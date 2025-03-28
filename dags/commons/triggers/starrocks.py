@@ -64,20 +64,20 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             LIMIT 1
             """
         )
-        state, error_msg = self.cursor.fetchone()
+        result = self.cursor.fetchone()
 
-        if not state:
+        if not result:
             return TaskFailedEvent(xcoms={"error_message": "empty result set"})
 
-        elif state == "FAILED":
-            return TaskFailedEvent(xcoms={"error_message": error_msg})
+        if result[0] == "FAILED":
+            return TaskFailedEvent(xcoms={"error_message": result[1]})
 
-        elif state == "SUCCESS":
+        elif result[0] == "SUCCESS":
             return TaskSuccessEvent()
 
-        elif state != "RUNNING":
+        elif result[0] != "RUNNING":
             return TaskFailedEvent(
-                xcoms={"error_message": f"unknown state: {error_msg}"}
+                xcoms={"error_message": f"unknown state: {result[0]}"}
             )
 
         return None
