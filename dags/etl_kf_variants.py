@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 
-from lib.operators.starrocks import StarRocksSQLExecuteQueryOperator, SubmitTaskOptions
+from commons.operators.starrocks import StarRocksSQLExecuteQueryOperator, SubmitTaskOptions
 
 with DAG(
     dag_id="etl_kf_variants",

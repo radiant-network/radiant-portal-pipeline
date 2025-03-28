@@ -2,7 +2,6 @@ import uuid
 from dataclasses import dataclass
 
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
-from airflow.sensors.base import BaseSensorOperator
 from airflow.triggers.base import TaskSuccessEvent
 
 from ..triggers.starrocks import (
@@ -30,7 +29,7 @@ class SubmitTaskOptions:
     spill_mode: str = "auto"
 
 
-class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperator):
+class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
     """
     Custom Airflow operator to execute SQL queries on StarRocks with task submission and polling capabilities.
 

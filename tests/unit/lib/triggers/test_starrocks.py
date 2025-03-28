@@ -2,14 +2,14 @@ import asyncio
 
 import pytest
 from unittest.mock import patch, MagicMock
-from dags.lib.triggers.starrocks import StarRocksTaskCompleteTrigger
+from dags.commons.triggers.starrocks import StarRocksTaskCompleteTrigger
 from airflow.triggers.base import TaskSuccessEvent, TaskFailedEvent
 
 
 @pytest.fixture
 def mock_connection():
     with patch(
-        "dags.lib.triggers.starrocks.BaseHook.get_connection"
+        "dags.commons.triggers.starrocks.BaseHook.get_connection"
     ) as mock_get_connection:
         mock_cursor = MagicMock()
         mock_connection = MagicMock()

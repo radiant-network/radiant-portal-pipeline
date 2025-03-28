@@ -40,7 +40,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             tuple[str, dict[str, Any]]: Serialized trigger information.
         """
         return (
-            "lib.triggers.starrocks.StarRocksTaskCompleteTrigger",
+            "commons.triggers.starrocks.StarRocksTaskCompleteTrigger",
             {
                 "conn_id": self.conn_id,
                 "task_name": self.task_name,
