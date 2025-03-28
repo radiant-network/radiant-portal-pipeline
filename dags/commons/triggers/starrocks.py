@@ -76,7 +76,9 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             return TaskSuccessEvent()
 
         elif state != "RUNNING":
-            return TaskFailedEvent(xcoms={"error_message": f"unknown state: {error_msg}"})
+            return TaskFailedEvent(
+                xcoms={"error_message": f"unknown state: {error_msg}"}
+            )
 
         return None
 
