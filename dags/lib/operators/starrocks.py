@@ -14,6 +14,16 @@ STARROCKS_TASK_TEMPLATE = "StarRocksSQLExecuteQueryOperator_Task_{uid}"
 
 @dataclass
 class SubmitTaskOptions:
+    """
+    Data class to hold options for submitting a task.
+
+    Attributes:
+        max_query_timeout (int): Maximum query timeout in milliseconds.
+        poll_interval (int): Interval in seconds to poll for task completion.
+        enable_spill (bool): Flag to enable or disable spilling.
+        spill_mode (str): Mode of spilling, e.g., 'auto'.
+    """
+
     max_query_timeout: int = 10000
     poll_interval: int = 30
     enable_spill: bool = False
@@ -21,6 +31,14 @@ class SubmitTaskOptions:
 
 
 class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperator):
+    """
+    Custom Airflow operator to execute SQL queries on StarRocks with task submission and polling capabilities.
+
+    Args:
+        submit_task (bool): Flag to indicate if the task should be submitted.
+        submit_task_options (SubmitTaskOptions): Options for submitting the task.
+        query_params (dict): Parameters to format the SQL query.
+    """
 
     def __init__(
         self,
@@ -43,6 +61,19 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperat
         spill_mode: str = "auto",
         query_params: dict = None,
     ) -> tuple[str, str]:
+        """
+        Prepare the SQL query with the given parameters.
+
+        Args:
+            sql (str): The SQL query to be executed.
+            query_timeout (int): Maximum query timeout in milliseconds.
+            enable_spill (bool): Flag to enable or disable spilling.
+            spill_mode (str): Mode of spilling, e.g., 'auto'.
+            query_params (dict): Parameters to format the SQL query.
+
+        Returns:
+            tuple[str, str]: The formatted SQL query and the task name.
+        """
         _task_name = STARROCKS_TASK_TEMPLATE.format(uid=str(uuid.uuid4())[-8:])
         _sql = f"""
             submit /*+set_var(
@@ -60,6 +91,12 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperat
         return _sql, _task_name
 
     def execute(self, context):
+        """
+        Execute the SQL query. If submit_task is True, submit the task and defer until completion.
+
+        Args:
+            context (dict): The execution context.
+        """
         if self.submit_task:
             self.sql, _task_name = self._prepare_sql(
                 sql=self.sql,
@@ -82,6 +119,13 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperat
             return super().execute(context)
 
     def _is_complete(self, context, event=None) -> None:
+        """
+        Check if the task is complete.
+
+        Args:
+            context (dict): The execution context.
+            event (TaskSuccessEvent): The event indicating task success.
+        """
         if not isinstance(event, TaskSuccessEvent):
             print("Task failed")
         return
