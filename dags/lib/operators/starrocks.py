@@ -14,11 +14,17 @@ STARROCKS_TASK_TEMPLATE = "StarRocksSQLExecuteQueryOperator_Task_{uid}"
 class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperator):
 
     def __init__(
-        self, submit_task: bool = False, max_query_timeout: int = 10000, *args, **kwargs
+        self,
+        submit_task: bool = False,
+        max_query_timeout: int = 10000,
+        poll_interval: int = 30,
+        *args,
+        **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.submit_task = submit_task
         self._query_timeout = max_query_timeout
+        self.poll_interval = poll_interval
 
     @staticmethod
     def _prepare_sql(sql: str, query_timeout: int) -> tuple[str, str]:
@@ -42,7 +48,7 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperat
                 trigger=StarRocksTaskCompleteTrigger(
                     conn_id=self.conn_id,
                     task_name=_task_name,
-                    sleep_time=5,
+                    sleep_time=self.poll_interval,
                 ),
                 method_name="_is_complete",
             )
