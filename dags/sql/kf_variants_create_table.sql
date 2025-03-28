@@ -1,34 +1,33 @@
-create table if not exists kf_variants
-(
+CREATE TABLE IF NOT EXISTS kf_variants (
     locus_id BIGINT NOT NULL,
-    `af`                     decimal(7, 6),
-    `pf`                     decimal(7, 6),
-    `gnomad_v3_af`           decimal(7, 6),
-    `topmed_af`           decimal(7, 6),
-    `tg_af`           decimal(7, 6),
-    `ac`                     int(11),
-    `pc`                     int(11),
-    `hom`                    int(11),
-    `chromosome`             char(2),
-    `start`                  bigint NULL COMMENT "",
-    `variant_class`          varchar(50) NULL COMMENT "",
-    `clinvar_interpretation` array< varchar (100)> NULL COMMENT "",
-    `symbol`                 varchar(20) NULL COMMENT "",
-    `consequence`            array< varchar (50)> NULL COMMENT "",
-    `vep_impact`             varchar(20) NULL COMMENT "",
-    `mane_select`            boolean NULL COMMENT "",
-    `mane_plus`            boolean NULL COMMENT "",
-    `picked`            boolean NULL COMMENT "",
-    `canonical`              boolean NULL COMMENT "",
-    `rsnumber`               array< varchar (15)> NULL COMMENT "",
-    `reference`              varchar(2000),
-    `alternate`              varchar(2000),
-    `hgvsg`                  varchar(2000) NULL,
-    `locus`             varchar(2000) NULL,
-    `dna_change`             varchar(2000),
-    `aa_change`             varchar(2000)
+    af DECIMAL(7, 6),
+    pf DECIMAL(7, 6),
+    gnomad_v3_af DECIMAL(7, 6),
+    topmed_af DECIMAL(7, 6),
+    tg_af DECIMAL(7, 6),
+    ac INT(11),
+    pc INT(11),
+    hom INT(11),
+    chromosome CHAR(2),
+    start BIGINT NULL COMMENT '',
+    variant_class VARCHAR(50) NULL COMMENT '',
+    clinvar_interpretation ARRAY<VARCHAR(100)> NULL COMMENT '',
+    symbol VARCHAR(20) NULL COMMENT '',
+    consequence ARRAY<VARCHAR(50)> NULL COMMENT '',
+    vep_impact VARCHAR(20) NULL COMMENT '',
+    mane_select BOOLEAN NULL COMMENT '',
+    mane_plus BOOLEAN NULL COMMENT '',
+    picked BOOLEAN NULL COMMENT '',
+    canonical BOOLEAN NULL COMMENT '',
+    rsnumber ARRAY<VARCHAR(15)> NULL COMMENT '',
+    reference VARCHAR(2000),
+    alternate VARCHAR(2000),
+    hgvsg VARCHAR(2000) NULL,
+    locus VARCHAR(2000) NULL,
+    dna_change VARCHAR(2000),
+    aa_change VARCHAR(2000)
 )
-DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
+DISTRIBUTED BY HASH(locus_id) BUCKETS 10
 PROPERTIES (
-"colocate_with" = "query_group"
+    'colocate_with' = 'query_group'
 );

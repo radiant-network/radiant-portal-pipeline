@@ -1,18 +1,18 @@
-insert into kf_variants
+INSERT INTO kf_variants
 SELECT
     v.locus_id,
-    (vf.ac / 22000) as af,
-    (vf.pc / 11000) as pf,
-    g.af as gnomad_af,
-    t.af as topmed_af,
-    tg.af as tg_af,
-    vf.ac as ac,
-    vf.pc as pc,
-    vf.hom as hom,
+    vf.ac / 22000 AS af,
+    vf.pc / 11000 AS pf,
+    g.af AS gnomad_af,
+    t.af AS topmed_af,
+    tg.af AS tg_af,
+    vf.ac AS ac,
+    vf.pc AS pc,
+    vf.hom AS hom,
     v.chromosome,
     v.start,
     v.variant_class,
-    cl.interpretations as clinvar_interpretation,
+    cl.interpretations AS clinvar_interpretation,
     v.symbol,
     v.consequence,
     v.vep_impact,
@@ -27,9 +27,9 @@ SELECT
     v.locus,
     v.dna_change,
     v.aa_change
-from intermediate_kf_variants v
-left join kf_variants_freq vf on vf.locus_id=v.locus_id
-left join gnomad_genomes_v3 g on g.locus_id=v.locus_id
-left join topmed_bravo t on t.locus_id=v.locus_id
-left join 1000_genomes tg on tg.locus_id=v.locus_id
-left join clinvar cl on cl.locus_id=v.locus_id;
+FROM intermediate_kf_variants v
+LEFT JOIN kf_variants_freq vf ON vf.locus_id = v.locus_id
+LEFT JOIN gnomad_genomes_v3 g ON g.locus_id = v.locus_id
+LEFT JOIN topmed_bravo t ON t.locus_id = v.locus_id
+LEFT JOIN 1000_genomes tg ON tg.locus_id = v.locus_id
+LEFT JOIN clinvar cl ON cl.locus_id = v.locus_id;
