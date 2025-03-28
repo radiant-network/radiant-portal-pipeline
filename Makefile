@@ -9,17 +9,9 @@ install:
 
 # Run tests
 test:
+	black --check dags/ tests/
 	pytest tests/
 
 # Lint the code
-lint:
-	black --check dags/ tests/
-
-# Clean up
-clean:
-	find . -type f -name '*.pyc' -delete
-	find . -type d -name '__pycache__' -exec rm -r {} +
-	rm -rf .pytest_cache
-	rm -rf .mypy_cache
-	rm -rf .coverage
-	rm -rf htmlcov
+format:
+	black dags/ tests/
