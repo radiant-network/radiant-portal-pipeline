@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 
-from lib.operators.starrocks import StarRocksSQLExecuteQueryOperator
+from lib.operators.starrocks import StarRocksSQLExecuteQueryOperator, SubmitTaskOptions
 
 with DAG(
     dag_id="etl_kf_variants",
@@ -22,8 +22,12 @@ with DAG(
         task_id="insert_into_table",
         sql="./sql/kf_variants_insert.sql",
         database="poc_starrocks",
-        submit_task=True,
-        max_query_timeout=3600,
+        submit_task_options=SubmitTaskOptions(
+            max_query_timeout=3600,
+            poll_interval=30,
+            enable_spill=False,
+            spill_mode="auto",
+        ),
     )
 
     start = EmptyOperator(
