@@ -2,7 +2,7 @@ import asyncio
 from typing import Any, AsyncIterator
 
 from airflow.hooks.base import BaseHook
-from airflow.triggers.base import BaseTrigger, TaskSuccessEvent
+from airflow.triggers.base import BaseTrigger, TaskFailedEvent, TaskSuccessEvent
 
 
 class StarRocksTaskCompleteTrigger(BaseTrigger):
@@ -17,7 +17,6 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
         self.cursor = connection.get_hook(hook_params={}).get_conn().cursor()
 
     def serialize(self) -> tuple[str, dict[str, Any]]:
-        print("serializing trigger")
         return (
             "lib.triggers.starrocks.StarRocksTaskCompleteTrigger",
             {
@@ -30,7 +29,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
     def _get_task_completed(self):
         self.cursor.execute(
             f"""
-            SELECT state
+            SELECT state, error_message
             FROM information_schema.task_runs
             WHERE task_name = '{self.task_name}'
             ORDER BY CREATE_TIME DESC
@@ -39,14 +38,17 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
         )
         result = self.cursor.fetchone()
         if not result or result[0] == "FAILED":
-            raise Exception(f"Task [{self.task_name}] failed")
+            return TaskFailedEvent(xcoms={"error_message": result[1]})
 
         if result[0] != "RUNNING":
-            return True
+            return TaskSuccessEvent()
 
-        return False
+        return None
 
     async def run(self) -> AsyncIterator[TaskSuccessEvent]:
-        while not self._get_task_completed():
+        result = self._get_task_completed()
+        while result is None:
             await asyncio.sleep(self._sleep_time)
-        yield TaskSuccessEvent()
+            result = self._get_task_completed()
+
+        yield result
