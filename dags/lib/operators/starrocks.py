@@ -25,13 +25,15 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperat
     def __init__(
         self,
         submit_task: bool = False,
-        submit_task_options: SubmitTaskOptions = SubmitTaskOptions(),
+        submit_task_options: SubmitTaskOptions = None,
+        query_params: dict = None,
         *args,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.submit_task = submit_task
-        self.submit_task_options = submit_task_options
+        self.submit_task_options = submit_task_options or SubmitTaskOptions()
+        self.query_params = query_params or {}
 
     @staticmethod
     def _prepare_sql(
@@ -39,19 +41,23 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperat
         query_timeout: int,
         enable_spill: bool = False,
         spill_mode: str = "auto",
+        query_params: dict = None,
     ) -> tuple[str, str]:
         _task_name = STARROCKS_TASK_TEMPLATE.format(uid=str(uuid.uuid4())[-8:])
-        return (
-            f"""
+        _sql = f"""
             submit /*+set_var(
-            query_timeout={query_timeout}, 
-            enable_spill={enable_spill}, 
-            spill_mode={spill_mode}
+                query_timeout={query_timeout}, 
+                enable_spill={enable_spill}, 
+                spill_mode={spill_mode}
             )*/ task {_task_name} as
             {sql}
-         """,
-            _task_name,
+         """
+        _sql = (
+            _sql.format(**{key: value for key, value in query_params.items()})
+            if query_params
+            else _sql
         )
+        return _sql, _task_name
 
     def execute(self, context):
         if self.submit_task:
@@ -60,6 +66,7 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator, BaseSensorOperat
                 query_timeout=self.submit_task_options.max_query_timeout,
                 enable_spill=self.submit_task_options.enable_spill,
                 spill_mode=self.submit_task_options.spill_mode,
+                query_params=self.query_params,
             )
 
             super().execute(context)
