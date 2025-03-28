@@ -4,6 +4,12 @@ This repository contains the different files and scripts used to run the Radiant
 
 ## Development
 
+### Useful `make` commands
+
+- `make install`: Installs the Python dependencies using `pip` in your virtual environment.
+- `make test`: Runs the code static checks and tests using `black` and `pytest`.
+- `make format`: Formats the code using `black`
+
 ### Structure
 
 - `dags` directory contains the DAGs used to run the pipeline.
