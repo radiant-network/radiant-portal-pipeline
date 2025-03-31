@@ -55,6 +55,7 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
     @staticmethod
     def _prepare_sql(
         sql: str,
+        is_submit_task: bool,
         query_timeout: int,
         enable_spill: bool = False,
         spill_mode: str = "auto",
@@ -73,20 +74,29 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         Returns:
             tuple[str, str]: The formatted SQL query and the task name.
         """
-        _task_name = STARROCKS_TASK_TEMPLATE.format(uid=str(uuid.uuid4())[-8:])
-        _sql = f"""
-            submit /*+set_var(
-                query_timeout={query_timeout}, 
-                enable_spill={enable_spill}, 
-                spill_mode={spill_mode}
-            )*/ task {_task_name} as
-            {sql}
-         """
-        _sql = (
-            _sql.format(**{key: value for key, value in query_params.items()})
-            if query_params
-            else _sql
-        )
+        _task_name = None
+        _sql = None
+
+        if is_submit_task:
+            _task_name = STARROCKS_TASK_TEMPLATE.format(uid=str(uuid.uuid4())[-8:])
+            _sql = f"""
+                submit /*+set_var(
+                    query_timeout={query_timeout}, 
+                    enable_spill={enable_spill}, 
+                    spill_mode={spill_mode}
+                )*/ task {_task_name} as
+                {sql}
+             """
+        else:
+            _sql = sql
+
+        if query_params:
+            _sql = (
+                _sql.format(**{key: value for key, value in query_params.items()})
+                if query_params
+                else _sql
+            )
+
         return _sql, _task_name
 
     def execute(self, context):
@@ -96,15 +106,17 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         Args:
             context (dict): The execution context.
         """
-        if self.submit_task:
-            self.sql, _task_name = self._prepare_sql(
-                sql=self.sql,
-                query_timeout=self.submit_task_options.max_query_timeout,
-                enable_spill=self.submit_task_options.enable_spill,
-                spill_mode=self.submit_task_options.spill_mode,
-                query_params=self.query_params,
-            )
 
+        self.sql, _task_name = self._prepare_sql(
+            sql=self.sql,
+            is_submit_task=self.submit_task,
+            query_timeout=self.submit_task_options.max_query_timeout,
+            enable_spill=self.submit_task_options.enable_spill,
+            spill_mode=self.submit_task_options.spill_mode,
+            query_params=self.query_params,
+        )
+
+        if self.submit_task:
             super().execute(context)
             self.defer(
                 trigger=StarRocksTaskCompleteTrigger(
