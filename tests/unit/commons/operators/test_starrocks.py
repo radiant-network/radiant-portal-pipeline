@@ -2,6 +2,7 @@ import pytest
 import re
 from dags.commons.operators.starrocks import StarRocksSQLExecuteQueryOperator
 
+
 @pytest.mark.parametrize(
     "sql, is_submit_task, query_timeout, enable_spill, spill_mode, query_params, expected_sql, expected_task_name",
     [
@@ -57,7 +58,16 @@ from dags.commons.operators.starrocks import StarRocksSQLExecuteQueryOperator
         ),
     ],
 )
-def test_prepare_sql(sql, is_submit_task, query_timeout, enable_spill, spill_mode, query_params, expected_sql, expected_task_name):
+def test_prepare_sql(
+    sql,
+    is_submit_task,
+    query_timeout,
+    enable_spill,
+    spill_mode,
+    query_params,
+    expected_sql,
+    expected_task_name,
+):
     result_sql, result_task_name = StarRocksSQLExecuteQueryOperator._prepare_sql(
         sql=sql,
         is_submit_task=is_submit_task,
