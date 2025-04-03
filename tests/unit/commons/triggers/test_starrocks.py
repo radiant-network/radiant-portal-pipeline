@@ -103,3 +103,44 @@ def test_run_trigger_until_success(mock_connection):
 
     assert len(result) == 1
     assert isinstance(result[0], TaskSuccessEvent)
+
+
+def test_run_trigger_until_failure(mock_connection):
+    mock_connection.fetchone.side_effect = [
+        ("RUNNING", None),
+        ("FAILED", "fake_out_of_memory_error"),
+    ]
+
+    trigger = StarRocksTaskCompleteTrigger(
+        conn_id="test_conn", task_name="test_task", sleep_time=1
+    )
+
+    async def run_trigger():
+        result = [event async for event in trigger.run()]
+        return result
+
+    result = asyncio.run(run_trigger())
+
+    assert len(result) == 1
+    assert isinstance(result[0], TaskFailedEvent)
+    assert result[0].xcoms["error_message"] == "state: FAILED, error_message: fake_out_of_memory_error"
+
+
+def test_run_trigger_until_unknown(mock_connection):
+    mock_connection.fetchone.side_effect = [
+        None, None, None, None, None
+    ]
+
+    trigger = StarRocksTaskCompleteTrigger(
+        conn_id="test_conn", task_name="test_task", sleep_time=1
+    )
+
+    async def run_trigger():
+        result = [event async for event in trigger.run()]
+        return result
+
+    result = asyncio.run(run_trigger())
+
+    assert len(result) == 1
+    assert isinstance(result[0], TaskFailedEvent)
+    assert result[0].xcoms["error_message"] == f"task test_task not found"
