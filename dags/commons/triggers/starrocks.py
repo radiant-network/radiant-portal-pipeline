@@ -75,8 +75,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
                 )
             return None
 
-        else:
-            self._missed_count = 0
+        self._missed_count = 0
 
         if result[0] == "SUCCESS":
             return TaskSuccessEvent()
