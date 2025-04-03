@@ -3,7 +3,10 @@ from airflow.models import Variable
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
-from commons.operators.starrocks import StarRocksSQLExecuteQueryOperator, SubmitTaskOptions
+from commons.operators.starrocks import (
+    StarRocksSQLExecuteQueryOperator,
+    SubmitTaskOptions,
+)
 
 
 def group_template(group_id):
@@ -66,7 +69,14 @@ with DAG(
     )
 
     tasks = [start, create_variant_dict]
-    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+    group_ids = [
+        "1000_genomes",
+        "clinvar",
+        "dbnsfp",
+        "gnomad",
+        "spliceai",
+        "topmed_bravo",
+    ]
     for group in group_ids:
         with TaskGroup(group_id=f"task_group_{group}"):
             _tasks = group_template(group_id=f"{group}")
