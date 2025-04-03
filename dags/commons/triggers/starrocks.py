@@ -14,6 +14,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
         task_name (str): Name of the task to check.
         sleep_time (int): Time in seconds to wait between checks.
     """
+
     _MISSED_MAX_COUNT = 5
 
     def __init__(self, conn_id, task_name, sleep_time):
