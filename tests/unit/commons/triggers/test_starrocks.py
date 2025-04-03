@@ -45,7 +45,10 @@ def test_get_task_completed_failed(mock_connection):
     result = trigger._get_task_completed()
 
     assert isinstance(result, TaskFailedEvent)
-    assert result.xcoms["error_message"] == "fake_out_of_memory_error"
+    assert (
+        result.xcoms["error_message"]
+        == "state: FAILED, error_message: fake_out_of_memory_error"
+    )
 
 
 def test_get_task_completed_running(mock_connection):
@@ -65,10 +68,12 @@ def test_get_task_completed_none(mock_connection):
     trigger = StarRocksTaskCompleteTrigger(
         conn_id="test_conn", task_name="test_task", sleep_time=5
     )
-    result = trigger._get_task_completed()
 
-    assert isinstance(result, TaskFailedEvent)
-    assert result.xcoms["error_message"] == "empty result set"
+    result = [trigger._get_task_completed() for _ in range(5)]
+
+    assert result[:4] == [None, None, None, None]
+    assert isinstance(result[4], TaskFailedEvent)
+    assert result[4].xcoms["error_message"] == "task test_task not found"
 
 
 def test_get_task_completed_unknown(mock_connection):
@@ -80,7 +85,7 @@ def test_get_task_completed_unknown(mock_connection):
     result = trigger._get_task_completed()
 
     assert isinstance(result, TaskFailedEvent)
-    assert result.xcoms["error_message"] == "unknown state: FOOBAR"
+    assert result.xcoms["error_message"] == "state: FOOBAR, error_message: None"
 
 
 def test_run_trigger_until_success(mock_connection):

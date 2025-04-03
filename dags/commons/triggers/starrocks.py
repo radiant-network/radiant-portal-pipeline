@@ -73,14 +73,20 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
                 return TaskFailedEvent(
                     xcoms={"error_message": f"task {self.task_name} not found"}
                 )
+            return None
+
         else:
             self._missed_count = 0
 
-        if result[0] == "FAILED":
-            return TaskFailedEvent(xcoms={"error_message": result[1]})
-
-        elif result[0] == "SUCCESS":
+        if result[0] == "SUCCESS":
             return TaskSuccessEvent()
+
+        if result[0] not in ["RUNNING", "PENDING"]:
+            return TaskFailedEvent(
+                xcoms={
+                    "error_message": f"state: {result[0]}, error_message: {result[1]}"
+                }
+            )
 
         return None
 
