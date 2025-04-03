@@ -123,13 +123,14 @@ def test_run_trigger_until_failure(mock_connection):
 
     assert len(result) == 1
     assert isinstance(result[0], TaskFailedEvent)
-    assert result[0].xcoms["error_message"] == "state: FAILED, error_message: fake_out_of_memory_error"
+    assert (
+        result[0].xcoms["error_message"]
+        == "state: FAILED, error_message: fake_out_of_memory_error"
+    )
 
 
 def test_run_trigger_until_unknown(mock_connection):
-    mock_connection.fetchone.side_effect = [
-        None, None, None, None, None
-    ]
+    mock_connection.fetchone.side_effect = [None, None, None, None, None]
 
     trigger = StarRocksTaskCompleteTrigger(
         conn_id="test_conn", task_name="test_task", sleep_time=1
