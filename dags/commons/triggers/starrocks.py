@@ -15,6 +15,8 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
         sleep_time (int): Time in seconds to wait between checks.
     """
 
+    _MISSED_MAX_COUNT = 5
+
     def __init__(self, conn_id, task_name, sleep_time):
         """
         Initialize the trigger with connection ID, task name, and sleep time.
@@ -31,6 +33,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
 
         connection = BaseHook.get_connection(conn_id)
         self.cursor = connection.get_hook(hook_params={}).get_conn().cursor()
+        self._missed_count = 0
 
     def serialize(self) -> tuple[str, dict[str, Any]]:
         """
@@ -67,17 +70,23 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
         result = self.cursor.fetchone()
 
         if not result:
-            return TaskFailedEvent(xcoms={"error_message": "empty result set"})
+            self._missed_count += 1
+            if self._missed_count == self._MISSED_MAX_COUNT:
+                return TaskFailedEvent(
+                    xcoms={"error_message": f"task {self.task_name} not found"}
+                )
+            return None
 
-        if result[0] == "FAILED":
-            return TaskFailedEvent(xcoms={"error_message": result[1]})
+        self._missed_count = 0
 
-        elif result[0] == "SUCCESS":
+        if result[0] == "SUCCESS":
             return TaskSuccessEvent()
 
-        elif result[0] != "RUNNING":
+        if result[0] not in ["RUNNING", "PENDING"]:
             return TaskFailedEvent(
-                xcoms={"error_message": f"unknown state: {result[0]}"}
+                xcoms={
+                    "error_message": f"state: {result[0]}, error_message: {result[1]}"
+                }
             )
 
         return None
