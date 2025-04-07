@@ -1,0 +1,46 @@
+# General Configuration
+line-length = 119
+target-version = "py312"
+
+# Exclude common directories that should not be linted
+exclude = [
+    ".git",
+    ".venv",
+    "__pycache__",
+    "build/",
+    "dist/",
+    "node_modules/",
+    ".ruff_cache/"
+]
+
+# Linting Rules
+[lint]
+select = [
+    "E",  # pycodestyle errors (e.g., formatting issues)
+    "F",  # Pyflakes logic errors (e.g., undefined variables)
+    "UP", # pyupgrade for modern Python syntax
+    "B",  # flake8-bugbear for bug-prone patterns
+    "SIM", # flake8-simplify for reducing complexity
+    "I"   # isort for import sorting
+]
+ignore = []  # Add specific rule codes to ignore if needed
+extend-select = ["E501"]  # Enforce line-too-long checks
+
+# Formatting Rules
+[format]
+quote-style = "double"  # Use double quotes for strings
+indent-style = "space"  # Use spaces instead of tabs for indentation
+skip-magic-trailing-comma = false  # Respect trailing commas like Black
+
+# Per-file Ignores (Optional)
+[lint.per-file-ignores]
+"tests/*" = ["D"]  # Ignore docstring rules in test files
+
+# Fixable Rules
+fixable = [
+    "ALL"  # Allow Ruff to fix all enabled rules when run with --fix
+]
+
+# Plugin-Specific Configurations (Optional)
+[lint.pydocstyle]
+convention = "google"  # Enforce Google-style docstrings

@@ -1,8 +1,13 @@
 import asyncio
-from typing import Any, AsyncIterator
+import logging
+from collections.abc import AsyncIterator
+from typing import Any
 
 from airflow.hooks.base import BaseHook
 from airflow.triggers.base import BaseTrigger, TaskFailedEvent, TaskSuccessEvent
+from pymysql import MySQLError
+
+LOGGER = logging.getLogger(__name__)
 
 
 class StarRocksTaskCompleteTrigger(BaseTrigger):
@@ -43,7 +48,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             tuple[str, dict[str, Any]]: Serialized trigger information.
         """
         return (
-            "commons.triggers.starrocks.StarRocksTaskCompleteTrigger",
+            "tasks.starrocks.trigger.StarRocksTaskCompleteTrigger",
             {
                 "conn_id": self.conn_id,
                 "task_name": self.task_name,
@@ -58,23 +63,29 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
         Returns:
             TaskFailedEvent or TaskSuccessEvent: Event indicating task success or failure.
         """
-        self.cursor.execute(
-            f"""
-            SELECT state, error_message
-            FROM information_schema.task_runs
-            WHERE task_name = '{self.task_name}'
-            ORDER BY CREATE_TIME DESC
-            LIMIT 1
-            """
-        )
-        result = self.cursor.fetchone()
-
-        if not result:
+        try:
+            self.cursor.execute(
+                f"""
+                SELECT state, error_message
+                FROM information_schema.task_runs
+                WHERE task_name = '{self.task_name}'
+                ORDER BY CREATE_TIME DESC
+                LIMIT 1
+                """
+            )
+            result = self.cursor.fetchone()
+        except MySQLError as e:
+            LOGGER.info(f"Retrying after receiving: {type(e)}")
             self._missed_count += 1
             if self._missed_count == self._MISSED_MAX_COUNT:
-                return TaskFailedEvent(
-                    xcoms={"error_message": f"task {self.task_name} not found"}
-                )
+                return TaskFailedEvent(xcoms={"error_message": f"Caught {type(e)} caused {self.task_name} to fail"})
+            return None
+
+        if not result:
+            LOGGER.info("Expected variable `result` is None, retrying...")
+            self._missed_count += 1
+            if self._missed_count == self._MISSED_MAX_COUNT:
+                return TaskFailedEvent(xcoms={"error_message": f"task {self.task_name} not found"})
             return None
 
         self._missed_count = 0
@@ -83,11 +94,8 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             return TaskSuccessEvent()
 
         if result[0] not in ["RUNNING", "PENDING"]:
-            return TaskFailedEvent(
-                xcoms={
-                    "error_message": f"state: {result[0]}, error_message: {result[1]}"
-                }
-            )
+            LOGGER.info(f"Received task state {result[0]}, failing task...")
+            return TaskFailedEvent(xcoms={"error_message": f"state: {result[0]}, error_message: {result[1]}"})
 
         return None
 

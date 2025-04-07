@@ -29,9 +29,7 @@ SCHEMA = merge_schemas(
         NestedField(112, "info_excess_het", FloatType(), required=False),
         NestedField(113, "info_fs", FloatType(), required=False),
         NestedField(114, "info_ds", BooleanType(), required=False),
-        NestedField(
-            115, "info_fraction_informative_reads", FloatType(), required=False
-        ),
+        NestedField(115, "info_fraction_informative_reads", FloatType(), required=False),
         NestedField(116, "info_inbreed_coeff", FloatType(), required=False),
         NestedField(117, "info_mleac", IntegerType(), required=False),
         NestedField(118, "info_mleaf", FloatType(), required=False),
@@ -154,9 +152,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
         gq = record.format("GQ")[idx][0] if "GQ" in record.FORMAT else 0
         ad_ref = record.gt_ref_depths[idx] if record.gt_ref_depths[idx] > 0 else None
         ad_alt = record.gt_alt_depths[idx] if record.gt_alt_depths[idx] > 0 else None
-        calls, zygosity = adjust_calls_and_zygosity(
-            record.genotypes[idx][:2], record.gt_types[idx], ad_ref, ad_alt
-        )
+        calls, zygosity = adjust_calls_and_zygosity(record.genotypes[idx][:2], record.gt_types[idx], ad_ref, ad_alt)
 
         has_alt = 1 in calls
         occurrences[exp.seq_id] = {
@@ -199,9 +195,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
             "ad_ref": ad_ref,
             "ad_alt": ad_alt,
             "ad_total": record.gt_depths[idx] if record.gt_depths[idx] > 0 else None,
-            "ad_ratio": (
-                record.gt_alt_freqs[idx] if record.gt_alt_freqs[idx] > 0 else None
-            ),
+            "ad_ratio": (record.gt_alt_freqs[idx] if record.gt_alt_freqs[idx] > 0 else None),
             "phased": record.gt_phases[idx],
         }
 
@@ -286,9 +280,7 @@ def adjust_calls_and_zygosity(
         - If the zygosity is HOM and there is only one call, the zygosity is adjusted to "HEM" (hemizygous).
         - Otherwise, the calls remain unchanged, and the zygosity is returned as its string representation.
     """
-    if ad_alt and (
-        (zygosity == ZYGOSITY_HET or zygosity == ZYGOSITY_HOM) and ad_alt < 3
-    ):
+    if ad_alt and ((zygosity == ZYGOSITY_HET or zygosity == ZYGOSITY_HOM) and ad_alt < 3):
         return [-1 for _ in range(len(calls))], "UNK"
     elif ad_ref and zygosity == ZYGOSITY_WT and ad_ref < 3:
         return [-1 for _ in range(len(calls))], "UNK"
@@ -458,9 +450,7 @@ def compute_transmission_mode(
             (gender, norm_calls, norm_fth, norm_mth, father_affected, mother_affected)
         )
     else:
-        result = AUTOSOMAL_TRANSMISSION_LOOKUP.get(
-            (norm_calls, norm_fth, norm_mth, father_affected, mother_affected)
-        )
+        result = AUTOSOMAL_TRANSMISSION_LOOKUP.get((norm_calls, norm_fth, norm_mth, father_affected, mother_affected))
 
     return result
 

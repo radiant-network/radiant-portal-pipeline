@@ -1,15 +1,15 @@
-import time
+from pathlib import Path
 
-import docker
 import fsspec
 import pytest
 from pyiceberg.catalog.rest import RestCatalog
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
+
+import docker
+from tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
 from tasks.vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
 from tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
-from tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
-from pathlib import Path
 
 # Base path of the current file
 CURRENT_DIR = Path(__file__).parent
@@ -61,9 +61,7 @@ def minio_container():
             ports = container.attrs["NetworkSettings"]["Ports"]
             api_port = ports[f"{MINIO_API_PORT}/tcp"][0]["HostPort"]
             console_port = ports[f"{MINIO_CONSOLE_PORT}/tcp"][0]["HostPort"]
-            instance = MinioInstance(
-                "localhost", api_port, console_port, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
-            )
+            instance = MinioInstance("localhost", api_port, console_port, MINIO_ACCESS_KEY, MINIO_SECRET_KEY)
             os.environ["HTS_S3_HOST"] = f"localhost:{api_port}"
             os.environ["HTS_S3_ADDRESS_STYLE"] = "path"
             os.environ["AWS_ACCESS_KEY_ID"] = instance.access_key
@@ -86,9 +84,7 @@ def minio_container():
     api_port = container.get_exposed_port(MINIO_API_PORT)
     console_port = container.get_exposed_port(MINIO_CONSOLE_PORT)
 
-    instance = MinioInstance(
-        "localhost", api_port, console_port, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
-    )
+    instance = MinioInstance("localhost", api_port, console_port, MINIO_ACCESS_KEY, MINIO_SECRET_KEY)
     os.environ["HTS_S3_HOST"] = f"localhost:{api_port}"
     os.environ["HTS_S3_ADDRESS_STYLE"] = "path"
     os.environ["AWS_ACCESS_KEY_ID"] = instance.access_key
@@ -107,9 +103,7 @@ def iceberg_container(minio_container):
         if "radiant-iceberg-rest" in container.name:
             ports = container.attrs["NetworkSettings"]["Ports"]
             rest_port = ports[f"{ICEBERG_REST_PORT}/tcp"][0]["HostPort"]
-            yield IcebergInstance(
-                "localhost", rest_port, ICEBERG_REST_CATALOG_NAME, ICEBERG_REST_TOKEN
-            )
+            yield IcebergInstance("localhost", rest_port, ICEBERG_REST_CATALOG_NAME, ICEBERG_REST_TOKEN)
             return
 
     container = (
@@ -121,9 +115,7 @@ def iceberg_container(minio_container):
         .with_env("CATALOG_S3_ACCESS_KEY_ID", minio_container.access_key)
         .with_env("CATALOG_S3_SECRET_ACCESS_KEY", minio_container.secret_key)
         .with_env("CATALOG_SECRET", ICEBERG_REST_TOKEN)
-        .with_env(
-            "CATALOG_CATALOG__IMPL", "org.apache.iceberg.inmemory.InMemoryCatalog"
-        )
+        .with_env("CATALOG_CATALOG__IMPL", "org.apache.iceberg.inmemory.InMemoryCatalog")
         .with_exposed_ports(ICEBERG_REST_PORT)
     )
     container.start()
@@ -131,9 +123,7 @@ def iceberg_container(minio_container):
 
     rest_port = container.get_exposed_port(ICEBERG_REST_PORT)
 
-    yield IcebergInstance(
-        "localhost", rest_port, ICEBERG_REST_CATALOG_NAME, ICEBERG_REST_TOKEN
-    )
+    yield IcebergInstance("localhost", rest_port, ICEBERG_REST_CATALOG_NAME, ICEBERG_REST_TOKEN)
 
     container.stop()
 
@@ -164,9 +154,7 @@ def iceberg_catalog_properties(iceberg_container, minio_container):
 
 @pytest.fixture(scope="session")
 def iceberg_client(iceberg_container, iceberg_catalog_properties):
-    return RestCatalog(
-        name=iceberg_container.catalog_name, **iceberg_catalog_properties
-    )
+    return RestCatalog(name=iceberg_container.catalog_name, **iceberg_catalog_properties)
 
 
 @pytest.fixture(autouse=True)
@@ -175,21 +163,16 @@ def setup_namespace(iceberg_client):
 
     namespace = f"ns_{uuid.uuid4().hex[:8]}"
     iceberg_client.create_namespace(namespace)
-    iceberg_client.create_table_if_not_exists(
-        f"{namespace}.germline_snv_occurrences", schema=OCCURRENCE_SCHEMA
-    )
-    iceberg_client.create_table_if_not_exists(
-        f"{namespace}.germline_snv_variants", schema=VARIANT_SCHEMA
-    )
-    iceberg_client.create_table_if_not_exists(
-        f"{namespace}.germline_snv_consequences", schema=CONSEQUENCE_SCHEMA
-    )
+    iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_occurrences", schema=OCCURRENCE_SCHEMA)
+    iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_variants", schema=VARIANT_SCHEMA)
+    iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_consequences", schema=CONSEQUENCE_SCHEMA)
 
     yield namespace
 
 
-import tempfile
 import os
+import tempfile
+
 import pysam
 
 VCF_SOURCE_DIR = "resources/vcf"

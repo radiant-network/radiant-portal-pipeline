@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
 from pyiceberg.catalog import load_catalog
-from pyiceberg.partitioning import PartitionSpec, PartitionField
+from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.transforms import IdentityTransform
 
 from tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
@@ -70,9 +70,7 @@ with DAG(
                 ),
             ]
         )
-        catalog.create_table_if_not_exists(
-            table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec
-        )
+        catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec)
 
     @task
     def create_germline_variants_table():
@@ -99,9 +97,7 @@ with DAG(
                 ),
             ]
         )
-        catalog.create_table_if_not_exists(
-            table_name, schema=VARIANT_SCHEMA, partition_spec=partition_spec
-        )
+        catalog.create_table_if_not_exists(table_name, schema=VARIANT_SCHEMA, partition_spec=partition_spec)
 
     @task
     def create_germline_consequences_table():
@@ -128,9 +124,7 @@ with DAG(
                 ),
             ]
         )
-        catalog.create_table_if_not_exists(
-            table_name, schema=CONSEQUENCE_SCHEMA, partition_spec=partition_spec
-        )
+        catalog.create_table_if_not_exists(table_name, schema=CONSEQUENCE_SCHEMA, partition_spec=partition_spec)
 
     (
         init_database()

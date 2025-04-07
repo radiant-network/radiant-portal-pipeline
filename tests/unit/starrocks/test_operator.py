@@ -1,6 +1,8 @@
-import pytest
 import re
-from dags.commons.operators.starrocks import StarRocksSQLExecuteQueryOperator
+
+import pytest
+
+from tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
 
 
 @pytest.mark.parametrize(
@@ -58,7 +60,7 @@ from dags.commons.operators.starrocks import StarRocksSQLExecuteQueryOperator
         ),
     ],
 )
-def test_prepare_sql(
+def test_basic_prepare_sql(
     sql,
     is_submit_task,
     query_timeout,
@@ -83,3 +85,26 @@ def test_prepare_sql(
         assert result_task_name.startswith(expected_task_name)
     else:
         assert result_task_name is None
+
+
+def test_prepare_sql_with_extra_args():
+    _result = StarRocksSQLExecuteQueryOperator._prepare_sql(
+        sql="SELECT * FROM table",
+        is_submit_task=True,
+        query_timeout=42,
+        enable_spill=False,
+        extra_args={"foo": "bar"},
+    )
+    assert re.sub(r"\s+", "", _result[0].strip()) == re.sub(
+        r"\s+",
+        "",
+        f"""
+            submit /*+set_var(
+            query_timeout=42, 
+            enable_spill=False, 
+            spill_mode=auto, 
+            foo=bar
+            )*/ task {_result[1]} as
+            SELECT * FROM table
+        """.strip(),
+    )
