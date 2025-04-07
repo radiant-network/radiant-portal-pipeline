@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.empty import EmptyOperator
