@@ -9,9 +9,9 @@ from commons.operators.starrocks import (
 )
 
 
-def group_template(group_id):
+def group_template(starrocks_connection, group_id):
     insert_hashes = StarRocksSQLExecuteQueryOperator(
-        conn_id="starrocks_conn",
+        conn_id=starrocks_connection,
         task_id=f"insert_hashes_{group_id}",
         sql=f"./sql/open_data/{group_id}_insert_hashes.sql",
         database=STARROCKS_DATABASE,
@@ -25,7 +25,7 @@ def group_template(group_id):
     )
 
     create_table_if_not_exists = StarRocksSQLExecuteQueryOperator(
-        conn_id="starrocks_conn",
+        conn_id=starrocks_connection,
         task_id=f"create_table_{group_id}",
         sql=f"./sql/open_data/{group_id}_create_table.sql",
         database=STARROCKS_DATABASE,
@@ -33,7 +33,7 @@ def group_template(group_id):
     )
 
     insert_table = StarRocksSQLExecuteQueryOperator(
-        conn_id="starrocks_conn",
+        conn_id=starrocks_connection,
         task_id=f"insert_table_{group_id}",
         sql=f"./sql/open_data/{group_id}_insert.sql",
         database=STARROCKS_DATABASE,
@@ -61,7 +61,7 @@ with DAG(
     start = EmptyOperator(task_id="start")
 
     create_variant_dict = StarRocksSQLExecuteQueryOperator(
-        conn_id="starrocks_conn",
+        conn_id=STARROCKS_CONNECTION,
         task_id="create_variant_dict_table",
         sql="./sql/variant_dict_create_table.sql",
         database=STARROCKS_DATABASE,
@@ -79,7 +79,9 @@ with DAG(
     ]
     for group in group_ids:
         with TaskGroup(group_id=f"task_group_{group}"):
-            _tasks = group_template(group_id=f"{group}")
+            _tasks = group_template(
+                starrocks_connection=STARROCKS_CONNECTION, group_id=f"{group}"
+            )
             for task in _tasks:
                 tasks.append(task)
 

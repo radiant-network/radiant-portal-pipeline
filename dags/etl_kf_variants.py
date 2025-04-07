@@ -1,10 +1,15 @@
+from pathlib import Path
+
 from airflow import DAG
+from airflow.models import Variable
 from airflow.operators.empty import EmptyOperator
+from airflow.models.baseoperator import chain
 
 from commons.operators.starrocks import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )
+
 
 with DAG(
     dag_id="etl_kf_variants",
@@ -13,29 +18,72 @@ with DAG(
     tags=["etl", "kf_data"],
 ) as dag:
 
-    create_kf_variants_table = StarRocksSQLExecuteQueryOperator(
-        conn_id="starrocks_conn",
-        task_id="create_table",
-        sql="./sql/kf_variants_create_table.sql",
-        database="poc_starrocks",
-    )
-
-    insert_into_kf_variants_table = StarRocksSQLExecuteQueryOperator(
-        conn_id="starrocks_conn",
-        task_id="insert_into_table",
-        sql="./sql/kf_variants_insert.sql",
-        database="poc_starrocks",
-        submit_task_options=SubmitTaskOptions(
-            max_query_timeout=3600,
-            poll_interval=30,
-            enable_spill=False,
-            spill_mode="auto",
-        ),
-    )
+    STARROCKS_CONNECTION = Variable.get("STARROCKS_CONNECTION")
+    STARROCKS_DATABASE = Variable.get("STARROCKS_DATABASE")
 
     start = EmptyOperator(
         task_id="start",
     )
 
-    start >> create_kf_variants_table
-    create_kf_variants_table >> insert_into_kf_variants_table
+    tasks = [
+        start,
+        StarRocksSQLExecuteQueryOperator(
+            conn_id=STARROCKS_CONNECTION,
+            task_id="create_variant_dict_table",
+            sql="./sql/variant_dict_create_table.sql",
+            database=STARROCKS_DATABASE,
+        ),
+        StarRocksSQLExecuteQueryOperator(
+            conn_id=STARROCKS_CONNECTION,
+            task_id="insert_kf_variants_hashes",
+            sql="./sql/kf/kf_variants_insert_hashes.sql",
+            database=STARROCKS_DATABASE,
+            submit_task=True,
+            submit_task_options=SubmitTaskOptions(
+                max_query_timeout=3600,
+                poll_interval=30,
+                enable_spill=False,
+                spill_mode="auto",
+            ),
+        ),
+        StarRocksSQLExecuteQueryOperator(
+            conn_id=STARROCKS_CONNECTION,
+            task_id="create_stg_kf_variants_table",
+            sql="./sql/kf/stg_kf_variants_create_table.sql",
+            database=STARROCKS_DATABASE,
+        ),
+        StarRocksSQLExecuteQueryOperator(
+            conn_id=STARROCKS_CONNECTION,
+            task_id="insert_into_stg_kf_variants",
+            sql="./sql/kf/stg_kf_variants_insert.sql",
+            database=STARROCKS_DATABASE,
+            submit_task=True,
+            submit_task_options=SubmitTaskOptions(
+                max_query_timeout=3600,
+                poll_interval=30,
+                enable_spill=False,
+                spill_mode="auto",
+            ),
+        ),
+        StarRocksSQLExecuteQueryOperator(
+            conn_id=STARROCKS_CONNECTION,
+            task_id="create_kf_variants_table",
+            sql="./sql/kf/kf_variants_create_table.sql",
+            database=STARROCKS_DATABASE,
+        ),
+        StarRocksSQLExecuteQueryOperator(
+            conn_id=STARROCKS_CONNECTION,
+            task_id="insert_into_kf_variants_table",
+            sql="./sql/kf/kf_variants_insert.sql",
+            database=STARROCKS_DATABASE,
+            submit_task=True,
+            submit_task_options=SubmitTaskOptions(
+                max_query_timeout=3600,
+                poll_interval=30,
+                enable_spill=False,
+                spill_mode="auto",
+            ),
+        ),
+    ]
+
+    chain(*tasks)
