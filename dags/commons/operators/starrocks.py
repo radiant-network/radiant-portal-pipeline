@@ -1,6 +1,8 @@
 import uuid
 from dataclasses import dataclass
+from typing import Any
 
+from airflow.models import Variable
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.triggers.base import TaskSuccessEvent
 
@@ -27,6 +29,7 @@ class SubmitTaskOptions:
     poll_interval: int = 30
     enable_spill: bool = False
     spill_mode: str = "auto"
+    extra_args: dict[str, Any] = None
 
 
 class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
@@ -44,10 +47,16 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         submit_task: bool = False,
         submit_task_options: SubmitTaskOptions = None,
         query_params: dict = None,
-        *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
+        conn_id = Variable.get("STARROCKS_CONNECTION_ID")
+        database = Variable.get("STARROCKS_DATABASE")
+
+        super().__init__(
+            conn_id=conn_id,
+            database=database,
+            **kwargs,
+        )
         self.submit_task = submit_task
         self.submit_task_options = submit_task_options or SubmitTaskOptions()
         self.query_params = query_params or {}
@@ -60,6 +69,7 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         enable_spill: bool = False,
         spill_mode: str = "auto",
         query_params: dict = None,
+        extra_args: dict = None,
     ) -> tuple[str, str]:
         """
         Prepare the SQL query with the given parameters.
@@ -79,11 +89,21 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
 
         if is_submit_task:
             _task_name = STARROCKS_TASK_TEMPLATE.format(uid=str(uuid.uuid4())[-8:])
+            _submit_config = f"""
+            query_timeout={query_timeout}, 
+            enable_spill={enable_spill}, 
+            spill_mode={spill_mode}
+            """
+
+            if extra_args:
+                _extra_args = ", ".join(
+                    [f"{key}={value}" for key, value in extra_args.items()]
+                )
+                _submit_config += f", {_extra_args}"
+
             _sql = f"""
                 submit /*+set_var(
-                    query_timeout={query_timeout}, 
-                    enable_spill={enable_spill}, 
-                    spill_mode={spill_mode}
+                {_submit_config}
                 )*/ task {_task_name} as
                 {sql}
              """
@@ -106,7 +126,6 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         Args:
             context (dict): The execution context.
         """
-
         self.sql, _task_name = self._prepare_sql(
             sql=self.sql,
             is_submit_task=self.submit_task,

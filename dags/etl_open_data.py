@@ -1,5 +1,5 @@
 from airflow import DAG
-from airflow.models import Variable
+from airflow.models import Param
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
@@ -9,12 +9,10 @@ from commons.operators.starrocks import (
 )
 
 
-def group_template(starrocks_connection, group_id):
+def group_template(group_id):
     insert_hashes = StarRocksSQLExecuteQueryOperator(
-        conn_id=starrocks_connection,
         task_id=f"insert_hashes_{group_id}",
         sql=f"./sql/open_data/{group_id}_insert_hashes.sql",
-        database=STARROCKS_DATABASE,
         submit_task=True,
         submit_task_options=SubmitTaskOptions(
             max_query_timeout=3600,
@@ -25,18 +23,14 @@ def group_template(starrocks_connection, group_id):
     )
 
     create_table_if_not_exists = StarRocksSQLExecuteQueryOperator(
-        conn_id=starrocks_connection,
         task_id=f"create_table_{group_id}",
         sql=f"./sql/open_data/{group_id}_create_table.sql",
-        database=STARROCKS_DATABASE,
         submit_task=False,
     )
 
     insert_table = StarRocksSQLExecuteQueryOperator(
-        conn_id=starrocks_connection,
         task_id=f"insert_table_{group_id}",
         sql=f"./sql/open_data/{group_id}_insert.sql",
-        database=STARROCKS_DATABASE,
         submit_task=True,
         submit_task_options=SubmitTaskOptions(
             max_query_timeout=3600,
@@ -48,23 +42,33 @@ def group_template(starrocks_connection, group_id):
     return [insert_hashes, create_table_if_not_exists, insert_table]
 
 
+dag_params = {
+    "starrocks_connection_var_name": Param(
+        default="STARROCKS_CONNECTION",
+        description="The name of the Airflow variable that contains the StarRocks connection name string.",
+        type="string",
+    ),
+    "starrocks_db_var_name": Param(
+        default="STARROCKS_DATABASE",
+        description="The name of the Airflow variable that contains the StarRocks database name string.",
+        type="string",
+    ),
+}
+
+
 with DAG(
     dag_id="etl_open_data",
     schedule_interval=None,
     catchup=False,
     tags=["etl", "open_data"],
+    params=dag_params,
 ) as dag:
-
-    STARROCKS_CONNECTION = Variable.get("STARROCKS_CONNECTION")
-    STARROCKS_DATABASE = Variable.get("STARROCKS_DATABASE")
 
     start = EmptyOperator(task_id="start")
 
     create_variant_dict = StarRocksSQLExecuteQueryOperator(
-        conn_id=STARROCKS_CONNECTION,
         task_id="create_variant_dict_table",
         sql="./sql/variant_dict_create_table.sql",
-        database=STARROCKS_DATABASE,
         submit_task=False,
     )
 
@@ -78,10 +82,8 @@ with DAG(
         "topmed_bravo",
     ]
     for group in group_ids:
-        with TaskGroup(group_id=f"task_group_{group}"):
-            _tasks = group_template(
-                starrocks_connection=STARROCKS_CONNECTION, group_id=f"{group}"
-            )
+        with TaskGroup(group_id=f"task_group_{group}", tooltip=group):
+            _tasks = group_template(group_id=group)
             for task in _tasks:
                 tasks.append(task)
 

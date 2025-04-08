@@ -1,5 +1,4 @@
 from airflow import DAG
-from airflow.models import Variable
 from airflow.operators.empty import EmptyOperator
 from airflow.models.baseoperator import chain
 
@@ -16,9 +15,6 @@ with DAG(
     tags=["etl", "kf_data"],
 ) as dag:
 
-    STARROCKS_CONNECTION = Variable.get("STARROCKS_CONNECTION")
-    STARROCKS_DATABASE = Variable.get("STARROCKS_DATABASE")
-
     start = EmptyOperator(
         task_id="start",
     )
@@ -26,16 +22,12 @@ with DAG(
     tasks = [
         start,
         StarRocksSQLExecuteQueryOperator(
-            conn_id=STARROCKS_CONNECTION,
             task_id="create_variant_dict_table",
             sql="./sql/variant_dict_create_table.sql",
-            database=STARROCKS_DATABASE,
         ),
         StarRocksSQLExecuteQueryOperator(
-            conn_id=STARROCKS_CONNECTION,
             task_id="insert_kf_variants_hashes",
             sql="./sql/kf/kf_variants_insert_hashes.sql",
-            database=STARROCKS_DATABASE,
             submit_task=True,
             submit_task_options=SubmitTaskOptions(
                 max_query_timeout=3600,
@@ -45,16 +37,12 @@ with DAG(
             ),
         ),
         StarRocksSQLExecuteQueryOperator(
-            conn_id=STARROCKS_CONNECTION,
             task_id="create_stg_kf_variants_table",
             sql="./sql/kf/stg_kf_variants_create_table.sql",
-            database=STARROCKS_DATABASE,
         ),
         StarRocksSQLExecuteQueryOperator(
-            conn_id=STARROCKS_CONNECTION,
             task_id="insert_into_stg_kf_variants",
             sql="./sql/kf/stg_kf_variants_insert.sql",
-            database=STARROCKS_DATABASE,
             submit_task=True,
             submit_task_options=SubmitTaskOptions(
                 max_query_timeout=3600,
@@ -64,16 +52,12 @@ with DAG(
             ),
         ),
         StarRocksSQLExecuteQueryOperator(
-            conn_id=STARROCKS_CONNECTION,
             task_id="create_kf_variants_table",
             sql="./sql/kf/kf_variants_create_table.sql",
-            database=STARROCKS_DATABASE,
         ),
         StarRocksSQLExecuteQueryOperator(
-            conn_id=STARROCKS_CONNECTION,
             task_id="insert_into_kf_variants_table",
             sql="./sql/kf/kf_variants_insert.sql",
-            database=STARROCKS_DATABASE,
             submit_task=True,
             submit_task_options=SubmitTaskOptions(
                 max_query_timeout=3600,
