@@ -19,6 +19,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
         task_name (str): Name of the task to check.
         sleep_time (int): Time in seconds to wait between checks.
     """
+
     _MISSED_MAX_COUNT = 5
 
     def __init__(self, conn_id, task_name, sleep_time):
@@ -77,7 +78,9 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             self._missed_count += 1
             if self._missed_count == self._MISSED_MAX_COUNT:
                 return TaskFailedEvent(
-                    xcoms={"error_message": f"ProgrammingErrors caused {self.task_name} to fail"}
+                    xcoms={
+                        "error_message": f"ProgrammingErrors caused {self.task_name} to fail"
+                    }
                 )
             return None
 

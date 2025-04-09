@@ -160,4 +160,7 @@ def test_get_task_complete_programming_error(mock_connection):
     result = [trigger._get_task_completed() for _ in range(5)]
 
     assert isinstance(result[-1], TaskFailedEvent)
-    assert result[-1].xcoms["error_message"] == "ProgrammingErrors caused test_task to fail"
+    assert (
+        result[-1].xcoms["error_message"]
+        == "ProgrammingErrors caused test_task to fail"
+    )
