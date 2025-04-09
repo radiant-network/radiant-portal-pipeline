@@ -96,9 +96,7 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
             """
 
             if extra_args:
-                _extra_args = ", ".join(
-                    [f"{key}={value}" for key, value in extra_args.items()]
-                )
+                _extra_args = ", ".join([f"{key}={value}" for key, value in extra_args.items()])
                 _submit_config += f", {_extra_args}"
 
             _sql = f"""
@@ -111,11 +109,7 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
             _sql = sql
 
         if query_params:
-            _sql = (
-                _sql.format(**{key: value for key, value in query_params.items()})
-                if query_params
-                else _sql
-            )
+            _sql = _sql.format(**{key: value for key, value in query_params.items()}) if query_params else _sql
 
         return _sql, _task_name
 

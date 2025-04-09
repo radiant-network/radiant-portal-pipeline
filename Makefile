@@ -4,8 +4,12 @@ install:
 	pip install -r requirements.txt
 
 test:
-	black --check dags/ tests/
+	ruff check dags/ tests/
 	pytest tests/
 
+test-static:
+	ruff check dags/ tests/
+
 format:
-	black dags/ tests/
+	ruff format dags/ tests/
+	ruff check --fix dags/ tests/

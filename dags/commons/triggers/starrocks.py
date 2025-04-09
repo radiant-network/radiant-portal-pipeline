@@ -1,11 +1,11 @@
 import asyncio
 import logging
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any
 
 from airflow.hooks.base import BaseHook
 from airflow.triggers.base import BaseTrigger, TaskFailedEvent, TaskSuccessEvent
 from pymysql.err import ProgrammingError
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -77,11 +77,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             LOGGER.info(f"Retrying after receiving: {pe}")
             self._missed_count += 1
             if self._missed_count == self._MISSED_MAX_COUNT:
-                return TaskFailedEvent(
-                    xcoms={
-                        "error_message": f"ProgrammingErrors caused {self.task_name} to fail"
-                    }
-                )
+                return TaskFailedEvent(xcoms={"error_message": f"ProgrammingErrors caused {self.task_name} to fail"})
             return None
 
         result = self.cursor.fetchone()
@@ -89,9 +85,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             LOGGER.info("Expected variable `result` is None, retrying...")
             self._missed_count += 1
             if self._missed_count == self._MISSED_MAX_COUNT:
-                return TaskFailedEvent(
-                    xcoms={"error_message": f"task {self.task_name} not found"}
-                )
+                return TaskFailedEvent(xcoms={"error_message": f"task {self.task_name} not found"})
             return None
 
         self._missed_count = 0
@@ -101,11 +95,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
 
         if result[0] not in ["RUNNING", "PENDING"]:
             LOGGER.info(f"Received task state {result[0]}, failing task...")
-            return TaskFailedEvent(
-                xcoms={
-                    "error_message": f"state: {result[0]}, error_message: {result[1]}"
-                }
-            )
+            return TaskFailedEvent(xcoms={"error_message": f"state: {result[0]}, error_message: {result[1]}"})
 
         return None
 

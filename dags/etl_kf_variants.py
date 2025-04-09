@@ -1,12 +1,10 @@
 from airflow import DAG
-from airflow.operators.empty import EmptyOperator
 from airflow.models.baseoperator import chain
-
+from airflow.operators.empty import EmptyOperator
 from commons.operators.starrocks import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )
-
 
 with DAG(
     dag_id="etl_kf_variants",
@@ -14,7 +12,6 @@ with DAG(
     catchup=False,
     tags=["etl", "kf_data"],
 ) as dag:
-
     start = EmptyOperator(
         task_id="start",
     )

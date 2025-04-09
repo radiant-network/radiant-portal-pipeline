@@ -1,5 +1,4 @@
 from airflow import DAG
-from airflow.models import Param
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
@@ -48,7 +47,6 @@ with DAG(
     catchup=False,
     tags=["etl", "open_data"],
 ) as dag:
-
     start = EmptyOperator(task_id="start")
 
     create_variant_dict = StarRocksSQLExecuteQueryOperator(

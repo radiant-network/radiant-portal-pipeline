@@ -1,5 +1,7 @@
-import pytest
 import re
+
+import pytest
+
 from dags.commons.operators.starrocks import StarRocksSQLExecuteQueryOperator
 
 
