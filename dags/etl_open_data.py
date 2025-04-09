@@ -42,26 +42,11 @@ def group_template(group_id):
     return [insert_hashes, create_table_if_not_exists, insert_table]
 
 
-dag_params = {
-    "starrocks_connection_var_name": Param(
-        default="STARROCKS_CONNECTION",
-        description="The name of the Airflow variable that contains the StarRocks connection name string.",
-        type="string",
-    ),
-    "starrocks_db_var_name": Param(
-        default="STARROCKS_DATABASE",
-        description="The name of the Airflow variable that contains the StarRocks database name string.",
-        type="string",
-    ),
-}
-
-
 with DAG(
     dag_id="etl_open_data",
     schedule_interval=None,
     catchup=False,
     tags=["etl", "open_data"],
-    params=dag_params,
 ) as dag:
 
     start = EmptyOperator(task_id="start")
