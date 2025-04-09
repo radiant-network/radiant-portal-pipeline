@@ -1,4 +1,4 @@
-INSERT INTO kf_occurrences
+INSERT OVERWRITE kf_occurrences PARTITION (p{part})
 SELECT part,
 	seq_id,
 	v.locus_id,

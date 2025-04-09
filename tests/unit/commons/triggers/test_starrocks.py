@@ -2,6 +2,9 @@ import asyncio
 
 import pytest
 from unittest.mock import patch, MagicMock
+
+from pymysql import ProgrammingError
+
 from dags.commons.triggers.starrocks import StarRocksTaskCompleteTrigger
 from airflow.triggers.base import TaskSuccessEvent, TaskFailedEvent
 
@@ -145,3 +148,16 @@ def test_run_trigger_until_unknown(mock_connection):
     assert len(result) == 1
     assert isinstance(result[0], TaskFailedEvent)
     assert result[0].xcoms["error_message"] == f"task test_task not found"
+
+
+def test_get_task_complete_programming_error(mock_connection):
+    mock_connection.execute.side_effect = ProgrammingError()
+
+    trigger = StarRocksTaskCompleteTrigger(
+        conn_id="test_conn", task_name="test_task", sleep_time=5
+    )
+
+    result = [trigger._get_task_completed() for _ in range(5)]
+
+    assert isinstance(result[-1], TaskFailedEvent)
+    assert result[-1].xcoms["error_message"] == "ProgrammingErrors caused test_task to fail"
