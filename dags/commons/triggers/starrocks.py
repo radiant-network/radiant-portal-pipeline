@@ -5,7 +5,7 @@ from typing import Any
 
 from airflow.hooks.base import BaseHook
 from airflow.triggers.base import BaseTrigger, TaskFailedEvent, TaskSuccessEvent
-from pymysql.err import ProgrammingError
+from pymysql import MySQLError
 
 LOGGER = logging.getLogger(__name__)
 
@@ -73,11 +73,11 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
                 LIMIT 1
                 """
             )
-        except ProgrammingError as pe:
-            LOGGER.info(f"Retrying after receiving: {pe}")
+        except MySQLError as e:
+            LOGGER.info(f"Retrying after receiving: {type(e)}")
             self._missed_count += 1
             if self._missed_count == self._MISSED_MAX_COUNT:
-                return TaskFailedEvent(xcoms={"error_message": f"ProgrammingErrors caused {self.task_name} to fail"})
+                return TaskFailedEvent(xcoms={"error_message": f"Caught {type(e)} caused {self.task_name} to fail"})
             return None
 
         result = self.cursor.fetchone()
