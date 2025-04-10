@@ -62,6 +62,11 @@ with DAG(
         map_index_template="{{ task.parameters['part'] }}",
     ).expand(query_params=get_parts_to_compute())
 
+    drop_if_exists_kf_variants_freq_table = StarRocksSQLExecuteQueryOperator(
+        task_id="drop_if_exists_kf_variants_freq",
+        sql="DROP TABLE IF EXISTS kf_variants_freq;",
+    )
+
     create_kf_variants_freq_table = StarRocksSQLExecuteQueryOperator(
         task_id="create_kf_variants_freq_table",
         sql="./sql/kf/kf_variants_freq_create_table.sql",
@@ -72,7 +77,7 @@ with DAG(
         sql="./sql/kf/kf_variants_freq_insert.sql",
         submit_task=True,
         submit_task_options=SubmitTaskOptions(
-            max_query_timeout=3600,
+            max_query_timeout=7200,
             poll_interval=10,
             enable_spill=True,
             spill_mode="auto",
@@ -80,5 +85,10 @@ with DAG(
     )
 
     chain(
-        start, create_kf_occurrences_table, insert_occurrences, create_kf_variants_freq_table, insert_kf_variants_freq
+        start,
+        create_kf_occurrences_table,
+        insert_occurrences,
+        drop_if_exists_kf_variants_freq_table,
+        create_kf_variants_freq_table,
+        insert_kf_variants_freq,
     )
