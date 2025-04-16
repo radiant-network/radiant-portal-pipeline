@@ -53,6 +53,14 @@ x-airflow-common:
   # build: .
   environment:
     &airflow-common-env
+    AWS_REGION: us-east-1
+    AWS_ACCESS_KEY_ID: admin
+    AWS_SECRET_ACCESS_KEY: password
+    HTS_S3_HOST: minio:9000
+    HTS_S3_ADDRESS_STYLE: path
+    PYICEBERG_CATALOG__DEFAULT__URI: http://iceberg-rest:8181
+    PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT: http://minio:9000
+    PYICEBERG_CATALOG__DEFAULT__TOKEN: mysecret
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
@@ -65,6 +73,9 @@ x-airflow-common:
     # Use simple http server on scheduler for health checks
     # See https://airflow.apache.org/docs/apache-airflow/stable/administration-and-deployment/logging-monitoring/check-health.html#scheduler-health-check-server
     # yamllint enable rule:line-length
+    AIRFLOW__LOGGING__REMOTE_LOGGING: 'False'
+    AIRFLOW__LOGGING__BASE_LOG_FOLDER: '/opt/airflow/logs'
+    AIRFLOW__LOGGING__LOGGING_CONFIG_CLASS: 'airflow.config_templates.airflow_local_settings.DEFAULT_LOGGING_CONFIG'
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
     # WARNING: Use _PIP_ADDITIONAL_REQUIREMENTS option ONLY for a quick checks
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
@@ -104,7 +115,19 @@ services:
     restart: always
     networks:
       - airflow_network
-
+  schema-init:
+    image: postgres:13
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: [ "sh", "-c" ]
+    command:
+      - >
+        psql -h postgres -U airflow -d airflow -c "CREATE SCHEMA IF NOT EXISTS iceberg_catalog;"
+    environment:
+      PGPASSWORD: airflow
+    networks:
+      - airflow_network
   redis:
     # Redis is limited to 7.2-bookworm due to licencing change
     # https://redis.io/blog/redis-adopts-dual-source-available-licensing/
@@ -170,6 +193,7 @@ services:
       # Required to handle warm shutdown of the celery workers properly
       # See https://airflow.apache.org/docs/docker-stack/entrypoint.html#signal-propagation
       DUMB_INIT_SETSID: "0"
+    mem_limit: 20g
     restart: always
     depends_on:
       <<: *airflow-common-depends-on
@@ -290,8 +314,74 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  iceberg-rest:
+    image: ferlabcrsj/iceberg-rest-catalog:1.0.0
+    container_name: iceberg-rest
+    networks:
+      airflow_network:
+        aliases:
+          - iceberg-rest.minio
+    depends_on:
+      - postgres
+      - schema-init
+    ports:
+      - 8181:8181
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
+      - CATALOG_S3_ENDPOINT=http://minio:9000
+      - CATALOG_S3_PATH__STYLE__ACCESS=true
+      - CATALOG_CATALOG__IMPL=org.apache.iceberg.jdbc.JdbcCatalog
+      - CATALOG_CATALOG__NAME=iceberg
+      - CATALOG_SECRET=mysecret
+      - CATALOG_JDBC_PASSWORD=airflow
+      - CATALOG_JDBC_USER=airflow
+      - CATALOG_URI=jdbc:postgresql://postgres:5432/airflow?currentSchema=iceberg_catalog
+      - CATALOG_WAREHOUSE=s3a://warehouse/
+
+  minio:
+    image: minio/minio:RELEASE.2024-10-29T16-01-48Z
+    container_name: minio
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=password
+      - MINIO_DOMAIN=minio
+    networks:
+      airflow_network:
+        aliases:
+          - warehouse.minio
+    ports:
+      - 9001:9001
+      - 9000:9000
+    command: ["server", "/data", "--console-address", ":9001"]
+    volumes:
+      - minio-data-volume:/data
+  mc:
+    depends_on:
+      - minio
+    image: minio/mc:RELEASE.2024-10-29T15-34-59Z
+    container_name: mc
+    networks:
+      airflow_network:
+    environment:
+      - AWS_ACCESS_KEY_ID=admin
+      - AWS_SECRET_ACCESS_KEY=password
+      - AWS_REGION=us-east-1
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc config host add minio http://minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc mb minio/warehouse;
+      /usr/bin/mc policy set public minio/warehouse;
+      /usr/bin/mc mb minio/vcf;
+      /usr/bin/mc policy set public minio/vcf;      
+      tail -f /dev/null
+      "
+
 volumes:
   postgres-db-volume:
+  minio-data-volume:
 
 networks:
   airflow_network:

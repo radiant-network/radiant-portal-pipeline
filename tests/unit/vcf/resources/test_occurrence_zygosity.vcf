@@ -1,0 +1,11 @@
+##fileformat=VCFv4.2
+##FILTER=<ID=PASS,Description="All filters passed">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths (counting only informative reads out of the total reads) for the ref and alt alleles in the order listed">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Approximate read depth (reads with MQ=255 or with bad mates are filtered)">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##contig=<ID=chr1,length=249250621>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SA0001
+chr1	1000	.	AC	A	44.64	PASS	.	GT:AD	1/1:3,7
+chr1	2000	.	AC	A	44.64	PASS	.	GT:AD	0/1:3,7
+chr1	3000	.	AC	A	44.64	PASS	.	GT:AD	./1:3,7
+chr1	4000	.	AC	A	44.64	PASS	.	GT:AD	0/0:3,7

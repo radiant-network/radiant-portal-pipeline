@@ -1,0 +1,76 @@
+import os
+
+from airflow import DAG
+from airflow.decorators import task
+from airflow.utils.dates import days_ago
+import fsspec
+from vcf.experiment import Case, Experiment
+from vcf.process import process_chromosomes, CHROMOSOMES
+import logging
+
+logger = logging.getLogger(__name__)
+default_args = {
+    "owner": "ferlab",
+}
+
+with DAG(
+    dag_id="import_vcf",
+    default_args=default_args,
+    start_date=days_ago(1),
+    schedule_interval=None,
+    catchup=False,
+) as dag:
+
+    @task
+    def get_cases():
+        cases = [
+            Case(
+                case_id=i,
+                vcf_file="s3+http://vcf/variants.11100002.vep.vcf.gz",
+                experiments=[
+                    Experiment(
+                        seq_id=i,
+                        patient_id=f"pa00{i}",
+                        sample_id=f"sa00{i}",
+                        family_role="proband",
+                        is_affected=True,
+                        sex="F",
+                    ),
+                ],
+            )
+            for i in range(1, 2)
+        ]
+        return [case.model_dump() for case in cases]
+
+    @task(pool="import_vcf")
+    def import_vcf(case: dict, chromosomes: list[str]):
+        fs = fsspec.filesystem(
+            "s3",
+            client_kwargs={
+                "endpoint_url": os.environ.get(
+                    "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT"
+                )
+            },
+        )
+        case = Case.model_validate(case)
+        logger.info(
+            f"🔁 STARTING IMPORT for Case: {case.case_id}, chromosome {",".join(chromosomes)}"
+        )
+        logger.info("=" * 80)
+        process_chromosomes(chromosomes, case, fs)
+        logger.info(
+            f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {",".join(chromosomes)}"
+        )
+
+    all_cases = get_cases()
+    optimized_groups = [
+        ["chrM", "chr18", "chr1"],
+        ["chr21", "chr10", "chr2"],
+        ["chr22", "chr11", "chr3"],
+        ["chr20", "chr9", "chr4"],
+        ["chr19", "chr8", "chr5"],
+        ["chrY", "chr7", "chr6"],
+        ["chr17", "chr13", "chr12"],
+        ["chr14", "chr15", "chr16"],
+    ]
+    import_vcf.expand(case=all_cases, chromosomes=optimized_groups)
