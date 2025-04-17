@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `kf_consequences` (
+CREATE TABLE IF NOT EXISTS `consequences` (
     `locus_id` bigint(20) COMMENT "",
     `symbol` varchar(30) COMMENT "",
     `ensembl_transcript_id` varchar(100) COMMENT "",

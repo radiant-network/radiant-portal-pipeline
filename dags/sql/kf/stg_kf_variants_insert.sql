@@ -1,4 +1,4 @@
-INSERT INTO stg_kf_variants
+INSERT INTO stg_variants
 SELECT v.locus_id,
     t.chromosome,
     t.start,
@@ -20,4 +20,4 @@ SELECT v.locus_id,
     t.aa_change
 FROM iceberg.poc_starrocks.kf_variants t
 JOIN variant_dict v ON t.hash = v.hash
-LEFT ANTI JOIN stg_kf_variants stg ON stg.locus_id = v.locus_id
+LEFT ANTI JOIN stg_variants stg ON stg.locus_id = v.locus_id

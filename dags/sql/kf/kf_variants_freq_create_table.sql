@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS kf_variants_freq (
+CREATE TABLE IF NOT EXISTS variants_freq (
     `locus_id` BIGINT NOT NULL,
     `pc` BIGINT,
     `ac` BIGINT,

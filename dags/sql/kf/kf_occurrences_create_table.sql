@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `kf_occurrences` (
+CREATE TABLE IF NOT EXISTS `occurrences` (
   `part` tinyint(4) NOT NULL COMMENT "",
   `seq_id` int(11) NOT NULL COMMENT "",
   `locus_id` bigint(20) NOT NULL COMMENT "",

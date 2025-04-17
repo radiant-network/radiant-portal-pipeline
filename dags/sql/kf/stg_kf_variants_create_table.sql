@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS stg_kf_variants
+CREATE TABLE IF NOT EXISTS stg_variants
 (
     `locus_id` BIGINT NOT NULL,
     `chromosome` char(2),

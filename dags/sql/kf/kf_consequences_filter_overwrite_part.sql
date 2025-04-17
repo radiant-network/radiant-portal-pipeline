@@ -1,7 +1,7 @@
-INSERT OVERWRITE kf_consequences_filter PARTITION (p{part})
+INSERT OVERWRITE consequences_filter PARTITION (p{part})
 SELECT
+    {part} AS part,
     t.locus_id,
-    o.part,
     NOT (sift_score IS NULL AND fathmm_score IS NULL AND polyphen2_hvar_score IS NULL AND cadd_score IS NULL AND dann_score IS NULL AND lrt_score IS NULL AND revel_score IS NULL AND phyloP17way_primate IS NULL AND phyloP100way_vertebrate IS NULL AND spliceai_ds IS NULL) AS is_deleterious,
     impact_score,
     symbol,
@@ -67,7 +67,7 @@ FROM (
             phyloP17way_primate,
             phyloP100way_vertebrate
         FROM
-            kf_consequences c,
+            consequences c,
             UNNEST(consequences) AS unnest
     ) gr
     GROUP BY
@@ -81,4 +81,4 @@ FROM (
         spliceai_ds,
         impact_score
 ) t
-LEFT JOIN kf_occurrences o ON o.locus_id = t.locus_id AND o.part in ({part})
+LEFT SEMI JOIN occurrences o ON o.locus_id = t.locus_id AND o.part in ({part})

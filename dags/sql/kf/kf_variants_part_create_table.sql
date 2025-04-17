@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS kf_variants_part (
+CREATE TABLE IF NOT EXISTS variants_part (
     part TINYINT NOT NULL,
     locus_id BIGINT NOT NULL,
     af DECIMAL(7, 6),

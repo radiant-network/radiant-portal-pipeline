@@ -1,4 +1,4 @@
-INSERT INTO kf_consequences
+INSERT INTO consequences
 SELECT
     v.locus_id AS locus_id,
     COALESCE(c.symbol, '') AS symbol,
@@ -29,8 +29,8 @@ SELECT
     c.aa_change,
     c.coding_dna_change
 FROM iceberg.poc_starrocks.kf_consequences_pk c
-LEFT JOIN stg_kf_variants v ON c.hash = v.hash
+LEFT JOIN stg_variants v ON c.hash = v.hash
 LEFT JOIN dbnsfp s ON v.locus_id=s.locus_id AND s.ensembl_transcript_id = c.ensembl_transcript_id
 LEFT JOIN spliceai sp ON v.locus_id=sp.locus_id AND sp.symbol = c.symbol
-LEFT ANTI JOIN kf_consequences kf ON kf.locus_id = v.locus_id
+LEFT ANTI JOIN consequences kf ON kf.locus_id = v.locus_id
 

@@ -18,7 +18,7 @@ dag_params = {
 }
 
 with DAG(
-    dag_id="etl_kf_variants",
+    dag_id="import_kf_variants",
     schedule_interval=None,
     catchup=False,
     tags=["etl", "kf_data"],
@@ -64,7 +64,7 @@ with DAG(
 
         @task
         def get_new_parts(variants_partitions, params) -> list[dict]:
-            _ids = set([p[0] // 10 for p in params.get("parts")]) - set([p[0] for p in variants_partitions])
+            _ids = set([int(p) // 10 for p in params.get("parts")]) - set([p[0] for p in variants_partitions])
             return [{"part_id": i, "part_lower": i * 10, "part_upper": (i * 10) + 10} for i in _ids]
 
         insert_new_kf_variants_partitions = StarRocksSQLExecuteQueryOperator.partial(
@@ -89,7 +89,7 @@ with DAG(
 
         @task
         def get_overwrite_parts(variants_partitions, params) -> list[dict]:
-            _ids = set([p[0] // 10 for p in params.get("parts")]) & set([p[0] for p in variants_partitions])
+            _ids = set([int(p) // 10 for p in params.get("parts")]) & set([p[0] for p in variants_partitions])
             return [{"part_id": i, "part_lower": i * 10, "part_upper": (i * 10) + 10} for i in _ids]
 
         insert_overwrite_kf_variants_partitions = StarRocksSQLExecuteQueryOperator.partial(

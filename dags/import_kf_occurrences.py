@@ -30,7 +30,7 @@ def check_import_stg_kf_variants(**context):
 
 
 with DAG(
-    dag_id="etl_kf_occurrences",
+    dag_id="import_kf_occurrences",
     schedule_interval=None,
     catchup=False,
     tags=["etl", "kf_data"],

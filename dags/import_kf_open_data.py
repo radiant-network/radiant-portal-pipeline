@@ -31,7 +31,7 @@ def group_template(group_id):
 
 
 with DAG(
-    dag_id="etl_kf_open_data",
+    dag_id="import_kf_open_data",
     schedule_interval=None,
     catchup=False,
     tags=["etl", "open_data"],

@@ -23,7 +23,7 @@ def parse_parts(**context):
 
 
 with DAG(
-    dag_id="etl_kf_e2e",
+    dag_id="import_kf_e2e",
     schedule_interval=None,
     catchup=False,
     tags=["etl", "kf_data"],
@@ -58,7 +58,7 @@ with DAG(
 
     import_occurrences = TriggerDagRunOperator(
         task_id="import_occurrences",
-        trigger_dag_id="etl_kf_occurrences",
+        trigger_dag_id="import_kf_occurrences",
         conf={
             "parts": "{{ task_instance.xcom_pull(task_ids='compute_parts', key='parts_to_process') | list | tojson }}"
         },
@@ -70,7 +70,7 @@ with DAG(
 
     import_variants_freq = TriggerDagRunOperator(
         task_id="import_variants_freq",
-        trigger_dag_id="etl_kf_variants_freq",
+        trigger_dag_id="import_kf_variants_freq",
         conf={
             "parts": "{{ task_instance.xcom_pull(task_ids='compute_parts', key='parts_to_process') | list | tojson }}"
         },
@@ -81,7 +81,7 @@ with DAG(
 
     import_variants = TriggerDagRunOperator(
         task_id="import_variants",
-        trigger_dag_id="etl_kf_variants",
+        trigger_dag_id="import_kf_variants",
         conf={
             "parts": "{{ task_instance.xcom_pull(task_ids='compute_parts', key='parts_to_process') | list | tojson }}"
         },
@@ -92,7 +92,7 @@ with DAG(
 
     import_consequences = TriggerDagRunOperator(
         task_id="import_consequences",
-        trigger_dag_id="etl_kf_consequences",
+        trigger_dag_id="import_kf_consequences",
         conf={
             "parts": "{{ task_instance.xcom_pull(task_ids='compute_parts', key='parts_to_process') | list | tojson }}"
         },

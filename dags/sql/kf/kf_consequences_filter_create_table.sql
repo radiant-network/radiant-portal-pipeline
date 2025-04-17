@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `kf_consequences_filter` (
+CREATE TABLE IF NOT EXISTS `consequences_filter` (
   `part` tinyint(4) NOT NULL COMMENT "",
   `locus_id` bigint(20) NULL COMMENT "",
   `is_deleterious` boolean NULL COMMENT "",

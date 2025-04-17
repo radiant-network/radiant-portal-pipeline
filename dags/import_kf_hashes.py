@@ -8,7 +8,7 @@ from tasks.starrocks.operator import (
 )
 
 with DAG(
-    dag_id="etl_kf_hashes",
+    dag_id="import_kf_hashes",
     schedule_interval=None,
     catchup=False,
     tags=["etl", "kf_data"],
