@@ -1,6 +1,6 @@
 from airflow import DAG
 from airflow.decorators import task
-from airflow.models import Variable
+from airflow.models import Variable, Param
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 
@@ -9,11 +9,20 @@ from tasks.starrocks.operator import (
     SubmitTaskOptions,
 )
 
+dag_params = {
+    "parts": Param(
+        default=None,
+        description="An array of integers that represents the parts that need to be processed. ",
+        type="array",
+    ),
+}
+
 with DAG(
     dag_id="etl_kf_consequences",
     schedule_interval=None,
     catchup=False,
     tags=["etl", "kf_data"],
+    params=dag_params,
 ) as dag:
     start = EmptyOperator(
         task_id="start",
