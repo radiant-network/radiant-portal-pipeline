@@ -68,17 +68,6 @@ with DAG(
         trigger_rule="none_failed",
     )
 
-    import_variants_freq = TriggerDagRunOperator(
-        task_id="import_variants_freq",
-        trigger_dag_id="import_kf_variants_freq",
-        conf={
-            "parts": "{{ task_instance.xcom_pull(task_ids='compute_parts', key='parts_to_process') | list | tojson }}"
-        },
-        reset_dag_run=True,
-        wait_for_completion=True,
-        poke_interval=60,
-    )
-
     import_variants = TriggerDagRunOperator(
         task_id="import_variants",
         trigger_dag_id="import_kf_variants",
@@ -113,7 +102,6 @@ with DAG(
         >> fetch_sequencing_experiment_delta
         >> compute_parts
         >> import_occurrences
-        >> import_variants_freq
         >> import_variants
         >> import_consequences
         >> update_sequencing_experiments

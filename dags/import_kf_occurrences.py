@@ -3,6 +3,7 @@ from airflow.decorators import task
 from airflow.models import Param, Variable
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import ShortCircuitOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
 from tasks.starrocks.operator import (
@@ -135,6 +136,17 @@ with DAG(
             pool_slots=1,
         ).expand(query_params=get_parts_to_overwrite(fetch_existing_occurrences_partitions.output))
 
+    import_variants_freq = TriggerDagRunOperator(
+        task_id="import_variants_freq",
+        trigger_dag_id="import_kf_variants_freq",
+        conf={
+            "parts": "{{ params.parts | list | tojson }}"
+        },
+        reset_dag_run=True,
+        wait_for_completion=True,
+        poke_interval=60,
+    )
+
     (
         start
         >> create_kf_occurrences_table
@@ -145,4 +157,5 @@ with DAG(
             insert_new_occurrences,
             overwrite_occurrences,
         ]
+        >> import_variants_freq
     )
