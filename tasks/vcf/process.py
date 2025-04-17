@@ -1,17 +1,15 @@
 import logging
-import os
 
-import fsspec
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
-import traceback
-from vcf.common import process_common
-from vcf.consequence import parse_csq_header, process_consequence
-from vcf.experiment import Case, Experiment
-from vcf.occurrence import process_occurrence
-from vcf.pedigree import Pedigree
-from iceberg.table_accumulator import TableAccumulator
-from vcf.variant import process_variant
+
+from tasks.iceberg.table_accumulator import TableAccumulator
+from tasks.vcf.common import process_common
+from tasks.vcf.consequence import parse_csq_header, process_consequence
+from tasks.vcf.experiment import Case
+from tasks.vcf.occurrence import process_occurrence
+from tasks.vcf.pedigree import Pedigree
+from tasks.vcf.variant import process_variant
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +31,23 @@ GROUPED_CHROMOSOMES = [
 
 
 def process_chromosomes(
-    chromosomes: list[str], case: Case, fs, catalog_name="default", namespace="radiant"
+    chromosomes: list[str],
+    case: Case,
+    fs,
+    catalog_name="default",
+    namespace="radiant",
+    vcf_threads=None,
+    catalog_properties=None,
 ):
-    catalog = load_catalog(catalog_name)
+    if catalog_properties:
+        catalog = load_catalog(catalog_name, **catalog_properties)
+    else:
+        catalog = load_catalog(catalog_name)
 
     vcf = VCF(
         case.vcf_file,
         strict_gt=True,
-        threads=4,
+        threads=vcf_threads,
         samples=[exp.sample_id for exp in case.experiments],
     )
     if not vcf.samples:
@@ -108,84 +115,3 @@ def process_chromosomes(
             f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {chromosome}"
         )
     vcf.close()
-
-
-def process_chromosome_logging(
-    chromosomes: list[str], case: Case, fs, catalog_name="default", namespace="radiant"
-):
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(processName)s - %(levelname)s - %(name)s - %(message)s",
-    )
-    return process_chromosomes(chromosomes, case, fs, catalog_name, namespace)
-
-
-if __name__ == "__main__":
-
-    example_case2 = Case(
-        case_id=1002,
-        vcf_file="s3+http://radiant@play/vcf/variants.HSJ0787.vep.vcf.gz",
-        experiments=[
-            Experiment(
-                seq_id=1,
-                patient_id="pa001",
-                sample_id="S24379",
-                family_role="proband",
-                is_affected=True,
-                sex="F",
-            ),
-            Experiment(
-                seq_id=2,
-                patient_id="pa002",
-                sample_id="S24380",
-                family_role="father",
-                is_affected=True,
-                sex="M",
-            ),
-            Experiment(
-                seq_id=3,
-                patient_id="pa003",
-                sample_id="S24381",
-                family_role="mother",
-                is_affected=False,
-                sex="F",
-            ),
-        ],
-    )
-
-    example_case1 = Case(
-        case_id=1003,
-        vcf_file="s3+http://radiant@play/vcf/variants.11100002.vep.vcf.gz",
-        experiments=[
-            Experiment(
-                seq_id=1,
-                patient_id="pa001",
-                sample_id="11100002",
-                family_role="proband",
-                is_affected=False,
-                sex="F",
-            ),
-        ],
-    )
-    currentFs = fsspec.filesystem(
-        "s3",
-        client_kwargs={
-            "endpoint_url": os.environ.get("PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT")
-        },
-    )
-    from concurrent.futures import ProcessPoolExecutor
-
-    with ProcessPoolExecutor(max_workers=1) as executor:
-        futures = [
-            executor.submit(
-                process_chromosome_logging, chromosomes, example_case1, currentFs
-            )
-            for chromosomes in [["chr1"]]
-        ]
-        for future in futures:
-            try:
-                result = future.result()
-                print(f"Result: {result}")
-            except Exception as e:
-                print(f"Error in processing: {e}")
-                traceback.print_exc()

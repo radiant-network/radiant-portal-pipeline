@@ -23,9 +23,9 @@ from pyiceberg.types import ListType
 from pyiceberg.types import StringType
 from pyiceberg.types import StructType
 
-from iceberg.utils import merge_schemas
-from vcf.common import Common
-from vcf.common import SCHEMA as COMMON_SCHEMA
+from tasks.iceberg.utils import merge_schemas
+from tasks.vcf.common import Common
+from tasks.vcf.common import SCHEMA as COMMON_SCHEMA
 
 CSQ_FORMAT_FIELD = "CSQ"
 

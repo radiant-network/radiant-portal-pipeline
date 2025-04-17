@@ -14,15 +14,23 @@ This repository contains the different files and scripts used to run the Radiant
 
 - `dags` directory contains the DAGs used to run the pipeline.
 - `dags/lib` directory contains the libraries used in the DAGs.
-  - `lib` contains Airflow-specific components to support ETL pipelines.
+- `lib` contains Airflow-specific components to support ETL pipelines.
+- `tasks` directory contains the python tasks used in the DAGs.
+- `docker` contain specific airflow image with dependencies to run the pipeline.
 
 
 ### Airflow dev stack
 
+Build the airflow docker image :
+
+```
+docker build . -f docker/airflow.Dockerfile -t radiant-network/airflow-cyvcf2:2.10.5
+```
+
 Deploy stack :
 
 ```
-docker-compose up
+docker compose up 
 ```
 
 Login to Airflow UI :

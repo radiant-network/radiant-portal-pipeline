@@ -5,9 +5,9 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionSpec, PartitionField
 from pyiceberg.transforms import IdentityTransform
 
-from vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
-from vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
-from vcf.variant import SCHEMA as VARIANT_SCHEMA
+from tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
+from tasks.vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
+from tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
 
 NAMESPACE = "radiant"
 
@@ -25,7 +25,7 @@ with DAG(
     catalog = load_catalog(
         "default",
         **{
-            "uri": "http://iceberg-rest:8181",
+            "uri": "http://radiant-iceberg-rest:8181",
             "token": "mysecret",
             "s3.endpoint": "http://minio:9000",
             "s3.access-key-id": "admin",

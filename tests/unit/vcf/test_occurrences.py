@@ -1,8 +1,10 @@
 import math
 
-from dags.vcf.common import Common
-from dags.vcf.experiment import Case, Experiment
-from dags.vcf.occurrence import (
+import pytest
+
+from tasks.vcf.common import Common
+from tasks.vcf.experiment import Case, Experiment
+from tasks.vcf.occurrence import (
     process_occurrence,
     adjust_calls_and_zygosity,
     ZYGOSITY_WT,
@@ -11,10 +13,14 @@ from dags.vcf.occurrence import (
     ZYGOSITY_UNK,
     normalize_monosomy,
     normalize_calls,
+    AUTOSOMAL_ORIGINS_LOOKUP,
+    parental_origin,
+    X_ORIGINS_LOOKUP,
+    Y_ORIGINS_LOOKUP,
+    compute_transmission_mode,
 )
-from tests.unit.vcf.vcf_test_utils import variant
-from dags.vcf.pedigree import Pedigree
-
+from tasks.vcf.pedigree import Pedigree
+from .vcf_test_utils import variant
 
 case = Case(
     case_id=1,
@@ -227,3 +233,121 @@ def approx_equal_occ(actual: dict, expected: dict, float_tol=1e-6):
             ), f"{k} mismatch: {actual.get(k)} != {v}"
         else:
             assert actual.get(k) == v, f"{k} mismatch: {actual.get(k)} != {v}"
+
+
+@pytest.mark.parametrize("gt_data,expected", list(AUTOSOMAL_ORIGINS_LOOKUP.items()))
+def test_parental_origin_autosomal(gt_data, expected):
+    child_gt, mother_gt, father_gt = gt_data
+    result = parental_origin("1", child_gt, mother_gt, father_gt)  # autosomal example
+    assert (
+        result == expected
+    ), f"Autosomal failed for {gt_data}: expected {expected}, got {result}"
+
+
+@pytest.mark.parametrize("gt_data,expected", list(X_ORIGINS_LOOKUP.items()))
+def test_parental_origin_x(gt_data, expected):
+    child_gt, mother_gt, father_gt = gt_data
+    result = parental_origin("X", child_gt, mother_gt, father_gt)
+    assert (
+        result == expected
+    ), f"X-linked failed for {gt_data}: expected {expected}, got {result}"
+
+
+@pytest.mark.parametrize("gt_data,expected", list(Y_ORIGINS_LOOKUP.items()))
+def test_parental_origin_y(gt_data, expected):
+    child_gt, mother_gt, father_gt = gt_data
+    result = parental_origin("Y", child_gt, mother_gt, father_gt)
+    assert (
+        result == expected
+    ), f"Y-linked failed for {gt_data}: expected {expected}, got {result}"
+
+
+@pytest.mark.parametrize(
+    "inputs,expected",
+    [
+        (
+            ("1", "Male", (0, 1), (0, 0), (0, 0), False, False),
+            "autosomal_dominant_de_novo",
+        ),
+        (("1", "Male", (0, 1), (0, 0), (0, 1), False, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (0, 0), (1, 1), False, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (0, 1), (0, 0), True, False), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (0, 1), (1, 1), True, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (0, 1), (0, 1), True, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (0, 1), (-1, -1), True, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (0, 1), (-1, -1), True, False), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (1, 1), (0, 0), True, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (1, 1), (0, 0), True, False), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (1, 1), (0, 1), True, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (1, 1), (0, 1), True, False), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (1, 1), (1, 1), True, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (1, 1), (1, 1), True, False), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (1, 1), (-1, -1), True, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (1, 1), (-1, -1), True, False), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (-1, -1), (0, 1), True, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (-1, -1), (0, 1), False, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (-1, -1), (1, 1), True, True), "autosomal_dominant"),
+        (("1", "Male", (0, 1), (-1, -1), (1, 1), False, True), "autosomal_dominant"),
+        (("1", "Male", (1, 1), (0, 1), (0, 1), False, False), "autosomal_recessive"),
+        (("1", "Male", (1, 1), (0, 1), (1, 1), False, True), "autosomal_recessive"),
+        (("1", "Male", (1, 1), (1, 1), (0, 1), True, False), "autosomal_recessive"),
+        (("1", "Male", (1, 1), (1, 1), (1, 1), True, True), "autosomal_recessive"),
+    ],
+)
+def test_autosomal_transmission_mode(inputs, expected):
+    assert compute_transmission_mode(*inputs) == expected
+
+
+@pytest.mark.parametrize(
+    "inputs,expected",
+    [
+        (
+            ("X", "Female", (0, 1), (0, 0), (0, 0), False, False),
+            "x_linked_dominant_de_novo",
+        ),
+        (
+            ("X", "Male", (1, 1), (0, 0), (0, 0), False, False),
+            "x_linked_recessive_de_novo",
+        ),
+        (("X", "Female", (0, 1), (0, 0), (0, 1), False, True), "x_linked_dominant"),
+        (("X", "Male", (1, 1), (0, 0), (0, 1), False, False), "x_linked_recessive"),
+        (("X", "Male", (1,), (0, 0), (0, 1), False, False), "x_linked_recessive"),
+        (("X", "Male", (1, 1), (0, 0), (1, 1), False, True), "x_linked_recessive"),
+        (("X", "Female", (0, 1), (1, 1), (0, 0), True, False), "x_linked_dominant"),
+        (("X", "Male", (1, 1), (1, 1), (0, 0), True, False), "x_linked_recessive"),
+        (("X", "Female", (0, 1), (1, 1), (0, 1), True, True), "x_linked_dominant"),
+        (("X", "Male", (1, 1), (1, 1), (0, 1), True, False), "x_linked_recessive"),
+        (("X", "Male", (0, 1), (1, 1), (0, 1), True, True), "x_linked_recessive"),
+        (("X", "Male", (1, 1), (1, 1), (1, 1), True, True), "x_linked_recessive"),
+        (("X", "Female", (0, 1), (-1, -1), (0, 1), False, True), "x_linked_dominant"),
+        (("X", "Female", (0, 1), (-1, -1), (0, 1), True, True), "x_linked_dominant"),
+        (("X", "Male", (1, 1), (-1, -1), (0, 1), True, False), "x_linked_recessive"),
+        (("X", "Male", (1, 1), (-1, -1), (0, 1), False, False), "x_linked_recessive"),
+        (("X", "Male", (1, 1), (-1, -1), (1, 1), False, True), "x_linked_recessive"),
+        (("X", "Male", (1, 1), (-1, -1), (1, 1), True, True), "x_linked_recessive"),
+        (("X", "Female", (1, 1), (1, 1), (0, 0), True, False), "x_linked_recessive"),
+        (("X", "Female", (1, 1), (1, 1), (0, 1), True, False), "x_linked_recessive"),
+        (("X", "Female", (1, 1), (1, 1), (1, 1), True, True), "x_linked_recessive"),
+        (("X", "Female", (1, 1), (1, 1), (-1, -1), True, True), "x_linked_dominant"),
+        (("X", "Female", (1, 1), (1, 1), (-1, -1), True, False), "x_linked_dominant"),
+    ],
+)
+def test_sexual_transmission_mode(inputs, expected):
+    assert compute_transmission_mode(*inputs) == expected
+
+
+@pytest.mark.parametrize(
+    "inputs,expected",
+    [
+        (("1", "Male", None, None, None, False, False), "unknown_parents_genotype"),
+        (("1", "Male", (0, 1), None, (0, 1), False, False), "unknown_father_genotype"),
+        (("1", "Male", (0, 1), (0, 1), None, False, False), "unknown_mother_genotype"),
+        (("1", "Male", (0, 0), (0, 1), (0, 1), False, False), "non_carrier_proband"),
+        (
+            ("1", "Male", (-1, -1), (0, 1), (0, 1), False, False),
+            "unknown_proband_genotype",
+        ),
+    ],
+)
+def test_transmission_mode_edge_cases(inputs, expected):
+    assert compute_transmission_mode(*inputs) == expected

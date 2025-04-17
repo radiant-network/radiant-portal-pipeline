@@ -1,4 +1,4 @@
-from .experiment import Case
+from tasks.vcf.experiment import Case
 
 
 class Pedigree:

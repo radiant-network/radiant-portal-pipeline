@@ -8,10 +8,10 @@ from pyiceberg.types import IntegerType
 from pyiceberg.types import ListType
 from pyiceberg.types import StringType
 
-from .common import Common
-from .common import SCHEMA as COMMON_SCHEMA
-from .pedigree import Pedigree
-from iceberg.utils import merge_schemas
+from tasks.vcf.common import Common
+from tasks.vcf.common import SCHEMA as COMMON_SCHEMA
+from tasks.vcf.pedigree import Pedigree
+from tasks.iceberg.utils import merge_schemas
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -220,8 +220,8 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
                 normalized_mother_calls,
             )
             transmission_mode = compute_transmission_mode(
-                progeny.sex,
                 common.chromosome,
+                progeny.sex,
                 normalized_progeny_calls,
                 normalized_father_calls,
                 normalized_mother_calls,
@@ -388,8 +388,8 @@ def parental_origin(
 
 
 def compute_transmission_mode(
-    gender: str,
     chromosome: str,
+    gender: str,
     normalized_progeny_calls: Optional[Tuple[int, int]],
     normalized_father_calls: Optional[Tuple[int, int]],
     normalized_mother_calls: Optional[Tuple[int, int]],
@@ -400,8 +400,8 @@ def compute_transmission_mode(
     Computes the transmission mode of a genetic variant based on the genotype calls of the progeny, father, and mother.
 
     Parameters:
-        gender (str): The gender of the progeny. Expected values are "Male" or "Female".
         chromosome (str): The chromosome where the variant is located. Can be "X", "Y", or autosomal (e.g., "1", "2").
+        gender (str): The gender of the progeny. Expected values are "Male" or "Female".
         normalized_progeny_calls (Optional[Tuple[int, int]]): The normalized genotype calls of the progeny.
         normalized_father_calls (Optional[Tuple[int, int]]): The normalized genotype calls of the father.
         normalized_mother_calls (Optional[Tuple[int, int]]): The normalized genotype calls of the mother.

@@ -1,17 +1,20 @@
 import os
+from pathlib import Path
 
 from cyvcf2 import VCF
 
-HERE = os.path.dirname(__file__)
-RESOURCES = os.path.join(HERE, "resources")
-VCF_PATH = os.path.join(RESOURCES, "test_common.vcf")
+# Base path of the current file
+CURRENT_DIR = Path(__file__).parent
+
+# Path to the resources directory
+RESOURCES_DIR = CURRENT_DIR.parent.parent / "resources"
 
 from contextlib import contextmanager
 
 
 @contextmanager
 def vcf(vcf_filename):
-    p = os.path.join(RESOURCES, vcf_filename)
+    p = os.path.join(RESOURCES_DIR, vcf_filename)
     file = VCF(p, strict_gt=True)
     try:
         yield file

@@ -23,9 +23,9 @@ from pyiceberg.types import IntegerType
 from pyiceberg.types import ListType
 from pyiceberg.types import StringType
 
-from vcf.common import Common
-from vcf.common import SCHEMA as COMMON_SCHEMA
-from iceberg.utils import merge_schemas
+from tasks.iceberg.utils import merge_schemas
+from tasks.vcf.common import Common
+from tasks.vcf.common import SCHEMA as COMMON_SCHEMA
 
 # Extended Iceberg schema for annotated variants, merging common fields and annotation-specific fields.
 SCHEMA = merge_schemas(
@@ -69,7 +69,8 @@ def process_variant(record: Variant, picked_consequence: dict, common: Common):
     Returns:
         dict: A dictionary with keys matching the SCHEMA fields, ready to be written to an Iceberg table.
     """
-    return {
+
+    variant = {
         "case_id": common.case_id,
         "locus": common.locus,
         "locus_hash": common.locus_hash,
@@ -78,39 +79,25 @@ def process_variant(record: Variant, picked_consequence: dict, common: Common):
         "end": common.end,
         "reference": common.reference,
         "alternate": common.alternate,
-        "variant_class": (
-            picked_consequence.get("variant_class") if picked_consequence else None
-        ),
-        "symbol": picked_consequence.get("symbol") if picked_consequence else None,
-        "consequences": (
-            picked_consequence.get("consequences") if picked_consequence else None
-        ),
-        "vep_impact": (
-            picked_consequence.get("vep_impact") if picked_consequence else None
-        ),
-        "impact_score": (
-            picked_consequence.get("impact_score") if picked_consequence else None
-        ),
-        "mane_select": (
-            picked_consequence.get("mane_select") if picked_consequence else None
-        ),
-        "is_mane_select": (
-            picked_consequence.get("is_mane_select") if picked_consequence else None
-        ),
-        "is_mane_plus": (
-            picked_consequence.get("is_mane_plus") if picked_consequence else None
-        ),
-        "is_canonical": (
-            picked_consequence.get("is_canonical") if picked_consequence else None
-        ),
         "rsnumber": record.ID,
-        "hgvsg": picked_consequence.get("hgvsg") if picked_consequence else None,
-        "hgvsp": picked_consequence.get("hgvsp") if picked_consequence else None,
-        "hgvsc": picked_consequence.get("hgvsc") if picked_consequence else None,
-        "dna_change": (
-            picked_consequence.get("dna_change") if picked_consequence else None
-        ),
-        "aa_change": (
-            picked_consequence.get("aa_change") if picked_consequence else None
-        ),
     }
+    if picked_consequence:
+        picked_fields = {
+            "variant_class": picked_consequence.get("variant_class"),
+            "symbol": picked_consequence.get("symbol"),
+            "consequences": picked_consequence.get("consequences"),
+            "vep_impact": picked_consequence.get("vep_impact"),
+            "impact_score": picked_consequence.get("impact_score"),
+            "mane_select": picked_consequence.get("mane_select"),
+            "is_mane_select": picked_consequence.get("is_mane_select"),
+            "is_mane_plus": picked_consequence.get("is_mane_plus"),
+            "is_canonical": picked_consequence.get("is_canonical"),
+            "hgvsg": picked_consequence.get("hgvsg"),
+            "hgvsp": picked_consequence.get("hgvsp"),
+            "hgvsc": picked_consequence.get("hgvsc"),
+            "dna_change": picked_consequence.get("dna_change"),
+            "aa_change": picked_consequence.get("aa_change"),
+        }
+
+        variant = {**variant, **picked_fields}
+    return variant

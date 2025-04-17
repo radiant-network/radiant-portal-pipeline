@@ -1,16 +1,17 @@
+import logging
 import os
 
+import fsspec
 from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
-import fsspec
-from vcf.experiment import Case, Experiment
-from vcf.process import process_chromosomes, CHROMOSOMES
-import logging
+
+from tasks.vcf.experiment import Case, Experiment
+from tasks.vcf.process import process_chromosomes, GROUPED_CHROMOSOMES
 
 logger = logging.getLogger(__name__)
 default_args = {
-    "owner": "ferlab",
+    "owner": "radiant",
 }
 
 with DAG(
@@ -26,12 +27,12 @@ with DAG(
         cases = [
             Case(
                 case_id=i,
-                vcf_file="s3+http://vcf/variants.11100002.vep.vcf.gz",
+                vcf_file="s3+http://vcf/variants.FM0000398.vep.vcf.gz",
                 experiments=[
                     Experiment(
                         seq_id=i,
                         patient_id=f"pa00{i}",
-                        sample_id=f"sa00{i}",
+                        sample_id=f"S14018",
                         family_role="proband",
                         is_affected=True,
                         sex="F",
@@ -57,20 +58,11 @@ with DAG(
             f"🔁 STARTING IMPORT for Case: {case.case_id}, chromosome {",".join(chromosomes)}"
         )
         logger.info("=" * 80)
-        process_chromosomes(chromosomes, case, fs)
+        process_chromosomes(chromosomes, case, fs, vcf_threads=4)
         logger.info(
             f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {",".join(chromosomes)}"
         )
 
     all_cases = get_cases()
-    optimized_groups = [
-        ["chrM", "chr18", "chr1"],
-        ["chr21", "chr10", "chr2"],
-        ["chr22", "chr11", "chr3"],
-        ["chr20", "chr9", "chr4"],
-        ["chr19", "chr8", "chr5"],
-        ["chrY", "chr7", "chr6"],
-        ["chr17", "chr13", "chr12"],
-        ["chr14", "chr15", "chr16"],
-    ]
-    import_vcf.expand(case=all_cases, chromosomes=optimized_groups)
+
+    import_vcf.expand(case=all_cases, chromosomes=GROUPED_CHROMOSOMES)
