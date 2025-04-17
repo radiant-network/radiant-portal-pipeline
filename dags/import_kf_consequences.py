@@ -1,6 +1,6 @@
 from airflow import DAG
 from airflow.decorators import task
-from airflow.models import Variable, Param
+from airflow.models import Param, Variable
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 

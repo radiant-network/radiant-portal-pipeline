@@ -1,6 +1,9 @@
+import os
+import tempfile
 from pathlib import Path
 
 import fsspec
+import pysam
 import pytest
 from pyiceberg.catalog.rest import RestCatalog
 from testcontainers.core.container import DockerContainer
@@ -169,11 +172,6 @@ def setup_namespace(iceberg_client):
 
     yield namespace
 
-
-import os
-import tempfile
-
-import pysam
 
 VCF_SOURCE_DIR = "resources/vcf"
 

@@ -7,7 +7,7 @@ from airflow.decorators import task
 from airflow.utils.dates import days_ago
 
 from tasks.vcf.experiment import Case, Experiment
-from tasks.vcf.process import process_chromosomes, GROUPED_CHROMOSOMES
+from tasks.vcf.process import GROUPED_CHROMOSOMES, process_chromosomes
 
 logger = logging.getLogger(__name__)
 default_args = {
