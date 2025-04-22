@@ -9,6 +9,13 @@ from tasks.starrocks.operator import (
     SubmitTaskOptions,
 )
 
+std_submit_task_opts = SubmitTaskOptions(
+    max_query_timeout=3600,
+    poll_interval=30,
+    enable_spill=True,
+    spill_mode="auto",
+)
+
 dag_params = {
     "parts": Param(
         default=None,
@@ -24,9 +31,7 @@ with DAG(
     tags=["etl", "kf_data"],
     params=dag_params,
 ) as dag:
-    start = EmptyOperator(
-        task_id="start",
-    )
+    start = EmptyOperator(task_id="start")
 
     create_kf_consequences_table = StarRocksSQLExecuteQueryOperator(
         task_id="create_table",
@@ -37,12 +42,7 @@ with DAG(
         task_id="insert_into",
         sql="./sql/kf/kf_consequences_insert.sql",
         submit_task=True,
-        submit_task_options=SubmitTaskOptions(
-            max_query_timeout=3600,
-            poll_interval=30,
-            enable_spill=True,
-            spill_mode="auto",
-        ),
+        submit_task_options=std_submit_task_opts,
     )
 
     create_kf_consequences_filter_table = StarRocksSQLExecuteQueryOperator(
@@ -50,12 +50,9 @@ with DAG(
         sql="./sql/kf/kf_consequences_filter_create_table.sql",
     )
 
-    fetch_existing_kf_consequences_filter_partitions = StarRocksSQLExecuteQueryOperator(
+    fetch_filter_partitions = StarRocksSQLExecuteQueryOperator(
         task_id="fetch_existing_kf_consequences_filter_partitions",
-        sql="""
-        SELECT part FROM test_etl.kf_consequences_filter
-        GROUP BY part HAVING count(1) > 0
-        """,
+        sql="SELECT part FROM test_etl.consequences_filter GROUP BY part HAVING count(1) > 0",
         do_xcom_push=True,
         trigger_rule="all_done",
     )
@@ -71,17 +68,12 @@ with DAG(
             task_id="insert_new_kf_consequences_filter_partitions",
             sql="./sql/kf/kf_consequences_filter_insert_part.sql",
             submit_task=True,
-            submit_task_options=SubmitTaskOptions(
-                max_query_timeout=3600,
-                poll_interval=10,
-                enable_spill=True,
-                spill_mode="auto",
-            ),
+            submit_task_options=std_submit_task_opts,
             pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
             pool_slots=1,
         ).expand(
             query_params=get_new_parts(
-                consequences_filter_partitions=fetch_existing_kf_consequences_filter_partitions.output,
+                consequences_filter_partitions=fetch_filter_partitions.output,
             )
         )
 
@@ -96,17 +88,12 @@ with DAG(
             task_id="insert_overwrite_kf_consequences_filter_partitions",
             sql="./sql/kf/kf_consequences_filter_overwrite_part.sql",
             submit_task=True,
-            submit_task_options=SubmitTaskOptions(
-                max_query_timeout=3600,
-                poll_interval=10,
-                enable_spill=True,
-                spill_mode="auto",
-            ),
+            submit_task_options=std_submit_task_opts,
             pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
             pool_slots=1,
         ).expand(
             query_params=get_overwrite_parts(
-                consequences_filter_partitions=fetch_existing_kf_consequences_filter_partitions.output,
+                consequences_filter_partitions=fetch_filter_partitions.output,
             )
         )
 
@@ -115,7 +102,7 @@ with DAG(
         >> create_kf_consequences_table
         >> insert_into_kf_consequences
         >> create_kf_consequences_filter_table
-        >> fetch_existing_kf_consequences_filter_partitions
+        >> fetch_filter_partitions
         >> [
             insert_new_partitions,
             overwrite_partitions,

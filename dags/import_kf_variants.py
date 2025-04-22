@@ -9,6 +9,13 @@ from tasks.starrocks.operator import (
     SubmitTaskOptions,
 )
 
+std_submit_task_opts = SubmitTaskOptions(
+    max_query_timeout=3600,
+    poll_interval=30,
+    enable_spill=True,
+    spill_mode="auto",
+)
+
 dag_params = {
     "parts": Param(
         default=None,
@@ -37,12 +44,7 @@ with DAG(
         task_id="insert_into_kf_variants_table",
         sql="./sql/kf/kf_variants_insert.sql",
         submit_task=True,
-        submit_task_options=SubmitTaskOptions(
-            max_query_timeout=3600,
-            poll_interval=30,
-            enable_spill=False,
-            spill_mode="auto",
-        ),
+        submit_task_options=std_submit_task_opts,
     )
 
     create_kf_variant_part_table = StarRocksSQLExecuteQueryOperator(
@@ -50,7 +52,7 @@ with DAG(
         sql="./sql/kf/kf_variants_part_create_table.sql",
     )
 
-    fetch_existing_kf_variants_partitions = StarRocksSQLExecuteQueryOperator(
+    fetch_partitions = StarRocksSQLExecuteQueryOperator(
         task_id="fetch_existing_kf_variants_partitions",
         sql="""
         SELECT part FROM test_etl.kf_variants_part
@@ -71,17 +73,12 @@ with DAG(
             task_id="insert_new_kf_variants_partitions",
             sql="./sql/kf/kf_variants_part_insert_part.sql",
             submit_task=True,
-            submit_task_options=SubmitTaskOptions(
-                max_query_timeout=3600,
-                poll_interval=10,
-                enable_spill=True,
-                spill_mode="auto",
-            ),
+            submit_task_options=std_submit_task_opts,
             pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
             pool_slots=1,
         ).expand(
             query_params=get_new_parts(
-                variants_partitions=fetch_existing_kf_variants_partitions.output,
+                variants_partitions=fetch_partitions.output,
             )
         )
 
@@ -96,17 +93,12 @@ with DAG(
             task_id="insert_overwrite_kf_variants_partitions",
             sql="./sql/kf/kf_variants_part_overwrite_part.sql",
             submit_task=True,
-            submit_task_options=SubmitTaskOptions(
-                max_query_timeout=3600,
-                poll_interval=10,
-                enable_spill=True,
-                spill_mode="auto",
-            ),
+            submit_task_options=std_submit_task_opts,
             pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
             pool_slots=1,
         ).expand(
             query_params=get_overwrite_parts(
-                variants_partitions=fetch_existing_kf_variants_partitions.output,
+                variants_partitions=fetch_partitions.output,
             )
         )
 
@@ -115,7 +107,7 @@ with DAG(
         >> create_kf_variant_table
         >> insert_kf_variant
         >> create_kf_variant_part_table
-        >> fetch_existing_kf_variants_partitions
+        >> fetch_partitions
         >> [
             insert_new_partitions,
             overwrite_partitions,

@@ -11,6 +11,13 @@ from tasks.starrocks.operator import (
     SubmitTaskOptions,
 )
 
+std_submit_task_opts = SubmitTaskOptions(
+    max_query_timeout=3600,
+    poll_interval=30,
+    enable_spill=True,
+    spill_mode="auto",
+)
+
 dag_params = {
     "parts": Param(
         default=None,
@@ -70,16 +77,11 @@ with DAG(
             task_id="insert_into_stg_kf_variants",
             sql="./sql/kf/stg_kf_variants_insert.sql",
             submit_task=True,
-            submit_task_options=SubmitTaskOptions(
-                max_query_timeout=3600,
-                poll_interval=30,
-                enable_spill=False,
-                spill_mode="auto",
-            ),
+            submit_task_options=std_submit_task_opts,
         )
         check_should_skip_stg_kf_variants >> create_stg_variants >> insert_stg_variants
 
-    fetch_existing_occurrences_partitions = StarRocksSQLExecuteQueryOperator(
+    fetch_partitions = StarRocksSQLExecuteQueryOperator(
         task_id="fetch_existing_occurrences_partitions",
         sql="""
         SELECT part FROM test_etl.kf_occurrences
@@ -94,54 +96,38 @@ with DAG(
     with TaskGroup(group_id="insert_new_occurrences_partitions") as insert_new_occurrences:
 
         @task
-        def get_parts_to_insert(fetch_existing_partitions_output, params) -> list[dict]:
-            _parts_from_params = [int(p) for p in params.get("parts")]
-            _parts = fetch_existing_partitions_output
-            parts_to_insert = set(_parts_from_params) - set([p[0] for p in _parts])  # parts is a list of tuples
-            return [{"part": i} for i in parts_to_insert]
+        def get_parts_to_insert(fetch_output, params) -> list[dict]:
+            _parts = {int(p) for p in params.get("parts")} - set([p[0] for p in fetch_output])
+            return [{"part": i} for i in _parts]
 
         insert_new_occurrences_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert_new_occurrences_partitions",
             sql="./sql/kf/kf_occurrences_insert_part.sql",
             submit_task=True,
-            submit_task_options=SubmitTaskOptions(
-                max_query_timeout=3600,
-                poll_interval=10,
-                enable_spill=True,
-                spill_mode="auto",
-            ),
+            submit_task_options=std_submit_task_opts,
             pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
             pool_slots=1,
-        ).expand(query_params=get_parts_to_insert(fetch_existing_occurrences_partitions.output))
+        ).expand(query_params=get_parts_to_insert(fetch_partitions.output))
 
     with TaskGroup(group_id="insert_overwrite_occurrences_partitions") as overwrite_occurrences:
 
         @task
-        def get_parts_to_overwrite(fetch_existing_partitions_output) -> list[dict]:
-            _parts = fetch_existing_partitions_output
-            parts_to_overwrite = set([p[0] for p in _parts])  # parts is a list of tuples
-            return [{"part": i} for i in parts_to_overwrite]
+        def get_parts_to_overwrite(fetch_output) -> list[dict]:
+            return [{"part": i} for i in {p[0] for p in fetch_output}]
 
         insert_overwrite_occurrences_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert_overwrite_occurrences_partitions",
             sql="./sql/kf/kf_occurrences_overwrite_part.sql",
             submit_task=True,
-            submit_task_options=SubmitTaskOptions(
-                max_query_timeout=3600,
-                poll_interval=10,
-                enable_spill=True,
-                spill_mode="auto",
-            ),
+            submit_task_options=std_submit_task_opts,
             pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
             pool_slots=1,
-        ).expand(query_params=get_parts_to_overwrite(fetch_existing_occurrences_partitions.output))
+        ).expand(query_params=get_parts_to_overwrite(fetch_partitions.output))
 
     import_variants_freq = TriggerDagRunOperator(
         task_id="import_variants_freq",
         trigger_dag_id="import_kf_variants_freq",
-        conf={
-            "parts": "{{ params.parts | list | tojson }}"
-        },
+        conf={"parts": "{{ params.parts | list | tojson }}"},
         reset_dag_run=True,
         wait_for_completion=True,
         poke_interval=60,
@@ -152,7 +138,7 @@ with DAG(
         >> create_kf_occurrences_table
         >> create_kf_occurrences_bitmap_index
         >> tg_hashes
-        >> fetch_existing_occurrences_partitions
+        >> fetch_partitions
         >> [
             insert_new_occurrences,
             overwrite_occurrences,

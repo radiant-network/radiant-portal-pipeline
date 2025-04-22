@@ -1,3 +1,5 @@
+import functools
+
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import ShortCircuitOperator
@@ -8,18 +10,20 @@ from tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
 
 def parse_parts(**context):
     parts = context["ti"].xcom_pull(task_ids="fetch_sequencing_experiment_delta", key="return_value")
-
     if parts is None:
         raise ValueError("No parts found in XCom")
-
-    parts_to_process = set([p[0] for p in parts])
-
-    context["ti"].xcom_push(
-        key="parts_to_process",
-        value=list(parts_to_process),
-    )
-
+    parts_to_process = {p[0] for p in parts}
+    context["ti"].xcom_push(key="parts_to_process", value=list(parts_to_process))
     return parts_to_process
+
+
+run_dag_operator = functools.partial(
+    TriggerDagRunOperator,
+    conf={"parts": "{{ task_instance.xcom_pull(task_ids='compute_parts', key='parts_to_process') | list | tojson }}"},
+    reset_dag_run=True,
+    wait_for_completion=True,
+    poke_interval=60,
+)
 
 
 with DAG(
@@ -29,9 +33,7 @@ with DAG(
     tags=["etl", "kf_data"],
     render_template_as_native_obj=True,
 ) as dag:
-    start = EmptyOperator(
-        task_id="start",
-    )
+    start = EmptyOperator(task_id="start")
 
     create_sequencing_experiment_table = StarRocksSQLExecuteQueryOperator(
         task_id="create_sequencing_experiment_table",
@@ -49,46 +51,15 @@ with DAG(
         do_xcom_push=True,
     )
 
-    # ShortCircuitOperator to skip rest of the pipeline when there's no new parts to process
     compute_parts = ShortCircuitOperator(
         task_id="compute_parts",
         python_callable=parse_parts,
         ignore_downstream_trigger_rules=True,
     )
 
-    import_occurrences = TriggerDagRunOperator(
-        task_id="import_occurrences",
-        trigger_dag_id="import_kf_occurrences",
-        conf={
-            "parts": "{{ task_instance.xcom_pull(task_ids='compute_parts', key='parts_to_process') | list | tojson }}"
-        },
-        reset_dag_run=True,
-        wait_for_completion=True,
-        poke_interval=60,
-        trigger_rule="none_failed",
-    )
-
-    import_variants = TriggerDagRunOperator(
-        task_id="import_variants",
-        trigger_dag_id="import_kf_variants",
-        conf={
-            "parts": "{{ task_instance.xcom_pull(task_ids='compute_parts', key='parts_to_process') | list | tojson }}"
-        },
-        reset_dag_run=True,
-        wait_for_completion=True,
-        poke_interval=60,
-    )
-
-    import_consequences = TriggerDagRunOperator(
-        task_id="import_consequences",
-        trigger_dag_id="import_kf_consequences",
-        conf={
-            "parts": "{{ task_instance.xcom_pull(task_ids='compute_parts', key='parts_to_process') | list | tojson }}"
-        },
-        reset_dag_run=True,
-        wait_for_completion=True,
-        poke_interval=60,
-    )
+    import_occurrences = run_dag_operator(task_id="import_occurrences", trigger_dag_id="import_kf_occurrences")
+    import_variants = run_dag_operator(task_id="import_variants", trigger_dag_id="import_kf_variants")
+    import_consequences = run_dag_operator(task_id="import_consequences", trigger_dag_id="import_kf_consequences")
 
     update_sequencing_experiments = StarRocksSQLExecuteQueryOperator(
         task_id="insert_new_sequencing_experiments",
