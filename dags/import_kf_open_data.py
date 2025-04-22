@@ -14,13 +14,13 @@ default_args = {
 
 def group_template(group_id):
     create_table_if_not_exists = StarRocksSQLExecuteQueryOperator(
-        task_id=f"create_table_{group_id}",
+        task_id=f"create_table",
         sql=f"./sql/open_data/{group_id}_create_table.sql",
         submit_task=False,
     )
 
     insert_table = StarRocksSQLExecuteQueryOperator(
-        task_id=f"insert_table_{group_id}",
+        task_id=f"insert",
         sql=f"./sql/open_data/{group_id}_insert.sql",
         submit_task=True,
         submit_task_options=SubmitTaskOptions(
@@ -42,7 +42,7 @@ with DAG(
 ) as dag:
     start = EmptyOperator(task_id="start")
     create_variant_dict = StarRocksSQLExecuteQueryOperator(
-        task_id="create_variant_dict",
+        task_id="create_variant_dict_table",
         sql="./sql/open_data/variant_dict_create_table.sql",
     )
 
@@ -56,7 +56,7 @@ with DAG(
         "topmed_bravo",
     ]
     for group in group_ids:
-        with TaskGroup(group_id=f"task_group_{group}", tooltip=group):
+        with TaskGroup(group_id=f"{group}", tooltip=group):
             _tasks = group_template(group_id=group)
             for task in _tasks:
                 tasks.append(task)

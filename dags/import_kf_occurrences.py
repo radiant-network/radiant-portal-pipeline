@@ -65,7 +65,7 @@ with DAG(
 
     with TaskGroup(group_id="stg_kf_variants") as tg_hashes:
         check_should_skip_stg_kf_variants = ShortCircuitOperator(
-            task_id="check_import_stg_kf_variants",
+            task_id="check_skip",
             python_callable=check_import_stg_kf_variants,
             ignore_downstream_trigger_rules=False,
             trigger_rule="all_done",
@@ -74,12 +74,12 @@ with DAG(
         # StarRocks doesn't support 'if not exists' for indexes.
         # It's "safe-ish" to continue even if the index creation fails.
         create_stg_variants = StarRocksSQLExecuteQueryOperator(
-            task_id="create_stg_kf_variants_table",
+            task_id="create_table",
             sql="./sql/kf/stg_kf_variants_create_table.sql",
         )
 
         insert_stg_variants = StarRocksSQLExecuteQueryOperator(
-            task_id="insert_into_stg_kf_variants",
+            task_id="insert",
             sql="./sql/kf/stg_kf_variants_insert.sql",
             submit_task=True,
             submit_task_options=std_submit_task_opts,
@@ -87,7 +87,7 @@ with DAG(
         check_should_skip_stg_kf_variants >> create_stg_variants >> insert_stg_variants
 
     fetch_partitions = StarRocksSQLExecuteQueryOperator(
-        task_id="fetch_existing_occurrences_partitions",
+        task_id="fetch_occurrences_partitions",
         sql="""
         SELECT part FROM test_etl.kf_occurrences
         WHERE part IN ({{ params.parts | join(',') }})
@@ -98,7 +98,7 @@ with DAG(
         trigger_rule="all_done",
     )
 
-    with TaskGroup(group_id="insert_new_occurrences_partitions") as insert_new_occurrences:
+    with TaskGroup(group_id="insert_occurrences_partitions") as insert_new_occurrences:
 
         @task
         def get_parts_to_insert(fetch_output, params) -> list[dict]:
@@ -106,7 +106,7 @@ with DAG(
             return [{"part": i} for i in _parts]
 
         insert_new_occurrences_partitions = StarRocksSQLExecuteQueryOperator.partial(
-            task_id="insert_new_occurrences_partitions",
+            task_id="insert",
             sql="./sql/kf/kf_occurrences_insert_part.sql",
             submit_task=True,
             submit_task_options=std_submit_task_opts,
@@ -114,14 +114,14 @@ with DAG(
             pool_slots=1,
         ).expand(query_params=get_parts_to_insert(fetch_partitions.output))
 
-    with TaskGroup(group_id="insert_overwrite_occurrences_partitions") as overwrite_occurrences:
+    with TaskGroup(group_id="overwrite_occurrences_partitions") as overwrite_occurrences:
 
         @task
         def get_parts_to_overwrite(fetch_output) -> list[dict]:
             return [{"part": i} for i in {p[0] for p in fetch_output}]
 
         insert_overwrite_occurrences_partitions = StarRocksSQLExecuteQueryOperator.partial(
-            task_id="insert_overwrite_occurrences_partitions",
+            task_id="overwrite",
             sql="./sql/kf/kf_occurrences_overwrite_part.sql",
             submit_task=True,
             submit_task_options=std_submit_task_opts,

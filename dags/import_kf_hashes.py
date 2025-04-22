@@ -53,7 +53,7 @@ with DAG(
     ]
 
     insert_hashes = StarRocksSQLExecuteQueryOperator(
-        task_id="kf_variants",
+        task_id="variants",
         sql="./sql/kf/kf_variants_insert_hashes.sql",
         submit_task=True,
         submit_task_options=std_submit_task_opts,

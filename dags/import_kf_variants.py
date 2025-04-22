@@ -41,24 +41,24 @@ with DAG(
     )
 
     create_kf_variant_table = StarRocksSQLExecuteQueryOperator(
-        task_id="create_kf_variants_table",
+        task_id="create_table",
         sql="./sql/kf/kf_variants_create_table.sql",
     )
 
     insert_kf_variant = StarRocksSQLExecuteQueryOperator(
-        task_id="insert_into_kf_variants_table",
+        task_id="insert",
         sql="./sql/kf/kf_variants_insert.sql",
         submit_task=True,
         submit_task_options=std_submit_task_opts,
     )
 
     create_kf_variant_part_table = StarRocksSQLExecuteQueryOperator(
-        task_id="create_kf_variants_part_table",
+        task_id="create_partitions_table",
         sql="./sql/kf/kf_variants_part_create_table.sql",
     )
 
     fetch_partitions = StarRocksSQLExecuteQueryOperator(
-        task_id="fetch_existing_kf_variants_partitions",
+        task_id="fetch_variants_partitions",
         sql="""
         SELECT part FROM test_etl.kf_variants_part
         GROUP BY part HAVING count(1) > 0
@@ -67,15 +67,15 @@ with DAG(
         trigger_rule="all_done",
     )
 
-    with TaskGroup(group_id="insert_new_kf_variants_partitions") as insert_new_partitions:
+    with TaskGroup(group_id="insert_variants_partitions") as insert_new_partitions:
 
         @task
         def get_new_parts(variants_partitions, params) -> list[dict]:
             _ids = set([int(p) // 10 for p in params.get("parts")]) - set([p[0] for p in variants_partitions])
             return [{"part_id": i, "part_lower": i * 10, "part_upper": (i * 10) + 10} for i in _ids]
 
-        insert_new_kf_variants_partitions = StarRocksSQLExecuteQueryOperator.partial(
-            task_id="insert_new_kf_variants_partitions",
+        insert_part = StarRocksSQLExecuteQueryOperator.partial(
+            task_id="insert",
             sql="./sql/kf/kf_variants_part_insert_part.sql",
             submit_task=True,
             submit_task_options=std_submit_task_opts,
@@ -87,15 +87,15 @@ with DAG(
             )
         )
 
-    with TaskGroup(group_id="insert_overwrite_kf_variants_partitions") as overwrite_partitions:
+    with TaskGroup(group_id="overwrite_variants_partitions") as overwrite_partitions:
 
         @task
         def get_overwrite_parts(variants_partitions, params) -> list[dict]:
             _ids = set([int(p) // 10 for p in params.get("parts")]) & set([p[0] for p in variants_partitions])
             return [{"part_id": i, "part_lower": i * 10, "part_upper": (i * 10) + 10} for i in _ids]
 
-        insert_overwrite_kf_variants_partitions = StarRocksSQLExecuteQueryOperator.partial(
-            task_id="insert_overwrite_kf_variants_partitions",
+        overwrite_part = StarRocksSQLExecuteQueryOperator.partial(
+            task_id="overwrite",
             sql="./sql/kf/kf_variants_part_overwrite_part.sql",
             submit_task=True,
             submit_task_options=std_submit_task_opts,
