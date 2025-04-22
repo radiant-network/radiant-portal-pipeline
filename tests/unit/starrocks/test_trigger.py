@@ -10,7 +10,7 @@ from tasks.starrocks.trigger import StarRocksTaskCompleteTrigger
 
 @pytest.fixture
 def mock_connection():
-    with patch("dags.starrocks.triggers.starrocks.BaseHook.get_connection") as mock_get_connection:
+    with patch("tasks.starrocks.trigger.BaseHook.get_connection") as mock_get_connection:
         mock_cursor = MagicMock()
         mock_connection = MagicMock()
         mock_connection.get_hook.return_value.get_conn.return_value.cursor.return_value = mock_cursor
