@@ -7,6 +7,9 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
 
+default_args = {
+    "owner": "ferlab",
+}
 
 def parse_parts(**context):
     parts = context["ti"].xcom_pull(task_ids="fetch_sequencing_experiment_delta", key="return_value")
@@ -30,6 +33,7 @@ with DAG(
     dag_id="import_kf_e2e",
     schedule_interval=None,
     catchup=False,
+    default_args=default_args,
     tags=["etl", "kf_data"],
     render_template_as_native_obj=True,
 ) as dag:

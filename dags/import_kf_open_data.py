@@ -8,6 +8,9 @@ from tasks.starrocks.operator import (
     SubmitTaskOptions,
 )
 
+default_args = {
+    "owner": "ferlab",
+}
 
 def group_template(group_id):
     create_table_if_not_exists = StarRocksSQLExecuteQueryOperator(
@@ -34,6 +37,7 @@ with DAG(
     dag_id="import_kf_open_data",
     schedule_interval=None,
     catchup=False,
+    default_args=default_args,
     tags=["etl", "open_data"],
 ) as dag:
     start = EmptyOperator(task_id="start")

@@ -1,6 +1,10 @@
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 
+default_args = {
+    "owner": "ferlab",
+}
+
 from tasks.starrocks.operator import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
@@ -10,6 +14,7 @@ with DAG(
     dag_id="import_kf_variants_freq",
     schedule_interval=None,
     catchup=False,
+    default_args=default_args,
     tags=["etl", "kf_data"],
 ) as dag:
     start = EmptyOperator(

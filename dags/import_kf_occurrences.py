@@ -11,6 +11,10 @@ from tasks.starrocks.operator import (
     SubmitTaskOptions,
 )
 
+default_args = {
+    "owner": "ferlab",
+}
+
 std_submit_task_opts = SubmitTaskOptions(
     max_query_timeout=3600,
     poll_interval=30,
@@ -41,6 +45,7 @@ with DAG(
     dag_id="import_kf_occurrences",
     schedule_interval=None,
     catchup=False,
+    default_args=default_args,
     tags=["etl", "kf_data"],
     params=dag_params,
 ) as dag:
