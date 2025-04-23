@@ -1,4 +1,4 @@
-INSERT INTO kf_variants
+INSERT INTO variants
 SELECT
     v.locus_id,
     vf.ac / 22000 AS af,
@@ -27,9 +27,10 @@ SELECT
     v.locus,
     v.dna_change,
     v.aa_change
-FROM intermediate_kf_variants v
-LEFT JOIN kf_variants_freq vf ON vf.locus_id = v.locus_id
+FROM stg_variants v
+LEFT JOIN variants_freq vf ON vf.locus_id = v.locus_id
 LEFT JOIN gnomad_genomes_v3 g ON g.locus_id = v.locus_id
 LEFT JOIN topmed_bravo t ON t.locus_id = v.locus_id
 LEFT JOIN 1000_genomes tg ON tg.locus_id = v.locus_id
-LEFT JOIN clinvar cl ON cl.locus_id = v.locus_id;
+LEFT JOIN clinvar cl ON cl.locus_id = v.locus_id
+LEFT ANTI JOIN variants kf ON kf.locus_id = v.locus_id

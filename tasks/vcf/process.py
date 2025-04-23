@@ -51,9 +51,7 @@ def process_chromosomes(
         samples=[exp.sample_id for exp in case.experiments],
     )
     if not vcf.samples:
-        raise ValueError(
-            f"Case {case.case_id} has no matching samples in the VCF file {case.vcf_file}"
-        )
+        raise ValueError(f"Case {case.case_id} has no matching samples in the VCF file {case.vcf_file}")
 
     csq_header = parse_csq_header(vcf)
     pedigree = Pedigree(case, vcf.samples)
@@ -82,20 +80,14 @@ def process_chromosomes(
             "chromosome": parsed_chromosome,
         }
         variant_table = catalog.load_table(f"{namespace}.germline_snv_variants")
-        variant_buffer = TableAccumulator(
-            variant_table, fs=fs, partition_filter=variant_csq_partition_filter
-        )
+        variant_buffer = TableAccumulator(variant_table, fs=fs, partition_filter=variant_csq_partition_filter)
 
         consequence_table = catalog.load_table(f"{namespace}.germline_snv_consequences")
-        consequence_buffer = TableAccumulator(
-            consequence_table, fs=fs, partition_filter=variant_csq_partition_filter
-        )
+        consequence_buffer = TableAccumulator(consequence_table, fs=fs, partition_filter=variant_csq_partition_filter)
         for record in vcf(chromosome):
             if len(record.ALT) <= 1:
                 common = process_common(record, case_id=case.case_id)
-                picked_consequence, consequences = process_consequence(
-                    record, csq_header, common
-                )
+                picked_consequence, consequences = process_consequence(record, csq_header, common)
                 consequence_buffer.extend(consequences)
                 occurrences = process_occurrence(record, pedigree, common=common)
                 for seq_id, occ in occurrences.items():
@@ -111,7 +103,5 @@ def process_chromosomes(
             occurence_buffer.write_files()
         variant_buffer.write_files()
         consequence_buffer.write_files()
-        logger.info(
-            f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {chromosome}"
-        )
+        logger.info(f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {chromosome}")
     vcf.close()

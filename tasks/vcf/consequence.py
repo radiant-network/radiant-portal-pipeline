@@ -86,9 +86,7 @@ def get_csq_field(csq_fields, fields, field_name):
     return fields[csq_fields[field_name]] if field_name in csq_fields else None
 
 
-def process_consequence(
-    record: Variant, csq_fields: dict[str, int], common: Common
-) -> tuple[dict, List[dict]]:
+def process_consequence(record: Variant, csq_fields: dict[str, int], common: Common) -> tuple[dict, List[dict]]:
     """
     Processes VEP CSQ annotations from a VCF record and builds structured consequence data.
 
@@ -135,9 +133,7 @@ def process_consequence(
                 "strand": get_csq_field(csq_fields, fields, "STRAND"),
                 "exon": {"rank": exon[0], "total": exon[1]} if len(exon) == 2 else None,
                 "vep_impact": vep_impact,
-                "consequences": get_csq_field(csq_fields, fields, "Consequence").split(
-                    ";"
-                ),
+                "consequences": get_csq_field(csq_fields, fields, "Consequence").split(";"),
                 "mane_select": get_csq_field(csq_fields, fields, "ManeSelect"),
                 "is_mane_select": False,
                 "is_mane_plus": False,

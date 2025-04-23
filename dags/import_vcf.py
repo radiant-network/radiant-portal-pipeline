@@ -7,7 +7,7 @@ from airflow.decorators import task
 from airflow.utils.dates import days_ago
 
 from tasks.vcf.experiment import Case, Experiment
-from tasks.vcf.process import process_chromosomes, GROUPED_CHROMOSOMES
+from tasks.vcf.process import GROUPED_CHROMOSOMES, process_chromosomes
 
 logger = logging.getLogger(__name__)
 default_args = {
@@ -32,7 +32,7 @@ with DAG(
                     Experiment(
                         seq_id=i,
                         patient_id=f"pa00{i}",
-                        sample_id=f"S14018",
+                        sample_id="S14018",
                         family_role="proband",
                         is_affected=True,
                         sex="F",
@@ -47,20 +47,14 @@ with DAG(
     def import_vcf(case: dict, chromosomes: list[str]):
         fs = fsspec.filesystem(
             "s3",
-            client_kwargs={
-                "endpoint_url": os.environ.get(
-                    "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT"
-                )
-            },
+            client_kwargs={"endpoint_url": os.environ.get("PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT")},
         )
         case = Case.model_validate(case)
-        logger.info(
-            f"🔁 STARTING IMPORT for Case: {case.case_id}, chromosome {",".join(chromosomes)}"
-        )
+        logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}, chromosome {','.join(chromosomes)}")
         logger.info("=" * 80)
         process_chromosomes(chromosomes, case, fs, vcf_threads=4)
         logger.info(
-            f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {",".join(chromosomes)}"
+            f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {','.join(chromosomes)}"
         )
 
     all_cases = get_cases()

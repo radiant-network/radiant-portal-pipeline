@@ -1,4 +1,5 @@
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 from cyvcf2 import VCF
@@ -8,8 +9,6 @@ CURRENT_DIR = Path(__file__).parent
 
 # Path to the resources directory
 RESOURCES_DIR = CURRENT_DIR.parent.parent / "resources"
-
-from contextlib import contextmanager
 
 
 @contextmanager

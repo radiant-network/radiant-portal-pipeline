@@ -1,0 +1,35 @@
+INSERT INTO occurrences
+SELECT part,
+	seq_id,
+	v.locus_id,
+	ad_ratio,
+	ad_total,
+	ad_ref,
+	ad_alt,
+	o.chromosome,
+	o.start,
+	zygosity,
+	has_alt,
+	filters[0] AS filter,
+	info_ac,
+	info_an,
+	info_af,
+	info_baseq_rank_sum,
+	info_excess_het,
+	info_ds,
+	info_inbreed_coeff,
+	info_mleac,
+	info_mleaf,
+	info_mq,
+	info_m_qrank_sum,
+	info_qd,
+	info_read_pos_rank_sum,
+	greatest(least(info_vqslod, 100), -100) AS info_vqslod,
+	info_culprit,
+	info_dp,
+	info_haplotype_score,
+	calls
+FROM iceberg.poc_starrocks.kf_occurrences o
+JOIN stg_variants v ON o.hash = v.hash
+WHERE part IN ({part})
+AND has_alt;

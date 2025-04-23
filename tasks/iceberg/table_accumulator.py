@@ -121,22 +121,15 @@ class TableAccumulator:
             force (bool): Force a merge regardless of row count threshold.
         """
         if force or len(self.rows) >= self.max_buffered_rows:
-            logger.debug(
-                f"Compact table {self.table.name()} for partition {self.partition_filter}"
-            )
+            logger.debug(f"Compact table {self.table.name()} for partition {self.partition_filter}")
             new_pa_table = self.to_arrow()
             if not self.accumulated_pa_table:
                 self.accumulated_pa_table = new_pa_table
             else:
-                self.accumulated_pa_table = pa.concat_tables(
-                    [self.accumulated_pa_table, new_pa_table]
-                )
+                self.accumulated_pa_table = pa.concat_tables([self.accumulated_pa_table, new_pa_table])
             self.clear_rows()
 
-            if (
-                self.accumulated_pa_table.get_total_buffer_size()
-                >= self.parquet_file_size_mb * 1024 * 1024
-            ):
+            if self.accumulated_pa_table.get_total_buffer_size() >= self.parquet_file_size_mb * 1024 * 1024:
                 self.write_files(commit=False, merge=False)
 
     def write_files(self, commit: bool = True, merge=True) -> str | None:
@@ -154,9 +147,7 @@ class TableAccumulator:
         if merge:
             self.merge_table(force=True)
         if not self.accumulated_pa_table:
-            logger.info(
-                f"No data to write for table {self.table.name()}, partition {self.partition_filter}"
-            )
+            logger.info(f"No data to write for table {self.table.name()}, partition {self.partition_filter}")
             return None
 
         file_uuid = str(uuid.uuid4())
@@ -191,15 +182,11 @@ class TableAccumulator:
             expr = EqualTo(col, val)
             filter_expr = expr if filter_expr is None else And(filter_expr, expr)
         if filter_expr is None:
-            raise ValueError(
-                f"Partition filter {self.partition_filter} must contain at least one key-value pair."
-            )
+            raise ValueError(f"Partition filter {self.partition_filter} must contain at least one key-value pair.")
         max_retries = 20
         while max_retries > 0:
             try:
-                logger.info(
-                    f"Try to commit tx for table {self.table.name()} with filter {self.partition_filter}"
-                )
+                logger.info(f"Try to commit tx for table {self.table.name()} with filter {self.partition_filter}")
                 self.table.refresh()
                 tx = self.table.transaction()
                 tx.delete(filter_expr)

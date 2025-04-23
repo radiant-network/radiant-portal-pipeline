@@ -1,7 +1,5 @@
 from tasks.vcf.experiment import Case, Experiment
 from tasks.vcf.process import process_chromosomes
-from pandas.testing import assert_frame_equal
-import pandas as pd
 
 
 def test_process_chromosomes(
@@ -37,18 +35,13 @@ def test_process_chromosomes(
 
     table_names = iceberg_client.list_tables(setup_namespace)
     assert (setup_namespace, "germline_snv_occurrences") in table_names
-    occ = (
-        iceberg_client.load_table(f"{setup_namespace}.germline_snv_occurrences")
-        .scan()
-        .to_arrow()
-        .to_pandas()
-    )
+    occ = iceberg_client.load_table(f"{setup_namespace}.germline_snv_occurrences").scan().to_arrow().to_pandas()
     print(occ)
 
     assert not occ.empty, "No occurrences were written to the iceberg table"
-    assert (
-        (occ["sample_id"] == "SA0001") & (occ["case_id"] == 1)
-    ).any(), "Expected sample/case not found in occurrences"
+    assert ((occ["sample_id"] == "SA0001") & (occ["case_id"] == 1)).any(), (
+        "Expected sample/case not found in occurrences"
+    )
     assert all(occ["chromosome"] == "1"), "Unexpected chromosome values in output"
     assert occ["zygosity"][0] == "HET", "Unexpected zygosity value in output"
     assert occ["zygosity"][1] == "HOM", "Unexpected zygosity value in output"

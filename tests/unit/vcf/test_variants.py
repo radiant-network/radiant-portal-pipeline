@@ -1,5 +1,6 @@
 from tasks.vcf.common import Common
 from tasks.vcf.variant import process_variant
+
 from .vcf_test_utils import variant
 
 common = Common(1, "1-1000-AC-A", "hash", "1", 1000, 1000, "AC", "A")

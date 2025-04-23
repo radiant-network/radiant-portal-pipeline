@@ -5,21 +5,22 @@ import pytest
 from tasks.vcf.common import Common
 from tasks.vcf.experiment import Case, Experiment
 from tasks.vcf.occurrence import (
-    process_occurrence,
-    adjust_calls_and_zygosity,
-    ZYGOSITY_WT,
-    ZYGOSITY_HOM,
-    ZYGOSITY_HET,
-    ZYGOSITY_UNK,
-    normalize_monosomy,
-    normalize_calls,
     AUTOSOMAL_ORIGINS_LOOKUP,
-    parental_origin,
     X_ORIGINS_LOOKUP,
     Y_ORIGINS_LOOKUP,
+    ZYGOSITY_HET,
+    ZYGOSITY_HOM,
+    ZYGOSITY_UNK,
+    ZYGOSITY_WT,
+    adjust_calls_and_zygosity,
     compute_transmission_mode,
+    normalize_calls,
+    normalize_monosomy,
+    parental_origin,
+    process_occurrence,
 )
 from tasks.vcf.pedigree import Pedigree
+
 from .vcf_test_utils import variant
 
 case = Case(
@@ -172,9 +173,7 @@ def test_multi_sample():
         vcf_file="",
     )
     v = variant("test_occurrence_multi_sample.vcf", 1)
-    occ = process_occurrence(
-        v, Pedigree(multi_sample_case, ["SA0001", "SA0002", "SA0003"]), common
-    )
+    occ = process_occurrence(v, Pedigree(multi_sample_case, ["SA0001", "SA0002", "SA0003"]), common)
 
     assert occ.get(1, None) is not None
     assert occ[1]["zygosity"] == "HOM"
@@ -228,9 +227,7 @@ def test_normalize_calls():
 def approx_equal_occ(actual: dict, expected: dict, float_tol=1e-6):
     for k, v in expected.items():
         if isinstance(v, float):
-            assert math.isclose(
-                actual.get(k), v, rel_tol=float_tol
-            ), f"{k} mismatch: {actual.get(k)} != {v}"
+            assert math.isclose(actual.get(k), v, rel_tol=float_tol), f"{k} mismatch: {actual.get(k)} != {v}"
         else:
             assert actual.get(k) == v, f"{k} mismatch: {actual.get(k)} != {v}"
 
@@ -239,27 +236,21 @@ def approx_equal_occ(actual: dict, expected: dict, float_tol=1e-6):
 def test_parental_origin_autosomal(gt_data, expected):
     child_gt, mother_gt, father_gt = gt_data
     result = parental_origin("1", child_gt, mother_gt, father_gt)  # autosomal example
-    assert (
-        result == expected
-    ), f"Autosomal failed for {gt_data}: expected {expected}, got {result}"
+    assert result == expected, f"Autosomal failed for {gt_data}: expected {expected}, got {result}"
 
 
 @pytest.mark.parametrize("gt_data,expected", list(X_ORIGINS_LOOKUP.items()))
 def test_parental_origin_x(gt_data, expected):
     child_gt, mother_gt, father_gt = gt_data
     result = parental_origin("X", child_gt, mother_gt, father_gt)
-    assert (
-        result == expected
-    ), f"X-linked failed for {gt_data}: expected {expected}, got {result}"
+    assert result == expected, f"X-linked failed for {gt_data}: expected {expected}, got {result}"
 
 
 @pytest.mark.parametrize("gt_data,expected", list(Y_ORIGINS_LOOKUP.items()))
 def test_parental_origin_y(gt_data, expected):
     child_gt, mother_gt, father_gt = gt_data
     result = parental_origin("Y", child_gt, mother_gt, father_gt)
-    assert (
-        result == expected
-    ), f"Y-linked failed for {gt_data}: expected {expected}, got {result}"
+    assert result == expected, f"Y-linked failed for {gt_data}: expected {expected}, got {result}"
 
 
 @pytest.mark.parametrize(

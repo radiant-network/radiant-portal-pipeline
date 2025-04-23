@@ -1,4 +1,4 @@
-from tasks.vcf.common import process_common, Common
+from tasks.vcf.common import Common, process_common
 from tests.unit.vcf.vcf_test_utils import variant
 
 
