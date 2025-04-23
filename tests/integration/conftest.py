@@ -167,6 +167,17 @@ def iceberg_container(minio_container):
 
 @pytest.fixture(scope="session")
 def starrocks_container(minio_container):
+    client = docker.from_env()
+
+    for container in client.containers.list():
+        if STARROCKS_HOSTNAME in container.name:
+            ports = container.attrs["NetworkSettings"]["Ports"]
+            query_port = ports[f"{STARROCKS_QUERY_PORT}/tcp"][0]["HostPort"]
+            fe_http_port = ports[f"{STARROCKS_FE_HTTP_PORT}/tcp"][0]["HostPort"]
+            be_http_port = ports[f"{STARROCKS_BE_HTTP_PORT}/tcp"][0]["HostPort"]
+            yield StarRocksInstance("localhost", query_port, fe_http_port, be_http_port, STARROCKS_USER, STARROCKS_PWD)
+            return
+
     container = (
         DockerContainer(STARROCKS_IMAGE)
         .with_name(STARROCKS_HOSTNAME)
