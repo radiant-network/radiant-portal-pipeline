@@ -141,9 +141,7 @@ with DAG(
     import_variants_freq = TriggerDagRunOperator(
         task_id="import_variants_freq",
         trigger_dag_id="import_kf_variants_freq",
-        conf={
-            "parts": "{{ params.parts | list | tojson }}"
-        },
+        conf={"parts": "{{ params.parts | list | tojson }}"},
         reset_dag_run=True,
         wait_for_completion=True,
         poke_interval=60,
