@@ -1,6 +1,5 @@
 import os
 import tempfile
-import time
 import uuid
 from pathlib import Path
 
@@ -169,7 +168,6 @@ def iceberg_container(minio_container):
 
 @pytest.fixture(scope="session")
 def starrocks_container(minio_container):
-
     container = (
         DockerContainer(STARROCKS_IMAGE)
         .with_name(STARROCKS_HOSTNAME)
