@@ -12,15 +12,16 @@ default_args = {
     "owner": "ferlab",
 }
 
+
 def group_template(group_id):
     create_table_if_not_exists = StarRocksSQLExecuteQueryOperator(
-        task_id=f"create_table",
+        task_id="create_table",
         sql=f"./sql/open_data/{group_id}_create_table.sql",
         submit_task=False,
     )
 
     insert_table = StarRocksSQLExecuteQueryOperator(
-        task_id=f"insert",
+        task_id="insert",
         sql=f"./sql/open_data/{group_id}_insert.sql",
         submit_task=True,
         submit_task_options=SubmitTaskOptions(

@@ -1,8 +1,11 @@
 import os
 import tempfile
+import time
+import uuid
 from pathlib import Path
 
 import fsspec
+import pymysql
 import pysam
 import pytest
 from pyiceberg.catalog.rest import RestCatalog
@@ -32,6 +35,17 @@ ICEBERG_REST_PORT = 8181
 ICEBERG_REST_CATALOG_NAME = "radiant"
 ICEBERG_REST_TOKEN = "mysecret"
 
+STARROCKS_HOSTNAME = "radiant-starrocks-allin1"
+STARROCKS_IMAGE = "starrocks/allin1-ubuntu:3.3.13"
+STARROCKS_FE_HTTP_PORT = 8030
+STARROCKS_BE_HTTP_PORT = 8040
+STARROCKS_QUERY_PORT = 9030
+STARROCKS_USER = "root"
+STARROCKS_PWD = ""
+STARROCKS_DATABASE_PREFIX = "test"
+
+STARROCKS_ICEBERG_CATALOG_NAME_PREFIX = "iceberg_catalog"
+
 
 # Utility classes
 class MinioInstance:
@@ -52,6 +66,28 @@ class IcebergInstance:
         self.endpoint = f"http://{host}:{port}"
         self.token = token
         self.catalog_name = catalog_name
+
+
+class StarRocksInstance:
+    def __init__(self, host, query_port, fe_port, be_port, user, password):
+        self.host = host
+        self.query_port = query_port
+        self.fe_port = fe_port
+        self.be_port = be_port
+        self.endpoint = f"http://{host}:{query_port}"
+        self.user = user
+        self.password = password
+
+
+class StarRocksIcebergCatalog:
+    def __init__(self, name):
+        self.name = name
+
+
+class StarRocksIcebergDatabase:
+    def __init__(self, catalog, name):
+        self.catalog = catalog
+        self.name = name
 
 
 # Fixtures
@@ -132,6 +168,44 @@ def iceberg_container(minio_container):
 
 
 @pytest.fixture(scope="session")
+def starrocks_container(minio_container):
+
+    container = (
+        DockerContainer(STARROCKS_IMAGE)
+        .with_name(STARROCKS_HOSTNAME)
+        .with_exposed_ports(STARROCKS_QUERY_PORT, STARROCKS_FE_HTTP_PORT, STARROCKS_BE_HTTP_PORT)
+    )
+    container.start()
+    wait_for_logs(container, "Enjoy the journey to StarRocks blazing-fast lake-house engine!", timeout=60)
+
+    query_port = container.get_exposed_port(STARROCKS_QUERY_PORT)
+    fe_http_port = container.get_exposed_port(STARROCKS_FE_HTTP_PORT)
+    be_http_port = container.get_exposed_port(STARROCKS_BE_HTTP_PORT)
+
+    yield StarRocksInstance(
+        host="localhost",
+        query_port=query_port,
+        fe_port=fe_http_port,
+        be_port=be_http_port,
+        user=STARROCKS_USER,
+        password=STARROCKS_PWD,
+    )
+
+    container.stop()
+
+
+@pytest.fixture(scope="session")
+def starrocks_session(starrocks_container):
+    with pymysql.connect(
+        host=starrocks_container.host,
+        port=int(starrocks_container.query_port),
+        password=starrocks_container.password,
+        user=starrocks_container.user,
+    ) as connection:
+        yield connection
+
+
+@pytest.fixture(scope="session")
 def s3_fs(minio_container):
     fs = fsspec.filesystem(
         "s3",
@@ -160,10 +234,42 @@ def iceberg_client(iceberg_container, iceberg_catalog_properties):
     return RestCatalog(name=iceberg_container.catalog_name, **iceberg_catalog_properties)
 
 
+@pytest.fixture(scope="session")
+def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_container):
+    with starrocks_session.cursor() as cursor:
+        catalog_name = f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{uuid.uuid4().hex[:8]}"
+        cursor.execute(f"""
+        CREATE EXTERNAL CATALOG '{catalog_name}'
+        COMMENT 'External catalog to Apache Iceberg on MinIO'
+        PROPERTIES
+        (
+            'type'='iceberg',
+            'iceberg.catalog.type'='rest',
+            'iceberg.catalog.uri'='{iceberg_container.endpoint}',
+            'iceberg.catalog.token' = '{iceberg_container.token}',
+            'aws.s3.region'='us-east-1',
+            'aws.s3.access_key'='{minio_container.access_key}',
+            'aws.s3.secret_key'='{minio_container.secret_key}',
+            'aws.s3.endpoint'='{minio_container.endpoint}',
+            'aws.s3.enable_path_style_access'='true',
+            'client.factory'='com.starrocks.connector.share.iceberg.IcebergAwsClientFactory'
+        );""")
+        starrocks_session.commit()
+        yield StarRocksIcebergCatalog(name=catalog_name)
+        cursor.execute(f"DROP CATALOG {catalog_name};")
+
+
+@pytest.fixture(scope="session")
+def starrocks_iceberg_database(starrocks_session, starrocks_iceberg_catalog):
+    with starrocks_session.cursor() as cursor:
+        database_name = f"{STARROCKS_DATABASE_PREFIX}_{uuid.uuid4().hex[:8]}"
+        cursor.execute(f"CREATE DATABASE `{starrocks_iceberg_catalog.name}.{database_name}`;")
+        yield StarRocksIcebergDatabase(catalog=starrocks_iceberg_catalog.name, name=database_name)
+        cursor.execute(f"DROP DATABASE `{starrocks_iceberg_catalog.name}.{database_name}`;")
+
+
 @pytest.fixture(autouse=True)
 def setup_namespace(iceberg_client):
-    import uuid
-
     namespace = f"ns_{uuid.uuid4().hex[:8]}"
     iceberg_client.create_namespace(namespace)
     iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_occurrences", schema=OCCURRENCE_SCHEMA)
