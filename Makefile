@@ -7,6 +7,14 @@ test:
 	ruff check dags/ tests/
 	pytest tests/
 
+test-unit:
+	ruff check dags/ tests/
+	pytest tests/unit/
+
+test-integration:
+	ruff check dags/ tests/
+	pytest tests/integration
+
 test-static:
 	ruff check dags/ tests/
 

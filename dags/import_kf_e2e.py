@@ -11,6 +11,7 @@ default_args = {
     "owner": "ferlab",
 }
 
+
 def parse_parts(**context):
     parts = context["ti"].xcom_pull(task_ids="fetch_sequencing_experiment_delta", key="return_value")
     if parts is None:

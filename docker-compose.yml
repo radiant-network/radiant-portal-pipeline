@@ -393,6 +393,122 @@ services:
       tail -f /dev/null
       "
 
+  radiant-starrocks-fe:
+    image: starrocks/fe-ubuntu:3.3.13
+    container_name: radiant-starrocks-fe
+    hostname: radiant-starrocks-fe
+    user: root
+    depends_on:
+      - radiant-minio
+    command: >
+      bash -c "
+      echo 'run_mode = shared_data' >> /opt/starrocks/fe/conf/fe.conf;
+      echo 'cloud_native_storage_type = S3' >> /opt/starrocks/fe/conf/fe.conf;
+      echo 'aws_s3_path = test/' >> /opt/starrocks/fe/conf/fe.conf;
+      echo 'aws_s3_region = us-east-1' >> /opt/starrocks/fe/conf/fe.conf;
+      echo 'aws_s3_endpoint = http://radiant-minio:9000' >> /opt/starrocks/fe/conf/fe.conf;
+      echo 'aws_s3_access_key = admin' >> /opt/starrocks/fe/conf/fe.conf;
+      echo 'aws_s3_secret_key = password' >> /opt/starrocks/fe/conf/fe.conf;
+      exec /opt/starrocks/fe/bin/start_fe.sh --host_type FQDN
+      "
+    ports:
+      - 8030:8030
+      - 9020:9020
+      - 9030:9030
+    networks:
+      - airflow_network
+    healthcheck:
+      test: 'mysql -u root -h radiant-starrocks-fe -P 9030 -e "SHOW FRONTENDS\G" |grep "Alive: true"'
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  radiant-starrocks-cn:
+    image: starrocks/cn-ubuntu:3.3.13
+    container_name: radiant-starrocks-cn
+    hostname: radiant-starrocks-cn
+    user: root
+    depends_on:
+      - radiant-starrocks-fe
+    environment:
+      - HOST_TYPE=FQDN
+    command: >
+      bash -c "
+        ulimit -u 65535;
+        ulimit -n 65535;
+        sleep 15;
+        mysql --connect-timeout 2 -h radiant-starrocks-fe -P 9030 -u root -e "ALTER SYSTEM ADD COMPUTE NODE \"radiant-starrocks-cn:9050\";"
+        bash /opt/starrocks/be/bin/start_be.sh
+      "
+    ports:
+      - 8040:8040
+      - 8060:8060
+      - 9050:9050
+      - 9060:9060
+    healthcheck:
+      test: >
+        mysql -u root -h radiant-starrocks-fe -P 9030 -e "SHOW COMPUTE NODES\G" |grep "Alive: true"
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - airflow_network
+
+  init-starrocks-storage-volume:
+    image: starrocks/fe-ubuntu:3.3.13
+    container_name: init-starrocks-storage-volume
+    depends_on:
+      - radiant-starrocks-fe
+    entrypoint: >
+      /bin/bash -c "
+      sleep 15;
+      mysql -h radiant-starrocks-fe -P 9030 -u root -e \"
+      CREATE STORAGE VOLUME test_storage_volume
+      TYPE = S3
+      LOCATIONS = ('s3://test')
+      PROPERTIES
+      (
+        'enabled' = 'true',
+        'aws.s3.region' = 'us-east-1',
+        'aws.s3.endpoint' = 'http://radiant-minio:9000',
+        'aws.s3.access_key' = 'admin',
+        'aws.s3.secret_key' = 'password',
+        'aws.s3.enable_partitioned_prefix' = 'true'
+      );
+      SET test_storage_volume AS DEFAULT STORAGE VOLUME;\"
+      "
+    networks:
+      - airflow_network
+
+  init-iceberg-catalog:
+    image: starrocks/fe-ubuntu:3.3.13
+    container_name: init-iceberg-catalog
+    depends_on:
+      - radiant-starrocks-fe
+      - radiant-iceberg-rest
+    entrypoint: >
+      /bin/bash -c "
+      sleep 15;
+      mysql -h radiant-starrocks-fe -P 9030 -u root -e \"
+      CREATE EXTERNAL CATALOG 'test_iceberg_catalog'
+      COMMENT 'External catalog to Apache Iceberg on MinIO'
+      PROPERTIES
+      (
+        'type'='iceberg',
+        'iceberg.catalog.type'='rest',
+        'iceberg.catalog.uri'='http://radiant-iceberg-rest:8181',
+        'iceberg.catalog.token' = 'mysecret',
+        'aws.s3.region'='us-east-1',
+        'aws.s3.access_key'='admin',
+        'aws.s3.secret_key'='password',
+        'aws.s3.endpoint'='http://minio:9000',
+        'aws.s3.enable_path_style_access'='true',
+        'client.factory'='com.starrocks.connector.share.iceberg.IcebergAwsClientFactory'
+      );\"
+      "
+    networks:
+      - airflow_network
+
 volumes:
   postgres-db-volume:
   minio-data-volume:
