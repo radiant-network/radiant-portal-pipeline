@@ -463,7 +463,7 @@ services:
       /bin/bash -c "
       sleep 15;
       mysql -h radiant-starrocks-fe -P 9030 -u root -e \"
-      CREATE STORAGE VOLUME def_volume
+      CREATE STORAGE VOLUME test_storage_volume
       TYPE = S3
       LOCATIONS = ('s3://test')
       PROPERTIES
@@ -475,7 +475,7 @@ services:
         'aws.s3.secret_key' = 'password',
         'aws.s3.enable_partitioned_prefix' = 'true'
       );
-      SET def_volume AS DEFAULT STORAGE VOLUME;\"
+      SET test_storage_volume AS DEFAULT STORAGE VOLUME;\"
       "
     networks:
       - airflow_network
@@ -490,7 +490,7 @@ services:
       /bin/bash -c "
       sleep 15;
       mysql -h radiant-starrocks-fe -P 9030 -u root -e \"
-      CREATE EXTERNAL CATALOG 'iceberg'
+      CREATE EXTERNAL CATALOG 'test_iceberg_catalog'
       COMMENT 'External catalog to Apache Iceberg on MinIO'
       PROPERTIES
       (
@@ -515,5 +515,3 @@ volumes:
 
 networks:
   airflow_network:
-
-
