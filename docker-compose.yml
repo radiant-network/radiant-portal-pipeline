@@ -53,6 +53,7 @@ x-airflow-common:
   # build: .
   environment:
     &airflow-common-env
+    PYTHONPATH: /opt/airflow/dags
     AWS_REGION: us-east-1
     AWS_ACCESS_KEY_ID: admin
     AWS_SECRET_ACCESS_KEY: password

@@ -1,5 +1,0 @@
-testcontainers
-requests
-pysam
-pandas
-pymysql

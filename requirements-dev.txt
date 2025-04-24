@@ -1,0 +1,8 @@
+apache-airflow==2.10.5
+testcontainers
+requests
+pysam
+pandas
+pytest==8.3.5
+ruff==0.11.4
+pymysql
