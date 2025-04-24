@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 
-from tasks.starrocks.operator import (
+from radiant.tasks.starrocks.operator import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )

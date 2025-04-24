@@ -1,4 +1,4 @@
-from tasks.vcf.experiment import Case
+from radiant.tasks.vcf.experiment import Case
 
 
 class Pedigree:

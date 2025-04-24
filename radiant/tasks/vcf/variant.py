@@ -18,14 +18,11 @@ Exports:
 
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
-from pyiceberg.types import BooleanType
-from pyiceberg.types import IntegerType
-from pyiceberg.types import ListType
-from pyiceberg.types import StringType
+from pyiceberg.types import BooleanType, IntegerType, ListType, StringType
 
-from tasks.iceberg.utils import merge_schemas
-from tasks.vcf.common import Common
-from tasks.vcf.common import SCHEMA as COMMON_SCHEMA
+from radiant.tasks.iceberg.utils import merge_schemas
+from radiant.tasks.vcf.common import SCHEMA as COMMON_SCHEMA
+from radiant.tasks.vcf.common import Common
 
 # Extended Iceberg schema for annotated variants, merging common fields and annotation-specific fields.
 SCHEMA = merge_schemas(
@@ -45,9 +42,7 @@ SCHEMA = merge_schemas(
         NestedField(308, "is_mane_select", BooleanType(), required=False),
         NestedField(309, "is_mane_plus", BooleanType(), required=False),
         NestedField(310, "is_canonical", BooleanType(), required=False),
-        NestedField(
-            311, "rsnumber", ListType(312, element_type=StringType()), required=False
-        ),
+        NestedField(311, "rsnumber", ListType(312, element_type=StringType()), required=False),
         NestedField(313, "hgvsg", StringType(), required=False),
         NestedField(314, "hgvsc", StringType(), required=False),
         NestedField(315, "hgvsp", StringType(), required=False),

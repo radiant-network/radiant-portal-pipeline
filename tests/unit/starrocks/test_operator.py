@@ -2,7 +2,7 @@ import re
 
 import pytest
 
-from tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
+from radiant.tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
 
 
 @pytest.mark.parametrize(

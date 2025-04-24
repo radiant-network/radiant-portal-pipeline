@@ -4,20 +4,20 @@ install:
 	pip install -r requirements.txt
 
 test:
-	ruff check dags/ tests/
+	ruff check radiant/ tests/
 	pytest tests/
 
 test-unit:
-	ruff check dags/ tests/
+	ruff check radiant/ tests/
 	pytest tests/unit/
 
 test-integration:
-	ruff check dags/ tests/
+	ruff check radiant/ tests/
 	pytest tests/integration
 
 test-static:
-	ruff check dags/ tests/
+	ruff check radiant/ tests/
 
 format:
-	ruff format dags/ tests/
-	ruff check --fix dags/ tests/
+	ruff format radiant/ tests/
+	ruff check --fix radiant/ tests/

@@ -1,5 +1,5 @@
-from tasks.vcf.common import Common
-from tasks.vcf.variant import process_variant
+from radiant.tasks.vcf.common import Common
+from radiant.tasks.vcf.variant import process_variant
 
 from .vcf_test_utils import variant
 

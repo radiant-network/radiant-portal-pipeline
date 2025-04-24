@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 
-from tasks.starrocks.operator import (
+from radiant.tasks.starrocks.operator import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )

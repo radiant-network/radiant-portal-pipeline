@@ -1,17 +1,11 @@
-from typing import Optional, Tuple
-
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
-from pyiceberg.types import BooleanType
-from pyiceberg.types import FloatType
-from pyiceberg.types import IntegerType
-from pyiceberg.types import ListType
-from pyiceberg.types import StringType
+from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, StringType
 
-from tasks.vcf.common import Common
-from tasks.vcf.common import SCHEMA as COMMON_SCHEMA
-from tasks.vcf.pedigree import Pedigree
-from tasks.iceberg.utils import merge_schemas
+from radiant.tasks.iceberg.utils import merge_schemas
+from radiant.tasks.vcf.common import SCHEMA as COMMON_SCHEMA
+from radiant.tasks.vcf.common import Common
+from radiant.tasks.vcf.pedigree import Pedigree
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -257,14 +251,15 @@ ZYGOSITY = {
 
 
 def adjust_calls_and_zygosity(
-    calls: list[int], zygosity: int, ad_ref: Optional[int], ad_alt: Optional[int]
-) -> Tuple[list[int], str]:
+    calls: list[int], zygosity: int, ad_ref: int | None, ad_alt: int | None
+) -> tuple[list[int], str]:
     """
 
     Adjusts the calls and zygosity based on the reference and alternate allele depths.
 
     Parameters:
-        calls (list[int]): A list of genotype calls, where each call represents an allele (e.g., 0 for reference, 1 for alternate).
+        calls (list[int]): A list of genotype calls, where each call represents an allele
+        (e.g., 0 for reference, 1 for alternate).
         zygosity (int): The zygosity type, represented as an integer (e.g., 0 for WT, 1 for HET, 3 for HOM, 2 for UNK).
         ad_ref (Optional[int]): The depth of reads supporting the reference allele. Can be None if not available.
         ad_alt (Optional[int]): The depth of reads supporting the alternate allele. Can be None if not available.
@@ -275,14 +270,20 @@ def adjust_calls_and_zygosity(
             - The zygosity as a string (e.g., "WT", "HET", "HOM", "UNK", or "HEM").
 
     Behavior:
-        - If the alternate allele depth (`ad_alt`) is less than 3 and the zygosity is HET or HOM, the calls are adjusted to [-1, -1] and the zygosity is set to "UNK".
-        - If the reference allele depth (`ad_ref`) is less than 3 and the zygosity is WT, the calls are adjusted to [-1, -1] and the zygosity is set to "UNK".
+        - If the alternate allele depth (`ad_alt`) is less than 3 and the zygosity is HET or HOM, the calls
+        are adjusted to [-1, -1] and the zygosity is set to "UNK".
+        - If the reference allele depth (`ad_ref`) is less than 3 and the zygosity is WT, the calls
+        are adjusted to [-1, -1] and the zygosity is set to "UNK".
         - If the zygosity is HOM and there is only one call, the zygosity is adjusted to "HEM" (hemizygous).
         - Otherwise, the calls remain unchanged, and the zygosity is returned as its string representation.
     """
-    if ad_alt and ((zygosity == ZYGOSITY_HET or zygosity == ZYGOSITY_HOM) and ad_alt < 3):
-        return [-1 for _ in range(len(calls))], "UNK"
-    elif ad_ref and zygosity == ZYGOSITY_WT and ad_ref < 3:
+    if (
+        ad_alt
+        and (zygosity in (ZYGOSITY_HET, ZYGOSITY_HOM) and ad_alt < 3)
+        or ad_ref
+        and zygosity == ZYGOSITY_WT
+        and ad_ref < 3
+    ):
         return [-1 for _ in range(len(calls))], "UNK"
     elif zygosity == 3 and len(calls) == 1:
         return calls, "HEM"
@@ -382,12 +383,12 @@ def parental_origin(
 def compute_transmission_mode(
     chromosome: str,
     gender: str,
-    normalized_progeny_calls: Optional[Tuple[int, int]],
-    normalized_father_calls: Optional[Tuple[int, int]],
-    normalized_mother_calls: Optional[Tuple[int, int]],
+    normalized_progeny_calls: tuple[int, int] | None,
+    normalized_father_calls: tuple[int, int] | None,
+    normalized_mother_calls: tuple[int, int] | None,
     father_affected: bool,
     mother_affected: bool,
-) -> Optional[str]:
+) -> str | None:
     """
     Computes the transmission mode of a genetic variant based on the genotype calls of the progeny, father, and mother.
 

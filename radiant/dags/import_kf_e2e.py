@@ -5,7 +5,7 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
-from tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
+from radiant.tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
 
 default_args = {
     "owner": "ferlab",
