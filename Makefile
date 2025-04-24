@@ -1,10 +1,16 @@
 .PHONY: all
 
+docker-build:
+	docker build -t radiant-airflow:latest .
+
 install:
 	pip install -r requirements.txt
 
 install-dev: install
 	pip install -r requirements-dev.txt
+
+test-docker: docker-build
+	pytest tests/docker/
 
 test-unit:
 	pytest tests/unit/

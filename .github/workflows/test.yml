@@ -22,4 +22,4 @@ jobs:
       - name: Run integration tests
         run: make test-integration
       - name: Verify docker build
-        run: docker build . -f Dockerfile -t test
+        run: make test-docker
