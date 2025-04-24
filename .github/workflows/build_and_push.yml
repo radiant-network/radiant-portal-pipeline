@@ -12,7 +12,8 @@ env:
 
 on:
   push:
-    branches: [ "**" ]  # TODO : For test purpose, change to main before merging
+    branches:
+      - main
     tags:
       - 'v*'
 
