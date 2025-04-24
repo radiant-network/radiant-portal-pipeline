@@ -1,8 +1,4 @@
 # This workflow builds and pushes a Docker image to GitHub Packages
-# Required environment variables:
-# - REGISTRY: The Docker registry to push the image to.
-# - IMAGE_NAME: The name of the Docker image.
-# - (Secret) GITHUB_TOKEN: A GitHub token with permissions to push to the registry
 name: Build and Push Docker Image
 
 env:
