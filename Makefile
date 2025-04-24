@@ -3,20 +3,19 @@
 install:
 	pip install -r requirements.txt
 
-test:
-	ruff check radiant/ tests/
-	pytest tests/
+install-dev: install
+	pip install -r requirements-dev.txt
 
 test-unit:
-	ruff check radiant/ tests/
 	pytest tests/unit/
 
 test-integration:
-	ruff check radiant/ tests/
 	pytest tests/integration
 
 test-static:
 	ruff check radiant/ tests/
+
+test: test-static test-unit test-integration
 
 format:
 	ruff format radiant/ tests/

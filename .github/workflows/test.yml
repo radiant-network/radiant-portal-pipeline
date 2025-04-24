@@ -1,0 +1,25 @@
+name: Test Pipeline
+
+on:
+  pull_request:
+    branches: [ "**" ]
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        run: make install-dev
+      - name: Run static tests
+        run: make test-static
+      - name: Run unit tests
+        run: make test-unit
+      - name: Run integration tests
+        run: make test-integration
+      - name: Verify docker build
+        run: docker build . -f Dockerfile -t test

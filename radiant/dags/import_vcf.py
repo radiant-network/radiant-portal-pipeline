@@ -1,14 +1,12 @@
-import logging
-import os
-
 from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
 
-logger = logging.getLogger(__name__)
 default_args = {
     "owner": "radiant",
 }
+
+PATH_TO_PYTHON_BINARY = "/home/airflow/.venv/radiant/bin/python"
 
 GROUPED_CHROMOSOMES = [
     ["chrM", "chr18", "chr1"],
@@ -52,8 +50,13 @@ with DAG(
         ]
         return [case.model_dump() for case in cases]
 
-    @task(pool="import_vcf")
+    @task.external_python(pool="import_vcf", task_id="import_vcf", python=PATH_TO_PYTHON_BINARY)
     def import_vcf(case: dict, chromosomes: list[str]):
+        import logging
+
+        logger = logging.getLogger(__name__)
+        import os
+
         import fsspec
 
         from radiant.tasks.vcf.experiment import Case

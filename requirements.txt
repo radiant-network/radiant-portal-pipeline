@@ -1,9 +1,5 @@
-apache-airflow==2.10.5
-black==25.1.0
-pytest==8.3.5
 cyvcf2
 pyiceberg[s3fs]
 pyarrow
 fsspec
 s3fs
-ruff==0.11.4
