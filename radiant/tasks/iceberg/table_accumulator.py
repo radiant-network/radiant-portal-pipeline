@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import uuid
@@ -6,8 +7,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pyiceberg.catalog import Table
 from pyiceberg.exceptions import CommitFailedException
-from pyiceberg.expressions import EqualTo, And
-import logging
+from pyiceberg.expressions import And, EqualTo
 
 logger = logging.getLogger(__name__)
 
@@ -201,5 +201,5 @@ class TableAccumulator:
                 logger.info(f"Commit failed: {e}. Retries left: {max_retries}")
                 time.sleep(1)
                 if max_retries <= 0:
-                    logger.error(f"Failed after 10 retries. Giving up.")
+                    logger.error("Failed after 10 retries. Giving up.")
                     raise e

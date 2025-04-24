@@ -3,31 +3,15 @@ import logging
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
 
-from tasks.iceberg.table_accumulator import TableAccumulator
-from tasks.vcf.common import process_common
-from tasks.vcf.consequence import parse_csq_header, process_consequence
-from tasks.vcf.experiment import Case
-from tasks.vcf.occurrence import process_occurrence
-from tasks.vcf.pedigree import Pedigree
-from tasks.vcf.variant import process_variant
+from radiant.tasks.iceberg.table_accumulator import TableAccumulator
+from radiant.tasks.vcf.common import process_common
+from radiant.tasks.vcf.consequence import parse_csq_header, process_consequence
+from radiant.tasks.vcf.experiment import Case
+from radiant.tasks.vcf.occurrence import process_occurrence
+from radiant.tasks.vcf.pedigree import Pedigree
+from radiant.tasks.vcf.variant import process_variant
 
 logger = logging.getLogger(__name__)
-
-CHROMOSOMES = [f"chr{i}" for i in range(1, 23)] + [
-    "chrX",
-    "chrY",
-    "chrM",
-]
-GROUPED_CHROMOSOMES = [
-    ["chrM", "chr18", "chr1"],
-    ["chr21", "chr10", "chr2"],
-    ["chr22", "chr11", "chr3"],
-    ["chr20", "chr9", "chr4"],
-    ["chr19", "chr8", "chr5"],
-    ["chrY", "chr7", "chr6"],
-    ["chr17", "chr13", "chr12"],
-    ["chr14", "chr15", "chr16"],
-]
 
 
 def process_chromosomes(
@@ -39,10 +23,7 @@ def process_chromosomes(
     vcf_threads=None,
     catalog_properties=None,
 ):
-    if catalog_properties:
-        catalog = load_catalog(catalog_name, **catalog_properties)
-    else:
-        catalog = load_catalog(catalog_name)
+    catalog = load_catalog(catalog_name, **catalog_properties) if catalog_properties else load_catalog(catalog_name)
 
     vcf = VCF(
         case.vcf_file,
@@ -96,11 +77,12 @@ def process_chromosomes(
                 variant_buffer.append(variant)
             else:
                 logger.debug(
-                    f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_file} : this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
+                    f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_file} : "
+                    f"this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
                 )
 
-        for occurence_buffer in occurrence_buffers.values():
-            occurence_buffer.write_files()
+        for occurrence_buffer in occurrence_buffers.values():
+            occurrence_buffer.write_files()
         variant_buffer.write_files()
         consequence_buffer.write_files()
         logger.info(f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {chromosome}")

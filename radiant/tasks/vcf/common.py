@@ -1,10 +1,8 @@
 from dataclasses import dataclass
 
 from cyvcf2 import Variant
-from pyiceberg.schema import NestedField
-from pyiceberg.schema import Schema
-from pyiceberg.types import StringType
-from pyiceberg.types import IntegerType
+from pyiceberg.schema import NestedField, Schema
+from pyiceberg.types import IntegerType, StringType
 
 
 @dataclass()

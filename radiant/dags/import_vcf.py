@@ -1,18 +1,25 @@
 import logging
 import os
 
-import fsspec
 from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
-
-from tasks.vcf.experiment import Case, Experiment
-from tasks.vcf.process import GROUPED_CHROMOSOMES, process_chromosomes
 
 logger = logging.getLogger(__name__)
 default_args = {
     "owner": "radiant",
 }
+
+GROUPED_CHROMOSOMES = [
+    ["chrM", "chr18", "chr1"],
+    ["chr21", "chr10", "chr2"],
+    ["chr22", "chr11", "chr3"],
+    ["chr20", "chr9", "chr4"],
+    ["chr19", "chr8", "chr5"],
+    ["chrY", "chr7", "chr6"],
+    ["chr17", "chr13", "chr12"],
+    ["chr14", "chr15", "chr16"],
+]
 
 with DAG(
     dag_id="import_vcf",
@@ -24,6 +31,8 @@ with DAG(
 
     @task
     def get_cases():
+        from radiant.tasks.vcf.experiment import Case, Experiment
+
         cases = [
             Case(
                 case_id=i,
@@ -45,6 +54,11 @@ with DAG(
 
     @task(pool="import_vcf")
     def import_vcf(case: dict, chromosomes: list[str]):
+        import fsspec
+
+        from radiant.tasks.vcf.experiment import Case
+        from radiant.tasks.vcf.process import process_chromosomes
+
         fs = fsspec.filesystem(
             "s3",
             client_kwargs={"endpoint_url": os.environ.get("PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT")},

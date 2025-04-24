@@ -13,19 +13,13 @@ Dependencies:
 - Common metadata and schema merging from internal modules.
 """
 
-from typing import List
-
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
-from pyiceberg.types import BooleanType
-from pyiceberg.types import IntegerType
-from pyiceberg.types import ListType
-from pyiceberg.types import StringType
-from pyiceberg.types import StructType
+from pyiceberg.types import BooleanType, IntegerType, ListType, StringType, StructType
 
-from tasks.iceberg.utils import merge_schemas
-from tasks.vcf.common import Common
-from tasks.vcf.common import SCHEMA as COMMON_SCHEMA
+from radiant.tasks.iceberg.utils import merge_schemas
+from radiant.tasks.vcf.common import SCHEMA as COMMON_SCHEMA
+from radiant.tasks.vcf.common import Common
 
 CSQ_FORMAT_FIELD = "CSQ"
 
@@ -86,7 +80,7 @@ def get_csq_field(csq_fields, fields, field_name):
     return fields[csq_fields[field_name]] if field_name in csq_fields else None
 
 
-def process_consequence(record: Variant, csq_fields: dict[str, int], common: Common) -> tuple[dict, List[dict]]:
+def process_consequence(record: Variant, csq_fields: dict[str, int], common: Common) -> tuple[dict, list[dict]]:
     """
     Processes VEP CSQ annotations from a VCF record and builds structured consequence data.
 

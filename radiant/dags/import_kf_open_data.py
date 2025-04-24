@@ -3,7 +3,7 @@ from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 
-from tasks.starrocks.operator import (
+from radiant.tasks.starrocks.operator import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )

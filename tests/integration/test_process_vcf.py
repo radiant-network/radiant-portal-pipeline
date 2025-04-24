@@ -1,5 +1,5 @@
-from tasks.vcf.experiment import Case, Experiment
-from tasks.vcf.process import process_chromosomes
+from radiant.tasks.vcf.experiment import Case, Experiment
+from radiant.tasks.vcf.process import process_chromosomes
 
 
 def test_process_chromosomes(

@@ -5,9 +5,9 @@ from pyiceberg.catalog import load_catalog
 from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.transforms import IdentityTransform
 
-from tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
-from tasks.vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
-from tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
+from radiant.tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
+from radiant.tasks.vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
+from radiant.tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
 
 NAMESPACE = "radiant"
 

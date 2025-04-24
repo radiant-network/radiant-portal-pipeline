@@ -6,7 +6,7 @@ from airflow.operators.python import ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
-from tasks.starrocks.operator import (
+from radiant.tasks.starrocks.operator import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )

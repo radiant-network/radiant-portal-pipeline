@@ -6,7 +6,7 @@ from airflow.models import Variable
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.triggers.base import TaskSuccessEvent
 
-from tasks.starrocks.trigger import (
+from radiant.tasks.starrocks.trigger import (
     StarRocksTaskCompleteTrigger,
 )
 
@@ -24,6 +24,7 @@ class SubmitTaskOptions:
         enable_spill (bool): Flag to enable or disable spilling.
         spill_mode (str): Mode of spilling, e.g., 'auto'.
     """
+
     max_query_timeout: int = 10000
     poll_interval: int = 30
     enable_spill: bool = False

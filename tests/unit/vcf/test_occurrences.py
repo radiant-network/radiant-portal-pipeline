@@ -2,9 +2,9 @@ import math
 
 import pytest
 
-from tasks.vcf.common import Common
-from tasks.vcf.experiment import Case, Experiment
-from tasks.vcf.occurrence import (
+from radiant.tasks.vcf.common import Common
+from radiant.tasks.vcf.experiment import Case, Experiment
+from radiant.tasks.vcf.occurrence import (
     AUTOSOMAL_ORIGINS_LOOKUP,
     X_ORIGINS_LOOKUP,
     Y_ORIGINS_LOOKUP,
@@ -19,7 +19,7 @@ from tasks.vcf.occurrence import (
     parental_origin,
     process_occurrence,
 )
-from tasks.vcf.pedigree import Pedigree
+from radiant.tasks.vcf.pedigree import Pedigree
 
 from .vcf_test_utils import variant
 

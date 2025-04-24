@@ -1,5 +1,4 @@
 testcontainers
-boto3
 requests
 pysam
 pandas

@@ -4,7 +4,7 @@ from airflow.models import Param, Variable
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 
-from tasks.starrocks.operator import (
+from radiant.tasks.starrocks.operator import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )
