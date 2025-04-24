@@ -5,6 +5,11 @@
 # - (Secret) GITHUB_TOKEN: A GitHub token with permissions to push to the registry
 name: Build and Push Docker Image
 
+env:
+  IMAGE_NAME: radiant-airflow
+  NAMESPACE: radiant-network
+  REGISTRY: ghcr.io
+
 on:
   push:
     branches: [ "**" ]  # TODO : For test purpose, change to main before merging
@@ -28,7 +33,7 @@ jobs:
       - name: Log in to the Container registry
         uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
         with:
-          registry: ghcr.io
+          registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
@@ -36,7 +41,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
         with:
-          images: ghcr.io/radiant-airflow
+          images: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}
           tags: |
             type=semver,pattern={{raw}} 
             type=semver,pattern={{version}}
@@ -58,6 +63,6 @@ jobs:
       - name: Generate artifact attestation
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ghcr.io/radiant-airflow
+          subject-name: ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
