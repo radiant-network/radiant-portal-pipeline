@@ -7,7 +7,7 @@ from airflow.decorators import task
 
 
 def expensive_api_call():
-    sleep(1000)
+    sleep(100)
     return "Hello from Airflow!"
 
 
