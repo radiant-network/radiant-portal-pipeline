@@ -35,7 +35,7 @@ with DAG(
         cases = [
             Case(
                 case_id=i,
-                vcf_file="s3+http://vcf/variants.FM0000398.vep.vcf.gz",
+                vcf_file="s3://cqdg-qa-file-import/jmichaud/study1/dataset_data2/annotated_vcf/variants.FM0000398.vep.vcf.gz",
                 experiments=[
                     Experiment(
                         seq_id=i,

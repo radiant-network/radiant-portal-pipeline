@@ -19,13 +19,17 @@ RUN curl -L -O https://github.com/samtools/htslib/releases/download/1.21/htslib-
 USER airflow
 
 RUN mkdir -p /home/airflow/.venv/radiant
-COPY requirements.txt /home/airflow/.venv/radiant/requirements.txt
+
 RUN python3 -m venv /home/airflow/.venv/radiant
 
 # Force Install Cyvcf2 using installed htslib
 RUN CYVCF2_HTSLIB_MODE=EXTERNAL /home/airflow/.venv/radiant/bin/pip install --force --no-binary cyvcf2 cyvcf2
 
+COPY requirements.txt /home/airflow/.venv/radiant/requirements.txt
 RUN /home/airflow/.venv/radiant/bin/pip install -r /home/airflow/.venv/radiant/requirements.txt
+
+COPY requirements.txt /home/airflow/.venv/radiant/requirements-airflow.txt
+RUN /home/airflow/.venv/radiant/bin/pip install --no-deps -r /home/airflow/.venv/radiant/requirements-airflow.txt
 
 
 
