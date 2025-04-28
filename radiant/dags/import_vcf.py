@@ -20,10 +20,11 @@ GROUPED_CHROMOSOMES = [
 ]
 
 with DAG(
-    dag_id="import_vcf",
+    dag_id="radiant-import-vcf",
     default_args=default_args,
     start_date=days_ago(1),
     schedule_interval=None,
+    tags=["radiant", "iceberg"],
     catchup=False,
 ) as dag:
 
