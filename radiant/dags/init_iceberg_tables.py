@@ -12,33 +12,39 @@ from radiant.tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
 NAMESPACE = "radiant"
 
 default_args = {
-    "owner": "ferlab",
+    "owner": "radiant",
 }
 
 with DAG(
-    dag_id="init_iceberg_tables",
+    dag_id="radiant-init-iceberg-tables",
     default_args=default_args,
     start_date=days_ago(1),
     schedule_interval=None,
+    tags=["radiant", "iceberg"],
     catchup=False,
 ) as dag:
-    catalog = load_catalog(
-        "default",
-        **{
-            "uri": "http://radiant-iceberg-rest:8181",
-            "token": "mysecret",
-            "s3.endpoint": "http://minio:9000",
-            "s3.access-key-id": "admin",
-            "s3.secret-access-key": "password",
-        },
-    )
+    catalog_settings = {
+        "uri": "http://radiant-iceberg-rest:8181",
+        "token": "mysecret",
+        "s3.endpoint": "http://minio:9000",
+        "s3.access-key-id": "admin",
+        "s3.secret-access-key": "password",
+    }
 
     @task
     def init_database():
+        catalog = load_catalog(
+            "default",
+            **catalog_settings,
+        )
         catalog.create_namespace_if_not_exists(NAMESPACE)
 
     @task
     def create_germline_occurrences_table():
+        catalog = load_catalog(
+            "default",
+            **catalog_settings,
+        )
         table_name = f"{NAMESPACE}.germline_snv_occurrences"
         if catalog.table_exists(table_name):
             print(f"Deleting existing table {table_name}")
@@ -74,6 +80,10 @@ with DAG(
 
     @task
     def create_germline_variants_table():
+        catalog = load_catalog(
+            "default",
+            **catalog_settings,
+        )
         table_name = f"{NAMESPACE}.germline_snv_variants"
         if catalog.table_exists(table_name):
             catalog.drop_table(table_name)
@@ -101,6 +111,10 @@ with DAG(
 
     @task
     def create_germline_consequences_table():
+        catalog = load_catalog(
+            "default",
+            **catalog_settings,
+        )
         table_name = f"{NAMESPACE}.germline_snv_consequences"
         if catalog.table_exists(table_name):
             catalog.drop_table(table_name)
