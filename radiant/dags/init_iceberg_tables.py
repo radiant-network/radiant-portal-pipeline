@@ -1,13 +1,6 @@
 from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
-from pyiceberg.catalog import load_catalog
-from pyiceberg.partitioning import PartitionField, PartitionSpec
-from pyiceberg.transforms import IdentityTransform
-
-from radiant.tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
-from radiant.tasks.vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
-from radiant.tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
 
 NAMESPACE = "radiant"
 
@@ -33,6 +26,8 @@ with DAG(
 
     @task
     def init_database():
+        from pyiceberg.catalog import load_catalog
+
         catalog = load_catalog(
             "default",
             **catalog_settings,
@@ -41,6 +36,12 @@ with DAG(
 
     @task
     def create_germline_occurrences_table():
+        from pyiceberg.catalog import load_catalog
+        from pyiceberg.partitioning import PartitionField, PartitionSpec
+        from pyiceberg.transforms import IdentityTransform
+
+        from radiant.tasks.vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
+
         catalog = load_catalog(
             "default",
             **catalog_settings,
@@ -80,6 +81,12 @@ with DAG(
 
     @task
     def create_germline_variants_table():
+        from pyiceberg.catalog import load_catalog
+        from pyiceberg.partitioning import PartitionField, PartitionSpec
+        from pyiceberg.transforms import IdentityTransform
+
+        from radiant.tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
+
         catalog = load_catalog(
             "default",
             **catalog_settings,
@@ -111,6 +118,12 @@ with DAG(
 
     @task
     def create_germline_consequences_table():
+        from pyiceberg.catalog import load_catalog
+        from pyiceberg.partitioning import PartitionField, PartitionSpec
+        from pyiceberg.transforms import IdentityTransform
+
+        from radiant.tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
+
         catalog = load_catalog(
             "default",
             **catalog_settings,
