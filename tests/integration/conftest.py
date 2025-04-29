@@ -227,6 +227,9 @@ def starrocks_container(minio_container):
         cursor.execute(f"CREATE DATABASE IF NOT EXISTS {test_db_name};")
         connection.commit()
 
+    # Ensure starrocks ad the backend node is ready
+    time.sleep(20)
+
     yield StarRocksEnvironment(
         host="localhost",
         query_port=query_port,
@@ -240,7 +243,6 @@ def starrocks_container(minio_container):
     container.stop()
 
 
-@pytest.mark.slow
 @pytest.fixture(scope="session")
 def radiant_airflow_container(starrocks_container):
     client = docker.from_env()
@@ -283,9 +285,6 @@ def radiant_airflow_container(starrocks_container):
     container.exec(["airflow", "pools", "set", "starrocks_insert_pool", "1", "StarRocks insert pool"])
 
     _api_port = container.get_exposed_port(AIRFLOW_API_PORT)
-
-    # This is required to ensure the link between Airflow and StarRocks is properly established
-    time.sleep(20)
 
     yield container
     container.stop()
