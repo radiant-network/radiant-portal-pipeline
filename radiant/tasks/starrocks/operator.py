@@ -9,6 +9,7 @@ from radiant.tasks.starrocks.trigger import (
     StarRocksTaskCompleteTrigger,
 )
 
+STARROCKS_INSERT_POOL = "starrocks_insert_pool"
 STARROCKS_TASK_TEMPLATE = "StarRocksSQLExecuteQueryOperator_Task_{uid}"
 
 
@@ -26,7 +27,7 @@ class SubmitTaskOptions:
 
     max_query_timeout: int = 10000
     poll_interval: int = 30
-    enable_spill: bool = False
+    enable_spill: bool = True
     spill_mode: str = "auto"
     extra_args: dict[str, Any] = None
 
@@ -43,7 +44,6 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
 
     def __init__(
         self,
-        submit_task: bool = False,
         submit_task_options: SubmitTaskOptions = None,
         query_params: dict = None,
         **kwargs,
@@ -53,7 +53,7 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
             conn_id=conn_id,
             **kwargs,
         )
-        self.submit_task = submit_task
+        self.submit_task = submit_task_options is not None
         self.submit_task_options = submit_task_options or SubmitTaskOptions()
         self.query_params = query_params or {}
 

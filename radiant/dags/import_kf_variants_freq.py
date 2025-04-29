@@ -35,12 +35,9 @@ with DAG(
     insert_kf_variants_freq = StarRocksSQLExecuteQueryOperator(
         task_id="insert",
         sql="./sql/kf/kf_variants_freq_insert.sql",
-        submit_task=True,
         submit_task_options=SubmitTaskOptions(
             max_query_timeout=7200,
             poll_interval=10,
-            enable_spill=True,
-            spill_mode="auto",
         ),
     )
 

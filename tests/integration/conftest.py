@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -45,6 +46,8 @@ STARROCKS_USER = "root"
 STARROCKS_PWD = ""
 STARROCKS_DATABASE_PREFIX = "test"
 STARROCKS_ICEBERG_CATALOG_NAME_PREFIX = "iceberg_catalog"
+
+AIRFLOW_API_PORT = 8080
 
 
 # Utility classes
@@ -212,15 +215,17 @@ def starrocks_container(minio_container):
     fe_http_port = container.get_exposed_port(STARROCKS_FE_HTTP_PORT)
     be_http_port = container.get_exposed_port(STARROCKS_BE_HTTP_PORT)
 
-    with pymysql.connect(
-        host="localhost",
-        port=int(query_port),
-        user=STARROCKS_USER,
-        password=STARROCKS_PWD,
-    ) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {test_db_name};")
-            connection.commit()
+    with (
+        pymysql.connect(
+            host="localhost",
+            port=int(query_port),
+            user=STARROCKS_USER,
+            password=STARROCKS_PWD,
+        ) as connection,
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(f"CREATE DATABASE IF NOT EXISTS {test_db_name};")
+        connection.commit()
 
     yield StarRocksEnvironment(
         host="localhost",
@@ -242,7 +247,7 @@ def radiant_airflow_container(starrocks_container):
     for container in client.containers.list():
         if "radiant-airflow" in container.name:
             ports = container.attrs["NetworkSettings"]["Ports"]
-            query_port = ports["8080/tcp"][0]["HostPort"]  # TODO Make a constant for this
+            query_port = ports[f"{AIRFLOW_API_PORT}/tcp"][0]["HostPort"]
             yield RadiantAirflowInstance("localhost", query_port)
             return
 
@@ -253,11 +258,11 @@ def radiant_airflow_container(starrocks_container):
         .with_env("AIRFLOW__CORE__DAGS_FOLDER", "/opt/airflow/radiant/dags")
         .with_env("PYTHONPATH", "$PYTHONPATH:/opt/airflow")
         .with_volume_mapping(host=str(RADIANT_DIR), container="/opt/airflow/radiant")
-        .with_exposed_ports(8080)
+        .with_exposed_ports(AIRFLOW_API_PORT)
     )
 
     container.start()
-    wait_for_logs(container, "\[INFO\] Starting gunicorn", timeout=60)
+    wait_for_logs(container, "Starting gunicorn", timeout=60)
 
     # Manually add pool & connection after container start
     container.exec(
@@ -276,7 +281,10 @@ def radiant_airflow_container(starrocks_container):
     )
     container.exec(["airflow", "pools", "set", "starrocks_insert_pool", "1", "StarRocks insert pool"])
 
-    _api_port = container.get_exposed_port(8080)
+    _api_port = container.get_exposed_port(AIRFLOW_API_PORT)
+
+    # This is required to ensure the link between Airflow and StarRocks is properly established
+    time.sleep(20)
 
     yield container
     container.stop()

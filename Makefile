@@ -16,7 +16,10 @@ test-unit:
 	pytest tests/unit/
 
 test-integration:
-	pytest tests/integration
+	pytest -m "not slow" tests/integration
+
+test-integration-slow:
+	pytest -m slow tests/integration
 
 test-static:
 	ruff check radiant/ tests/

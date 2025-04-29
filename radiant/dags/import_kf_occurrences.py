@@ -7,6 +7,7 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
 from radiant.tasks.starrocks.operator import (
+    STARROCKS_INSERT_POOL,
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )
@@ -81,7 +82,6 @@ with DAG(
         insert_stg_variants = StarRocksSQLExecuteQueryOperator(
             task_id="insert",
             sql="./sql/kf/stg_kf_variants_insert.sql",
-            submit_task=True,
             submit_task_options=std_submit_task_opts,
         )
         check_should_skip_stg_kf_variants >> create_stg_variants >> insert_stg_variants
@@ -108,9 +108,8 @@ with DAG(
         insert_new_occurrences_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert",
             sql="./sql/kf/kf_occurrences_insert_part.sql",
-            submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool="starrocks_insert_pool",
+            pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
         ).expand(query_params=get_parts_to_insert(fetch_partitions.output))
 
@@ -123,9 +122,8 @@ with DAG(
         insert_overwrite_occurrences_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="overwrite",
             sql="./sql/kf/kf_occurrences_overwrite_part.sql",
-            submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool="starrocks_insert_pool",
+            pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
         ).expand(query_params=get_parts_to_overwrite(fetch_partitions.output))
 

@@ -6,28 +6,18 @@ from airflow.operators.python import ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
+from radiant.dags import ICEBERG_COMMON_PARAMS, NAMESPACE
 from radiant.tasks.starrocks.operator import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )
-
-NAMESPACE = "radiant"
 
 default_args = {
     "owner": "ferlab",
 }
 
 dag_params = {
-    "iceberg_catalog": Param(
-        default="iceberg_catalog",
-        description="The iceberg catalog to use.",
-        type="string",
-    ),
-    "iceberg_database": Param(
-        default="iceberg_database",
-        description="The iceberg database to use.",
-        type="string",
-    ),
+    **ICEBERG_COMMON_PARAMS,
     "force_import_hashes": Param(
         default=False,
         description="Set to True to force import of hashes into the variant_dict table. (Defaults to False)",
@@ -45,14 +35,12 @@ def group_template(group_id: str):
     create_table_if_not_exists = StarRocksSQLExecuteQueryOperator(
         task_id="create-table",
         sql=f"./sql/open_data/{group_id}_create_table.sql",
-        submit_task=False,
         trigger_rule="none_failed",
     )
 
     insert_table = StarRocksSQLExecuteQueryOperator(
         task_id="insert",
         sql=f"./sql/open_data/{group_id}_insert.sql",
-        submit_task=True,
         submit_task_options=SubmitTaskOptions(
             max_query_timeout=3600,
             poll_interval=30,

@@ -4,7 +4,9 @@ from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 
+from radiant import NAMESPACE
 from radiant.tasks.starrocks.operator import (
+    STARROCKS_INSERT_POOL,
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )
@@ -16,8 +18,6 @@ default_args = {
 std_submit_task_opts = SubmitTaskOptions(
     max_query_timeout=3600,
     poll_interval=30,
-    enable_spill=True,
-    spill_mode="auto",
 )
 
 dag_params = {
@@ -29,7 +29,7 @@ dag_params = {
 }
 
 with DAG(
-    dag_id="import_kf_consequences",
+    dag_id=f"{NAMESPACE}-import-kf-consequences",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
@@ -46,7 +46,6 @@ with DAG(
     insert_into_kf_consequences = StarRocksSQLExecuteQueryOperator(
         task_id="insert",
         sql="./sql/kf/kf_consequences_insert.sql",
-        submit_task=True,
         submit_task_options=std_submit_task_opts,
     )
 
@@ -58,7 +57,6 @@ with DAG(
     fetch_filter_partitions = StarRocksSQLExecuteQueryOperator(
         task_id="fetch_filter_partitions",
         sql="SELECT part FROM test_etl.consequences_filter GROUP BY part HAVING count(1) > 0",
-        do_xcom_push=True,
         trigger_rule="all_done",
     )
 
@@ -72,9 +70,8 @@ with DAG(
         insert_new_kf_consequences_filter_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert",
             sql="./sql/kf/kf_consequences_filter_insert_part.sql",
-            submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool="starrocks_insert_pool",
+            pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
         ).expand(
             query_params=get_new_parts(
@@ -92,9 +89,8 @@ with DAG(
         insert_overwrite_kf_variants_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert",
             sql="./sql/kf/kf_consequences_filter_overwrite_part.sql",
-            submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool="starrocks_insert_pool",
+            pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
         ).expand(
             query_params=get_overwrite_parts(

@@ -1,31 +1,6 @@
-import json
-
-import pandas as pd
-import pyarrow as pa
 import pytest
 
-
-def get_pyarrow_table_from_csv(
-    csv_path, sep: str | None, json_fields: list[str] | None = None, is_clinvar: bool = False
-) -> pa.Table:
-    """
-    Get the pyarrow schema from a CSV file.
-    """
-    df = pd.read_csv(csv_path, sep=sep)
-
-    if is_clinvar:
-        df = df.applymap(lambda x: [""] if pd.isna(x) else x)
-
-    if json_fields:
-        for field in json_fields:
-            if field in df.columns:
-                df[field] = df[field].apply(lambda x: json.loads(x) if isinstance(x, str) else x)
-
-    for col in df.columns:
-        if df[col].apply(lambda x: isinstance(x, list)).all():
-            df[col] = pa.array(df[col].tolist(), type=pa.list_(pa.string()))
-
-    return pa.Table.from_pandas(df)
+from tests.utils.dags import get_pyarrow_table_from_csv
 
 
 @pytest.fixture(scope="session")
@@ -56,7 +31,7 @@ def open_data_iceberg_tables(iceberg_client, setup_namespace, resources_dir):
             ]
 
         _content = get_pyarrow_table_from_csv(
-            csv_path=_path, sep="\t", json_fields=_json_fields, is_clinvar=True if table == "clinvar" else False
+            csv_path=_path, sep="\t", json_fields=_json_fields, is_clinvar=table == "clinvar"
         )
         iceberg_client.create_table_if_not_exists(
             f"{setup_namespace}.{table}",
