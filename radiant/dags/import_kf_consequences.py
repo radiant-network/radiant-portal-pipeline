@@ -57,6 +57,7 @@ with DAG(
     fetch_filter_partitions = StarRocksSQLExecuteQueryOperator(
         task_id="fetch_filter_partitions",
         sql="SELECT part FROM test_etl.consequences_filter GROUP BY part HAVING count(1) > 0",
+        do_xcom_push=True,
         trigger_rule="all_done",
     )
 
