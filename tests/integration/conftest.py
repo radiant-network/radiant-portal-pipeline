@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
@@ -263,6 +264,9 @@ def radiant_airflow_container(starrocks_container):
     container.start()
     wait_for_logs(container, "Starting gunicorn", timeout=60)
 
+    # Manual delay for 20 seconds, because airflow standalone doesn't continuously output logs
+    time.sleep(20)
+
     # Manually add pool & connection after container start
     container.exec(
         [
@@ -280,8 +284,6 @@ def radiant_airflow_container(starrocks_container):
     )
     container.exec(["airflow", "pools", "set", "starrocks_insert_pool", "1", "StarRocks insert pool"])
 
-    _api_port = container.get_exposed_port(AIRFLOW_API_PORT)
-
     yield container
     container.stop()
 
@@ -298,7 +300,7 @@ def starrocks_session(starrocks_container):
         yield connection
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def s3_fs(minio_container):
     fs = fsspec.filesystem(
         "s3",
@@ -352,8 +354,8 @@ def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_contai
         cursor.execute(f"DROP CATALOG {catalog_name};")
 
 
-@pytest.fixture(scope="session", autouse=True)
-def setup_namespace(iceberg_client):
+@pytest.fixture(scope="session")
+def setup_namespace(s3_fs, iceberg_client):
     namespace = f"ns_{uuid.uuid4().hex[:8]}"
     iceberg_client.create_namespace(namespace)
     iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_occurrences", schema=OCCURRENCE_SCHEMA)
