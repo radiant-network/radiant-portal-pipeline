@@ -1,6 +1,6 @@
 from airflow import DAG
 from airflow.decorators import task
-from airflow.models import Param, Variable
+from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 
@@ -74,7 +74,7 @@ with DAG(
             sql="./sql/kf/kf_consequences_filter_insert_part.sql",
             submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
+            pool="starrocks_insert_pool",
             pool_slots=1,
         ).expand(
             query_params=get_new_parts(
@@ -94,7 +94,7 @@ with DAG(
             sql="./sql/kf/kf_consequences_filter_overwrite_part.sql",
             submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
+            pool="starrocks_insert_pool",
             pool_slots=1,
         ).expand(
             query_params=get_overwrite_parts(

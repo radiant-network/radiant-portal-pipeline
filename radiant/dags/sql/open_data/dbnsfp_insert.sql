@@ -16,6 +16,6 @@ SELECT
     d.LRT_pred AS lrt_pred,
     d.phyloP17way_primate AS phyloP17way_primate,
     d.phyloP100way_vertebrate AS phyloP100way_vertebrate
-FROM iceberg.poc_starrocks.dbnsfp d
+FROM {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.dbnsfp d
 JOIN variant_dict v ON d.hash = v.hash
 LEFT ANTI JOIN dbnsfp d ON d.locus_id = v.locus_id

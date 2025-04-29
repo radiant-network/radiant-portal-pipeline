@@ -2,7 +2,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from airflow.models import Variable
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.triggers.base import TaskSuccessEvent
 
@@ -49,12 +48,9 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         query_params: dict = None,
         **kwargs,
     ):
-        conn_id = Variable.get("STARROCKS_CONNECTION_ID")
-        database = Variable.get("STARROCKS_DATABASE")
-
+        conn_id = "starrocks_conn"
         super().__init__(
             conn_id=conn_id,
-            database=database,
             **kwargs,
         )
         self.submit_task = submit_task

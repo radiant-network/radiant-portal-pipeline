@@ -22,6 +22,8 @@ CURRENT_DIR = Path(__file__).parent
 # Path to the resources directory
 RESOURCES_DIR = CURRENT_DIR.parent / "resources" / "integration"
 
+RADIANT_DIR = CURRENT_DIR.parent.parent / "radiant"
+
 # Constants
 MINIO_IMAGE = "minio/minio:latest"
 MINIO_ACCESS_KEY = "admin"
@@ -66,8 +68,8 @@ class IcebergInstance:
         self.catalog_name = catalog_name
 
 
-class StarRocksInstance:
-    def __init__(self, host, query_port, fe_port, be_port, user, password):
+class StarRocksEnvironment:
+    def __init__(self, host, query_port, fe_port, be_port, user, password, database):
         self.host = host
         self.query_port = query_port
         self.fe_port = fe_port
@@ -75,6 +77,7 @@ class StarRocksInstance:
         self.endpoint = f"http://{host}:{query_port}"
         self.user = user
         self.password = password
+        self.database = database
 
 
 class StarRocksIcebergCatalog:
@@ -86,6 +89,21 @@ class StarRocksIcebergDatabase:
     def __init__(self, catalog, name):
         self.catalog = catalog
         self.name = name
+
+
+class RadiantAirflowInstance:
+    def __init__(self, host, port):
+        self.host = host
+        self.port = port
+        self.endpoint = f"http://{host}:{port}"
+
+
+@pytest.fixture(scope="session")
+def resources_dir():
+    """
+    Fixture to provide the path to the resources directory.
+    """
+    return RESOURCES_DIR
 
 
 # Fixtures
@@ -169,13 +187,17 @@ def iceberg_container(minio_container):
 def starrocks_container(minio_container):
     client = docker.from_env()
 
+    test_db_name = f"{STARROCKS_DATABASE_PREFIX}_{uuid.uuid4().hex[:8]}"
+
     for container in client.containers.list():
         if STARROCKS_HOSTNAME in container.name:
             ports = container.attrs["NetworkSettings"]["Ports"]
             query_port = ports[f"{STARROCKS_QUERY_PORT}/tcp"][0]["HostPort"]
             fe_http_port = ports[f"{STARROCKS_FE_HTTP_PORT}/tcp"][0]["HostPort"]
             be_http_port = ports[f"{STARROCKS_BE_HTTP_PORT}/tcp"][0]["HostPort"]
-            yield StarRocksInstance("localhost", query_port, fe_http_port, be_http_port, STARROCKS_USER, STARROCKS_PWD)
+            yield StarRocksEnvironment(
+                "localhost", query_port, fe_http_port, be_http_port, STARROCKS_USER, STARROCKS_PWD, test_db_name
+            )
             return
 
     container = (
@@ -190,15 +212,73 @@ def starrocks_container(minio_container):
     fe_http_port = container.get_exposed_port(STARROCKS_FE_HTTP_PORT)
     be_http_port = container.get_exposed_port(STARROCKS_BE_HTTP_PORT)
 
-    yield StarRocksInstance(
+    with pymysql.connect(
+        host="localhost",
+        port=int(query_port),
+        user=STARROCKS_USER,
+        password=STARROCKS_PWD,
+    ) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {test_db_name};")
+            connection.commit()
+
+    yield StarRocksEnvironment(
         host="localhost",
         query_port=query_port,
         fe_port=fe_http_port,
         be_port=be_http_port,
         user=STARROCKS_USER,
         password=STARROCKS_PWD,
+        database=test_db_name,
     )
 
+    container.stop()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def radiant_airflow_container(starrocks_container):
+    client = docker.from_env()
+
+    for container in client.containers.list():
+        if "radiant-airflow" in container.name:
+            ports = container.attrs["NetworkSettings"]["Ports"]
+            query_port = ports["8080/tcp"][0]["HostPort"]  # TODO Make a constant for this
+            yield RadiantAirflowInstance("localhost", query_port)
+            return
+
+    container = (
+        DockerContainer("radiant-airflow:latest")
+        .with_name("radiant-airflow")
+        .with_command("standalone")
+        .with_env("AIRFLOW__CORE__DAGS_FOLDER", "/opt/airflow/radiant/dags")
+        .with_env("PYTHONPATH", "$PYTHONPATH:/opt/airflow")
+        .with_volume_mapping(host=str(RADIANT_DIR), container="/opt/airflow/radiant")
+        .with_exposed_ports(8080)
+    )
+
+    container.start()
+    wait_for_logs(container, "\[INFO\] Starting gunicorn", timeout=60)
+
+    # Manually add pool & connection after container start
+    container.exec(
+        [
+            "airflow",
+            "connections",
+            "add",
+            "starrocks_conn",
+            "--conn-uri",
+            (
+                f"mysql://{starrocks_container.user}:{starrocks_container.password}"
+                f"@host.docker.internal:{starrocks_container.query_port}"
+                f"/{starrocks_container.database}"
+            ),
+        ]
+    )
+    container.exec(["airflow", "pools", "set", "starrocks_insert_pool", "1", "StarRocks insert pool"])
+
+    _api_port = container.get_exposed_port(8080)
+
+    yield container
     container.stop()
 
 
@@ -209,11 +289,12 @@ def starrocks_session(starrocks_container):
         port=int(starrocks_container.query_port),
         password=starrocks_container.password,
         user=starrocks_container.user,
+        database=starrocks_container.database,
     ) as connection:
         yield connection
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def s3_fs(minio_container):
     fs = fsspec.filesystem(
         "s3",
@@ -242,7 +323,7 @@ def iceberg_client(iceberg_container, iceberg_catalog_properties):
     return RestCatalog(name=iceberg_container.catalog_name, **iceberg_catalog_properties)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_container):
     with starrocks_session.cursor() as cursor:
         catalog_name = f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{uuid.uuid4().hex[:8]}"
@@ -253,12 +334,12 @@ def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_contai
         (
             'type'='iceberg',
             'iceberg.catalog.type'='rest',
-            'iceberg.catalog.uri'='{iceberg_container.endpoint}',
+            'iceberg.catalog.uri'='http://host.docker.internal:{iceberg_container.port}',
             'iceberg.catalog.token' = '{iceberg_container.token}',
             'aws.s3.region'='us-east-1',
             'aws.s3.access_key'='{minio_container.access_key}',
             'aws.s3.secret_key'='{minio_container.secret_key}',
-            'aws.s3.endpoint'='{minio_container.endpoint}',
+            'aws.s3.endpoint'='http://host.docker.internal:{minio_container.api_port}',
             'aws.s3.enable_path_style_access'='true',
             'client.factory'='com.starrocks.connector.share.iceberg.IcebergAwsClientFactory'
         );""")
@@ -267,16 +348,7 @@ def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_contai
         cursor.execute(f"DROP CATALOG {catalog_name};")
 
 
-@pytest.fixture(scope="session")
-def starrocks_iceberg_database(starrocks_session, starrocks_iceberg_catalog):
-    with starrocks_session.cursor() as cursor:
-        database_name = f"{STARROCKS_DATABASE_PREFIX}_{uuid.uuid4().hex[:8]}"
-        cursor.execute(f"CREATE DATABASE `{starrocks_iceberg_catalog.name}.{database_name}`;")
-        yield StarRocksIcebergDatabase(catalog=starrocks_iceberg_catalog.name, name=database_name)
-        cursor.execute(f"DROP DATABASE `{starrocks_iceberg_catalog.name}.{database_name}`;")
-
-
-@pytest.fixture(autouse=True)
+@pytest.fixture(scope="session", autouse=True)
 def setup_namespace(iceberg_client):
     namespace = f"ns_{uuid.uuid4().hex[:8]}"
     iceberg_client.create_namespace(namespace)

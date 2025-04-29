@@ -436,7 +436,7 @@ services:
         ulimit -u 65535;
         ulimit -n 65535;
         sleep 15;
-        mysql --connect-timeout 2 -h radiant-starrocks-fe -P 9030 -u root -e "ALTER SYSTEM ADD COMPUTE NODE \"radiant-starrocks-cn:9050\";"
+        mysql --connect-timeout 2 -h radiant-starrocks-fe -P 9030 -u root -e \"ALTER SYSTEM ADD COMPUTE NODE \\\"radiant-starrocks-cn:9050\\\";\"
         bash /opt/starrocks/be/bin/start_be.sh
       "
     ports:

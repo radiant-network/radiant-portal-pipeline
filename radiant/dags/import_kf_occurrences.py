@@ -1,6 +1,6 @@
 from airflow import DAG
 from airflow.decorators import task
-from airflow.models import Param, Variable
+from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
@@ -110,7 +110,7 @@ with DAG(
             sql="./sql/kf/kf_occurrences_insert_part.sql",
             submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
+            pool="starrocks_insert_pool",
             pool_slots=1,
         ).expand(query_params=get_parts_to_insert(fetch_partitions.output))
 
@@ -125,7 +125,7 @@ with DAG(
             sql="./sql/kf/kf_occurrences_overwrite_part.sql",
             submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
+            pool="starrocks_insert_pool",
             pool_slots=1,
         ).expand(query_params=get_parts_to_overwrite(fetch_partitions.output))
 
