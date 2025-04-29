@@ -12,9 +12,7 @@ from radiant.tasks.starrocks.operator import (
     SubmitTaskOptions,
 )
 
-default_args = {
-    "owner": "ferlab",
-}
+default_args = {"owner": "ferlab"}
 
 dag_params = {
     **ICEBERG_COMMON_PARAMS,
@@ -27,33 +25,27 @@ dag_params = {
 
 
 def check_import_hashes(**context):
-    import_hashes = context["params"].get("force_import_hashes", False)
-    return import_hashes
+    return context["params"].get("force_import_hashes", False)
 
 
 def group_template(group_id: str):
-    create_table_if_not_exists = StarRocksSQLExecuteQueryOperator(
-        task_id="create-table",
-        sql=f"./sql/open_data/{group_id}_create_table.sql",
-        trigger_rule="none_failed",
-    )
-
-    insert_table = StarRocksSQLExecuteQueryOperator(
-        task_id="insert",
-        sql=f"./sql/open_data/{group_id}_insert.sql",
-        submit_task_options=SubmitTaskOptions(
-            max_query_timeout=3600,
-            poll_interval=30,
-            enable_spill=True,
-            spill_mode="auto",
+    return [
+        StarRocksSQLExecuteQueryOperator(
+            task_id="create-table",
+            sql=f"./sql/open_data/{group_id}_create_table.sql",
+            trigger_rule="none_failed",
         ),
-        params={
-            "iceberg_catalog": "{{ params.iceberg_catalog }}",
-            "iceberg_database": "{{ params.iceberg_database }}",
-        },
-        trigger_rule="none_failed",
-    )
-    return [create_table_if_not_exists, insert_table]
+        StarRocksSQLExecuteQueryOperator(
+            task_id="insert",
+            sql=f"./sql/open_data/{group_id}_insert.sql",
+            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+            params={
+                "iceberg_catalog": "{{ params.iceberg_catalog }}",
+                "iceberg_database": "{{ params.iceberg_database }}",
+            },
+            trigger_rule="none_failed",
+        ),
+    ]
 
 
 with DAG(
@@ -67,14 +59,12 @@ with DAG(
     start = EmptyOperator(task_id="start")
 
     with TaskGroup(group_id="hashes") as hashes:
-        check_import_hashes = ShortCircuitOperator(
+        ShortCircuitOperator(
             task_id="check_skip",
             python_callable=check_import_hashes,
             ignore_downstream_trigger_rules=False,
             trigger_rule="all_done",
-        )
-
-        import_hashes = TriggerDagRunOperator(
+        ) >> TriggerDagRunOperator(
             task_id="import_variant_hashes",
             trigger_dag_id=f"{NAMESPACE}-import-kf-hashes",
             reset_dag_run=True,
@@ -82,21 +72,10 @@ with DAG(
             poke_interval=30,
         )
 
-        check_import_hashes >> import_hashes
-
     tasks = [start, hashes]
-    group_ids = [
-        "1000_genomes",
-        "clinvar",
-        "dbnsfp",
-        "gnomad",
-        "spliceai",
-        "topmed_bravo",
-    ]
+    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
     for group in group_ids:
         with TaskGroup(group_id=f"{group}", tooltip=group):
-            _tasks = group_template(group_id=group)
-            for task in _tasks:
-                tasks.append(task)
+            tasks.extend(group_template(group_id=group))
 
     chain(*tasks)

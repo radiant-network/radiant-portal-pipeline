@@ -5,6 +5,7 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
+from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
 
 default_args = {
@@ -31,7 +32,7 @@ run_dag_operator = functools.partial(
 
 
 with DAG(
-    dag_id="import_kf_e2e",
+    dag_id=f"{NAMESPACE}-import-kf-e2e",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
@@ -62,9 +63,13 @@ with DAG(
         ignore_downstream_trigger_rules=True,
     )
 
-    import_occurrences = run_dag_operator(task_id="import_occurrences", trigger_dag_id="import_kf_occurrences")
-    import_variants = run_dag_operator(task_id="import_variants", trigger_dag_id="import_kf_variants")
-    import_consequences = run_dag_operator(task_id="import_consequences", trigger_dag_id="import_kf_consequences")
+    import_occurrences = run_dag_operator(
+        task_id="import_occurrences", trigger_dag_id=f"{NAMESPACE}-import-kf-occurrences"
+    )
+    import_variants = run_dag_operator(task_id="import_variants", trigger_dag_id=f"{NAMESPACE}-import-kf-variants")
+    import_consequences = run_dag_operator(
+        task_id="import_consequences", trigger_dag_id=f"{NAMESPACE}-import-kf-consequences"
+    )
 
     update_sequencing_experiments = StarRocksSQLExecuteQueryOperator(
         task_id="insert_new_sequencing_experiments",

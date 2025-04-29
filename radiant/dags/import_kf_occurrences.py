@@ -6,6 +6,7 @@ from airflow.operators.python import ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
+from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import (
     STARROCKS_INSERT_POOL,
     StarRocksSQLExecuteQueryOperator,
@@ -43,7 +44,7 @@ def check_import_stg_kf_variants(**context):
 
 
 with DAG(
-    dag_id="import_kf_occurrences",
+    dag_id=f"{NAMESPACE}-import-kf-occurrences",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
@@ -138,7 +139,7 @@ with DAG(
 
     import_variants_freq = TriggerDagRunOperator(
         task_id="import_variants_freq",
-        trigger_dag_id="import_kf_variants_freq",
+        trigger_dag_id=f"{NAMESPACE}-import-kf-variants-freq",
         conf={"parts": "{{ params.parts | list | tojson }}"},
         reset_dag_run=True,
         wait_for_completion=True,

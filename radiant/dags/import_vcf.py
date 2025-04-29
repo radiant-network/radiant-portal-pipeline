@@ -2,6 +2,8 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
 
+from radiant.dags import NAMESPACE
+
 default_args = {
     "owner": "radiant",
 }
@@ -20,7 +22,7 @@ GROUPED_CHROMOSOMES = [
 ]
 
 with DAG(
-    dag_id="radiant-import-vcf",
+    dag_id=f"{NAMESPACE}-radiant-import-vcf",
     default_args=default_args,
     start_date=days_ago(1),
     schedule_interval=None,

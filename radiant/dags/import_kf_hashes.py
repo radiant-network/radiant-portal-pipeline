@@ -8,6 +8,10 @@ from radiant.tasks.starrocks.operator import (
     SubmitTaskOptions,
 )
 
+default_args = {
+    "owner": "ferlab",
+}
+
 TASK_PARAMS = {
     "iceberg_catalog": "{{ params.iceberg_catalog }}",
     "iceberg_database": "{{ params.iceberg_database }}",
@@ -22,7 +26,7 @@ with DAG(
     dag_id=f"{NAMESPACE}-import-kf-hashes",
     schedule_interval=None,
     catchup=False,
-    default_args={"owner": "ferlab"},
+    default_args=default_args,
     tags=["etl", "kf_data"],
     params=dag_params,
 ) as dag:

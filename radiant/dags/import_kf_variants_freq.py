@@ -1,6 +1,7 @@
 from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 
+from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import (
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
@@ -11,7 +12,7 @@ default_args = {
 }
 
 with DAG(
-    dag_id="import_kf_variants_freq",
+    dag_id=f"{NAMESPACE}-import-kf-variants-freq",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,

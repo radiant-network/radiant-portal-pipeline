@@ -2,14 +2,15 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
 
-NAMESPACE = "radiant"
+from radiant.dags import NAMESPACE
+
 PATH_TO_PYTHON_BINARY = "/home/airflow/.venv/radiant/bin/python"
 default_args = {
     "owner": "radiant",
 }
 
 with DAG(
-    dag_id="radiant-init-iceberg-tables",
+    dag_id=f"{NAMESPACE}-init-iceberg-tables",
     default_args=default_args,
     start_date=days_ago(1),
     schedule_interval=None,

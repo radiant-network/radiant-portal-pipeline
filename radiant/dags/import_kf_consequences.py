@@ -4,7 +4,7 @@ from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 
-from radiant import NAMESPACE
+from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import (
     STARROCKS_INSERT_POOL,
     StarRocksSQLExecuteQueryOperator,
