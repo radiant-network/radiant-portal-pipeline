@@ -28,7 +28,7 @@ RUN CYVCF2_HTSLIB_MODE=EXTERNAL /home/airflow/.venv/radiant/bin/pip install --fo
 COPY requirements.txt /home/airflow/.venv/radiant/requirements.txt
 RUN /home/airflow/.venv/radiant/bin/pip install -r /home/airflow/.venv/radiant/requirements.txt
 
-COPY requirements.txt /home/airflow/.venv/radiant/requirements-airflow.txt
+COPY requirements-airflow.txt /home/airflow/.venv/radiant/requirements-airflow.txt
 RUN /home/airflow/.venv/radiant/bin/pip install --no-deps -r /home/airflow/.venv/radiant/requirements-airflow.txt
 
 
