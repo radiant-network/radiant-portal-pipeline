@@ -56,8 +56,11 @@ with DAG(
     @task.external_python(pool="import_vcf", task_id="import_vcf", python=PATH_TO_PYTHON_BINARY)
     def import_vcf(case: dict, chromosomes: list[str]):
         import logging
+        import sys
 
+        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
         logger = logging.getLogger(__name__)
+
         import os
 
         import fsspec
