@@ -1,6 +1,5 @@
 import os
 import tempfile
-import time
 import uuid
 from pathlib import Path
 
@@ -226,9 +225,6 @@ def starrocks_container(minio_container):
     ):
         cursor.execute(f"CREATE DATABASE IF NOT EXISTS {test_db_name};")
         connection.commit()
-
-    # Ensure starrocks ad the backend node is ready
-    time.sleep(20)
 
     yield StarRocksEnvironment(
         host="localhost",
