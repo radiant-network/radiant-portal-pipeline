@@ -241,7 +241,7 @@ def starrocks_container(minio_container):
 
 
 @pytest.mark.slow
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def radiant_airflow_container(starrocks_container):
     client = docker.from_env()
 
