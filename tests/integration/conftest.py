@@ -331,7 +331,7 @@ def iceberg_client(iceberg_container, iceberg_catalog_properties):
     return RestCatalog(name=iceberg_container.catalog_name, **iceberg_catalog_properties)
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_container):
     with starrocks_session.cursor() as cursor:
         catalog_name = f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{uuid.uuid4().hex[:8]}"
