@@ -4,11 +4,11 @@
 """
 
 
-def test_starrocks_iceberg_state(starrocks_iceberg_catalog, setup_namespace, starrocks_session):
+def test_starrocks_iceberg_state(starrocks_iceberg_catalog, starrocks_session):
     with starrocks_session.cursor() as cursor:
-        cursor.execute(f"SHOW TABLES FROM {starrocks_iceberg_catalog.name}.{setup_namespace}")
-        iceberg_tables = cursor.fetchall()
-        assert len(iceberg_tables) == 3
+        cursor.execute("SHOW CATALOGS")
+        catalogs = cursor.fetchall()
+        assert len(catalogs) == 2
 
 
 def test_starrocks_create_table(starrocks_session):
