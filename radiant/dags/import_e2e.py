@@ -43,12 +43,12 @@ with DAG(
 
     create_sequencing_experiment_table = StarRocksSQLExecuteQueryOperator(
         task_id="create_sequencing_experiment_table",
-        sql="./sql/kf/sequencing_experiment_create_table.sql",
+        sql="./sql/radiant/sequencing_experiment_create_table.sql",
     )
 
     create_sequencing_experiment_delta_view = StarRocksSQLExecuteQueryOperator(
         task_id="create_sequencing_experiment_view",
-        sql="./sql/kf/sequencing_experiment_delta_create_view.sql",
+        sql="./sql/radiant/sequencing_experiment_delta_create_view.sql",
     )
 
     fetch_sequencing_experiment_delta = StarRocksSQLExecuteQueryOperator(
@@ -73,7 +73,7 @@ with DAG(
 
     update_sequencing_experiments = StarRocksSQLExecuteQueryOperator(
         task_id="insert_new_sequencing_experiments",
-        sql="./sql/kf/sequencing_experiment_insert.sql",
+        sql="./sql/radiant/sequencing_experiment_insert.sql",
     )
 
     (

@@ -30,21 +30,21 @@ dag_params = {
         description="An array of integers that represents the parts that need to be processed. ",
         type="array",
     ),
-    "force_import_stg_kf_variants": Param(
+    "force_import_stg_variants": Param(
         default=False,
-        description="Set to True to force import of stg_kf_variants table. (Defaults to False)",
+        description="Set to True to force import of stg_variants table. (Defaults to False)",
         type="boolean",
     ),
 }
 
 
-def check_import_stg_kf_variants(**context):
-    import_stg_kf_variants = context["params"].get("force_import_stg_kf_variants", False)
-    return import_stg_kf_variants
+def check_import_stg_variants(**context):
+    import_stg_variants = context["params"].get("force_import_stg_variants", False)
+    return import_stg_variants
 
 
 with DAG(
-    dag_id=f"{NAMESPACE}-import-kf-occurrences",
+    dag_id=f"{NAMESPACE}-import-occurrences",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
@@ -55,20 +55,20 @@ with DAG(
         task_id="start",
     )
 
-    create_kf_occurrences_table = StarRocksSQLExecuteQueryOperator(
+    create_occurrences_table = StarRocksSQLExecuteQueryOperator(
         task_id="create_table",
-        sql="./sql/kf/kf_occurrences_create_table.sql",
+        sql="./sql/radiant/occurrences_create_table.sql",
     )
 
-    create_kf_occurrences_bitmap_index = StarRocksSQLExecuteQueryOperator(
+    create_occurrences_bitmap_index = StarRocksSQLExecuteQueryOperator(
         task_id="create_bitmap_index",
-        sql="CREATE INDEX locus_id_index ON kf_occurrences (locus_id) USING BITMAP;",
+        sql="CREATE INDEX locus_id_index ON occurrences (locus_id) USING BITMAP;",
     )
 
-    with TaskGroup(group_id="stg_kf_variants") as tg_hashes:
-        check_should_skip_stg_kf_variants = ShortCircuitOperator(
+    with TaskGroup(group_id="stg_variants") as tg_hashes:
+        check_should_skip_stg_variants = ShortCircuitOperator(
             task_id="check_skip",
-            python_callable=check_import_stg_kf_variants,
+            python_callable=check_import_stg_variants,
             ignore_downstream_trigger_rules=False,
             trigger_rule="all_done",
         )
@@ -77,20 +77,20 @@ with DAG(
         # It's "safe-ish" to continue even if the index creation fails.
         create_stg_variants = StarRocksSQLExecuteQueryOperator(
             task_id="create_table",
-            sql="./sql/kf/stg_kf_variants_create_table.sql",
+            sql="./sql/radiant/stg_variants_create_table.sql",
         )
 
         insert_stg_variants = StarRocksSQLExecuteQueryOperator(
             task_id="insert",
-            sql="./sql/kf/stg_kf_variants_insert.sql",
+            sql="./sql/radiant/stg_variants_insert.sql",
             submit_task_options=std_submit_task_opts,
         )
-        check_should_skip_stg_kf_variants >> create_stg_variants >> insert_stg_variants
+        check_should_skip_stg_variants >> create_stg_variants >> insert_stg_variants
 
     fetch_partitions = StarRocksSQLExecuteQueryOperator(
         task_id="fetch_occurrences_partitions",
         sql="""
-        SELECT part FROM test_etl.kf_occurrences
+        SELECT part FROM test_etl.occurrences
         WHERE part IN ({{ params.parts | join(',') }})
         GROUP BY part
         HAVING count(1) > 0
@@ -108,7 +108,7 @@ with DAG(
 
         insert_new_occurrences_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert",
-            sql="./sql/kf/kf_occurrences_insert_part.sql",
+            sql="./sql/radiant/occurrences_insert_part.sql",
             submit_task_options=std_submit_task_opts,
             pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
@@ -122,7 +122,7 @@ with DAG(
 
         insert_overwrite_occurrences_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="overwrite",
-            sql="./sql/kf/kf_occurrences_overwrite_part.sql",
+            sql="./sql/radiant/occurrences_overwrite_part.sql",
             submit_task_options=std_submit_task_opts,
             pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
@@ -130,7 +130,7 @@ with DAG(
 
     import_variants_freq = TriggerDagRunOperator(
         task_id="import_variants_freq",
-        trigger_dag_id="import_kf_variants_freq",
+        trigger_dag_id="import_variants_freq",
         conf={"parts": "{{ params.parts | list | tojson }}"},
         reset_dag_run=True,
         wait_for_completion=True,
@@ -139,8 +139,8 @@ with DAG(
 
     (
         start
-        >> create_kf_occurrences_table
-        >> create_kf_occurrences_bitmap_index
+        >> create_occurrences_table
+        >> create_occurrences_bitmap_index
         >> tg_hashes
         >> fetch_partitions
         >> [

@@ -49,15 +49,15 @@ def open_data_iceberg_tables(
 
 
 @pytest.fixture(scope="session")
-def kf_iceberg_tables(starrocks_iceberg_catalog, iceberg_client, setup_namespace, resources_dir, random_test_id):
+def iceberg_tables(starrocks_iceberg_catalog, iceberg_client, setup_namespace, resources_dir, random_test_id):
     create_and_append_table(
         iceberg_client,
         setup_namespace,
         f"test_{random_test_id}_germline_snv_variants",
-        resources_dir / "kf" / "kf_variants.tsv",
+        resources_dir / "radiant" / "variants.tsv",
     )
 
 
 @pytest.fixture(scope="session")
-def init_iceberg_tables(open_data_iceberg_tables, kf_iceberg_tables):
+def init_iceberg_tables(open_data_iceberg_tables, iceberg_tables):
     yield

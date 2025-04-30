@@ -38,20 +38,20 @@ with DAG(
 ) as dag:
     start = EmptyOperator(task_id="start")
 
-    create_kf_consequences_table = StarRocksSQLExecuteQueryOperator(
+    create_consequences_table = StarRocksSQLExecuteQueryOperator(
         task_id="create_table",
-        sql="./sql/kf/kf_consequences_create_table.sql",
+        sql="./sql/radiant/consequences_create_table.sql",
     )
 
-    insert_into_kf_consequences = StarRocksSQLExecuteQueryOperator(
+    insert_into_consequences = StarRocksSQLExecuteQueryOperator(
         task_id="insert",
-        sql="./sql/kf/kf_consequences_insert.sql",
+        sql="./sql/radiant/consequences_insert.sql",
         submit_task_options=std_submit_task_opts,
     )
 
-    create_kf_consequences_filter_table = StarRocksSQLExecuteQueryOperator(
+    create_consequences_filter_table = StarRocksSQLExecuteQueryOperator(
         task_id="create_filter_table",
-        sql="./sql/kf/kf_consequences_filter_create_table.sql",
+        sql="./sql/radiant/consequences_filter_create_table.sql",
     )
 
     fetch_filter_partitions = StarRocksSQLExecuteQueryOperator(
@@ -68,9 +68,9 @@ with DAG(
             _ids = set([int(p) for p in params.get("parts")]) - set([p[0] for p in consequences_filter_partitions])
             return [{"part": i} for i in _ids]
 
-        insert_new_kf_consequences_filter_partitions = StarRocksSQLExecuteQueryOperator.partial(
+        insert_new_consequences_filter_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert",
-            sql="./sql/kf/kf_consequences_filter_insert_part.sql",
+            sql="./sql/radiant/consequences_filter_insert_part.sql",
             submit_task_options=std_submit_task_opts,
             pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
@@ -87,9 +87,9 @@ with DAG(
             _ids = set([int(p) for p in params.get("parts")]) & set([p[0] for p in consequences_filter_partitions])
             return [{"part": i} for i in _ids]
 
-        insert_overwrite_kf_variants_partitions = StarRocksSQLExecuteQueryOperator.partial(
+        insert_overwrite_variants_partitions = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert",
-            sql="./sql/kf/kf_consequences_filter_overwrite_part.sql",
+            sql="./sql/radiant/consequences_filter_overwrite_part.sql",
             submit_task_options=std_submit_task_opts,
             pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
@@ -101,9 +101,9 @@ with DAG(
 
     (
         start
-        >> create_kf_consequences_table
-        >> insert_into_kf_consequences
-        >> create_kf_consequences_filter_table
+        >> create_consequences_table
+        >> insert_into_consequences
+        >> create_consequences_filter_table
         >> fetch_filter_partitions
         >> [
             insert_new_partitions,

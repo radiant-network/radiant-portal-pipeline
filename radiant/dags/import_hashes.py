@@ -53,7 +53,7 @@ with DAG(
 
     insert_hashes = RadiantStarRocksOperator(
         task_id="variants",
-        sql="./sql/kf/kf_variants_insert_hashes.sql",
+        sql="./sql/radiant/variants_insert_hashes.sql",
         submit_task_options=std_submit_task_opts,
         params=ICEBERG_COMMON_TASK_PARAMS,
     )
