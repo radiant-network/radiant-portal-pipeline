@@ -22,7 +22,7 @@ GROUPED_CHROMOSOMES = [
 ]
 
 with DAG(
-    dag_id=f"{NAMESPACE}-radiant-import-vcf",
+    dag_id=f"{NAMESPACE}-import-vcf",
     default_args=default_args,
     start_date=days_ago(1),
     schedule_interval=None,
