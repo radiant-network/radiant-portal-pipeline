@@ -1,10 +1,12 @@
 from airflow import DAG
 from airflow.decorators import task
-from airflow.models import Param, Variable
+from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.task_group import TaskGroup
 
+from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import (
+    STARROCKS_INSERT_POOL,
     StarRocksSQLExecuteQueryOperator,
     SubmitTaskOptions,
 )
@@ -29,7 +31,7 @@ dag_params = {
 }
 
 with DAG(
-    dag_id="import_kf_variants",
+    dag_id=f"{NAMESPACE}-import-kf-variants",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
@@ -48,7 +50,6 @@ with DAG(
     insert_kf_variant = StarRocksSQLExecuteQueryOperator(
         task_id="insert",
         sql="./sql/kf/kf_variants_insert.sql",
-        submit_task=True,
         submit_task_options=std_submit_task_opts,
     )
 
@@ -77,9 +78,8 @@ with DAG(
         insert_part = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert",
             sql="./sql/kf/kf_variants_part_insert_part.sql",
-            submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
+            pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
         ).expand(
             query_params=get_new_parts(
@@ -97,9 +97,8 @@ with DAG(
         overwrite_part = StarRocksSQLExecuteQueryOperator.partial(
             task_id="overwrite",
             sql="./sql/kf/kf_variants_part_overwrite_part.sql",
-            submit_task=True,
             submit_task_options=std_submit_task_opts,
-            pool=Variable.get("STARROCKS_INSERT_POOL_ID"),
+            pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
         ).expand(
             query_params=get_overwrite_parts(
