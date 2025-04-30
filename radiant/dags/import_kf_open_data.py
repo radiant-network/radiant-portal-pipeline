@@ -12,7 +12,7 @@ from radiant.tasks.starrocks.operator import (
     SubmitTaskOptions,
 )
 
-default_args = {"owner": "ferlab"}
+default_args = {"owner": "radiant"}
 
 dag_params = {
     **ICEBERG_COMMON_PARAMS,
@@ -53,7 +53,7 @@ with DAG(
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
-    tags=["etl", "open_data"],
+    tags=["radiant", "starrocks", "open-data"],
     params=dag_params,
 ) as dag:
     start = EmptyOperator(task_id="start")

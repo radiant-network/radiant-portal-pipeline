@@ -9,7 +9,7 @@ from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
 
 default_args = {
-    "owner": "ferlab",
+    "owner": "radiant",
 }
 
 
@@ -36,7 +36,7 @@ with DAG(
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
-    tags=["etl", "kf_data"],
+    tags=["radiant", "e2e"],
     render_template_as_native_obj=True,
 ) as dag:
     start = EmptyOperator(task_id="start")

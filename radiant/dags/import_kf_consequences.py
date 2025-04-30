@@ -12,7 +12,7 @@ from radiant.tasks.starrocks.operator import (
 )
 
 default_args = {
-    "owner": "ferlab",
+    "owner": "radiant",
 }
 
 std_submit_task_opts = SubmitTaskOptions(
@@ -33,7 +33,7 @@ with DAG(
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
-    tags=["etl", "kf_data"],
+    tags=["radiant", "starrocks"],
     params=dag_params,
 ) as dag:
     start = EmptyOperator(task_id="start")
