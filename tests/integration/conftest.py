@@ -102,6 +102,14 @@ class RadiantAirflowInstance:
 
 
 @pytest.fixture(scope="session")
+def random_test_id():
+    """
+    Fixture to provide a random test ID for the session.
+    """
+    return uuid.uuid4().hex[:8]
+
+
+@pytest.fixture(scope="session")
 def resources_dir():
     """
     Fixture to provide the path to the resources directory.
@@ -187,10 +195,10 @@ def iceberg_container(minio_container):
 
 
 @pytest.fixture(scope="session")
-def starrocks_container(minio_container):
+def starrocks_container(minio_container, random_test_id):
     client = docker.from_env()
 
-    test_db_name = f"{STARROCKS_DATABASE_PREFIX}_{uuid.uuid4().hex[:8]}"
+    test_db_name = f"{STARROCKS_DATABASE_PREFIX}_{random_test_id}"
 
     for container in client.containers.list():
         if STARROCKS_HOSTNAME in container.name:
@@ -241,7 +249,7 @@ def starrocks_container(minio_container):
 
 
 @pytest.fixture(scope="session")
-def radiant_airflow_container(starrocks_container):
+def radiant_airflow_container(starrocks_container, random_test_id):
     client = docker.from_env()
 
     for container in client.containers.list():
@@ -255,6 +263,7 @@ def radiant_airflow_container(starrocks_container):
         DockerContainer("radiant-airflow:latest")
         .with_name("radiant-airflow")
         .with_command("standalone")
+        .with_env("RADIANT_TABLES_NAMESPACE", f"test_{random_test_id}")
         .with_env("AIRFLOW__CORE__DAGS_FOLDER", "/opt/airflow/radiant/dags")
         .with_env("PYTHONPATH", "$PYTHONPATH:/opt/airflow")
         .with_volume_mapping(host=str(RADIANT_DIR), container="/opt/airflow/radiant")
@@ -330,9 +339,9 @@ def iceberg_client(iceberg_container, iceberg_catalog_properties):
 
 
 @pytest.fixture(scope="session")
-def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_container):
+def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_container, random_test_id):
     with starrocks_session.cursor() as cursor:
-        catalog_name = f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{uuid.uuid4().hex[:8]}"
+        catalog_name = f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}"
         cursor.execute(f"""
         CREATE EXTERNAL CATALOG '{catalog_name}'
         COMMENT 'External catalog to Apache Iceberg on MinIO'

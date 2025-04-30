@@ -1,4 +1,4 @@
-INSERT OVERWRITE occurrences PARTITION (p{part})
+INSERT OVERWRITE {{ params.starrocks_occurrences }} PARTITION (p{part})
 SELECT part,
 	seq_id,
 	v.locus_id,
@@ -29,7 +29,7 @@ SELECT part,
 	info_dp,
 	info_haplotype_score,
 	calls
-FROM iceberg.poc_starrocks.kf_occurrences o
+FROM {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.{{ params.iceberg_occurrences }} o
 JOIN stg_variants v ON o.hash = v.hash
 WHERE part IN ({part})
 AND has_alt;

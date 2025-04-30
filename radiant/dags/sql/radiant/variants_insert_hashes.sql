@@ -1,5 +1,5 @@
 INSERT INTO {{ params.starrocks_variants_lookup }}(`hash`)
-select
+SELECT
     `hash`
-FROM {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.{{ params.iceberg_topmed_bravo }} v
+FROM {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.{{ params.iceberg_variants }} v
 LEFT ANTI JOIN {{ params.starrocks_variants_lookup }} vd ON vd.hash=v.hash;

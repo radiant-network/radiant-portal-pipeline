@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `occurrences` (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_occurrences }} (
   `part` tinyint(4) NOT NULL COMMENT "",
   `seq_id` int(11) NOT NULL COMMENT "",
   `locus_id` bigint(20) NOT NULL COMMENT "",
@@ -37,5 +37,5 @@ COMMENT "OLAP"
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "query_group"
+    "colocate_with" = "{{ params.colocate_query_group }}"
 );

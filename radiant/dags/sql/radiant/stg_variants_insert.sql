@@ -1,4 +1,4 @@
-INSERT INTO stg_variants
+INSERT INTO {{ params.starrocks_staging_variants }}
 SELECT v.locus_id,
     t.chromosome,
     t.start,
@@ -18,6 +18,6 @@ SELECT v.locus_id,
     t.hash,
     t.dna_change,
     t.aa_change
-FROM iceberg.poc_starrocks.kf_variants t
-JOIN variant_dict v ON t.hash = v.hash
-LEFT ANTI JOIN stg_variants stg ON stg.locus_id = v.locus_id
+FROM {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.{{ params.iceberg_variants }} t
+JOIN {{ params.starrocks_variants_lookup }} v ON t.hash = v.hash
+LEFT ANTI JOIN {{ params.starrocks_staging_variants }} stg ON stg.locus_id = v.locus_id

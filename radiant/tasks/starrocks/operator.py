@@ -1,10 +1,12 @@
 import uuid
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.triggers.base import TaskSuccessEvent
 
+from radiant.tasks.data.radiant_tables import get_radiant_mapping
 from radiant.tasks.starrocks.trigger import (
     StarRocksTaskCompleteTrigger,
 )
@@ -149,3 +151,9 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         if not isinstance(event, TaskSuccessEvent):
             print("Task failed")
         return
+
+
+class RadiantStarRocksOperator(StarRocksSQLExecuteQueryOperator):
+    def __init__(self, params: MutableMapping | None = None, radiant_params: dict | None = None, *args, **kwargs):
+        self.radiant_params = radiant_params or get_radiant_mapping()
+        super().__init__(*args, params={**(params or {}), **self.radiant_params}, **kwargs)

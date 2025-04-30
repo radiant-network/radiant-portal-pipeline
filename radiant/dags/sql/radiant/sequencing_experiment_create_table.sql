@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS sequencing_experiment (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_sequencing_experiments }} (
     seq_id INT,
     part INT,
     sample_id VARCHAR(255),

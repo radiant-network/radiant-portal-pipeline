@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `clinvar` (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_clinvar }} (
   `locus_id` bigint(20) NOT NULL COMMENT "",
   `chromosome` varchar(1048576) NULL COMMENT "",
   `start` bigint(20) NULL COMMENT "",
@@ -57,5 +57,5 @@ DUPLICATE KEY(`locus_id`, `chromosome`)
 COMMENT "OLAP"
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "query_group"
+    "colocate_with" = "{{ params.colocate_query_group }}"
 )

@@ -9,13 +9,18 @@ LOGGER = logging.getLogger(__name__)
 
 @pytest.mark.slow
 def test_open_data_iceberg_tables(
-    init_iceberg_tables, starrocks_iceberg_catalog, setup_namespace, radiant_airflow_container, starrocks_session
+    init_iceberg_tables,
+    starrocks_iceberg_catalog,
+    setup_namespace,
+    radiant_airflow_container,
+    starrocks_session,
+    random_test_id,
 ):
     _af_port = radiant_airflow_container.get_exposed_port(8080)
-    _sr_port = starrocks_session.port
+    _starrocks_port = starrocks_session.port
 
-    hashes_dag_id = "radiant-import-kf-hashes"
-    dag_id = "radiant-import-kf-open-data"
+    hashes_dag_id = "radiant-import-hashes"
+    dag_id = "radiant-import-open-data"
     _conf = f'{{"iceberg_catalog": "{starrocks_iceberg_catalog.name}", "iceberg_database": "{setup_namespace}"}}'
 
     # Hashes are required to be imported first, but standalone airflow doesn't support
@@ -32,6 +37,6 @@ def test_open_data_iceberg_tables(
 
     with starrocks_session.cursor() as cursor:
         for _table in ["1000_genomes", "clinvar", "dbnsfp", "gnomad_genomes_v3", "spliceai", "topmed_bravo"]:
-            cursor.execute(f"SELECT COUNT(1) FROM {_table}")
+            cursor.execute(f"SELECT COUNT(1) FROM test_{random_test_id}_{_table}")
             response = cursor.fetchall()
             assert response[0][0] == 100, f"Table {_table} is empty"

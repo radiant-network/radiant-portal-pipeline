@@ -1,5 +1,4 @@
-CREATE TABLE IF NOT EXISTS variants_part (
-    part TINYINT NOT NULL,
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants }} (
     locus_id BIGINT NOT NULL,
     af DECIMAL(7, 6),
     pf DECIMAL(7, 6),
@@ -28,7 +27,6 @@ CREATE TABLE IF NOT EXISTS variants_part (
     dna_change VARCHAR(2000),
     aa_change VARCHAR(2000)
 )
-PARTITION BY (`part`)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10
 PROPERTIES (
     'colocate_with' = 'query_group'

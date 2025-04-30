@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `consequences_filter` (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences_filter }} (
   `part` tinyint(4) NOT NULL COMMENT "",
   `locus_id` bigint(20) NULL COMMENT "",
   `is_deleterious` boolean NULL COMMENT "",
@@ -21,9 +21,10 @@ CREATE TABLE IF NOT EXISTS `consequences_filter` (
   `lrt_pred` varchar(1) NULL COMMENT "",
   `phyloP17way_primate` decimal(7, 5) NULL COMMENT "",
   `phyloP100way_vertebrate` decimal(7, 5) NULL COMMENT ""
-) ENGINE=OLAP
+)
+ENGINE=OLAP
 DUPLICATE KEY(`part`, `locus_id`, `is_deleterious`)
 COMMENT "OLAP"
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
-PROPERTIES ("colocate_with" = "query_group");
+PROPERTIES ("colocate_with" = "{{ params.colocate_query_group }}");

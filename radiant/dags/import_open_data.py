@@ -6,16 +6,16 @@ from airflow.operators.python import ShortCircuitOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
-from radiant.dags import ICEBERG_COMMON_PARAMS, NAMESPACE
+from radiant.dags import ICEBERG_COMMON_DAG_PARAMS, ICEBERG_COMMON_TASK_PARAMS, NAMESPACE
 from radiant.tasks.starrocks.operator import (
-    StarRocksSQLExecuteQueryOperator,
+    RadiantStarRocksOperator,
     SubmitTaskOptions,
 )
 
 default_args = {"owner": "radiant"}
 
 dag_params = {
-    **ICEBERG_COMMON_PARAMS,
+    **ICEBERG_COMMON_DAG_PARAMS,
     "force_import_hashes": Param(
         default=False,
         description="Set to True to force import of hashes into the variant_dict table. (Defaults to False)",
@@ -30,26 +30,23 @@ def check_import_hashes(**context):
 
 def group_template(group_id: str):
     return [
-        StarRocksSQLExecuteQueryOperator(
+        RadiantStarRocksOperator(
             task_id="create-table",
             sql=f"./sql/open_data/{group_id}_create_table.sql",
             trigger_rule="none_failed",
         ),
-        StarRocksSQLExecuteQueryOperator(
+        RadiantStarRocksOperator(
             task_id="insert",
             sql=f"./sql/open_data/{group_id}_insert.sql",
             submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
-            params={
-                "iceberg_catalog": "{{ params.iceberg_catalog }}",
-                "iceberg_database": "{{ params.iceberg_database }}",
-            },
+            params=ICEBERG_COMMON_TASK_PARAMS,
             trigger_rule="none_failed",
         ),
     ]
 
 
 with DAG(
-    dag_id=f"{NAMESPACE}-import-kf-open-data",
+    dag_id=f"{NAMESPACE}-import-open-data",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
@@ -66,7 +63,7 @@ with DAG(
             trigger_rule="all_done",
         ) >> TriggerDagRunOperator(
             task_id="import_variant_hashes",
-            trigger_dag_id=f"{NAMESPACE}-import-kf-hashes",
+            trigger_dag_id=f"{NAMESPACE}-import-hashes",
             reset_dag_run=True,
             wait_for_completion=True,
             poke_interval=30,

@@ -31,7 +31,7 @@ dag_params = {
 }
 
 with DAG(
-    dag_id=f"{NAMESPACE}-import-kf-variants",
+    dag_id=f"{NAMESPACE}-import-variants",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
@@ -42,26 +42,26 @@ with DAG(
         task_id="start",
     )
 
-    create_kf_variant_table = StarRocksSQLExecuteQueryOperator(
+    create_variant_table = StarRocksSQLExecuteQueryOperator(
         task_id="create_table",
-        sql="./sql/kf/kf_variants_create_table.sql",
+        sql="./sql/radiant/variants_create_table.sql",
     )
 
-    insert_kf_variant = StarRocksSQLExecuteQueryOperator(
+    insert_variant = StarRocksSQLExecuteQueryOperator(
         task_id="insert",
-        sql="./sql/kf/kf_variants_insert.sql",
+        sql="./sql/radiant/variants_insert.sql",
         submit_task_options=std_submit_task_opts,
     )
 
-    create_kf_variant_part_table = StarRocksSQLExecuteQueryOperator(
+    create_variant_part_table = StarRocksSQLExecuteQueryOperator(
         task_id="create_partitions_table",
-        sql="./sql/kf/kf_variants_part_create_table.sql",
+        sql="./sql/radiant/variants_part_create_table.sql",
     )
 
     fetch_partitions = StarRocksSQLExecuteQueryOperator(
         task_id="fetch_variants_partitions",
         sql="""
-        SELECT part FROM test_etl.kf_variants_part
+        SELECT part FROM test_etl.variants_part
         GROUP BY part HAVING count(1) > 0
         """,
         do_xcom_push=True,
@@ -77,7 +77,7 @@ with DAG(
 
         insert_part = StarRocksSQLExecuteQueryOperator.partial(
             task_id="insert",
-            sql="./sql/kf/kf_variants_part_insert_part.sql",
+            sql="./sql/radiant/variants_part_insert_part.sql",
             submit_task_options=std_submit_task_opts,
             pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
@@ -96,7 +96,7 @@ with DAG(
 
         overwrite_part = StarRocksSQLExecuteQueryOperator.partial(
             task_id="overwrite",
-            sql="./sql/kf/kf_variants_part_overwrite_part.sql",
+            sql="./sql/radiant/variants_part_overwrite_part.sql",
             submit_task_options=std_submit_task_opts,
             pool=STARROCKS_INSERT_POOL,
             pool_slots=1,
@@ -108,9 +108,9 @@ with DAG(
 
     (
         start
-        >> create_kf_variant_table
-        >> insert_kf_variant
-        >> create_kf_variant_part_table
+        >> create_variant_table
+        >> insert_variant
+        >> create_variant_part_table
         >> fetch_partitions
         >> [
             insert_new_partitions,
