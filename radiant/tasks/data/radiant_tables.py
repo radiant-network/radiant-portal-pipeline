@@ -45,7 +45,7 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_clinvar": "clinvar",
     "starrocks_dbnsfp": "dbnsfp",
     "starrocks_gnomad_genomes_v3": "gnomad_genomes_v3",
-    "starrocks_spliceai": "spliceai_enriched",
+    "starrocks_spliceai": "spliceai",
     "starrocks_topmed_bravo": "topmed_bravo",
 }
 
