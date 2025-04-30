@@ -14,7 +14,7 @@ from radiant.tasks.starrocks.operator import (
 )
 
 default_args = {
-    "owner": "ferlab",
+    "owner": "radiant",
 }
 
 std_submit_task_opts = SubmitTaskOptions(
@@ -48,7 +48,7 @@ with DAG(
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
-    tags=["etl", "kf_data"],
+    tags=["radiant", "starrocks"],
     params=dag_params,
 ) as dag:
     start = EmptyOperator(
@@ -131,15 +131,6 @@ with DAG(
     import_variants_freq = TriggerDagRunOperator(
         task_id="import_variants_freq",
         trigger_dag_id="import_kf_variants_freq",
-        conf={"parts": "{{ params.parts | list | tojson }}"},
-        reset_dag_run=True,
-        wait_for_completion=True,
-        poke_interval=60,
-    )
-
-    import_variants_freq = TriggerDagRunOperator(
-        task_id="import_variants_freq",
-        trigger_dag_id=f"{NAMESPACE}-import-kf-variants-freq",
         conf={"parts": "{{ params.parts | list | tojson }}"},
         reset_dag_run=True,
         wait_for_completion=True,
