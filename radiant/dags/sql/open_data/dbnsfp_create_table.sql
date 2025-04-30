@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `dbnsfp` (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_dbnsfp }} (
   `locus_id` bigint(20) NULL COMMENT "",
   `ensembl_transcript_id` varchar(1048576) NULL COMMENT "",
   `sift_score` decimal(38, 9) NULL COMMENT "",
@@ -21,5 +21,5 @@ DUPLICATE KEY(`locus_id`, `ensembl_transcript_id`)
 COMMENT "OLAP"
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "query_group"
+    "colocate_with" = "{{ params.colocate_query_group }}"
 );

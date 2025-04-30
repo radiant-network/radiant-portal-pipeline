@@ -32,7 +32,7 @@ run_dag_operator = functools.partial(
 
 
 with DAG(
-    dag_id=f"{NAMESPACE}-import-kf-e2e",
+    dag_id=f"{NAMESPACE}-import-e2e",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
@@ -64,11 +64,11 @@ with DAG(
     )
 
     import_occurrences = run_dag_operator(
-        task_id="import_occurrences", trigger_dag_id=f"{NAMESPACE}-import-kf-occurrences"
+        task_id="import_occurrences", trigger_dag_id=f"{NAMESPACE}-import-occurrences"
     )
-    import_variants = run_dag_operator(task_id="import_variants", trigger_dag_id=f"{NAMESPACE}-import-kf-variants")
+    import_variants = run_dag_operator(task_id="import_variants", trigger_dag_id=f"{NAMESPACE}-import-variants")
     import_consequences = run_dag_operator(
-        task_id="import_consequences", trigger_dag_id=f"{NAMESPACE}-import-kf-consequences"
+        task_id="import_consequences", trigger_dag_id=f"{NAMESPACE}-import-consequences"
     )
 
     update_sequencing_experiments = StarRocksSQLExecuteQueryOperator(

@@ -12,7 +12,7 @@ default_args = {
 }
 
 with DAG(
-    dag_id=f"{NAMESPACE}-import-kf-variants-freq",
+    dag_id=f"{NAMESPACE}-import-variants-freq",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,

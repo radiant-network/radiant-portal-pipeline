@@ -29,7 +29,7 @@ dag_params = {
 }
 
 with DAG(
-    dag_id=f"{NAMESPACE}-import-kf-consequences",
+    dag_id=f"{NAMESPACE}-import-consequences",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,

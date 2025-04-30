@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS variant_dict (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_lookup }} (
     hash VARCHAR(64) NOT NULL,
     locus_id BIGINT NOT NULL AUTO_INCREMENT
 )

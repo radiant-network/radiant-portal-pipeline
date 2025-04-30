@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS stg_variants
+CREATE TABLE IF NOT EXISTS {{ params.staging_variants }}
 (
     `locus_id` BIGINT NOT NULL,
     `chromosome` char(2),
@@ -22,5 +22,5 @@ CREATE TABLE IF NOT EXISTS stg_variants
 )
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "query_group"
+    "colocate_with" = "{{ params.colocate_query_group }}"
 );

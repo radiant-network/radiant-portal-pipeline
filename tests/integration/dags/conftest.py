@@ -10,7 +10,9 @@ def create_and_append_table(iceberg_client, namespace, table_name, file_path, js
 
 
 @pytest.fixture(scope="session")
-def open_data_iceberg_tables(starrocks_iceberg_catalog, iceberg_client, setup_namespace, resources_dir):
+def open_data_iceberg_tables(
+    starrocks_iceberg_catalog, iceberg_client, setup_namespace, resources_dir, random_test_id
+):
     # Json fields are required for certain .tsv files to properly handle types
     tables = {
         "1000_genomes": None,
@@ -39,7 +41,7 @@ def open_data_iceberg_tables(starrocks_iceberg_catalog, iceberg_client, setup_na
         create_and_append_table(
             iceberg_client,
             setup_namespace,
-            table,
+            f"test_{random_test_id}_open_data_{table}",
             resources_dir / "open_data" / f"{table}.tsv",
             json_fields=json_fields,
             is_clinvar=(table == "clinvar"),
@@ -47,11 +49,11 @@ def open_data_iceberg_tables(starrocks_iceberg_catalog, iceberg_client, setup_na
 
 
 @pytest.fixture(scope="session")
-def kf_iceberg_tables(starrocks_iceberg_catalog, iceberg_client, setup_namespace, resources_dir):
+def kf_iceberg_tables(starrocks_iceberg_catalog, iceberg_client, setup_namespace, resources_dir, random_test_id):
     create_and_append_table(
         iceberg_client,
         setup_namespace,
-        "kf_variants",
+        f"test_{random_test_id}_germline_snv_variants",
         resources_dir / "kf" / "kf_variants.tsv",
     )
 

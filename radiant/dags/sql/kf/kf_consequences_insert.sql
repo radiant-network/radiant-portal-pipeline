@@ -1,4 +1,4 @@
-INSERT INTO consequences
+INSERT INTO {{ params.starrocks_consequences }}
 SELECT
     v.locus_id AS locus_id,
     COALESCE(c.symbol, '') AS symbol,
@@ -28,7 +28,7 @@ SELECT
     s.phyloP100way_vertebrate,
     c.aa_change,
     c.coding_dna_change
-FROM iceberg.poc_starrocks.kf_consequences_pk c
+FROM {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.{{ params.iceberg_consequences }} c
 LEFT JOIN stg_variants v ON c.hash = v.hash
 LEFT JOIN dbnsfp s ON v.locus_id=s.locus_id AND s.ensembl_transcript_id = c.ensembl_transcript_id
 LEFT JOIN spliceai sp ON v.locus_id=sp.locus_id AND sp.symbol = c.symbol

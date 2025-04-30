@@ -1,4 +1,4 @@
-INSERT OVERWRITE consequences_filter PARTITION (p{part})
+INSERT OVERWRITE {{ params.starrocks_consequences_filter }} PARTITION (p{part})
 SELECT
     {part} AS part,
     t.locus_id,
@@ -67,7 +67,7 @@ FROM (
             phyloP17way_primate,
             phyloP100way_vertebrate
         FROM
-            consequences c,
+            {{ params.starrocks_consequences }} c,
             UNNEST(consequences) AS unnest
     ) gr
     GROUP BY
@@ -81,4 +81,4 @@ FROM (
         spliceai_ds,
         impact_score
 ) t
-LEFT SEMI JOIN occurrences o ON o.locus_id = t.locus_id AND o.part in ({part})
+LEFT SEMI JOIN {{ params.starrocks_occurrences }} o ON o.locus_id = t.locus_id AND o.part in ({part})

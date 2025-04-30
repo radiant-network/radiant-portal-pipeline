@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `consequences` (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences }} (
     `locus_id` bigint(20) COMMENT "",
     `symbol` varchar(30) COMMENT "",
     `ensembl_transcript_id` varchar(100) COMMENT "",
@@ -33,5 +33,5 @@ PRIMARY KEY(`locus_id`, `symbol`, `ensembl_transcript_id`)
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10
 PROPERTIES (
-	"colocate_with" = "query_group"
+	"colocate_with" = "{{ params.colocate_query_group }}"
 );

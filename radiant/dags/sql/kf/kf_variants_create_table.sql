@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS variants (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants }} (
     locus_id BIGINT NOT NULL,
     af DECIMAL(7, 6),
     pf DECIMAL(7, 6),

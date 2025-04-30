@@ -31,7 +31,7 @@ dag_params = {
 }
 
 with DAG(
-    dag_id=f"{NAMESPACE}-import-kf-variants",
+    dag_id=f"{NAMESPACE}-import-variants",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,

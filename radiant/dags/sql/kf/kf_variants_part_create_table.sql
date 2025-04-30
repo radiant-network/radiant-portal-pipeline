@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS variants_part (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_partitioned }} (
     part TINYINT NOT NULL,
     locus_id BIGINT NOT NULL,
     af DECIMAL(7, 6),
