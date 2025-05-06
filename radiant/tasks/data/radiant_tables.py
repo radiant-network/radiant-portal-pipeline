@@ -25,6 +25,7 @@ ICEBERG_OPEN_DATA_MAPPING = {
     "iceberg_gnomad_genomes_v3": "gnomad_genomes_v3",
     "iceberg_spliceai": "spliceai_enriched",
     "iceberg_topmed_bravo": "topmed_bravo",
+    "iceberg_gnomad_constraints": "gnomad_constraint_v_2_1_1",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
@@ -47,6 +48,7 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_gnomad_genomes_v3": "gnomad_genomes_v3",
     "starrocks_spliceai": "spliceai",
     "starrocks_topmed_bravo": "topmed_bravo",
+    "starrocks_gnomad_constraints": "gnomad_constraints",
 }
 
 ICEBERG_CATALOG_DATABASE = {
