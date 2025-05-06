@@ -14,7 +14,8 @@ with DAG(
     default_args=default_args,
     start_date=days_ago(1),
     schedule_interval=None,
-    tags=["radiant", "iceberg"],
+    tags=["radiant", "iceberg", "manual"],
+    dag_display_name="Radiant - Init Iceberg Tables",
     catchup=False,
 ) as dag:
 
@@ -39,12 +40,19 @@ with DAG(
             print(f"Deleting existing table {table_name}")
             catalog.drop_table(table_name)
 
+        part_field = OCCURRENCE_SCHEMA.find_field("part")
         case_id_field = OCCURRENCE_SCHEMA.find_field("case_id")
         seq_id_field = OCCURRENCE_SCHEMA.find_field("seq_id")
         chromosome_field = OCCURRENCE_SCHEMA.find_field("chromosome")
 
         partition_spec = PartitionSpec(
             fields=[
+                PartitionField(
+                    field_id=1001,
+                    source_id=part_field.field_id,
+                    name=part_field.name,
+                    transform=IdentityTransform(),
+                ),
                 PartitionField(
                     field_id=1001,
                     source_id=case_id_field.field_id,

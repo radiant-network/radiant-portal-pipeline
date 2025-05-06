@@ -6,7 +6,7 @@ from radiant.tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
 
 
 @pytest.mark.parametrize(
-    "sql, is_submit_task, query_timeout, enable_spill, spill_mode, query_params, expected_sql, expected_task_name",
+    "sql, is_submit_task, query_timeout, enable_spill, spill_mode, expected_sql, expected_task_name",
     [
         (
             "SELECT * FROM table",
@@ -14,7 +14,6 @@ from radiant.tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
             3600,
             False,
             "auto",
-            {"param1": "value1"},
             "submit /*+set_var(query_timeout=3600, enable_spill=False, spill_mode=auto)*/",
             "StarRocksSQLExecuteQueryOperator_Task_",
         ),
@@ -24,29 +23,8 @@ from radiant.tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
             3600,
             False,
             "auto",
-            {"param1": "value1"},
             "SELECT * FROM table",
             None,
-        ),
-        (
-            "SELECT * FROM table WHERE column = {param1}",
-            False,
-            3600,
-            False,
-            "auto",
-            {"param1": "value1"},
-            "SELECT * FROM table WHERE column = value1",
-            None,
-        ),
-        (
-            "SELECT * FROM table WHERE column = {param1}",
-            True,
-            3600,
-            True,
-            "manual",
-            {"param1": "value1"},
-            "submit /*+set_var(query_timeout=3600, enable_spill=True, spill_mode=manual)*/",
-            "StarRocksSQLExecuteQueryOperator_Task_",
         ),
         (
             "SELECT * FROM table",
@@ -54,7 +32,6 @@ from radiant.tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
             3600,
             False,
             "auto",
-            None,
             "submit /*+set_var(query_timeout=3600, enable_spill=False, spill_mode=auto)*/",
             "StarRocksSQLExecuteQueryOperator_Task_",
         ),
@@ -66,7 +43,6 @@ def test_basic_prepare_sql(
     query_timeout,
     enable_spill,
     spill_mode,
-    query_params,
     expected_sql,
     expected_task_name,
 ):
@@ -76,7 +52,6 @@ def test_basic_prepare_sql(
         query_timeout=query_timeout,
         enable_spill=enable_spill,
         spill_mode=spill_mode,
-        query_params=query_params,
     )
     result_sql = re.sub(r"\s+", "", result_sql.strip())
     expected_sql = re.sub(r"\s+", "", expected_sql.strip())

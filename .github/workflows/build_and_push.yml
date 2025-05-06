@@ -8,8 +8,6 @@ env:
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
 
@@ -43,7 +41,6 @@ jobs:
             type=semver,pattern={{raw}} 
             type=semver,pattern={{version}}
             type=sha,format=short
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
 
           flavor: |
             latest=auto

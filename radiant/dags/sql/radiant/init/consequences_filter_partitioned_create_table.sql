@@ -1,7 +1,7 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences_filter }} (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences_filter_partitioned }} (
   `part` tinyint(4) NOT NULL COMMENT "",
   `locus_id` bigint(20) NULL COMMENT "",
-  `is_deleterious` boolean NULL COMMENT "",
+  `is_deleterious` boolean NOT NULL COMMENT "",
   `impact_score` tinyint(4) NULL COMMENT "",
   `symbol` varchar(30) NULL COMMENT "",
   `consequence` varchar(50) NULL COMMENT "",
@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences_filter }} (
   `phyloP100way_vertebrate` decimal(7, 5) NULL COMMENT ""
 )
 ENGINE=OLAP
-DUPLICATE KEY(`part`, `locus_id`, `is_deleterious`)
 COMMENT "OLAP"
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10

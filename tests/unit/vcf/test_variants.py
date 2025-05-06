@@ -3,7 +3,7 @@ from radiant.tasks.vcf.variant import process_variant
 
 from .vcf_test_utils import variant
 
-common = Common(1, "1-1000-AC-A", "hash", "1", 1000, 1000, "AC", "A")
+common = Common(1, 1, "1-1000-AC-A", "hash", "1", 1000, 1000, "AC", "A")
 
 
 def test_variants_with_id():

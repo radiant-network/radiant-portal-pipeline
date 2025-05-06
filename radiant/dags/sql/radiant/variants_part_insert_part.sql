@@ -1,8 +1,8 @@
-INSERT INTO {{ params.starrocks_variants_partitioned }}
+INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ params.starrocks_variants_partitioned }}
 SELECT
-    {part_id} AS part,
+    %(variant_part)s AS part,
     v.*
 FROM
-    variants v
+    {{ params.starrocks_variants }} v
 LEFT SEMI JOIN {{ params.starrocks_occurrences }} o
-ON v.locus_id = o.locus_id AND o.part >= {part_lower} AND o.part < {part_upper};
+ON v.locus_id = o.locus_id AND o.part >= %(part_lower)s AND o.part < %(part_upper)s;

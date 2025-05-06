@@ -1,10 +1,11 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants }} (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_partitioned }} (
+    part INT NOT NULL,
     locus_id BIGINT NOT NULL,
-    af DECIMAL(7, 6),
-    pf DECIMAL(7, 6),
-    gnomad_v3_af DECIMAL(7, 6),
-    topmed_af DECIMAL(7, 6),
-    tg_af DECIMAL(7, 6),
+    af DOUBLE,
+    pf DOUBLE,
+    gnomad_v3_af DOUBLE,
+    topmed_af DOUBLE,
+    tg_af DOUBLE,
     ac INT(11),
     pc INT(11),
     hom INT(11),
@@ -13,21 +14,25 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants }} (
     variant_class VARCHAR(50) NULL COMMENT '',
     clinvar_interpretation ARRAY<VARCHAR(100)> NULL COMMENT '',
     symbol VARCHAR(20) NULL COMMENT '',
-    consequence ARRAY<VARCHAR(50)> NULL COMMENT '',
+    impact_score tinyint NULL COMMENT "",
+    consequences ARRAY<VARCHAR(50)> NULL COMMENT '',
     vep_impact VARCHAR(20) NULL COMMENT '',
-    mane_select BOOLEAN NULL COMMENT '',
-    mane_plus BOOLEAN NULL COMMENT '',
-    picked BOOLEAN NULL COMMENT '',
-    canonical BOOLEAN NULL COMMENT '',
+    is_mane_select BOOLEAN NULL COMMENT '',
+    is_mane_plus BOOLEAN NULL COMMENT '',
+    is_canonical BOOLEAN NULL COMMENT '',
     rsnumber ARRAY<VARCHAR(15)> NULL COMMENT '',
     reference VARCHAR(2000),
     alternate VARCHAR(2000),
+    mane_select varchar(200) NULL,
     hgvsg VARCHAR(2000) NULL,
+    hgvsc varchar(2000) NULL,
+    hgvsp varchar(2000) NULL,
     locus VARCHAR(2000) NULL,
     dna_change VARCHAR(2000),
     aa_change VARCHAR(2000)
 )
+PARTITION BY (`part`)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10
 PROPERTIES (
-    'colocate_with' = 'query_group'
+    "colocate_with" = "{{ params.colocate_query_group }}"
 );

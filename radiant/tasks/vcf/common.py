@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import dataclass
 
 from cyvcf2 import Variant
@@ -24,6 +25,7 @@ class Common:
     """
 
     case_id: int
+    part: int
     locus: str
     locus_hash: str
     chromosome: str
@@ -33,16 +35,19 @@ class Common:
     alternate: str
 
 
-def process_common(record: Variant, case_id: int):
+def process_common(record: Variant, case_id: int, part: int) -> Common:
     chrom = record.CHROM.replace("chr", "")
     pos = record.POS
     ref = record.REF
     alt = record.ALT[0]
     info_end = record.end
+    locus = f"{chrom}-{pos}-{ref}-{alt}"
+    locus_hash = hashlib.sha256(locus.encode()).hexdigest()
     return Common(
         case_id=case_id,
-        locus=f"{chrom}-{pos}-{ref}-{alt}",
-        locus_hash="hash",
+        part=part,
+        locus=locus,
+        locus_hash=locus_hash,
         chromosome=chrom,
         start=pos,
         end=info_end,

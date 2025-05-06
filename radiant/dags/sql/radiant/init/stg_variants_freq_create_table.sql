@@ -1,10 +1,11 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_frequencies }} (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variants_frequencies }} (
+    `part` INT NOT NULL,
     `locus_id` BIGINT NOT NULL,
     `pc` BIGINT,
     `ac` BIGINT,
     `hom` BIGINT
 )
-PRIMARY KEY(`locus_id`)
+PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10
 PROPERTIES (

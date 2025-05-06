@@ -1,78 +1,44 @@
 from airflow import DAG
-from airflow.models import Param
-from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
-from airflow.operators.python import ShortCircuitOperator
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from airflow.utils.task_group import TaskGroup
+from airflow.utils.helpers import chain
 
-from radiant.dags import ICEBERG_COMMON_DAG_PARAMS, ICEBERG_COMMON_TASK_PARAMS, NAMESPACE
-from radiant.tasks.starrocks.operator import (
-    RadiantStarRocksOperator,
-    SubmitTaskOptions,
-)
+from radiant.dags import ICEBERG_COMMON_TASK_PARAMS, NAMESPACE
+from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
 
 default_args = {"owner": "radiant"}
 
-dag_params = {
-    **ICEBERG_COMMON_DAG_PARAMS,
-    "force_import_hashes": Param(
-        default=False,
-        description="Set to True to force import of hashes into the variant_dict table. (Defaults to False)",
-        type="boolean",
-    ),
-}
-
-
-def check_import_hashes(**context):
-    return context["params"].get("force_import_hashes", False)
-
-
-def group_template(group_id: str):
-    return [
-        RadiantStarRocksOperator(
-            task_id="create-table",
-            sql=f"./sql/open_data/{group_id}_create_table.sql",
-            trigger_rule="none_failed",
-        ),
-        RadiantStarRocksOperator(
-            task_id="insert",
-            sql=f"./sql/open_data/{group_id}_insert.sql",
-            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
-            params=ICEBERG_COMMON_TASK_PARAMS,
-            trigger_rule="none_failed",
-        ),
-    ]
-
-
 with DAG(
     dag_id=f"{NAMESPACE}-import-open-data",
+    dag_display_name="Radiant - Import Open Data",
     schedule_interval=None,
     catchup=False,
     default_args=default_args,
-    tags=["radiant", "starrocks", "open-data"],
-    params=dag_params,
+    tags=["radiant", "starrocks", "open-data", "manual"],
 ) as dag:
     start = EmptyOperator(task_id="start")
 
-    with TaskGroup(group_id="hashes") as hashes:
-        ShortCircuitOperator(
-            task_id="check_skip",
-            python_callable=check_import_hashes,
-            ignore_downstream_trigger_rules=False,
-            trigger_rule="all_done",
-        ) >> TriggerDagRunOperator(
-            task_id="import_variant_hashes",
-            trigger_dag_id=f"{NAMESPACE}-import-hashes",
-            reset_dag_run=True,
-            wait_for_completion=True,
-            poke_interval=30,
+    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+    data_tasks = []
+    for group in group_ids:
+        data_tasks.append(
+            RadiantStarRocksOperator(
+                task_id=f"insert_hashes_{group}",
+                task_display_name=f"{group} Insert Hashes",
+                sql=f"./sql/open_data/{group}_insert_hashes.sql",
+                submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+                params=ICEBERG_COMMON_TASK_PARAMS,
+                trigger_rule="none_failed",
+            )
+        )
+        data_tasks.append(
+            RadiantStarRocksOperator(
+                task_id=f"insert_{group}",
+                task_display_name=f"{group} Insert Data",
+                sql=f"./sql/open_data/{group}_insert.sql",
+                submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+                params=ICEBERG_COMMON_TASK_PARAMS,
+                trigger_rule="none_failed",
+            )
         )
 
-    tasks = [start, hashes]
-    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
-    for group in group_ids:
-        with TaskGroup(group_id=f"{group}", tooltip=group):
-            tasks.extend(group_template(group_id=group))
-
-    chain(*tasks)
+    chain(start, *data_tasks)

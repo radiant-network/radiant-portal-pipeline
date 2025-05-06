@@ -12,5 +12,6 @@ class Experiment(BaseModel):
 
 class Case(BaseModel):
     case_id: int
-    vcf_file: str
+    part: int
+    vcf_filepath: str
     experiments: list[Experiment]

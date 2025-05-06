@@ -1,5 +1,6 @@
 from airflow import DAG
 from airflow.decorators import task
+from airflow.models import Param
 from airflow.utils.dates import days_ago
 
 from radiant.dags import NAMESPACE
@@ -21,37 +22,30 @@ GROUPED_CHROMOSOMES = [
     ["chr14", "chr15", "chr16"],
 ]
 
+dag_params = {
+    "cases": Param(
+        default=[],
+        description="An array of objects representing Cases to be processed",
+        type="array",
+    )
+}
+
 with DAG(
     dag_id=f"{NAMESPACE}-import-vcf",
     default_args=default_args,
     start_date=days_ago(1),
     schedule_interval=None,
     tags=["radiant", "iceberg"],
+    dag_display_name="Radiant - Import VCF",
     catchup=False,
+    params=dag_params,
 ) as dag:
 
     @task
-    def get_cases():
-        from radiant.tasks.vcf.experiment import Case, Experiment
+    def get_cases(params):
+        from radiant.tasks.vcf.experiment import Case
 
-        cases = [
-            Case(
-                case_id=i,
-                vcf_file="s3://cqdg-qa-file-import/jmichaud/study1/dataset_data2/annotated_vcf/variants.FM0000398.vep.vcf.gz",
-                experiments=[
-                    Experiment(
-                        seq_id=i,
-                        patient_id=f"pa00{i}",
-                        sample_id="S14018",
-                        family_role="proband",
-                        is_affected=True,
-                        sex="F",
-                    ),
-                ],
-            )
-            for i in range(1, 2)
-        ]
-        return [case.model_dump() for case in cases]
+        return [Case.model_validate(c).model_dump() for c in params.get("cases", [])]
 
     @task.external_python(pool="import_vcf", task_id="import_vcf", python=PATH_TO_PYTHON_BINARY)
     def import_vcf(case: dict, chromosomes: list[str]):
@@ -77,7 +71,7 @@ with DAG(
         logger.info("=" * 80)
         process_chromosomes(chromosomes, case, fs, vcf_threads=4)
         logger.info(
-            f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {','.join(chromosomes)}"
+            f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_filepath}, chromosome {','.join(chromosomes)}"
         )
 
     all_cases = get_cases()

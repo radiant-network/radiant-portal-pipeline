@@ -1,7 +1,36 @@
-INSERT INTO {{ params.starrocks_clinvar }}
+INSERT OVERWRITE {{ params.starrocks_clinvar }}
 SELECT
 	v.locus_id,
-	c.*
-FROM {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.{{ params.iceberg_clinvar }} c
-JOIN {{ params.starrocks_variants_lookup }} v ON c.hash = v.hash
-LEFT ANTI JOIN {{ params.starrocks_clinvar }} c ON c.locus_id = v.locus_id
+    c.chromosome,
+    c.start,
+    c.end,
+    c.reference,
+    c.alternate,
+    c.interpretations,
+    c.name,
+    c.clin_sig,
+    c.clin_sig_conflict,
+    c.af_exac,
+    c.clnvcso,
+    c.geneinfo,
+    c.clnsigincl,
+    c.clnvi,
+    c.clndisdb,
+    c.clnrevstat,
+    c.alleleid,
+    c.origin,
+    c.clndnincl,
+    c.rs,
+    c.dbvarid,
+    c.af_tgp,
+    c.clnvc,
+    c.clnhgvs,
+    c.mc,
+    c.af_esp,
+    c.clndisdbincl,
+    c.conditions,
+    c.inheritance,
+    c.locus,
+    c.locus_hash
+FROM {{ params.iceberg_clinvar }} c
+JOIN {{ params.starrocks_variants_lookup }} v ON c.locus_hash = v.locus_hash
