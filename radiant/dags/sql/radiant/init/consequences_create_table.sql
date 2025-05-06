@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences }} (
     `consequences` array<varchar(50)> COMMENT "",
     `impact_score` tinyint(4) NULL COMMENT "",
     `biotype` varchar(50) NULL COMMENT "",
+    `exon_rank` INT NULL COMMENT "",
+    `exon_total` INT NULL COMMENT "",
     `spliceai_ds` float NULL COMMENT "",
     `spliceai_type` array<varchar(2)> NULL COMMENT "",
     `is_canonical` boolean NULL COMMENT "",
