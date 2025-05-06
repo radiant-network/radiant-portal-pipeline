@@ -38,7 +38,7 @@ with DAG(
             )
         )
 
-    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo", "gnomad_constraints"]
     for group in group_ids:
         tasks.append(
             RadiantStarRocksOperator(
