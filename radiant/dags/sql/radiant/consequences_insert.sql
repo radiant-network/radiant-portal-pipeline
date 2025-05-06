@@ -25,6 +25,8 @@ SELECT
     d.revel_score,
     d.lrt_score,
     d.lrt_pred,
+    gc.pli,
+    gc.loeuf,
     d.phyloP17way_primate,
     d.phyloP100way_vertebrate,
     c.aa_change,
@@ -33,4 +35,5 @@ FROM {{ params.iceberg_consequences }} c
 LEFT JOIN {{ params.starrocks_staging_variants }} v ON c.locus_hash = v.locus_hash
 LEFT JOIN {{ params.starrocks_dbnsfp }} d ON v.locus_id=d.locus_id AND d.ensembl_transcript_id = c.transcript_id
 LEFT JOIN {{ params.starrocks_spliceai }} sp ON v.locus_id=sp.locus_id AND sp.symbol = c.symbol
+LEFT JOIN {{ params.starrocks_gnomad_constraints }} gc ON gc.transcript_id=c.transcript_id
 WHERE c.case_id in %(case_ids)s
