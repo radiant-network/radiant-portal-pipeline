@@ -1,23 +1,27 @@
-INSERT INTO {{ params.starrocks_staging_variants }}
+INSERT OVERWRITE {{ params.starrocks_staging_variants }}
 SELECT v.locus_id,
     t.chromosome,
     t.start,
     t.variant_class,
-    split(t.symbol, '-')[1] AS symbol, -- some rows have multiple gene symbol separated by '-', need to investigate
-    t.consequences AS consequence,
+    t.symbol,
+    t.impact_score,
+    t.consequences,
     t.vep_impact,
-    t.mane_select,
-    t.mane_plus,
-    t.canonical,
-    t.picked,
+    t.is_mane_select,
+    t.is_mane_plus,
+    t.is_canonical,
     t.rsnumber,
+    t.end,
     t.reference,
     t.alternate,
+    t.mane_select,
     t.hgvsg,
+    t.hgvsc,
+    t.hgvsp,
     t.locus,
-    t.hash,
+    t.locus_hash,
     t.dna_change,
     t.aa_change
-FROM {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.{{ params.iceberg_variants }} t
-JOIN {{ params.starrocks_variants_lookup }} v ON t.hash = v.hash
-LEFT ANTI JOIN {{ params.starrocks_staging_variants }} stg ON stg.locus_id = v.locus_id
+FROM {{ params.iceberg_variants }} t
+JOIN {{ params.starrocks_variants_lookup }} v ON t.locus_hash = v.locus_hash
+where t.case_id in %(case_ids)s;

@@ -1,4 +1,4 @@
-INSERT INTO {{ params.starrocks_dbnsfp }}
+INSERT OVERWRITE {{ params.starrocks_dbnsfp }}
 SELECT
 	v.locus_id,
 	d.ensembl_transcript_id,
@@ -16,6 +16,6 @@ SELECT
     d.LRT_pred AS lrt_pred,
     d.phyloP17way_primate AS phyloP17way_primate,
     d.phyloP100way_vertebrate AS phyloP100way_vertebrate
-FROM {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.{{ params.iceberg_dbnsfp }} d
-JOIN {{ params.starrocks_variants_lookup }} v ON d.hash = v.hash
+FROM {{ params.iceberg_dbnsfp }} d
+JOIN {{ params.starrocks_variants_lookup }} v ON d.locus_hash = v.locus_hash
 LEFT ANTI JOIN {{ params.starrocks_dbnsfp }} d ON d.locus_id = v.locus_id

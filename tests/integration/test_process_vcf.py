@@ -12,6 +12,7 @@ def test_process_chromosomes(
 ):
     case = Case(
         case_id=1,
+        part=1,
         experiments=[
             Experiment(
                 seq_id=1,
@@ -22,7 +23,7 @@ def test_process_chromosomes(
                 sex="F",
             )
         ],
-        vcf_file=indexed_vcfs["test.vcf"],
+        vcf_filepath=indexed_vcfs["test.vcf"],
     )
     process_chromosomes(
         ["chr1"],

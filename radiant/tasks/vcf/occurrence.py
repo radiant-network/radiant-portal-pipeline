@@ -10,6 +10,7 @@ from radiant.tasks.vcf.pedigree import Pedigree
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
     Schema(
+        NestedField(100, "part", IntegerType(), required=True),
         NestedField(101, "seq_id", IntegerType(), required=True),
         NestedField(102, "sample_id", StringType(), required=True),
         NestedField(104, "dp", IntegerType(), required=False),
@@ -151,6 +152,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
         has_alt = 1 in calls
         occurrences[exp.seq_id] = {
             "case_id": common.case_id,
+            "part": common.part,
             "seq_id": exp.seq_id,
             "locus": common.locus,
             "locus_hash": common.locus_hash,

@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS {{ params.starrocks_spliceai }} (
-  `locus_id` bigint(20) NULL COMMENT "",
+  `locus_id` bigint(20) NOT NULL COMMENT "",
   `symbol` varchar(1048576) NULL COMMENT "",
-  `spliceai_ds` decimal(38, 9) NULL COMMENT "",
+  `spliceai_ds` double NULL COMMENT "",
   `spliceai_type` array<varchar(1048576)> NULL COMMENT ""
 )
 ENGINE=OLAP

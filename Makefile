@@ -9,6 +9,9 @@ install:
 install-dev: install
 	pip install -r requirements-dev.txt
 
+	# Required for standalone unit tests
+	airflow db init
+
 test-docker: docker-build
 	pytest tests/docker/
 

@@ -25,6 +25,7 @@ from .vcf_test_utils import variant
 
 case = Case(
     case_id=1,
+    part=1,
     experiments=[
         Experiment(
             seq_id=1,
@@ -35,9 +36,9 @@ case = Case(
             sex="F",
         )
     ],
-    vcf_file="",
+    vcf_filepath="",
 )
-common = Common(case.case_id, "1-1000-AC-A", "hash", "1", 1000, 1000, "AC", "A")
+common = Common(case.case_id, case.part, "1-1000-AC-A", "hash", "1", 1000, 1000, "AC", "A")
 
 
 def test_one_sample():
@@ -144,6 +145,7 @@ def test_filter_defined():
 def test_multi_sample():
     multi_sample_case = Case(
         case_id=1,
+        part=1,
         experiments=[
             Experiment(
                 seq_id=1,
@@ -170,7 +172,7 @@ def test_multi_sample():
                 sex="M",
             ),
         ],
-        vcf_file="",
+        vcf_filepath="",
     )
     v = variant("test_occurrence_multi_sample.vcf", 1)
     occ = process_occurrence(v, Pedigree(multi_sample_case, ["SA0001", "SA0002", "SA0003"]), common)

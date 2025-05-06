@@ -47,7 +47,6 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
     def __init__(
         self,
         submit_task_options: SubmitTaskOptions = None,
-        query_params: dict = None,
         **kwargs,
     ):
         conn_id = "starrocks_conn"
@@ -57,7 +56,6 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         )
         self.submit_task = submit_task_options is not None
         self.submit_task_options = submit_task_options or SubmitTaskOptions()
-        self.query_params = query_params or {}
 
     @staticmethod
     def _prepare_sql(
@@ -66,7 +64,6 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         query_timeout: int,
         enable_spill: bool = False,
         spill_mode: str = "auto",
-        query_params: dict = None,
         extra_args: dict = None,
     ) -> tuple[str, str]:
         """
@@ -77,7 +74,6 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
             query_timeout (int): Maximum query timeout in milliseconds.
             enable_spill (bool): Flag to enable or disable spilling.
             spill_mode (str): Mode of spilling, e.g., 'auto'.
-            query_params (dict): Parameters to format the SQL query.
 
         Returns:
             tuple[str, str]: The formatted SQL query and the task name.
@@ -106,9 +102,6 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         else:
             _sql = sql
 
-        if query_params:
-            _sql = _sql.format(**{key: value for key, value in query_params.items()}) if query_params else _sql
-
         return _sql, _task_name
 
     def execute(self, context):
@@ -124,7 +117,6 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
             query_timeout=self.submit_task_options.max_query_timeout,
             enable_spill=self.submit_task_options.enable_spill,
             spill_mode=self.submit_task_options.spill_mode,
-            query_params=self.query_params,
         )
 
         if self.submit_task:

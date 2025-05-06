@@ -26,13 +26,13 @@ def process_chromosomes(
     catalog = load_catalog(catalog_name, **catalog_properties) if catalog_properties else load_catalog(catalog_name)
 
     vcf = VCF(
-        case.vcf_file,
+        case.vcf_filepath,
         strict_gt=True,
         threads=vcf_threads,
         samples=[exp.sample_id for exp in case.experiments],
     )
     if not vcf.samples:
-        raise ValueError(f"Case {case.case_id} has no matching samples in the VCF file {case.vcf_file}")
+        raise ValueError(f"Case {case.case_id} has no matching samples in the VCF file {case.vcf_filepath}")
 
     csq_header = parse_csq_header(vcf)
     pedigree = Pedigree(case, vcf.samples)
@@ -43,6 +43,7 @@ def process_chromosomes(
         occurrence_table = catalog.load_table(f"{namespace}.germline_snv_occurrences")
         occurrence_partition_filters = [
             {
+                "part": case.part,
                 "case_id": case.case_id,
                 "seq_id": exp.seq_id,
                 "chromosome": parsed_chromosome,
@@ -67,7 +68,7 @@ def process_chromosomes(
         consequence_buffer = TableAccumulator(consequence_table, fs=fs, partition_filter=variant_csq_partition_filter)
         for record in vcf(chromosome):
             if len(record.ALT) <= 1:
-                common = process_common(record, case_id=case.case_id)
+                common = process_common(record, case_id=case.case_id, part=case.part)
                 picked_consequence, consequences = process_consequence(record, csq_header, common)
                 consequence_buffer.extend(consequences)
                 occurrences = process_occurrence(record, pedigree, common=common)
@@ -77,7 +78,7 @@ def process_chromosomes(
                 variant_buffer.append(variant)
             else:
                 logger.debug(
-                    f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_file} : "
+                    f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_filepath} : "
                     f"this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
                 )
 
@@ -85,5 +86,5 @@ def process_chromosomes(
             occurrence_buffer.write_files()
         variant_buffer.write_files()
         consequence_buffer.write_files()
-        logger.info(f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_file}, chromosome {chromosome}")
+        logger.info(f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_filepath}, chromosome {chromosome}")
     vcf.close()

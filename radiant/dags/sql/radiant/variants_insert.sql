@@ -1,8 +1,16 @@
-INSERT INTO {{ params.starrocks_variants }}
+INSERT OVERWRITE {{ params.starrocks_variants }}
+
+WITH patients AS (
+    SELECT
+        COUNT(DISTINCT s.patient_id) AS cnt
+    FROM sequencing_experiments s
+    LEFT OUTER JOIN occurrences o ON o.seq_id=s.seq_id
+)
+
 SELECT
     v.locus_id,
-    vf.ac / 22000 AS af,
-    vf.pc / 11000 AS pf,
+    vf.ac / ( (select cnt from patients) * 2) AS af,
+    vf.pc / (select cnt from patients ) AS pf,
     g.af AS gnomad_af,
     t.af AS topmed_af,
     tg.af AS tg_af,
@@ -14,23 +22,25 @@ SELECT
     v.variant_class,
     cl.interpretations AS clinvar_interpretation,
     v.symbol,
-    v.consequence,
+    v.impact_score,
+    v.consequences,
     v.vep_impact,
-    v.mane_select,
-    v.mane_plus,
-    v.picked,
-    v.canonical,
+    v.is_mane_select,
+    v.is_mane_plus,
+    v.is_canonical,
     v.rsnumber,
     v.reference,
     v.alternate,
+    v.mane_select,
     v.hgvsg,
+    v.hgvsc,
+    v.hgvsp,
     v.locus,
     v.dna_change,
     v.aa_change
 FROM {{ params.starrocks_staging_variants }} v
-LEFT JOIN {{ params.starrocks_variants_frequences }} vf ON vf.locus_id = v.locus_id
+JOIN {{ params.starrocks_variants_frequencies }} vf ON vf.locus_id = v.locus_id
 LEFT JOIN {{ params.starrocks_gnomad_genomes_v3 }} g ON g.locus_id = v.locus_id
 LEFT JOIN {{ params.starrocks_topmed_bravo }} t ON t.locus_id = v.locus_id
 LEFT JOIN {{ params.starrocks_1000_genomes }} tg ON tg.locus_id = v.locus_id
-LEFT JOIN {{ params.starrocks_clinvar }} cl ON cl.locus_id = v.locus_id
-LEFT ANTI JOIN {{ params.starrocks_variants }} kf ON kf.locus_id = v.locus_id
+LEFT JOIN {{ params.starrocks_clinvar }} cl  ON cl.locus_id = v.locus_id

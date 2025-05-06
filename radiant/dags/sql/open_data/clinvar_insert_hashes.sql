@@ -1,4 +1,4 @@
-insert into {{ params.starrocks_variants_lookup }}(`hash`)
-select `hash`
-from {{ params.iceberg_catalog }}.{{ params.iceberg_database }}.{{ params.iceberg_clinvar }} v
-LEFT ANTI JOIN {{ params.starrocks_variants_lookup }} vd on vd.hash=v.hash;
+insert into {{ params.starrocks_variants_lookup }}(`locus_hash`)
+select `locus_hash`
+from {{ params.iceberg_clinvar }} v
+LEFT ANTI JOIN {{ params.starrocks_variants_lookup }} vd on vd.locus_hash=v.locus_hash;

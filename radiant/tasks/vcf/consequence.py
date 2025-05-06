@@ -127,7 +127,7 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
                 "strand": get_csq_field(csq_fields, fields, "STRAND"),
                 "exon": {"rank": exon[0], "total": exon[1]} if len(exon) == 2 else None,
                 "vep_impact": vep_impact,
-                "consequences": get_csq_field(csq_fields, fields, "Consequence").split(";"),
+                "consequences": get_csq_field(csq_fields, fields, "Consequence").split("&"),
                 "mane_select": get_csq_field(csq_fields, fields, "ManeSelect"),
                 "is_mane_select": False,
                 "is_mane_plus": False,

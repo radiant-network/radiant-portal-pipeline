@@ -1,0 +1,4 @@
+"case_id","seq_id","part","sample_id","vcf_filepath","sex","family_role","is_affected","created_at","updated_at","ingested_at","patient_id"
+1001,2002,2,SAMPLE_ABC456,/data/vcfs/sample2.vcf,female,mother,0,"2025-04-30 13:15:00","2025-04-30 13:15:00","2025-04-30 13:15:00","3002"
+1001,2001,1,SAMPLE_XYZ123,/data/vcfs/sample1.vcf,male,proband,1,"2025-05-01 08:38:00","2025-05-01 08:38:00","2025-05-01 08:38:00","3001"
+1002,2003,1,SAMPLE_DEF789,/data/vcfs/sample3.vcf,male,father,0,"2025-03-15 09:45:00","2025-03-15 09:45:00","2025-03-15 09:45:00","3003"

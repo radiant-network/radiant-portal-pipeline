@@ -49,7 +49,7 @@ x-airflow-common:
   # In order to add custom dependencies or upgrade provider packages you can use your extended image.
   # Comment the image line, place your Dockerfile in the directory where you placed the docker-compose.yaml
   # and uncomment the "build" line below, Then run `docker-compose build` to build the images.
-  image: ${AIRFLOW_IMAGE_NAME:-radiant-network/airflow-cyvcf2:2.10.5}
+  image: ${AIRFLOW_IMAGE_NAME:-ghcr.io/radiant-network/radiant-airflow:1.0.1}
   # build: .
   environment:
     &airflow-common-env
@@ -385,6 +385,8 @@ services:
     entrypoint: >
       /bin/sh -c "
       until (/usr/bin/mc config host add minio http://radiant-minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
+      /usr/bin/mc mb minio/starrocks;
+      /usr/bin/mc policy set public minio/starrocks;      
       /usr/bin/mc mb minio/warehouse;
       /usr/bin/mc policy set public minio/warehouse;
       /usr/bin/mc mb minio/vcf;
@@ -393,7 +395,7 @@ services:
       "
 
   radiant-starrocks-fe:
-    image: starrocks/fe-ubuntu:3.3.13
+    image: starrocks/fe-ubuntu:3.4.2  # TODO Changes this to 3.4.3 when available
     container_name: radiant-starrocks-fe
     hostname: radiant-starrocks-fe
     user: root
@@ -403,7 +405,7 @@ services:
       bash -c "
       echo 'run_mode = shared_data' >> /opt/starrocks/fe/conf/fe.conf;
       echo 'cloud_native_storage_type = S3' >> /opt/starrocks/fe/conf/fe.conf;
-      echo 'aws_s3_path = test/' >> /opt/starrocks/fe/conf/fe.conf;
+      echo 'aws_s3_path = starrocks/' >> /opt/starrocks/fe/conf/fe.conf;
       echo 'aws_s3_region = us-east-1' >> /opt/starrocks/fe/conf/fe.conf;
       echo 'aws_s3_endpoint = http://radiant-minio:9000' >> /opt/starrocks/fe/conf/fe.conf;
       echo 'aws_s3_access_key = admin' >> /opt/starrocks/fe/conf/fe.conf;
@@ -423,7 +425,7 @@ services:
       retries: 10
 
   radiant-starrocks-cn:
-    image: starrocks/cn-ubuntu:3.3.13
+    image: starrocks/cn-ubuntu:3.4.2  # TODO Changes this to 3.4.3 when available
     container_name: radiant-starrocks-cn
     hostname: radiant-starrocks-cn
     user: root
@@ -437,7 +439,7 @@ services:
         ulimit -n 65535;
         sleep 15;
         mysql --connect-timeout 2 -h radiant-starrocks-fe -P 9030 -u root -e \"ALTER SYSTEM ADD COMPUTE NODE \\\"radiant-starrocks-cn:9050\\\";\"
-        bash /opt/starrocks/be/bin/start_be.sh
+        bash /opt/starrocks/be/bin/start_cn.sh
       "
     ports:
       - 8040:8040
@@ -454,17 +456,17 @@ services:
       - airflow_network
 
   init-starrocks-storage-volume:
-    image: starrocks/fe-ubuntu:3.3.13
+    image: starrocks/fe-ubuntu:3.4.2  # TODO Changes this to 3.4.3 when available
     container_name: init-starrocks-storage-volume
     depends_on:
-      - radiant-starrocks-fe
+      - radiant-starrocks-cn
     entrypoint: >
       /bin/bash -c "
       sleep 15;
       mysql -h radiant-starrocks-fe -P 9030 -u root -e \"
-      CREATE STORAGE VOLUME test_storage_volume
+      CREATE STORAGE VOLUME starrocks_storage_volume
       TYPE = S3
-      LOCATIONS = ('s3://test')
+      LOCATIONS = ('s3://starrocks')
       PROPERTIES
       (
         'enabled' = 'true',
@@ -474,22 +476,35 @@ services:
         'aws.s3.secret_key' = 'password',
         'aws.s3.enable_partitioned_prefix' = 'true'
       );
-      SET test_storage_volume AS DEFAULT STORAGE VOLUME;\"
+      SET starrocks_storage_volume AS DEFAULT STORAGE VOLUME;\"
       "
     networks:
       - airflow_network
 
+  init-radiant-database:
+     image: starrocks/fe-ubuntu:3.4.2  # TODO Changes this to 3.4.3 when available
+     container_name: init-radiant-database
+     depends_on:
+       - init-starrocks-storage-volume
+     entrypoint: >
+       /bin/bash -c "
+       sleep 15;
+       mysql -h radiant-starrocks-fe -P 9030 -u root -e \"CREATE DATABASE IF NOT EXISTS radiant\"
+       "
+     networks:
+       - airflow_network
+
   init-iceberg-catalog:
-    image: starrocks/fe-ubuntu:3.3.13
+    image: starrocks/fe-ubuntu:3.4.2  # TODO Changes this to 3.4.3 when available
     container_name: init-iceberg-catalog
     depends_on:
-      - radiant-starrocks-fe
+      - radiant-starrocks-cn
       - radiant-iceberg-rest
     entrypoint: >
       /bin/bash -c "
       sleep 15;
       mysql -h radiant-starrocks-fe -P 9030 -u root -e \"
-      CREATE EXTERNAL CATALOG 'test_iceberg_catalog'
+      CREATE EXTERNAL CATALOG 'radiant_iceberg_catalog'
       COMMENT 'External catalog to Apache Iceberg on MinIO'
       PROPERTIES
       (
@@ -500,7 +515,7 @@ services:
         'aws.s3.region'='us-east-1',
         'aws.s3.access_key'='admin',
         'aws.s3.secret_key'='password',
-        'aws.s3.endpoint'='http://minio:9000',
+        'aws.s3.endpoint'='http://radiant-minio:9000',
         'aws.s3.enable_path_style_access'='true',
         'client.factory'='com.starrocks.connector.share.iceberg.IcebergAwsClientFactory'
       );\"

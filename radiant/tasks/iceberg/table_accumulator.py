@@ -157,7 +157,10 @@ class TableAccumulator:
         self.parquet_paths.append(parquet_path)
 
         logger.info(f"Writing to parquet path: {parquet_path}")
-        pq.write_table(self.accumulated_pa_table, parquet_path, filesystem=self.fs)
+
+        with self.fs.open(parquet_path, "wb") as fos, pq.ParquetWriter(fos, schema=self.schema) as writer:
+            writer.write_table(self.accumulated_pa_table)
+
         self.accumulated_pa_table = None
         if commit:
             self.commit_files()
