@@ -6,6 +6,7 @@ from tests.unit.vcf.vcf_test_utils import variant, vcf
 case = Case(
     case_id=1,
     part=1,
+    analysis_type="germline",
     experiments=[
         Experiment(
             seq_id=1,

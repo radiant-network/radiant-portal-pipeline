@@ -2,6 +2,7 @@ SELECT
     case_id,
     seq_id,
     part,
+    analysis_type,
     sample_id,
     patient_id,
     vcf_filepath,

@@ -14,4 +14,5 @@ class Case(BaseModel):
     case_id: int
     part: int
     vcf_filepath: str
+    analysis_type: str
     experiments: list[Experiment]
