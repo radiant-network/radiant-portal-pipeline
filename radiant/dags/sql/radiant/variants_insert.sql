@@ -19,7 +19,7 @@ SELECT
     vf.hom AS hom,
     v.chromosome,
     v.start,
-    cl.name AS clinvar_name
+    cl.name AS clinvar_name,
     v.variant_class,
     cl.interpretations AS clinvar_interpretation,
     v.symbol,
