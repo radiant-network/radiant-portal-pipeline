@@ -6,6 +6,8 @@ SELECT
     c.consequences,
     c.impact_score,
     c.biotype,
+    c.exon.rank,
+    c.exon.total,
     sp.spliceai_ds,
     sp.spliceai_type,
     c.is_canonical,
