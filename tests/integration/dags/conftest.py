@@ -1,6 +1,7 @@
 import pytest
 
-from tests.utils.dags import get_pyarrow_table_from_csv
+from radiant.dags import NAMESPACE
+from tests.utils.dags import get_pyarrow_table_from_csv, poll_dag_until_success
 
 
 def create_and_append_table(iceberg_client, namespace, table_name, file_path, json_fields=None, is_clinvar=False):
@@ -41,7 +42,7 @@ def open_data_iceberg_tables(
         create_and_append_table(
             iceberg_client,
             setup_namespace,
-            f"test_{random_test_id}_open_data_{table}",
+            f"{table}",
             resources_dir / "open_data" / f"{table}.tsv",
             json_fields=json_fields,
             is_clinvar=(table == "clinvar"),
@@ -49,15 +50,23 @@ def open_data_iceberg_tables(
 
 
 @pytest.fixture(scope="session")
-def iceberg_tables(starrocks_iceberg_catalog, iceberg_client, setup_namespace, resources_dir, random_test_id):
-    create_and_append_table(
-        iceberg_client,
-        setup_namespace,
-        f"test_{random_test_id}_germline_snv_variants",
-        resources_dir / "radiant" / "variants.tsv",
-    )
+def init_iceberg_tables(radiant_airflow_container):
+    dag_id = f"{NAMESPACE}-init-iceberg-tables"
+    radiant_airflow_container.exec(["airflow", "dags", "unpause", dag_id])
+    radiant_airflow_container.exec(["airflow", "dags", "trigger", dag_id])
+    assert poll_dag_until_success(airflow_container=radiant_airflow_container, dag_id=dag_id, timeout=180)
+    yield
 
 
 @pytest.fixture(scope="session")
-def init_iceberg_tables(open_data_iceberg_tables, iceberg_tables):
+def init_starrocks_tables(radiant_airflow_container):
+    dag_id = f"{NAMESPACE}-init-starrocks-tables"
+    radiant_airflow_container.exec(["airflow", "dags", "unpause", dag_id])
+    radiant_airflow_container.exec(["airflow", "dags", "trigger", dag_id])
+    assert poll_dag_until_success(airflow_container=radiant_airflow_container, dag_id=dag_id, timeout=180)
+    yield
+
+
+@pytest.fixture(scope="session")
+def init_all_tables(init_starrocks_tables, init_iceberg_tables, open_data_iceberg_tables):
     yield
