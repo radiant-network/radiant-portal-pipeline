@@ -17,7 +17,7 @@ with DAG(
 ) as dag:
     start = EmptyOperator(task_id="start")
 
-    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo", "gnomad_constraints"]
     data_tasks = []
     for group in group_ids:
         data_tasks.append(
