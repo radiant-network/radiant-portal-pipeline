@@ -162,4 +162,4 @@ def parse_csq_header(vcf):
     return {f: i for i, f in enumerate(csq_fields)}
 
 
-IMPACT_SCORE = {"HIGH": 1, "MODERATE": 2, "LOW": 3, "MODIFIER": 4}
+IMPACT_SCORE = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
