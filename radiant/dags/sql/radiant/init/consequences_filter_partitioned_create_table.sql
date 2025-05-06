@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences_filter_partitioned }
   `revel_score` decimal(6, 5) NULL COMMENT "",
   `lrt_score` decimal(6, 5) NULL COMMENT "",
   `lrt_pred` varchar(1) NULL COMMENT "",
+  `gnomad_pli` float NULL COMMENT "",
+  `gnomad_loeuf` float NULL COMMENT "",
   `phyloP17way_primate` decimal(7, 5) NULL COMMENT "",
   `phyloP100way_vertebrate` decimal(7, 5) NULL COMMENT ""
 )
