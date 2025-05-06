@@ -1,4 +1,4 @@
-"chromosome"	"start"	"end"	"name"	"reference"	"alternate"	"ac"	"af"	"an"	"afr_af"	"eur_af"	"sas_af"	"amr_af"	"eas_af"	"dp"	"locus"	"hash"
+"chromosome"	"start"	"end"	"name"	"reference"	"alternate"	"ac"	"af"	"an"	"afr_af"	"eur_af"	"sas_af"	"amr_af"	"eas_af"	"dp"	"locus"	"locus_hash"
 "14"	99588268	99588269	rs576592835	T	C	18	0.00359425	5008	0.0136	0.0	0.0	0.0	0.0	17423	"14-99588268-T-C"	f5109495ff7127d6339f4240c6c80bb8b1fc8a4d10dc437182fd5774dd6739f7
 "14"	99588273	99588274	rs537628785	T	C	32	0.00638978	5008	0.0234	0.0	0.0	0.0014	0.0	17978	"14-99588273-T-C"	edd04f1be573d6e628c64083a7a873d5e3582326a9ebe159a53a8164f3403d49
 "14"	99588296	99588297	rs555627854	A	G	2	0.000399361	5008	0.0	0.001	0.0	0.0014	0.0	12106	"14-99588296-A-G"	"51d71c660dbead5eb567f61b97fb133d2e22c232590c7a8fd177d90197a191eb"

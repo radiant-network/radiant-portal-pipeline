@@ -46,6 +46,7 @@ STARROCKS_USER = "root"
 STARROCKS_PWD = ""
 STARROCKS_DATABASE_PREFIX = "test"
 STARROCKS_ICEBERG_CATALOG_NAME_PREFIX = "iceberg_catalog"
+STARROCKS_ICEBERG_DB_NAME_PREFIX = "ns"
 
 AIRFLOW_API_PORT = 8080
 
@@ -249,7 +250,7 @@ def starrocks_container(minio_container, random_test_id):
 
 
 @pytest.fixture(scope="session")
-def radiant_airflow_container(starrocks_container, random_test_id):
+def radiant_airflow_container(starrocks_container, iceberg_container, minio_container, random_test_id):
     client = docker.from_env()
 
     for container in client.containers.list():
@@ -264,6 +265,13 @@ def radiant_airflow_container(starrocks_container, random_test_id):
         .with_name("radiant-airflow")
         .with_command("standalone")
         .with_env("RADIANT_TABLES_NAMESPACE", f"test_{random_test_id}")
+        .with_env("RADIANT_ICEBERG_CATALOG", f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}")
+        .with_env("RADIANT_ICEBERG_DATABASE", f"{STARROCKS_ICEBERG_DB_NAME_PREFIX}_{random_test_id}")
+        .with_env("PYICEBERG_CATALOG__DEFAULT__URI", f"http://host.docker.internal:{iceberg_container.port}")
+        .with_env(
+            "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT", f"http://host.docker.internal:{minio_container.api_port}"
+        )
+        .with_env("PYICEBERG_CATALOG__DEFAULT__TOKEN", ICEBERG_REST_TOKEN)
         .with_env("AIRFLOW__CORE__DAGS_FOLDER", "/opt/airflow/radiant/dags")
         .with_env("PYTHONPATH", "$PYTHONPATH:/opt/airflow")
         .with_volume_mapping(host=str(RADIANT_DIR), container="/opt/airflow/radiant")
@@ -364,8 +372,8 @@ def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_contai
 
 
 @pytest.fixture(scope="session")
-def setup_namespace(s3_fs, iceberg_client):
-    namespace = f"ns_{uuid.uuid4().hex[:8]}"
+def setup_namespace(s3_fs, iceberg_client, random_test_id):
+    namespace = f"{STARROCKS_ICEBERG_DB_NAME_PREFIX}_{random_test_id}"
     iceberg_client.create_namespace(namespace)
     iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_occurrences", schema=OCCURRENCE_SCHEMA)
     iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_variants", schema=VARIANT_SCHEMA)
