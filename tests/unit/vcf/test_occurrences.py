@@ -26,6 +26,7 @@ from .vcf_test_utils import variant
 case = Case(
     case_id=1,
     part=1,
+    analysis_type="germline",
     experiments=[
         Experiment(
             seq_id=1,
@@ -146,6 +147,7 @@ def test_multi_sample():
     multi_sample_case = Case(
         case_id=1,
         part=1,
+        analysis_type="germline",
         experiments=[
             Experiment(
                 seq_id=1,
