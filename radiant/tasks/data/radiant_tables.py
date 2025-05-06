@@ -3,6 +3,8 @@ import os
 from radiant.dags import NAMESPACE
 
 RADIANT_TABLES_PREFIX_ENV_KEY = "RADIANT_TABLES_NAMESPACE"
+ICEBERG_CATALOG_ENV_KEY = "RADIANT_ICEBERG_CATALOG"
+ICEBERG_DATABASE_ENV_KEY = "RADIANT_ICEBERG_DATABASE"
 
 STARROCKS_COLOCATE_GROUP_MAPPING = {"colocate_query_group": f"{NAMESPACE}.query_group"}
 
@@ -65,8 +67,10 @@ def get_iceberg_germline_snv_mapping() -> dict:
 
 
 def get_iceberg_open_data_mapping() -> dict:
+    _catalog = os.getenv(ICEBERG_CATALOG_ENV_KEY, ICEBERG_CATALOG_DATABASE["iceberg_catalog"])
+    _database = os.getenv(ICEBERG_DATABASE_ENV_KEY, ICEBERG_CATALOG_DATABASE["iceberg_database"])
     return {
-        key: f"{ICEBERG_CATALOG_DATABASE['iceberg_catalog']}.{ICEBERG_CATALOG_DATABASE['iceberg_database']}.{value}"
+        key: f"{ICEBERG_CATALOG_DATABASE['iceberg_catalog']}.{_database}.{value}"
         for key, value in ICEBERG_OPEN_DATA_MAPPING.items()
     }
 

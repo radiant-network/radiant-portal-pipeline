@@ -1,4 +1,4 @@
-"chromosome"	"start"	"reference"	"alternate"	"af"	"locus"	"hash"
+"chromosome"	"start"	"reference"	"alternate"	"af"	"locus"	"locus_hash"
 "19"	27761801	TC	T	0.0000066038	"19-27761801-TC-T"	"068b97edc5ac66b55a875a8c9d21d724ac9a8b780095e0d2bd10e51a45d1e30d"
 "19"	29290598	T	C	0.0000131558	"19-29290598-T-C"	e93add5d6aaa93755a52253faab55dae44ecc5bd3e4fb7a984d1b6c84ffb1f97
 "19"	27761802	C	T	0.000125686	"19-27761802-C-T"	b1999ae36be7780f4ad3ad687b4093862ed8275148925222ba969470c24540f8

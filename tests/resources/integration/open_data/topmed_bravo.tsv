@@ -1,4 +1,4 @@
-"chromosome"	"start"	"end"	"name"	"reference"	"alternate"	"ac"	"af"	"an"	"homozygotes"	"heterozygotes"	"qual"	"qual_filter"	"locus"	"hash"
+"chromosome"	"start"	"end"	"name"	"reference"	"alternate"	"ac"	"af"	"an"	"homozygotes"	"heterozygotes"	"qual"	"qual_filter"	"locus"	"locus_hash"
 "4"	58481064	58481065	TOPMed_freeze_5?chr4:58	C	T	1	0.00000796381	125568	0	1	151.0	PASS	"4-58481064-C-T"	a4f136e6ea1acdf1a22ffa270ef5b28ca54457e15b2ff8a79c7bf077d5af1169
 "4"	58481072	58481073	TOPMed_freeze_5?chr4:58	C	T	2	0.0000159276	125568	0	2	255.0	PASS	"4-58481072-C-T"	"8fc9bb30974bf4caccf7316e215184f1d362c0e13b493220cceebc8360b9cd5b"
 "4"	58481081	58481082	TOPMed_freeze_5?chr4:58	G	T	1	0.00000796381	125568	0	1	255.0	PASS	"4-58481081-G-T"	"4821a581750d137359e0ce1f27d33c28be820e05567dbef53fa98a6b3592c9e9"

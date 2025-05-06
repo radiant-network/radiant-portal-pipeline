@@ -1,4 +1,4 @@
-"chromosome"	"start"	"end"	"reference"	"alternate"	"allele"	"symbol"	"ds_ag"	"ds_al"	"ds_dg"	"ds_dl"	"dp_ag"	"dp_al"	"dp_dg"	"dp_dl"	"max_score"	"locus"	"hash"
+"chromosome"	"start"	"end"	"reference"	"alternate"	"allele"	"symbol"	"ds_ag"	"ds_al"	"ds_dg"	"ds_dl"	"dp_ag"	"dp_al"	"dp_dg"	"dp_dl"	"max_score"	"locus"	"locus_hash"
 "11_KI270927v1_alt"	159755	159756	C	CA	CA	MUC2	0.23	0.0	0.0	0.0	35	7	35	7	"{""ds"":0.23,""type"":[""AG""]}"	"11_KI270927v1_alt-159755-C-CA"	dcc740d1dd521a5633aed16475f6579eacce28174b7e1e8fe47f2037d2f4994b
 "11_KI270927v1_alt"	159758	159759	C	CA	CA	MUC2	0.28	0.0	0.0	0.0	32	4	32	-37	"{""ds"":0.28,""type"":[""AG""]}"	"11_KI270927v1_alt-159758-C-CA"	"28228377cb2dfb53ca4329e08672edf3af06a93bcc6553f3c5abd1cf2d335d65"
 "11_KI270927v1_alt"	159760	159761	G	GA	GA	MUC2	0.23	0.0	0.0	0.0	30	-25	29	-3	"{""ds"":0.23,""type"":[""AG""]}"	"11_KI270927v1_alt-159760-G-GA"	"78c1150a42e4cf53f3a96b46580e9bc99be130ebc816037fb6e1f1a7d83ad94b"
