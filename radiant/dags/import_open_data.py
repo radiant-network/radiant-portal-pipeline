@@ -36,7 +36,6 @@ with DAG(
                 sql=f"./sql/open_data/{group}_insert.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
                 params=ICEBERG_COMMON_TASK_PARAMS,
-                trigger_rule="none_failed",
             )
         )
     data_tasks.append(
@@ -46,7 +45,6 @@ with DAG(
             sql="./sql/open_data/gnomad_constraints_insert.sql",
             submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
             params=ICEBERG_COMMON_TASK_PARAMS,
-            trigger_rule="none_failed",
         )
     )
 
