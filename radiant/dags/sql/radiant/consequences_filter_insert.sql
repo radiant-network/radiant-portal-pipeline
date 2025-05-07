@@ -1,7 +1,7 @@
 INSERT OVERWRITE {{ params.starrocks_consequences_filter }}
 SELECT
     t.locus_id,
-    NOT (sift_score IS NULL AND fathmm_score IS NULL AND polyphen2_hvar_score IS NULL AND cadd_score IS NULL AND dann_score IS NULL AND lrt_score IS NULL AND revel_score IS NULL AND phyloP17way_primate IS NULL AND phyloP100way_vertebrate IS NULL AND spliceai_ds IS NULL AND gnomad_pli <0.9) AS is_deleterious,
+    NOT (sift_score IS NULL AND fathmm_score IS NULL AND polyphen2_hvar_score IS NULL AND cadd_score IS NULL AND dann_score IS NULL AND lrt_score IS NULL AND revel_score IS NULL AND phyloP17way_primate IS NULL AND phyloP100way_vertebrate IS NULL AND spliceai_ds IS NULL) AS is_deleterious,
     impact_score,
     symbol,
     consequence,

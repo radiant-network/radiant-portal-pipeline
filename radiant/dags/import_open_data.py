@@ -6,7 +6,7 @@ from radiant.dags import ICEBERG_COMMON_TASK_PARAMS, NAMESPACE
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
 
 default_args = {"owner": "radiant"}
-
+group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
 with DAG(
     dag_id=f"{NAMESPACE}-import-open-data",
     dag_display_name="Radiant - Import Open Data",
@@ -17,7 +17,6 @@ with DAG(
 ) as dag:
     start = EmptyOperator(task_id="start")
 
-    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo", "gnomad_constraints"]
     data_tasks = []
     for group in group_ids:
         data_tasks.append(
@@ -37,8 +36,16 @@ with DAG(
                 sql=f"./sql/open_data/{group}_insert.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
                 params=ICEBERG_COMMON_TASK_PARAMS,
-                trigger_rule="none_failed",
             )
         )
+    data_tasks.append(
+        RadiantStarRocksOperator(
+            task_id="insert_gnomad_constraints",
+            task_display_name="gnomad_constraints Insert Data",
+            sql="./sql/open_data/gnomad_constraints_insert.sql",
+            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+            params=ICEBERG_COMMON_TASK_PARAMS,
+        )
+    )
 
     chain(start, *data_tasks)
