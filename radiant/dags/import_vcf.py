@@ -39,7 +39,7 @@ with DAG(
     dag_display_name="Radiant - Import VCF",
     catchup=False,
     params=dag_params,
-    max_active_tasks=128
+    max_active_tasks=128,
 ) as dag:
 
     @task
