@@ -346,7 +346,6 @@ def radiant_airflow_container(
         ]
     )
     container.exec(["airflow", "pools", "set", "starrocks_insert_pool", "1", "StarRocks insert pool"])
-    container.exec(["airflow", "pools", "set", "import_vcf", "1", "VCF import pool"])
 
     yield container
     container.stop()
