@@ -30,8 +30,9 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences }} (
     `gnomad_loeuf` float NULL COMMENT "",
     `phyloP17way_primate` float NULL COMMENT "",
     `phyloP100way_vertebrate` float NULL COMMENT "",
+    `vep_impact` VARCHAR(20) NULL COMMENT "",
     `aa_change` varchar(1000) NULL COMMENT "",
-    `dna_change` varchar(1000) NULL COMMENT ""
+    `dna_change` varchar(1000) NULL COMMENT "",
 )
 ENGINE=OLAP
 PRIMARY KEY(`locus_id`, `symbol`, `transcript_id`)

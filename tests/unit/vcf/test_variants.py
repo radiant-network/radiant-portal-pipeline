@@ -67,5 +67,6 @@ def test_variants_with_picked():
         "hgvsc": None,
         "dna_change": None,
         "aa_change": None,
+        "transcript_id": None,
     }
     assert expected == result

@@ -31,6 +31,7 @@ SELECT
     gc.loeuf,
     d.phyloP17way_primate,
     d.phyloP100way_vertebrate,
+    c.vep_impact,
     c.aa_change,
     c.dna_change
 FROM {{ params.iceberg_consequences }} c
