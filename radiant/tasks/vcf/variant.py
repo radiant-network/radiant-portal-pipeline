@@ -48,6 +48,7 @@ SCHEMA = merge_schemas(
         NestedField(315, "hgvsp", StringType(), required=False),
         NestedField(316, "dna_change", StringType(), required=False),
         NestedField(317, "aa_change", StringType(), required=False),
+        NestedField(318, "transcript_id", StringType(), required=False),
     ),
 )
 
@@ -92,6 +93,7 @@ def process_variant(record: Variant, picked_consequence: dict, common: Common):
             "hgvsc": picked_consequence.get("hgvsc"),
             "dna_change": picked_consequence.get("dna_change"),
             "aa_change": picked_consequence.get("aa_change"),
+            "transcript_id": picked_consequence.get("transcript_id"),
         }
 
         variant = {**variant, **picked_fields}

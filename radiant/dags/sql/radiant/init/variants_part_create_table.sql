@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_partitioned }} (
     hgvsp varchar(2000) NULL,
     locus VARCHAR(2000) NULL,
     dna_change VARCHAR(2000),
-    aa_change VARCHAR(2000)
+    aa_change VARCHAR(2000),
+    transcript_id varchar(100) COMMENT ""
 )
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10
