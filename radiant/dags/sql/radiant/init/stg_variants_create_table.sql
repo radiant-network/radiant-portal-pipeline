@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variants }}
     `locus_hash` varchar(64) NULL,
     `dna_change` varchar(2000),
     `aa_change` varchar(2000),
-    `transcript_id` varchar(2000) NULL
+    `transcript_id` varchar(100) COMMENT ""
 )
 ENGINE=OLAP
 PRIMARY KEY(`locus_id`)

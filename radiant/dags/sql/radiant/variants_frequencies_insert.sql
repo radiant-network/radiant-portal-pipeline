@@ -3,14 +3,14 @@ WITH freq AS  (
     SELECT
         locus_id,
         SUM(pc) AS pc,
-        SUM(pn) AS an
+        SUM(pn) AS pn
     FROM {{ params.starrocks_staging_variants_frequencies }}
     GROUP BY locus_id
 )
-
 SELECT
     locus_id,
-    freq.pc,
-    freq.an,
-    freq.pc / freq.an AS pf
+    pc,
+    pn,
+    pc / pn AS pf
 FROM freq
+;

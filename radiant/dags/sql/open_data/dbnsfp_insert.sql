@@ -18,4 +18,3 @@ SELECT
     d.phyloP100way_vertebrate AS phyloP100way_vertebrate
 FROM {{ params.iceberg_dbnsfp }} d
 JOIN {{ params.starrocks_variants_lookup }} v ON d.locus_hash = v.locus_hash
-LEFT ANTI JOIN {{ params.starrocks_dbnsfp }} d ON d.locus_id = v.locus_id
