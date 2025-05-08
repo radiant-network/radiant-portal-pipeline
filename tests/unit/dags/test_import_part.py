@@ -1,7 +1,6 @@
 import pytest
-from airflow.models import DagBag
 
-from radiant.dags import DAGS_DIR, NAMESPACE
+from radiant.dags import NAMESPACE
 from radiant.dags.import_part import cases_output_processor
 
 
@@ -32,11 +31,6 @@ def mock_descriptions():
             ("is_affected",),
         ]
     ]
-
-
-@pytest.fixture
-def dag_bag():
-    return DagBag(dag_folder=str(DAGS_DIR), include_examples=False)
 
 
 def test_cases_output_processor_returns_correct_cases(mock_results, mock_descriptions):
