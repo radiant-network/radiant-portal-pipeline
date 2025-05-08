@@ -48,4 +48,14 @@ with DAG(
         )
     )
 
+    data_tasks.append(
+        RadiantStarRocksOperator(
+            task_id="insert_omim_gene_panel",
+            task_display_name="omim_gene_panel Insert Data",
+            sql="./sql/open_data/omim_gene_panel_insert.sql",
+            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+            params=ICEBERG_COMMON_TASK_PARAMS,
+        )
+    )
+
     chain(start, *data_tasks)
