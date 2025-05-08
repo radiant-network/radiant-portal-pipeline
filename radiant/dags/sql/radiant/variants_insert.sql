@@ -9,14 +9,12 @@ WITH patients AS (
 
 SELECT
     v.locus_id,
-    vf.ac / ( (select cnt from patients) * 2) AS af,
-    vf.pc / (select cnt from patients ) AS pf,
+    vf.pf as pf,
     g.af AS gnomad_af,
     t.af AS topmed_af,
     tg.af AS tg_af,
-    vf.ac AS ac,
     vf.pc AS pc,
-    vf.hom AS hom,
+    vf.pn AS pn,
     v.chromosome,
     v.start,
     cl.name AS clinvar_name,

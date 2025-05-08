@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_frequencies }} (
    `locus_id` BIGINT NOT NULL,
    `pc` BIGINT,
-   `ac` BIGINT,
-   `hom` BIGINT
+   `pn` BIGINT,
+   `pf` DOUBLE
 )
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10
