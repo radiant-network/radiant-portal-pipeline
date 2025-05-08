@@ -1,7 +1,6 @@
 CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_partitioned }} (
     part INT NOT NULL,
     locus_id BIGINT NOT NULL,
-    af DOUBLE,
     pf DOUBLE,
     gnomad_v3_af DOUBLE,
     topmed_af DOUBLE,

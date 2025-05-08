@@ -38,7 +38,7 @@ ICEBERG_REST_CATALOG_NAME = "radiant"
 ICEBERG_REST_TOKEN = "mysecret"
 
 STARROCKS_HOSTNAME = "radiant-starrocks-allin1"
-STARROCKS_IMAGE = "starrocks/allin1-ubuntu:3.3.13"
+STARROCKS_IMAGE = "starrocks/allin1-ubuntu:3.4.2"
 STARROCKS_FE_HTTP_PORT = 8030
 STARROCKS_BE_HTTP_PORT = 8040
 STARROCKS_QUERY_PORT = 9030
@@ -93,6 +93,15 @@ class StarRocksIcebergDatabase:
     def __init__(self, catalog, name):
         self.catalog = catalog
         self.name = name
+
+
+class PostgresInstance:
+    def __init__(self, host, port, user, password, db):
+        self.host = host
+        self.port = port
+        self.user = user
+        self.password = password
+        self.db = db
 
 
 class RadiantAirflowInstance:
@@ -249,8 +258,36 @@ def starrocks_container(minio_container, random_test_id):
     container.stop()
 
 
+# Note on the Postgres fixture
+# We cannot run Airflow in a standalone mode to properly test the DAGs because we need to run something else than
+# the SequentialExecutor. The SequentialExecutor doesn't support parallelism and is not suitable for testing.
+# This is required to setup Airflow because running a LocalExecutor is not supported with sqlite.
+# This means we
 @pytest.fixture(scope="session")
-def radiant_airflow_container(starrocks_container, iceberg_container, minio_container, random_test_id):
+def postgres_container():
+    pg_container = (
+        DockerContainer("postgres:latest")
+        .with_name("radiant-postgres")
+        .with_env("POSTGRES_USER", "airflow_user")
+        .with_env("POSTGRES_PASSWORD", "airflow_pass")
+        .with_env("POSTGRES_DB", "airflow_db")
+        .with_exposed_ports(5432)
+        .with_command("postgres -c max_connections=1000")
+    )
+    pg_container.start()
+    wait_for_logs(pg_container, "database system is ready to accept connections", timeout=60)
+
+    pg_port = pg_container.get_exposed_port(5432)
+    yield PostgresInstance(
+        host="host.docker.internal", port=pg_port, user="airflow_user", password="airflow_pass", db="airflow_db"
+    )
+    pg_container.stop()
+
+
+@pytest.fixture(scope="session")
+def radiant_airflow_container(
+    postgres_container, starrocks_container, iceberg_container, minio_container, random_test_id
+):
     client = docker.from_env()
 
     for container in client.containers.list():
@@ -260,23 +297,32 @@ def radiant_airflow_container(starrocks_container, iceberg_container, minio_cont
             yield RadiantAirflowInstance("localhost", query_port)
             return
 
+    env_vars = {
+        "RADIANT_TABLES_NAMESPACE": f"test_{random_test_id}",
+        "RADIANT_ICEBERG_CATALOG": f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}",
+        "PYICEBERG_CATALOG__DEFAULT__URI": f"http://host.docker.internal:{iceberg_container.port}",
+        "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": f"http://host.docker.internal:{minio_container.api_port}",
+        "PYICEBERG_CATALOG__DEFAULT__TOKEN": ICEBERG_REST_TOKEN,
+        "AIRFLOW__CORE__DAGS_FOLDER": "/opt/airflow/radiant/dags",
+        "AIRFLOW__CORE__EXECUTOR": "LocalExecutor",
+        "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": f"postgresql+psycopg2://{postgres_container.user}:{postgres_container.password}@{postgres_container.host}:{postgres_container.port}/{postgres_container.db}",
+        "PYTHONPATH": "$PYTHONPATH:/opt/airflow",
+        "HTS_S3_HOST": f"host.docker.internal:{minio_container.api_port}",
+        "HTS_S3_ADDRESS_STYLE": "path",
+        "AWS_ACCESS_KEY_ID": "admin",
+        "AWS_SECRET_ACCESS_KEY": "password",
+        "AWS_REGION": "us-east-1",
+    }
+
     container = (
         DockerContainer("radiant-airflow:latest")
         .with_name("radiant-airflow")
         .with_command("standalone")
-        .with_env("RADIANT_TABLES_NAMESPACE", f"test_{random_test_id}")
-        .with_env("RADIANT_ICEBERG_CATALOG", f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}")
-        .with_env("RADIANT_ICEBERG_DATABASE", f"{STARROCKS_ICEBERG_DB_NAME_PREFIX}_{random_test_id}")
-        .with_env("PYICEBERG_CATALOG__DEFAULT__URI", f"http://host.docker.internal:{iceberg_container.port}")
-        .with_env(
-            "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT", f"http://host.docker.internal:{minio_container.api_port}"
-        )
-        .with_env("PYICEBERG_CATALOG__DEFAULT__TOKEN", ICEBERG_REST_TOKEN)
-        .with_env("AIRFLOW__CORE__DAGS_FOLDER", "/opt/airflow/radiant/dags")
-        .with_env("PYTHONPATH", "$PYTHONPATH:/opt/airflow")
         .with_volume_mapping(host=str(RADIANT_DIR), container="/opt/airflow/radiant")
         .with_exposed_ports(AIRFLOW_API_PORT)
     )
+
+    container.env |= env_vars
 
     container.start()
     wait_for_logs(container, "Starting gunicorn", timeout=60)
@@ -300,6 +346,7 @@ def radiant_airflow_container(starrocks_container, iceberg_container, minio_cont
         ]
     )
     container.exec(["airflow", "pools", "set", "starrocks_insert_pool", "1", "StarRocks insert pool"])
+    container.exec(["airflow", "pools", "set", "import_vcf", "1", "VCF import pool"])
 
     yield container
     container.stop()

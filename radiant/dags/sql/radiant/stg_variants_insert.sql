@@ -21,7 +21,8 @@ SELECT v.locus_id,
     t.locus,
     t.locus_hash,
     t.dna_change,
-    t.aa_change
+    t.aa_change,
+    t.transcript_id
 FROM {{ params.iceberg_variants }} t
 JOIN {{ params.starrocks_variants_lookup }} v ON t.locus_hash = v.locus_hash
 where t.case_id in %(case_ids)s;
