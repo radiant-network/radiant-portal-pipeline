@@ -5,13 +5,11 @@ from tests.utils.dags import poll_dag_until_success
 
 @pytest.mark.slow
 def test_import_part_with_valid_sequencing_experiments(
-    init_iceberg_tables,
-    init_starrocks_tables,
+    init_all_tables,
     starrocks_iceberg_catalog,
     radiant_airflow_container,
     starrocks_session,
     random_test_id,
-    s3_fs,
     indexed_vcfs,
 ):
     with starrocks_session.cursor() as cursor:

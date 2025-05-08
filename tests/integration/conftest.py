@@ -262,7 +262,6 @@ def starrocks_container(minio_container, random_test_id):
 # We cannot run Airflow in a standalone mode to properly test the DAGs because we need to run something else than
 # the SequentialExecutor. The SequentialExecutor doesn't support parallelism and is not suitable for testing.
 # This is required to setup Airflow because running a LocalExecutor is not supported with sqlite.
-# This means we
 @pytest.fixture(scope="session")
 def postgres_container():
     pg_container = (
@@ -299,6 +298,7 @@ def radiant_airflow_container(
 
     env_vars = {
         "RADIANT_TABLES_NAMESPACE": f"test_{random_test_id}",
+        "RADIANT_ICEBERG_DATABASE": f"{STARROCKS_ICEBERG_DB_NAME_PREFIX}_{random_test_id}",
         "RADIANT_ICEBERG_CATALOG": f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}",
         "PYICEBERG_CATALOG__DEFAULT__URI": f"http://host.docker.internal:{iceberg_container.port}",
         "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": f"http://host.docker.internal:{minio_container.api_port}",
