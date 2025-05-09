@@ -6,7 +6,15 @@ from radiant.dags import ICEBERG_COMMON_TASK_PARAMS, NAMESPACE
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
 
 default_args = {"owner": "radiant"}
-group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+variant_group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+gene_group_ids = [
+    "gnomad_constraints",
+    "omim_gene_panel",
+    "hpo_gene_panel",
+    "orphanet_gene_panel",
+    "ddd_gene_panel",
+    "cosmic_gene_panel",
+]
 with DAG(
     dag_id=f"{NAMESPACE}-import-open-data",
     dag_display_name="Radiant - Import Open Data",
@@ -18,7 +26,7 @@ with DAG(
     start = EmptyOperator(task_id="start")
 
     data_tasks = []
-    for group in group_ids:
+    for group in variant_group_ids:
         data_tasks.append(
             RadiantStarRocksOperator(
                 task_id=f"insert_hashes_{group}",
@@ -38,24 +46,16 @@ with DAG(
                 params=ICEBERG_COMMON_TASK_PARAMS,
             )
         )
-    data_tasks.append(
-        RadiantStarRocksOperator(
-            task_id="insert_gnomad_constraints",
-            task_display_name="gnomad_constraints Insert Data",
-            sql="./sql/open_data/gnomad_constraints_insert.sql",
-            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
-            params=ICEBERG_COMMON_TASK_PARAMS,
-        )
-    )
 
-    data_tasks.append(
-        RadiantStarRocksOperator(
-            task_id="insert_omim_gene_panel",
-            task_display_name="omim_gene_panel Insert Data",
-            sql="./sql/open_data/omim_gene_panel_insert.sql",
-            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
-            params=ICEBERG_COMMON_TASK_PARAMS,
+    for group in gene_group_ids:
+        data_tasks.append(
+            RadiantStarRocksOperator(
+                task_id=f"insert_{group}",
+                task_display_name=f"{group} Insert Data",
+                sql=f"./sql/open_data/{group}_insert.sql",
+                submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+                params=ICEBERG_COMMON_TASK_PARAMS,
+            )
         )
-    )
 
     chain(start, *data_tasks)
