@@ -9,7 +9,7 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-starrocks-tables")
-    assert len(dag.tasks) == 19  # 11 radiant tables + 7 open data tables
+    assert len(dag.tasks) == 23  # 11 radiant tables + 11 open data tables + 1 start task
 
 
 def test_dag_has_all_tasks(dag_bag):
@@ -40,6 +40,10 @@ def test_dag_has_all_tasks(dag_bag):
         "topmed_bravo",
         "gnomad_constraints",
         "omim_gene_panel",
+        "hpo_gene_panel",
+        "orphanet_gene_panel",
+        "ddd_gene_panel",
+        "cosmic_gene_panel",
     ]
     for group in group_ids:
         assert f"create_{group}" in task_ids

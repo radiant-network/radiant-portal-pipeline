@@ -9,8 +9,16 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
-    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
-    assert len(dag.tasks) == 3 + len(group_ids) * 2
+    variant_group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+    gene_group_ids = [
+        "gnomad_constraints",
+        "omim_gene_panel",
+        "hpo_gene_panel",
+        "orphanet_gene_panel",
+        "ddd_gene_panel",
+        "cosmic_gene_panel",
+    ]
+    assert len(dag.tasks) == 1 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_dag_has_all_group_tasks(dag_bag):

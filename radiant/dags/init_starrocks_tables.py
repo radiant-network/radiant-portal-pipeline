@@ -47,6 +47,10 @@ with DAG(
         "topmed_bravo",
         "gnomad_constraints",
         "omim_gene_panel",
+        "hpo_gene_panel",
+        "orphanet_gene_panel",
+        "ddd_gene_panel",
+        "cosmic_gene_panel",
     ]
     for group in group_ids:
         tasks.append(
