@@ -1,0 +1,101 @@
+symbol	hpo_term_name	hpo_term_id
+TP53	Short stature	HP:0004322
+BRCA1	Seizures	HP:0001250
+EGFR	Hearing loss	HP:0000365
+KRAS	Developmental delay	HP:0001263
+ALK	Microcephaly	HP:0000252
+BRAF	Ataxia	HP:0001251
+PTEN	Macrocephaly	HP:0000256
+PIK3CA	Hypertension	HP:0000822
+NRAS	Autism	HP:0000717
+APC	Polydactyly	HP:0001167
+ATM	Cataract	HP:0000518
+CDH1	Cleft palate	HP:0000175
+CHEK2	Hypertelorism	HP:0000316
+MLH1	Cardiomyopathy	HP:0001638
+MSH2	Hypotonia	HP:0001252
+MSH6	Growth delay	HP:0001510
+PMS2	Abnormality of the skin	HP:0000951
+SMAD4	Nephrotic syndrome	HP:0000098
+VHL	Anemia	HP:0001903
+RET	Diabetes mellitus	HP:0000819
+MET	Optic atrophy	HP:0000648
+CDKN2A	Spasticity	HP:0001257
+RB1	Leukopenia	HP:0001882
+NF1	Café-au-lait spot	HP:0007565
+NF2	Hearing impairment	HP:0000365
+WT1	Hematuria	HP:0000790
+SDHB	Hyperpigmentation	HP:0000953
+SDHD	Thrombocytopenia	HP:0001873
+KIT	Leukocytosis	HP:0001974
+PDGFRA	Muscle weakness	HP:0001324
+JAK2	Hepatomegaly	HP:0002240
+FLT3	Splenomegaly	HP:0001744
+IDH1	Abnormal facial shape	HP:0001999
+IDH2	Blue sclerae	HP:0000592
+GATA2	Abnormality of the kidney	HP:0000077
+RUNX1	Muscular hypotonia	HP:0001252
+NPM1	Abnormality of the heart	HP:0001626
+TET2	Delayed speech and language development	HP:0000750
+ASXL1	Failure to thrive	HP:0001508
+EZH2	Abnormality of the eye	HP:0000478
+DNMT3A	Abnormality of the liver	HP:0001392
+SF3B1	Abnormality of the nervous system	HP:0000707
+SRSF2	Abnormality of the skeletal system	HP:0000924
+U2AF1	Abnormality of the musculature	HP:0003011
+TP63	Abnormality of the gastrointestinal tract	HP:0002014
+FGFR1	Abnormality of the respiratory system	HP:0002086
+FGFR2	Abnormality of the cardiovascular system	HP:0001626
+FGFR3	Abnormality of the immune system	HP:0002715
+ERBB2	Abnormality of the endocrine system	HP:0000818
+ERBB3	Abnormality of the blood and blood-forming tissues	HP:0001871
+ERBB4	Abnormality of the integument	HP:0000951
+CDK4	Abnormality of the genitourinary system	HP:0000119
+CDK6	Abnormality of the ear	HP:0000598
+MDM2	Abnormality of the nose	HP:0000411
+CCND1	Abnormality of the mouth	HP:0000153
+CCND2	Abnormality of the teeth	HP:0000164
+CCND3	Abnormality of the nails	HP:0001597
+EWSR1	Abnormality of the limbs	HP:0009826
+FUS	Abnormality of the foot	HP:0001761
+SMARCB1	Abnormality of the hand	HP:0001155
+SMARCA4	Abnormality of the spine	HP:0000925
+ARID1A	Abnormality of the pelvis	HP:0002871
+ARID1B	Abnormality of the thorax	HP:0000765
+CREBBP	Abnormality of the ribs	HP:0000772
+EP300	Abnormality of the clavicle	HP:0000892
+NOTCH1	Abnormality of the scapula	HP:0000893
+NOTCH2	Abnormality of the sternum	HP:0000766
+FBXW7	Abnormality of the vertebral column	HP:0000925
+CTNNB1	Abnormality of the cranium	HP:0000239
+AXIN1	Abnormality of the mandible	HP:0000277
+AXIN2	Abnormality of the maxilla	HP:0000275
+GNAS	Abnormality of the zygomatic bone	HP:0000274
+MEN1	Abnormality of the orbit	HP:0001107
+HRAS	Abnormality of the eyelid	HP:0000527
+MAP2K1	Abnormality of the eyebrow	HP:0000526
+MAP2K2	Abnormality of the eyelashes	HP:0000528
+ROS1	Abnormality of the cornea	HP:0000481
+NTRK1	Abnormality of the retina	HP:0000556
+NTRK2	Abnormality of the lens	HP:0000517
+NTRK3	Abnormality of the iris	HP:0000521
+FGFR4	Abnormality of the vitreous	HP:0001136
+POLE	Abnormality of the optic nerve	HP:0000609
+POLD1	Abnormality of the pupil	HP:0000610
+MUTYH	Abnormality of the conjunctiva	HP:0000509
+STK11	Abnormality of the lacrimal gland	HP:0000632
+SUFU	Abnormality of the tongue	HP:0000157
+PTCH1	Abnormality of the lip	HP:0000167
+GLI1	Abnormality of the palate	HP:0000175
+SMO	Abnormality of the tooth	HP:0000164
+BCL2	Abnormality of the jaw	HP:0000277
+BCL6	Abnormality of the chin	HP:0000301
+MYC	Abnormality of the neck	HP:0000470
+MYCN	Abnormality of the shoulder	HP:0001319
+TERT	Abnormality of the arm	HP:0001443
+HNF1A	Abnormality of the elbow	HP:0001376
+FOXL2	Abnormality of the wrist	HP:0001378
+DICER1	Abnormality of the finger	HP:0001155
+RAD51C	Abnormality of the thumb	HP:0001160
+RAD51D	Abnormality of the hip	HP:0001363
+PALB2	Abnormality of the knee	HP:0001371
