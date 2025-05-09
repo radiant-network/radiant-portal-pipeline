@@ -3,8 +3,8 @@ INSERT OVERWRITE {{ params.starrocks_variants }}
 WITH patients AS (
     SELECT
         COUNT(DISTINCT s.patient_id) AS cnt
-    FROM sequencing_experiments s
-    LEFT OUTER JOIN occurrences o ON o.seq_id=s.seq_id
+    FROM {{ params.source_sequencing_experiments }} s
+    LEFT OUTER JOIN {{ params.starrocks_occurrences }} o ON o.seq_id=s.seq_id
 )
 
 SELECT

@@ -38,6 +38,7 @@ def open_data_iceberg_tables(
         "gnomad_constraint_v_2_1_1": None,
         "spliceai_enriched": ["max_score"],
         "topmed_bravo": None,
+        "omim_gene_set": ["symbols", "phenotype"],
     }
     for table, json_fields in tables.items():
         create_and_append_table(

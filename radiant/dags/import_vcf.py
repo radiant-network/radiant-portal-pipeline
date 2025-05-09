@@ -70,7 +70,9 @@ with DAG(
         case = Case.model_validate(case)
         logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}, chromosome {','.join(chromosomes)}")
         logger.info("=" * 80)
-        process_chromosomes(chromosomes, case, fs, vcf_threads=4)
+
+        namespace = os.getenv("RADIANT_ICEBERG_DATABASE", "radiant")
+        process_chromosomes(chromosomes, case, fs, namespace=namespace, vcf_threads=4)
         logger.info(
             f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_filepath}, chromosome {','.join(chromosomes)}"
         )
