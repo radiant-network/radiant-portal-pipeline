@@ -29,6 +29,10 @@ ICEBERG_OPEN_DATA_MAPPING = {
     "iceberg_topmed_bravo": "topmed_bravo",
     "iceberg_gnomad_constraints": "gnomad_constraint_v_2_1_1",
     "iceberg_omim_gene_set": "omim_gene_set",
+    "iceberg_hpo_gene_set": "hpo_gene_set",
+    "iceberg_orphanet_gene_set": "orphanet_gene_set",
+    "iceberg_cosmic_gene_set": "cosmic_gene_set",
+    "iceberg_ddd_gene_set": "ddd_gene_set",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
@@ -53,6 +57,10 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_topmed_bravo": "topmed_bravo",
     "starrocks_gnomad_constraints": "gnomad_constraints",
     "starrocks_omim_gene_panel": "omim_gene_panel",
+    "starrocks_hpo_gene_panel": "hpo_gene_panel",
+    "starrocks_orphanet_gene_panel": "orphanet_gene_panel",
+    "starrocks_cosmic_gene_panel": "cosmic_gene_panel",
+    "starrocks_ddd_gene_panel": "ddd_gene_panel",
 }
 
 ICEBERG_CATALOG_DATABASE = {
