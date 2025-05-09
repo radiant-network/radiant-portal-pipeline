@@ -1,0 +1,105 @@
+symbol	disease_name
+TP53	Li-Fraumeni syndrome
+BRCA1	Hereditary breast and ovarian cancer
+BRCA2	Hereditary breast and ovarian cancer
+CFTR	Cystic fibrosis
+FBN1	Marfan syndrome
+NF1	Neurofibromatosis type 1
+NF2	Neurofibromatosis type 2
+COL1A1	Osteogenesis imperfecta
+COL1A2	Osteogenesis imperfecta
+DMD	Duchenne muscular dystrophy
+SMN1	Spinal muscular atrophy
+HTT	Huntington disease
+PAH	Phenylketonuria
+HBB	Sickle cell anemia
+HBA1	Alpha-thalassemia
+HBA2	Alpha-thalassemia
+G6PD	G6PD deficiency
+GAA	Pompe disease
+GBA	Gaucher disease
+IDUA	Hurler syndrome
+MECP2	Rett syndrome
+TSC1	Tuberous sclerosis
+TSC2	Tuberous sclerosis
+MLH1	Lynch syndrome
+MSH2	Lynch syndrome
+MSH6	Lynch syndrome
+PMS2	Lynch syndrome
+APC	Familial adenomatous polyposis
+RET	Multiple endocrine neoplasia type 2
+MEN1	Multiple endocrine neoplasia type 1
+VHL	Von Hippel-Lindau disease
+RB1	Retinoblastoma
+PTEN	Cowden syndrome
+CDH1	Hereditary diffuse gastric cancer
+ATM	Ataxia-telangiectasia
+CHEK2	Li-Fraumeni-like syndrome
+SMARCB1	Rhabdoid tumor predisposition syndrome
+WT1	Wilms tumor
+SDHB	Paraganglioma syndrome
+SDHD	Paraganglioma syndrome
+KIT	Piebaldism
+PDGFRA	Gastrointestinal stromal tumor
+JAK2	Polycythemia vera
+FLT3	Acute myeloid leukemia
+IDH1	Acute myeloid leukemia
+IDH2	Acute myeloid leukemia
+GATA2	Emberger syndrome
+RUNX1	Familial platelet disorder with propensity to myeloid malignancy
+NPM1	Acute myeloid leukemia
+TET2	Clonal hematopoiesis
+ASXL1	Bohring-Opitz syndrome
+EZH2	Weaver syndrome
+DNMT3A	Tatton-Brown-Rahman syndrome
+SF3B1	Myelodysplastic syndrome
+SRSF2	Myelodysplastic syndrome
+U2AF1	Myelodysplastic syndrome
+TP63	Ectrodactyly-ectodermal dysplasia-clefting syndrome
+FGFR1	Pfeiffer syndrome
+FGFR2	Apert syndrome
+FGFR3	Achondroplasia
+ERBB2	Charcot-Marie-Tooth disease type 2N
+ERBB3	Charcot-Marie-Tooth disease type 2D
+ERBB4	Schizophrenia susceptibility
+CDK4	Melanoma susceptibility
+CDK6	Acute lymphoblastic leukemia
+MDM2	Li-Fraumeni syndrome
+CCND1	Mantle cell lymphoma
+CCND2	Megalencephaly-polymicrogyria-polydactyly-hydrocephalus syndrome
+CCND3	Acute lymphoblastic leukemia
+EWSR1	Ewing sarcoma
+FUS	Amyotrophic lateral sclerosis
+SMARCA4	Coffin-Siris syndrome
+ARID1A	Coffin-Siris syndrome
+ARID1B	Coffin-Siris syndrome
+CREBBP	Rubinstein-Taybi syndrome
+EP300	Rubinstein-Taybi syndrome
+NOTCH1	Aortic valve disease
+NOTCH2	Alagille syndrome
+FBXW7	Cholangiocarcinoma
+CTNNB1	Hepatoblastoma
+AXIN1	Hepatocellular carcinoma
+AXIN2	Oligodontia-colorectal cancer syndrome
+GNAS	Pseudohypoparathyroidism
+HRAS	Costello syndrome
+MAP2K1	Cardiofaciocutaneous syndrome
+MAP2K2	Cardiofaciocutaneous syndrome
+ROS1	Non-small cell lung cancer
+NTRK1	Congenital insensitivity to pain with anhidrosis
+NTRK2	Obesity
+NTRK3	Congenital hypomyelinating neuropathy
+FGFR4	Rhabdomyosarcoma
+POLE	Polymerase proofreading-associated polyposis
+POLD1	Polymerase proofreading-associated polyposis
+MUTYH	MUTYH-associated polyposis
+STK11	Peutz-Jeghers syndrome
+SUFU	Medulloblastoma
+PTCH1	Gorlin syndrome
+GLI1	Pallister-Hall syndrome
+SMO	Basal cell nevus syndrome
+BCL2	Follicular lymphoma
+BCL6	Diffuse large B-cell lymphoma
+MYC	Burkitt lymphoma
+MYCN	Neuroblastoma
+TERT	Dyskeratosis congenita

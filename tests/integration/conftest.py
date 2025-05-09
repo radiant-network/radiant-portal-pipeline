@@ -258,10 +258,9 @@ def starrocks_container(minio_container, random_test_id):
     container.stop()
 
 
-# Note on the Postgres fixture
-# We cannot run Airflow in a standalone mode to properly test the DAGs because we need to run something else than
-# the SequentialExecutor. The SequentialExecutor doesn't support parallelism and is not suitable for testing.
-# This is required to setup Airflow because running a LocalExecutor is not supported with sqlite.
+# Note on the Postgres fixture:
+# Airflow cannot be run in standalone mode for proper DAG testing because the SequentialExecutor
+# does not support parallelism, making it unsuitable for testing. A LocalExecutor requires a non-sqlite database.
 @pytest.fixture(scope="session")
 def postgres_container():
     pg_container = (
@@ -321,16 +320,12 @@ def radiant_airflow_container(
         .with_volume_mapping(host=str(RADIANT_DIR), container="/opt/airflow/radiant")
         .with_exposed_ports(AIRFLOW_API_PORT)
     )
-
     container.env |= env_vars
-
     container.start()
     wait_for_logs(container, "Starting gunicorn", timeout=60)
 
-    # Manual delay for 20 seconds, because airflow standalone doesn't continuously output logs
+    # Add delay and configure Airflow
     time.sleep(20)
-
-    # Manually add pool & connection after container start
     container.exec(
         [
             "airflow",
