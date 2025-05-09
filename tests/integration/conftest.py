@@ -320,16 +320,12 @@ def radiant_airflow_container(
         .with_volume_mapping(host=str(RADIANT_DIR), container="/opt/airflow/radiant")
         .with_exposed_ports(AIRFLOW_API_PORT)
     )
-
     container.env |= env_vars
-
     container.start()
     wait_for_logs(container, "Starting gunicorn", timeout=60)
 
-    # Manual delay for 20 seconds, because airflow standalone doesn't continuously output logs
+    # Add delay and configure Airflow
     time.sleep(20)
-
-    # Manually add pool & connection after container start
     container.exec(
         [
             "airflow",
