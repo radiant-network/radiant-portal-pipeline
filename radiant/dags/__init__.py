@@ -25,7 +25,7 @@ ICEBERG_COMMON_TASK_PARAMS = {
 DEFAULT_ARGS = {"owner": "radiant"}
 
 DAGS_DIR = pathlib.Path(__file__).parent
-SQL_DIR = pathlib.Path("sql")
+SQL_DIR = DAGS_DIR / "sql"
 
 # This is required because docs are read at DAG parse time, not a execution time.
 _dags_dir = pathlib.Path(__file__).parent
