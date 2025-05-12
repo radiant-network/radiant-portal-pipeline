@@ -306,7 +306,7 @@ def radiant_airflow_container(
         "AIRFLOW__CORE__EXECUTOR": "LocalExecutor",
         "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": f"postgresql+psycopg2://{postgres_container.user}:{postgres_container.password}@{postgres_container.host}:{postgres_container.port}/{postgres_container.db}",
         "PYTHONPATH": "$PYTHONPATH:/opt/airflow",
-        "HTS_S3_HOST": f"h{host_internal_address}:{minio_container.api_port}",
+        "HTS_S3_HOST": f"{host_internal_address}:{minio_container.api_port}",
         "HTS_S3_ADDRESS_STYLE": "path",
         "AWS_ACCESS_KEY_ID": "admin",
         "AWS_SECRET_ACCESS_KEY": "password",

@@ -8,7 +8,6 @@ def test_process_chromosomes(
     iceberg_client,
     iceberg_container,
     indexed_vcfs,
-    starrocks_session,
     s3_fs,
 ):
     case = Case(
