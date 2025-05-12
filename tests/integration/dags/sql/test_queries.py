@@ -2,12 +2,14 @@ import os
 
 import jinja2
 
-from radiant.dags import SQL_DIR
+from radiant.dags import DAGS_DIR
 
-_RADIANT_INIT_DIR = os.path.join(SQL_DIR, "radiant", "init")
-_RADIANT_INSERT_DIR = os.path.join(SQL_DIR, "radiant")
-_OPEN_DATA_INIT_DIR = os.path.join(SQL_DIR, "open_data", "init")
-_OPEN_DATA_INSERT_DIR = os.path.join(SQL_DIR, "open_data")
+_SQL_DIR = os.path.join(DAGS_DIR, "sql")
+
+_RADIANT_INIT_DIR = os.path.join(_SQL_DIR, "radiant", "init")
+_RADIANT_INSERT_DIR = os.path.join(_SQL_DIR, "radiant")
+_OPEN_DATA_INIT_DIR = os.path.join(_SQL_DIR, "open_data", "init")
+_OPEN_DATA_INSERT_DIR = os.path.join(_SQL_DIR, "open_data")
 
 _MOCK_PARAMS = {
     "part": 0,
