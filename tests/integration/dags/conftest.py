@@ -39,6 +39,10 @@ def open_data_iceberg_tables(
         "spliceai_enriched": ["max_score"],
         "topmed_bravo": None,
         "omim_gene_set": ["symbols", "phenotype"],
+        "cosmic_gene_set": ["tumour_types_germline"],
+        "ddd_gene_set": None,
+        "hpo_gene_set": None,
+        "orphanet_gene_set": None,
     }
     for table, json_fields in tables.items():
         create_and_append_table(
