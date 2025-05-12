@@ -24,7 +24,7 @@ def _execute_query(cursor, query, args=None):
         _result = cursor.fetchall()
         assert _result is not None, f"Query failed: {query}"
     except Exception as e:
-        raise Exception(f"Query failed: {e}") from e
+        raise Exception(f"Query failed: {query}, with exception: {e}") from e
 
 
 def _validate_init(starrocks_session, sql_dir, tables):
@@ -47,7 +47,6 @@ def _explain_insert(starrocks_session, sql_dir):
     from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
     sql_files = [os.path.join(sql_dir, file) for file in os.listdir(sql_dir) if file.endswith(".sql")]
-
     with starrocks_session.cursor() as cursor:
         for sql_file in sql_files:
             with open(sql_file) as f:
@@ -56,7 +55,12 @@ def _explain_insert(starrocks_session, sql_dir):
 
 
 def test_queries_are_valid(
-    monkeypatch, starrocks_session, setup_namespace, open_data_iceberg_tables, starrocks_iceberg_catalog
+    monkeypatch,
+    iceberg_client,
+    starrocks_session,
+    setup_namespace,
+    open_data_iceberg_tables,
+    starrocks_iceberg_catalog,
 ):
     monkeypatch.setenv("RADIANT_ICEBERG_CATALOG", starrocks_iceberg_catalog.name)
     monkeypatch.setenv("RADIANT_ICEBERG_DATABASE", setup_namespace)

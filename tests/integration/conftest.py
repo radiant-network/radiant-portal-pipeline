@@ -262,7 +262,7 @@ def starrocks_container(minio_container, random_test_id):
 # Airflow cannot be run in standalone mode for proper DAG testing because the SequentialExecutor
 # does not support parallelism, making it unsuitable for testing. A LocalExecutor requires a non-sqlite database.
 @pytest.fixture(scope="session")
-def postgres_container():
+def postgres_container(host_internal_address):
     pg_container = (
         DockerContainer("postgres:latest")
         .with_name("radiant-postgres")
@@ -277,14 +277,14 @@ def postgres_container():
 
     pg_port = pg_container.get_exposed_port(5432)
     yield PostgresInstance(
-        host="host.docker.internal", port=pg_port, user="airflow_user", password="airflow_pass", db="airflow_db"
+        host=host_internal_address, port=pg_port, user="airflow_user", password="airflow_pass", db="airflow_db"
     )
     pg_container.stop()
 
 
 @pytest.fixture(scope="session")
 def radiant_airflow_container(
-    postgres_container, starrocks_container, iceberg_container, minio_container, random_test_id
+    host_internal_address, postgres_container, starrocks_container, iceberg_container, minio_container, random_test_id
 ):
     client = docker.from_env()
 
@@ -299,14 +299,14 @@ def radiant_airflow_container(
         "RADIANT_TABLES_NAMESPACE": f"test_{random_test_id}",
         "RADIANT_ICEBERG_DATABASE": f"{STARROCKS_ICEBERG_DB_NAME_PREFIX}_{random_test_id}",
         "RADIANT_ICEBERG_CATALOG": f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}",
-        "PYICEBERG_CATALOG__DEFAULT__URI": f"http://host.docker.internal:{iceberg_container.port}",
-        "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": f"http://host.docker.internal:{minio_container.api_port}",
+        "PYICEBERG_CATALOG__DEFAULT__URI": f"{host_internal_address}:{iceberg_container.port}",
+        "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": f"{host_internal_address}:{minio_container.api_port}",
         "PYICEBERG_CATALOG__DEFAULT__TOKEN": ICEBERG_REST_TOKEN,
         "AIRFLOW__CORE__DAGS_FOLDER": "/opt/airflow/radiant/dags",
         "AIRFLOW__CORE__EXECUTOR": "LocalExecutor",
         "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": f"postgresql+psycopg2://{postgres_container.user}:{postgres_container.password}@{postgres_container.host}:{postgres_container.port}/{postgres_container.db}",
         "PYTHONPATH": "$PYTHONPATH:/opt/airflow",
-        "HTS_S3_HOST": f"host.docker.internal:{minio_container.api_port}",
+        "HTS_S3_HOST": f"h{host_internal_address}:{minio_container.api_port}",
         "HTS_S3_ADDRESS_STYLE": "path",
         "AWS_ACCESS_KEY_ID": "admin",
         "AWS_SECRET_ACCESS_KEY": "password",
@@ -335,7 +335,7 @@ def radiant_airflow_container(
             "--conn-uri",
             (
                 f"mysql://{starrocks_container.user}:{starrocks_container.password}"
-                f"@host.docker.internal:{starrocks_container.query_port}"
+                f"@{host_internal_address}:{starrocks_container.query_port}"
                 f"/{starrocks_container.database}"
             ),
         ]
@@ -389,7 +389,9 @@ def iceberg_client(iceberg_container, iceberg_catalog_properties):
 
 
 @pytest.fixture(scope="session")
-def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_container, random_test_id):
+def starrocks_iceberg_catalog(
+    host_internal_address, starrocks_session, iceberg_container, minio_container, random_test_id
+):
     with starrocks_session.cursor() as cursor:
         catalog_name = f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}"
         cursor.execute(f"""
@@ -399,12 +401,12 @@ def starrocks_iceberg_catalog(starrocks_session, iceberg_container, minio_contai
         (
             'type'='iceberg',
             'iceberg.catalog.type'='rest',
-            'iceberg.catalog.uri'='http://host.docker.internal:{iceberg_container.port}',
+            'iceberg.catalog.uri'='http://{host_internal_address}:{iceberg_container.port}',
             'iceberg.catalog.token' = '{iceberg_container.token}',
             'aws.s3.region'='us-east-1',
             'aws.s3.access_key'='{minio_container.access_key}',
             'aws.s3.secret_key'='{minio_container.secret_key}',
-            'aws.s3.endpoint'='http://host.docker.internal:{minio_container.api_port}',
+            'aws.s3.endpoint'='http://{host_internal_address}:{minio_container.api_port}',
             'aws.s3.enable_path_style_access'='true',
             'client.factory'='com.starrocks.connector.share.iceberg.IcebergAwsClientFactory'
         );""")
