@@ -59,3 +59,9 @@ with DAG(
                 sql=str(_OPEN_DATA_SQL_INIT_DIR / f"{group}_create_table.sql"),
             )
         )
+    tasks.append(
+        RadiantStarRocksOperator(
+            task_id="create_variant_id_udf",
+            sql=str(_RADIANT_SQL_INIT_DIR / "variant_id_udf_create.sql"),
+        )
+    )
