@@ -410,6 +410,7 @@ services:
       echo 'aws_s3_endpoint = http://radiant-minio:9000' >> /opt/starrocks/fe/conf/fe.conf;
       echo 'aws_s3_access_key = admin' >> /opt/starrocks/fe/conf/fe.conf;
       echo 'aws_s3_secret_key = password' >> /opt/starrocks/fe/conf/fe.conf;
+      echo 'enable_udf = true' >> /opt/starrocks/fe/conf/fe.conf;
       exec /opt/starrocks/fe/bin/start_fe.sh --host_type FQDN
       "
     ports:
