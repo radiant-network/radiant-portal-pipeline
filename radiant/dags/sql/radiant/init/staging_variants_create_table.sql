@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variants }} (
     transcript_id varchar(100) COMMENT "",
     omim_inheritance_code array<varchar(5)> COMMENT ""
 )
-PRIMARY KEY(`locus_id`)
+PRIMARY KEY(locus_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10
 PROPERTIES (
     "colocate_with" = "{{ params.colocate_query_group }}"
