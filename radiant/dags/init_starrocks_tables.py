@@ -23,10 +23,11 @@ with DAG(
         "consequences_filter_partitioned",
         "occurrences",
         "sequencing_experiment",
-        "stg_variants",
+        "tmp_variants",
+        "staging_variants",
         "variant_dict",
         "variants",
-        "stg_variants_freq",
+        "staging_variants_freq",
         "variants_frequencies",
         "variants_part",
     ]
