@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ params.starrocks_staging_variants }}
+INSERT OVERWRITE {{ params.starrocks_tmp_variants }}
 SELECT COALESCE(GET_VARIANT_ID(t.chromosome, t.start, t.reference, t.alternate), v.locus_id) as locus_id,
     t.chromosome,
     t.start,

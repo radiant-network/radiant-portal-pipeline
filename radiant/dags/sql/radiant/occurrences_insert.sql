@@ -52,6 +52,6 @@ SELECT
     transmission_mode,
     info_old_record
 FROM {{ params.iceberg_occurrences }} o
-JOIN {{ params.starrocks_staging_variants }} v ON o.locus_hash = v.locus_hash
+JOIN {{ params.starrocks_tmp_variants }} v ON o.locus_hash = v.locus_hash
 WHERE part = %(part)s
 AND has_alt;

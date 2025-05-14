@@ -40,6 +40,7 @@ STARROCKS_GERMLINE_SNV_MAPPING = {
     "starrocks_consequences_filter": "consequences_filter",
     "starrocks_consequences_filter_partitioned": "consequences_filter_partitioned",
     "starrocks_occurrences": "occurrences",
+    "starrocks_tmp_variants": "tmp_variants",
     "starrocks_variants": "variants",
     "starrocks_variants_frequencies": "variants_frequencies",
     "starrocks_variants_partitioned": "variants_partitioned",

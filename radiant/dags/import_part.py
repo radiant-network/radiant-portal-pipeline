@@ -115,10 +115,10 @@ def import_part():
         parameters=case_ids,
     )
 
-    overwrite_stg_variants = RadiantStarRocksOperator(
-        task_id="overwrite_stg_variants",
-        sql="./sql/radiant/stg_variants_insert.sql",
-        task_display_name="[StarRocks] Insert Variants Staging tables",
+    overwrite_tmp_variants = RadiantStarRocksOperator(
+        task_id="overwrite_tmp_variants",
+        sql="./sql/radiant/tmp_variants_insert.sql",
+        task_display_name="[StarRocks] Insert Variants Tmp tables",
         submit_task_options=std_submit_task_opts,
         parameters=case_ids,
     )
@@ -133,7 +133,7 @@ def import_part():
 
     insert_stg_variants_freq = RadiantStarRocksOperator(
         task_id="insert_stg_variants_freq",
-        sql="./sql/radiant/stg_variants_freq_insert.sql",
+        sql="./sql/radiant/staging_variants_freq_insert.sql",
         task_display_name="[StarRocks] Insert Stg Variants Freq Part",
         submit_task_options=std_submit_task_opts,
         parameters={"part": "{{ params.part }}"},
@@ -147,9 +147,16 @@ def import_part():
     )
 
     with TaskGroup(group_id="variants") as tg_variants:
-        insert_variants = RadiantStarRocksOperator(
+        insert_staging_variants = RadiantStarRocksOperator(
+            task_id="insert_staging_variants",
+            task_display_name="[StarRocks] Insert Staging Variants",
+            sql="./sql/radiant/staging_variants_insert.sql",
+            submit_task_options=std_submit_task_opts,
+        )
+
+        insert_variants_with_freqs = RadiantStarRocksOperator(
             task_id="insert_variants",
-            task_display_name="[StarRocks] Insert Variants",
+            task_display_name="[StarRocks] Insert Variants /w Frequencies",
             sql="./sql/radiant/variants_insert.sql",
             submit_task_options=std_submit_task_opts,
         )
@@ -174,7 +181,7 @@ def import_part():
             parameters=_compute_part,
         )
 
-        insert_variants >> insert_variants_part
+        insert_staging_variants >> insert_variants_with_freqs >> insert_variants_part
 
     with TaskGroup(group_id="consequences") as tg_consequences:
         import_consequences = RadiantStarRocksOperator(
@@ -212,7 +219,7 @@ def import_part():
         >> import_vcf
         >> refresh_iceberg_tables
         >> insert_hashes
-        >> overwrite_stg_variants
+        >> overwrite_tmp_variants
         >> insert_occurrences
         >> insert_stg_variants_freq
         >> aggregate_variants_frequencies
