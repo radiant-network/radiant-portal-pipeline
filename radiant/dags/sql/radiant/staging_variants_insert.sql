@@ -1,7 +1,7 @@
 INSERT INTO {{ params.starrocks_staging_variants }}
 SELECT
     v.locus_id,
-    g.af AS gnomad_af,
+    g.af AS gnomad_v3_af,
     t.af AS topmed_af,
     tg.af AS tg_af,
     v.chromosome,
