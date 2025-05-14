@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variants }}
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_tmp_variants }}
 (
     `locus_id` BIGINT NOT NULL,
     `chromosome` char(2),

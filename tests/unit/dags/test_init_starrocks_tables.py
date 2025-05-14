@@ -9,7 +9,7 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-starrocks-tables")
-    assert len(dag.tasks) == 24  # 11 radiant tables + 11 open data tables + 1 create function + 1 start task
+    assert len(dag.tasks) == 25  # 12 radiant tables + 11 open data tables + 1 create function + 1 start task
 
 
 def test_dag_has_all_tasks(dag_bag):
@@ -21,10 +21,11 @@ def test_dag_has_all_tasks(dag_bag):
         "consequences_filter_partitioned",
         "occurrences",
         "sequencing_experiment",
-        "stg_variants",
+        "tmp_variants",
+        "staging_variants",
         "variant_dict",
         "variants",
-        "stg_variants_freq",
+        "staging_variants_freq",
         "variants_frequencies",
         "variants_part",
     ]
