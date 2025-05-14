@@ -1,5 +1,5 @@
 INSERT OVERWRITE {{ params.starrocks_staging_variants }}
-SELECT v.locus_id,
+SELECT COALESCE(GET_VARIANT_ID(t.chromosome, t.start, t.reference, t.alternate), v.locus_id) as locus_id,
     t.chromosome,
     t.start,
     t.variant_class,
@@ -24,5 +24,5 @@ SELECT v.locus_id,
     t.aa_change,
     t.transcript_id
 FROM {{ params.iceberg_variants }} t
-JOIN {{ params.starrocks_variants_lookup }} v ON t.locus_hash = v.locus_hash
-where t.case_id in %(case_ids)s;
+LEFT JOIN {{ params.starrocks_variants_lookup }} v ON t.locus_hash = v.locus_hash
+where t.case_id in %(case_ids)s and t.alternate <> '*';

@@ -4,4 +4,4 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_lookup }} (
 )
 ENGINE=OLAP
 PRIMARY KEY (locus_hash)
-DISTRIBUTED BY HASH(`locus_hash`) BUCKETS 30;
+DISTRIBUTED BY HASH(`locus_hash`) BUCKETS 5;
