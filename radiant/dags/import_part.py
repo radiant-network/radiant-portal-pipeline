@@ -156,7 +156,7 @@ def import_part():
 
         insert_variants_with_freqs = RadiantStarRocksOperator(
             task_id="insert_variants",
-            task_display_name="[StarRocks] Insert Variants /w Frequencies",
+            task_display_name="[StarRocks] Insert Variants",
             sql="./sql/radiant/variants_insert.sql",
             submit_task_options=std_submit_task_opts,
         )
