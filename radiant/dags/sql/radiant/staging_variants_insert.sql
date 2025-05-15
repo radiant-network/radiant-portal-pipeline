@@ -6,6 +6,7 @@ SELECT
     tg.af AS tg_af,
     v.chromosome,
     v.start,
+    v.end,
     cl.name AS clinvar_name,
     v.variant_class,
     cl.interpretations AS clinvar_interpretation,
