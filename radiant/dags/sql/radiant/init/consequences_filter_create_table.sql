@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences_filter }} (
     `gnomad_pli` float NULL COMMENT "",
     `gnomad_loeuf` float NULL COMMENT "",
     `phyloP17way_primate` float NULL COMMENT "",
-    `phyloP100way_vertebrate` float NULL COMMENT ""
+    `phyloP100way_vertebrate` float NULL COMMENT "",
+    `vep_impact` VARCHAR(20) NULL COMMENT ""
 )
 ENGINE=OLAP
 DUPLICATE KEY(`locus_id`, `is_deleterious`, `impact_score`)

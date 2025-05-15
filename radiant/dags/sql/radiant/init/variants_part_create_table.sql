@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_partitioned }} (
     pn INT(11),
     chromosome CHAR(2),
     start BIGINT NULL COMMENT '',
+    end BIGINT NULL COMMENT '',
     clinvar_name VARCHAR(2000) NULL COMMENT '',
     variant_class VARCHAR(50) NULL COMMENT '',
     clinvar_interpretation ARRAY<VARCHAR(100)> NULL COMMENT '',

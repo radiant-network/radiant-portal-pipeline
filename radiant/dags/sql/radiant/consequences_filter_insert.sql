@@ -22,7 +22,8 @@ SELECT
     gnomad_pli,
     gnomad_loeuf,
     phyloP17way_primate,
-    phyloP100way_vertebrate
+    phyloP100way_vertebrate,
+    vep_impact
 FROM (
     SELECT
         locus_id,
@@ -46,7 +47,8 @@ FROM (
         gnomad_pli,
         ANY_VALUE(gnomad_loeuf) AS gnomad_loeuf,
         ANY_VALUE(phyloP17way_primate) AS phyloP17way_primate,
-        ANY_VALUE(phyloP100way_vertebrate) AS phyloP100way_vertebrate
+        ANY_VALUE(phyloP100way_vertebrate) AS phyloP100way_vertebrate,
+        vep_impact
     FROM (
         SELECT
             locus_id,
@@ -70,7 +72,8 @@ FROM (
             gnomad_pli,
             gnomad_loeuf,
             phyloP17way_primate,
-            phyloP100way_vertebrate
+            phyloP100way_vertebrate,
+            vep_impact
         FROM
             {{ params.starrocks_consequences }} c,
             UNNEST(consequences) AS unnest
@@ -85,5 +88,6 @@ FROM (
         revel_score,
         spliceai_ds,
         impact_score,
-        gnomad_pli
+        gnomad_pli,
+        vep_impact
 ) t

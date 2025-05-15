@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences_filter_partitioned }
   `gnomad_pli` float NULL COMMENT "",
   `gnomad_loeuf` float NULL COMMENT "",
   `phyloP17way_primate` float NULL COMMENT "",
-  `phyloP100way_vertebrate` float NULL COMMENT ""
+  `phyloP100way_vertebrate` float NULL COMMENT "",
+  `vep_impact` VARCHAR(20) NULL COMMENT ""
 )
 ENGINE=OLAP
 COMMENT "OLAP"

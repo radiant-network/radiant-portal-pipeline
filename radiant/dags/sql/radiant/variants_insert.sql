@@ -9,6 +9,7 @@ SELECT
     vf.pn AS pn,
     v.chromosome,
     v.start,
+    v.end,
     v.clinvar_name,
     v.variant_class,
     v.clinvar_interpretation,
