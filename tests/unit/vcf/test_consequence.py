@@ -36,7 +36,7 @@ def test_one_sample():
         "consequences": ["missense_variant"],
         "dna_change": "c.227A>T",
         "end": 1000,
-        "exon": {"rank": 2, "total": 8},
+        "exon": {"rank": "2-3", "total": "8"},
         "hgvsc": "c.227A>T",
         "hgvsg": "g.12345G>A",
         "hgvsp": "p.Lys76Asn",
