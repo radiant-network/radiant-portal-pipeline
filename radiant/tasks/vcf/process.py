@@ -42,7 +42,7 @@ def process_chromosomes(
         with open(local_path, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
-        print(f"File downloaded to {local_path}")
+        logger.info(f"Index TBI file downloaded to {local_path}")
         vcf.set_index(local_path)
     if not vcf.samples:
         raise ValueError(f"Case {case.case_id} has no matching samples in the VCF file {case.vcf_filepath}")
