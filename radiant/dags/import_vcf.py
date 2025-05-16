@@ -50,7 +50,8 @@ with DAG(
         return [Case.model_validate(c).model_dump() for c in params.get("cases", [])]
 
     @task
-    def generate_presigned_url(case: dict, expiration=3600):
+    def generate_presigned_url(case: dict):
+        expiration=3600
         hook = S3Hook(aws_conn_id='minio')
         client = hook.get_conn()
 
@@ -101,5 +102,5 @@ with DAG(
 
     all_cases = get_cases()
 
-    generate_url = generate_presigned_url.expand(all_cases)
+    generate_url = generate_presigned_url.expand(case=all_cases)
     import_vcf.expand(case=generate_url, chromosomes=GROUPED_CHROMOSOMES)
