@@ -1,3 +1,8 @@
+import sys
+from unittest.mock import patch
+
+import pytest
+
 from radiant.tasks.vcf.experiment import Case, Experiment
 from radiant.tasks.vcf.process import process_chromosomes
 
@@ -58,3 +63,47 @@ def test_process_chromosomes(
     # })
     #
     # assert_frame_equal(occ.reset_index(drop=True), expected_df, check_like=True)
+
+
+def fake_error_logging(*args, **kwargs):
+    print("[E:: Fake error message", file=sys.stderr)
+
+
+def test_process_chromosomes_error(
+    setup_namespace,
+    iceberg_catalog_properties,
+    iceberg_container,
+    indexed_vcfs,
+    minio_container,
+    s3_fs,
+):
+    case = Case(
+        case_id=1,
+        part=1,
+        analysis_type="germline",
+        experiments=[
+            Experiment(
+                seq_id=1,
+                patient_id="PA001",
+                sample_id="SA0001",
+                family_role="proband",
+                is_affected=True,
+                sex="F",
+            )
+        ],
+        vcf_filepath=indexed_vcfs["test.vcf"],
+    )
+    with (
+        pytest.raises(Exception) as exc,
+        patch("radiant.tasks.iceberg.table_accumulator.TableAccumulator.write_files", fake_error_logging),
+    ):
+        process_chromosomes(
+            ["chr1"],
+            case,
+            s3_fs,
+            catalog_name=iceberg_container.catalog_name,
+            namespace=setup_namespace,
+            catalog_properties=iceberg_catalog_properties,
+        )
+
+    assert "Detected error: [E::" in str(exc.value)
