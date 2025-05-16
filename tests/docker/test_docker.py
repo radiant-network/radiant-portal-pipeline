@@ -14,3 +14,4 @@ def test_docker_image_contains_cyvcf(docker_container):
     exit_code, output = docker_container.exec('/bin/bash -c "/home/airflow/.venv/radiant/bin/pip freeze"')
     assert exit_code == 0
     assert b"cyvcf2" in output
+    assert b"wurlitzer" in output
