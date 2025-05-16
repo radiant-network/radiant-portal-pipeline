@@ -27,6 +27,7 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
             vcf_filepath=list_rows[0]["vcf_filepath"],
             part=list_rows[0]["part"],
             analysis_type=list_rows[0]["analysis_type"],
+            tbi_filepath=None,
             experiments=[
                 Experiment(
                     seq_id=row["seq_id"],
