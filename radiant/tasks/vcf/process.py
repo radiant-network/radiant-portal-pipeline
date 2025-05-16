@@ -1,5 +1,5 @@
 import logging
-
+import requests
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
 
@@ -36,7 +36,14 @@ def process_chromosomes(
         samples=[exp.sample_id for exp in case.experiments],
     )
     if case.tbi_filepath:
-        vcf.set_index(case.tbi_filepath)
+        local_path = f"/tmp/file.tbi"
+        response = requests.get(case.tbi_filepath, stream=True)
+        response.raise_for_status()
+        with open(local_path, 'wb') as f:
+            for chunk in response.iter_content(chunk_size=8192):
+                f.write(chunk)
+        print(f"File downloaded to {local_path}")
+        vcf.set_index(local_path)
     if not vcf.samples:
         raise ValueError(f"Case {case.case_id} has no matching samples in the VCF file {case.vcf_filepath}")
 
