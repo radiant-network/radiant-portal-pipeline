@@ -66,7 +66,16 @@ def test_process_chromosomes(
 
 
 def fake_error_logging(*args, **kwargs):
-    print("[E:: Fake error message", file=sys.stderr)
+    import ctypes
+
+    libc = ctypes.CDLL(None)
+    if sys.platform == "darwin":
+        # macOS uses __stderrp
+        c_stderr = ctypes.c_void_p.in_dll(libc, "__stderrp")
+    else:
+        # Linux and most other Unix-like OSes use stderr
+        c_stderr = ctypes.c_void_p.in_dll(libc, "stderr")
+    libc.fprintf(c_stderr, b"[E:: Fake error message\n")
 
 
 def test_process_chromosomes_error(

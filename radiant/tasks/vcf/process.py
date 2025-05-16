@@ -4,7 +4,7 @@ from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
 
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
-from radiant.tasks.utils import capture_stderr_and_check_errors
+from radiant.tasks.utils import capture_libc_stderr_and_check_errors
 from radiant.tasks.vcf.common import process_common
 from radiant.tasks.vcf.consequence import parse_csq_header, process_consequence
 from radiant.tasks.vcf.experiment import Case
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
 # Airflow will treat the task as successful if the error is not captured properly.
-@capture_stderr_and_check_errors(error_patterns=["[E::"])
+@capture_libc_stderr_and_check_errors(error_patterns=["[E::"])
 def process_chromosomes(
     chromosomes: list[str],
     case: Case,
