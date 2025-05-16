@@ -2,6 +2,7 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Param
 from airflow.utils.dates import days_ago
+from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 
 from radiant.dags import NAMESPACE
 
@@ -48,6 +49,28 @@ with DAG(
 
         return [Case.model_validate(c).model_dump() for c in params.get("cases", [])]
 
+    @task
+    def generate_presigned_url(case: dict, expiration=3600):
+        hook = S3Hook(aws_conn_id='minio')
+        client = hook.get_conn()
+
+        if case['vcf_filepath'].startswith("s3://"):
+            bucket_name, object_key = case['vcf_filepath'][5:].split("/", 1)
+            vcf_url = client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': bucket_name, 'Key': object_key},
+                ExpiresIn=expiration
+            )
+            tbi_url = client.generate_presigned_url(
+                'get_object',
+                Params={'Bucket': bucket_name, 'Key': f"{object_key}.tbi"},
+                ExpiresIn=expiration
+            )
+            case['vcf_filepath'] = vcf_url
+            case['tbi_filepath'] = tbi_url
+
+        return case
+
     @task.external_python(pool="import_vcf", task_id="import_vcf", python=PATH_TO_PYTHON_BINARY)
     def import_vcf(case: dict, chromosomes: list[str]):
         import logging
@@ -78,4 +101,5 @@ with DAG(
 
     all_cases = get_cases()
 
-    import_vcf.expand(case=all_cases, chromosomes=GROUPED_CHROMOSOMES)
+    generate_url = generate_presigned_url.expand(all_cases)
+    import_vcf.expand(case=generate_url, chromosomes=GROUPED_CHROMOSOMES)

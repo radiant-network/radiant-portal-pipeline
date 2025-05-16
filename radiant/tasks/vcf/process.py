@@ -35,6 +35,8 @@ def process_chromosomes(
         threads=vcf_threads,
         samples=[exp.sample_id for exp in case.experiments],
     )
+    if case.tbi_filepath:
+        vcf.set_index(case.vcf_filepath)
     if not vcf.samples:
         raise ValueError(f"Case {case.case_id} has no matching samples in the VCF file {case.vcf_filepath}")
 

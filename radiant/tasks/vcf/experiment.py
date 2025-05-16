@@ -1,3 +1,5 @@
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -14,5 +16,6 @@ class Case(BaseModel):
     case_id: int
     part: int
     vcf_filepath: str
+    tbi_filepath: Optional[str]
     analysis_type: str
     experiments: list[Experiment]
