@@ -11,9 +11,9 @@ from radiant.tasks.vcf.experiment import Case
 from radiant.tasks.vcf.occurrence import process_occurrence
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.variant import process_variant
-
+import os
 logger = logging.getLogger(__name__)
-
+os.environ["HTS_CURL_OPTS"] = "--http1.1"
 
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
 # Airflow will treat the task as successful if the error is not captured properly.
@@ -27,6 +27,7 @@ def process_chromosomes(
     vcf_threads=None,
     catalog_properties=None,
 ):
+
     catalog = load_catalog(catalog_name, **catalog_properties) if catalog_properties else load_catalog(catalog_name)
 
     vcf = VCF(
