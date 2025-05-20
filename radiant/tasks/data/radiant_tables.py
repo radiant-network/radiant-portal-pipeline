@@ -8,17 +8,16 @@ ICEBERG_DATABASE_ENV_KEY = "RADIANT_ICEBERG_DATABASE"
 
 STARROCKS_COLOCATE_GROUP_MAPPING = {"colocate_query_group": f"{NAMESPACE}.query_group"}
 
+GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX = "germline__snv__"
 
-SOURCE_SEQUENCING_EXPERIMENT_MAPPING = {
-    "source_sequencing_experiments": "sequencing_experiments",
-}
+
+# --- Iceberg tables
 
 ICEBERG_GERMLINE_SNV_MAPPING = {
     "iceberg_consequences": "germline_snv_consequences",
     "iceberg_occurrences": "germline_snv_occurrences",
     "iceberg_variants": "germline_snv_variants",
 }
-
 
 ICEBERG_OPEN_DATA_MAPPING = {
     "iceberg_1000_genomes": "1000_genomes",
@@ -33,6 +32,18 @@ ICEBERG_OPEN_DATA_MAPPING = {
     "iceberg_orphanet_gene_set": "orphanet_gene_set",
     "iceberg_cosmic_gene_set": "cosmic_gene_set",
     "iceberg_ddd_gene_set": "ddd_gene_set",
+}
+
+ICEBERG_CATALOG_DATABASE = {
+    "iceberg_catalog": os.getenv("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog"),
+    "iceberg_database": os.getenv("RADIANT_ICEBERG_DATABASE", "radiant"),
+}
+
+
+# --- StarRocks tables
+
+STARROCKS_SEQUENCING_EXPERIMENT_MAPPING = {
+    "starrocks_sequencing_experiments": "sequencing_experiments",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
@@ -64,11 +75,6 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_ddd_gene_panel": "ddd_gene_panel",
 }
 
-ICEBERG_CATALOG_DATABASE = {
-    "iceberg_catalog": os.getenv("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog"),
-    "iceberg_database": os.getenv("RADIANT_ICEBERG_DATABASE", "radiant"),
-}
-
 
 def get_iceberg_germline_snv_mapping() -> dict:
     return {
@@ -93,17 +99,35 @@ def get_iceberg_tables() -> dict:
     }
 
 
-def get_radiant_mapping() -> dict:
+def get_starrocks_germline_snv_mapping() -> dict:
+    namespace = os.environ.get(RADIANT_TABLES_PREFIX_ENV_KEY)
+    namespace = f"{namespace}_" if namespace else GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX
+    return {key: f"{namespace}{value}" for key, value in STARROCKS_GERMLINE_SNV_MAPPING.items()}
+
+
+def get_starrocks_open_data_mapping() -> dict:
     namespace = os.environ.get(RADIANT_TABLES_PREFIX_ENV_KEY)
     namespace = f"{namespace}_" if namespace else ""
+    return {key: f"{namespace}{value}" for key, value in STARROCKS_OPEN_DATA_MAPPING.items()}
+
+
+def get_starrocks_sequencing_experiment_mapping() -> dict:
+    namespace = os.environ.get(RADIANT_TABLES_PREFIX_ENV_KEY)
+    namespace = f"{namespace}_" if namespace else ""
+    return {key: f"{namespace}{value}" for key, value in STARROCKS_SEQUENCING_EXPERIMENT_MAPPING.items()}
+
+
+def get_radiant_mapping() -> dict:
+    namespace = os.environ.get(RADIANT_TABLES_PREFIX_ENV_KEY)
+    namespace = f"{namespace}_" if namespace else GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX
     mapping = {
         key: f"{namespace}{value}"
         for key, value in {
-            **SOURCE_SEQUENCING_EXPERIMENT_MAPPING,
-            **STARROCKS_GERMLINE_SNV_MAPPING,
-            **STARROCKS_OPEN_DATA_MAPPING,
             **STARROCKS_COLOCATE_GROUP_MAPPING,
         }.items()
     }
+    mapping.update(get_starrocks_sequencing_experiment_mapping())
+    mapping.update(get_starrocks_germline_snv_mapping())
+    mapping.update(get_starrocks_open_data_mapping())
     mapping.update(get_iceberg_tables())
     return mapping
