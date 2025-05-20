@@ -42,8 +42,9 @@ ICEBERG_CATALOG_DATABASE = {
 
 # --- StarRocks tables
 
-STARROCKS_SEQUENCING_EXPERIMENT_MAPPING = {
+STARROCKS_COMMON_MAPPING = {
     "starrocks_sequencing_experiments": "sequencing_experiments",
+    "starrocks_variants_lookup": "variants_lookup",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
@@ -55,7 +56,6 @@ STARROCKS_GERMLINE_SNV_MAPPING = {
     "starrocks_variants": "variants",
     "starrocks_variants_frequencies": "variants_frequencies",
     "starrocks_variants_partitioned": "variants_partitioned",
-    "starrocks_variants_lookup": "variants_lookup",
     "starrocks_staging_variants": "staging_variants",
     "starrocks_staging_variants_frequencies": "staging_variants_frequencies_part",
 }
@@ -111,10 +111,10 @@ def get_starrocks_open_data_mapping() -> dict:
     return {key: f"{namespace}{value}" for key, value in STARROCKS_OPEN_DATA_MAPPING.items()}
 
 
-def get_starrocks_sequencing_experiment_mapping() -> dict:
+def get_starrocks_common_mapping() -> dict:
     namespace = os.environ.get(RADIANT_TABLES_PREFIX_ENV_KEY)
     namespace = f"{namespace}_" if namespace else ""
-    return {key: f"{namespace}{value}" for key, value in STARROCKS_SEQUENCING_EXPERIMENT_MAPPING.items()}
+    return {key: f"{namespace}{value}" for key, value in STARROCKS_COMMON_MAPPING.items()}
 
 
 def get_radiant_mapping() -> dict:
@@ -126,7 +126,7 @@ def get_radiant_mapping() -> dict:
             **STARROCKS_COLOCATE_GROUP_MAPPING,
         }.items()
     }
-    mapping.update(get_starrocks_sequencing_experiment_mapping())
+    mapping.update(get_starrocks_common_mapping())
     mapping.update(get_starrocks_germline_snv_mapping())
     mapping.update(get_starrocks_open_data_mapping())
     mapping.update(get_iceberg_tables())

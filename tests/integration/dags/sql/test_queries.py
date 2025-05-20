@@ -68,9 +68,9 @@ def test_queries_are_valid(
     monkeypatch.setenv("RADIANT_ICEBERG_DATABASE", setup_namespace)
 
     from radiant.tasks.data.radiant_tables import (
+        get_starrocks_common_mapping,
         get_starrocks_germline_snv_mapping,
         get_starrocks_open_data_mapping,
-        get_starrocks_sequencing_experiment_mapping,
     )
 
     # Validate table creation for Open Data & Radiant
@@ -78,7 +78,7 @@ def test_queries_are_valid(
     _validate_init(
         starrocks_session,
         sql_dir=_RADIANT_INIT_DIR,
-        tables={**get_starrocks_germline_snv_mapping(), **get_starrocks_sequencing_experiment_mapping()}.values(),
+        tables={**get_starrocks_germline_snv_mapping(), **get_starrocks_common_mapping()}.values(),
     )
 
     # Validate table insertion using SQL `EXPLAIN` for Open Data & Radiant (Requires existing tables)
