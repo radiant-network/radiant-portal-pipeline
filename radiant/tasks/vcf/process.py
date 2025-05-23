@@ -12,7 +12,7 @@ from radiant.tasks.vcf.occurrence import process_occurrence
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.variant import process_variant
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("airflow.task")
 
 
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.

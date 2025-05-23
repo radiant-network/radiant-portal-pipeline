@@ -1,3 +1,4 @@
+import sys
 from functools import wraps
 
 from wurlitzer import pipes
@@ -14,9 +15,14 @@ def capture_libc_stderr_and_check_errors(error_patterns: list[str]):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            with pipes() as (_, stderr):
+            with pipes() as (stdout, stderr):
                 result = func(*args, **kwargs)
             errors = stderr.getvalue()
+            output = stdout.getvalue()
+            if output:
+                print(output, file=sys.stdout)
+            if errors:
+                print(errors, file=sys.stderr)
             if any(pattern in errors for pattern in error_patterns):
                 raise ValueError(f"Detected error: {errors}")
             return result
