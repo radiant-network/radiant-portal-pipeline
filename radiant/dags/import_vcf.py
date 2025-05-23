@@ -71,7 +71,7 @@ with DAG(
         logger.info("=" * 80)
 
         namespace = os.getenv("RADIANT_ICEBERG_DATABASE", "radiant")
-        process_chromosomes(chromosomes, case, fs, namespace=namespace, vcf_threads=None)
+        process_chromosomes(chromosomes, case, fs, namespace=namespace, vcf_threads=4)
         logger.info(
             f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_filepath}, chromosome {','.join(chromosomes)}"
         )

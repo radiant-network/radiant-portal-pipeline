@@ -1,6 +1,6 @@
 .PHONY: all
 
-docker-build:
+build-docker:
 	docker build -t radiant-airflow:latest .
 
 install:
@@ -12,7 +12,7 @@ install-dev: install
 	# Required for standalone unit tests
 	airflow db init
 
-test-docker: docker-build
+test-docker: build-docker
 	pytest tests/docker/
 
 test-unit:

@@ -9,7 +9,7 @@ from pyiceberg.catalog import Table
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import And, EqualTo
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("airflow.task")
 
 PARQUET_FILE_SIZE_MB = 256
 MAX_BUFFERED_ROWS = 10000
