@@ -87,28 +87,28 @@ x-airflow-common:
 
     # Observability feature flags
     OTLP_COLLECTOR_ENABLED: "true"
-    AIRFLOW__METRICS__OTEL_ON: 'False'
-    AIRFLOW__TRACES__OTEL_ON: 'False'
+    AIRFLOW__METRICS__OTEL_ON: "False"
+    AIRFLOW__TRACES__OTEL_ON: "False"
 
     # Radiant-specific OTEL span collection
     OTLP_COLLECTOR_HTTP_ENDPOINT: "http://host.docker.internal:8889"
 
     # Airflow-bundled OTEL METRICS
-    AIRFLOW__METRICS__OTEL_HOST: 'host.docker.internal'
-    AIRFLOW__METRICS__OTEL_PORT: '8889'
-    AIRFLOW__METRICS__OTEL_PREFIX: 'airflow'
+    AIRFLOW__METRICS__OTEL_HOST: "host.docker.internal"
+    AIRFLOW__METRICS__OTEL_PORT: "8889"
+    AIRFLOW__METRICS__OTEL_PREFIX: "airflow"
     AIRFLOW__METRICS__OTEL_INTERVAL_MILLISECONDS: 60000
-    AIRFLOW__METRICS__OTEL_DEBUGGING_ON: 'False'
-    AIRFLOW__METRICS__OTEL_SERVICE: 'Airflow'
-    AIRFLOW__METRICS__OTEL_SSL_ACTIVE: 'False'
+    AIRFLOW__METRICS__OTEL_DEBUGGING_ON: "False"
+    AIRFLOW__METRICS__OTEL_SERVICE: "Airflow"
+    AIRFLOW__METRICS__OTEL_SSL_ACTIVE: "False"
 
     # Airflow-bundled OTEL TRACES
-    AIRFLOW__TRACES__OTEL_HOST: 'host.docker.internal'
-    AIRFLOW__TRACES__OTEL_PORT: '8889'
-    AIRFLOW__TRACES__OTEL_SERVICE: 'Airflow'
-    AIRFLOW__TRACES__OTEL_DEBUGGING_ON: 'False'
-    AIRFLOW__TRACES__OTEL_SSL_ACTIVE: 'False'
-    AIRFLOW__TRACES__OTEL_TASK_LOG_EVENT: 'False'
+    AIRFLOW__TRACES__OTEL_HOST: "host.docker.internal"
+    AIRFLOW__TRACES__OTEL_PORT: "8889"
+    AIRFLOW__TRACES__OTEL_SERVICE: "Airflow"
+    AIRFLOW__TRACES__OTEL_DEBUGGING_ON: "False"
+    AIRFLOW__TRACES__OTEL_SSL_ACTIVE: "False"
+    AIRFLOW__TRACES__OTEL_TASK_LOG_EVENT: "False"
 
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/radiant:/opt/airflow/dags/radiant
