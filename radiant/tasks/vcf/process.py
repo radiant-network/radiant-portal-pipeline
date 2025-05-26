@@ -14,6 +14,7 @@ from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.variant import process_variant
 
 logger = logging.getLogger("airflow.task")
+tracer = get_tracer(__name__)
 
 
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
@@ -28,13 +29,10 @@ def process_chromosomes(
     vcf_threads=None,
     catalog_properties=None,
 ):
-    with get_tracer(__name__).start_as_current_span(f"process_chromosomes_{str(chromosomes)}"):
-        with get_tracer(__name__).start_as_current_span("load_iceberg_catalog") as iceberg_span:
-            iceberg_span.set_attribute("catalog_name", catalog_name)
-            iceberg_span.add_event("Loading iceberg catalog")
-            catalog = (
-                load_catalog(catalog_name, **catalog_properties) if catalog_properties else load_catalog(catalog_name)
-            )
+    with tracer.start_as_current_span(f"process_chromosomes_{str(chromosomes)}"):
+        catalog = (
+            load_catalog(catalog_name, **catalog_properties) if catalog_properties else load_catalog(catalog_name)
+        )
 
         vcf = VCF(
             case.vcf_filepath,
@@ -48,8 +46,7 @@ def process_chromosomes(
         csq_header = parse_csq_header(vcf)
         pedigree = Pedigree(case, vcf.samples)
         for chromosome in chromosomes:
-            with get_tracer(__name__).start_as_current_span(f"chromosome_{chromosome}"):
-
+            with tracer.start_as_current_span(f"chromosome_{chromosome}"):
                 logger.info(f"Starting processing chromosome: {chromosome}")
                 parsed_chromosome = chromosome.replace("chr", "")
 
@@ -92,11 +89,11 @@ def process_chromosomes(
                         variant = process_variant(record, picked_consequence, common)
                         variant_buffer.append(variant)
 
-                else:
-                    logger.debug(
-                        f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_filepath}:"
-                        f" this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
-                    )
+                    else:
+                        logger.debug(
+                            f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_filepath}:"
+                            f" this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
+                        )
 
                 for occurrence_buffer in occurrence_buffers.values():
                     occurrence_buffer.write_files()
@@ -105,4 +102,5 @@ def process_chromosomes(
                 logger.info(
                     f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_filepath}, chromosome {chromosome}"
                 )
-            vcf.close()
+
+        vcf.close()

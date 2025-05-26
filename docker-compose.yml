@@ -86,12 +86,12 @@ x-airflow-common:
     # AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
 
     # Observability feature flags
-    OTLP_COLLECTOR_ENABLED: "true"
+    RADIANT_OTLP_COLLECTOR_ENABLED: "False"
     AIRFLOW__METRICS__OTEL_ON: "False"
     AIRFLOW__TRACES__OTEL_ON: "False"
 
     # Radiant-specific OTEL span collection
-    OTLP_COLLECTOR_HTTP_ENDPOINT: "http://host.docker.internal:8889"
+    RADIANT_OTLP_COLLECTOR_HTTP_ENDPOINT: "http://host.docker.internal:8889"
 
     # Airflow-bundled OTEL METRICS
     AIRFLOW__METRICS__OTEL_HOST: "host.docker.internal"
