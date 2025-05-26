@@ -84,6 +84,32 @@ x-airflow-common:
     # The following line can be used to set a custom config file, stored in the local config folder
     # If you want to use it, outcomment it and replace airflow.cfg with the name of your config file
     # AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+
+    # Observability feature flags
+    OTLP_COLLECTOR_ENABLED: "true"
+    AIRFLOW__METRICS__OTEL_ON: 'False'
+    AIRFLOW__TRACES__OTEL_ON: 'False'
+
+    # Radiant-specific OTEL span collection
+    OTLP_COLLECTOR_HTTP_ENDPOINT: "http://host.docker.internal:8889"
+
+    # Airflow-bundled OTEL METRICS
+    AIRFLOW__METRICS__OTEL_HOST: 'host.docker.internal'
+    AIRFLOW__METRICS__OTEL_PORT: '8889'
+    AIRFLOW__METRICS__OTEL_PREFIX: 'airflow'
+    AIRFLOW__METRICS__OTEL_INTERVAL_MILLISECONDS: 60000
+    AIRFLOW__METRICS__OTEL_DEBUGGING_ON: 'False'
+    AIRFLOW__METRICS__OTEL_SERVICE: 'Airflow'
+    AIRFLOW__METRICS__OTEL_SSL_ACTIVE: 'False'
+
+    # Airflow-bundled OTEL TRACES
+    AIRFLOW__TRACES__OTEL_HOST: 'host.docker.internal'
+    AIRFLOW__TRACES__OTEL_PORT: '8889'
+    AIRFLOW__TRACES__OTEL_SERVICE: 'Airflow'
+    AIRFLOW__TRACES__OTEL_DEBUGGING_ON: 'False'
+    AIRFLOW__TRACES__OTEL_SSL_ACTIVE: 'False'
+    AIRFLOW__TRACES__OTEL_TASK_LOG_EVENT: 'False'
+
   volumes:
     - ${AIRFLOW_PROJ_DIR:-.}/radiant:/opt/airflow/dags/radiant
     - ${AIRFLOW_PROJ_DIR:-.}/logs:/opt/airflow/logs
@@ -144,7 +170,25 @@ services:
     restart: always
     networks:
       - airflow_network
+  otel-collector:
+    container_name: otel-collector
+    image: otel/opentelemetry-collector-contrib:latest
+    command: [ "--config=/etc/otel-collector-config.yaml" ]
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "8889:8889"  # OTLP HTTP receiver
+      - "8890:8890"  # OLTP gRPC receiver
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14268:14268"  # Jaeger collector HTTP
+      - "4317:4317"  # OTLP gRPC
 
+  # Airflow services
   airflow-webserver:
     <<: *airflow-common
     command: webserver
