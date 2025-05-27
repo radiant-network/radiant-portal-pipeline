@@ -191,7 +191,7 @@ services:
     expose:
       - 6379
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 30s
       retries: 50
@@ -604,7 +604,6 @@ services:
     container_name: init-clinical-catalog
     depends_on:
       - radiant-starrocks-cn
-      - radiant-iceberg-rest
     entrypoint: >
       /bin/bash -c "
       sleep 15;
