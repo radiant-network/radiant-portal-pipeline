@@ -8,7 +8,7 @@ from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTas
 default_args = {"owner": "radiant"}
 variant_group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
 gene_group_ids = [
-    "gnomad_constraints",
+    "gnomad_constraint",
     "omim_gene_panel",
     "hpo_gene_panel",
     "orphanet_gene_panel",

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences_filter }} (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequence_filter }} (
     `locus_id` bigint(20) NULL COMMENT "",
     `is_deleterious` boolean NOT NULL COMMENT "",
     `impact_score` tinyint(4) NULL COMMENT "",

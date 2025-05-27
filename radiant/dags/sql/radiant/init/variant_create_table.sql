@@ -1,8 +1,11 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variants }} (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_variant }} (
     locus_id BIGINT NOT NULL,
+    pf DOUBLE,
     gnomad_v3_af DOUBLE,
     topmed_af DOUBLE,
     tg_af DOUBLE,
+    pc INT(11),
+    pn INT(11),
     chromosome CHAR(2),
     start BIGINT NULL COMMENT '',
     end BIGINT NULL COMMENT '',

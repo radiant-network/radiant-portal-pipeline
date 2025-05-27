@@ -108,56 +108,56 @@ def import_part():
     case_ids = extract_case_ids(cases)
 
     insert_hashes = RadiantStarRocksOperator(
-        task_id="insert_variants_hashes",
-        sql="./sql/radiant/variants_insert_hashes.sql",
+        task_id="insert_variant_hashes",
+        sql="./sql/radiant/variant_insert_hashes.sql",
         task_display_name="[StarRocks] Insert Variants Hashes into Lookup",
         submit_task_options=std_submit_task_opts,
         parameters=case_ids,
     )
 
     overwrite_tmp_variants = RadiantStarRocksOperator(
-        task_id="overwrite_tmp_variants",
-        sql="./sql/radiant/tmp_variants_insert.sql",
+        task_id="overwrite_tmp_variant",
+        sql="./sql/radiant/tmp_variant_insert.sql",
         task_display_name="[StarRocks] Insert Variants Tmp tables",
         submit_task_options=std_submit_task_opts,
         parameters=case_ids,
     )
 
     insert_occurrences = RadiantStarRocksOperator(
-        task_id="insert_occurrences",
-        sql="./sql/radiant/occurrences_insert.sql",
+        task_id="insert_occurrence",
+        sql="./sql/radiant/occurrence_insert.sql",
         task_display_name="[StarRocks] Insert Occurrences Part",
         submit_task_options=std_submit_task_opts,
         parameters={"part": "{{ params.part }}"},
     )
 
     insert_stg_variants_freq = RadiantStarRocksOperator(
-        task_id="insert_stg_variants_freq",
-        sql="./sql/radiant/staging_variants_freq_insert.sql",
+        task_id="insert_stg_variant_freq",
+        sql="./sql/radiant/staging_variant_freq_insert.sql",
         task_display_name="[StarRocks] Insert Stg Variants Freq Part",
         submit_task_options=std_submit_task_opts,
         parameters={"part": "{{ params.part }}"},
     )
 
     aggregate_variants_frequencies = RadiantStarRocksOperator(
-        task_id="aggregate_variants_freq",
+        task_id="aggregate_variant_freq",
         task_display_name="[StarRocks] Aggregate all variants frequencies",
-        sql="./sql/radiant/variants_frequencies_insert.sql",
+        sql="./sql/radiant/variant_frequency_insert.sql",
         submit_task_options=std_submit_task_opts,
     )
 
-    with TaskGroup(group_id="variants") as tg_variants:
+    with TaskGroup(group_id="variant") as tg_variants:
         insert_staging_variants = RadiantStarRocksOperator(
-            task_id="insert_staging_variants",
+            task_id="insert_staging_variant",
             task_display_name="[StarRocks] Insert Staging Variants",
-            sql="./sql/radiant/staging_variants_insert.sql",
+            sql="./sql/radiant/staging_variant_insert.sql",
             submit_task_options=std_submit_task_opts,
         )
 
         insert_variants_with_freqs = RadiantStarRocksOperator(
-            task_id="insert_variants",
+            task_id="insert_variant",
             task_display_name="[StarRocks] Insert Variants",
-            sql="./sql/radiant/variants_insert.sql",
+            sql="./sql/radiant/variant_insert.sql",
             submit_task_options=std_submit_task_opts,
         )
 
@@ -174,8 +174,8 @@ def import_part():
         _compute_part = compute_part()
 
         insert_variants_part = RadiantStarRocksOperator(
-            task_id="insert_variants_part",
-            sql="./sql/radiant/variants_part_insert_part.sql",
+            task_id="insert_variant_part",
+            sql="./sql/radiant/variant_part_insert_part.sql",
             task_display_name="[StarRocks] Insert Variants Part",
             submit_task_options=std_submit_task_opts,
             parameters=_compute_part,
@@ -183,25 +183,25 @@ def import_part():
 
         insert_staging_variants >> insert_variants_with_freqs >> insert_variants_part
 
-    with TaskGroup(group_id="consequences") as tg_consequences:
+    with TaskGroup(group_id="consequence") as tg_consequences:
         import_consequences = RadiantStarRocksOperator(
-            task_id="import_consequences",
-            sql="./sql/radiant/consequences_insert.sql",
+            task_id="import_consequence",
+            sql="./sql/radiant/consequence_insert.sql",
             task_display_name="[StarRocks] Insert Consequences",
             submit_task_options=std_submit_task_opts,
             parameters=case_ids,
         )
 
         import_consequences_filter = RadiantStarRocksOperator(
-            task_id="import_consequences_filter",
-            sql="./sql/radiant/consequences_filter_insert.sql",
+            task_id="import_consequence_filter",
+            sql="./sql/radiant/consequence_filter_insert.sql",
             task_display_name="[StarRocks] Insert Consequences Filter",
             submit_task_options=std_submit_task_opts,
         )
 
         insert_consequences_filter_part = RadiantStarRocksOperator(
-            task_id="insert_consequences_filter_part",
-            sql="./sql/radiant/consequences_filter_insert_part.sql",
+            task_id="insert_consequence_filter_part",
+            sql="./sql/radiant/consequence_filter_insert_part.sql",
             task_display_name="[StarRocks] Insert Consequences Filter Part",
             submit_task_options=std_submit_task_opts,
             parameters={"part": "{{ params.part }}"},
@@ -210,7 +210,7 @@ def import_part():
         import_consequences >> import_consequences_filter >> insert_consequences_filter_part
 
     update_sequencing_experiments = EmptyOperator(
-        task_id="update_sequencing_experiments", task_display_name="[TODO] Update Sequencing Experiments"
+        task_id="update_sequencing_experiment", task_display_name="[TODO] Update Sequencing Experiments"
     )
 
     (

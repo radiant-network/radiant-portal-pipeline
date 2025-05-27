@@ -50,7 +50,7 @@ def process_chromosomes(
                 logger.info(f"Starting processing chromosome: {chromosome}")
                 parsed_chromosome = chromosome.replace("chr", "")
 
-                occurrence_table = catalog.load_table(f"{namespace}.germline_snv_occurrences")
+                occurrence_table = catalog.load_table(f"{namespace}.germline_snv_occurrence")
                 occurrence_partition_filters = [
                     {
                         "part": case.part,
@@ -71,10 +71,10 @@ def process_chromosomes(
                     "case_id": case.case_id,
                     "chromosome": parsed_chromosome,
                 }
-                variant_table = catalog.load_table(f"{namespace}.germline_snv_variants")
+                variant_table = catalog.load_table(f"{namespace}.germline_snv_variant")
                 variant_buffer = TableAccumulator(variant_table, fs=fs, partition_filter=variant_csq_partition_filter)
 
-                consequence_table = catalog.load_table(f"{namespace}.germline_snv_consequences")
+                consequence_table = catalog.load_table(f"{namespace}.germline_snv_consequence")
                 consequence_buffer = TableAccumulator(
                     consequence_table, fs=fs, partition_filter=variant_csq_partition_filter
                 )

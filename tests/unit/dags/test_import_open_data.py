@@ -11,7 +11,7 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
     variant_group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
     gene_group_ids = [
-        "gnomad_constraints",
+        "gnomad_constraint",
         "omim_gene_panel",
         "hpo_gene_panel",
         "orphanet_gene_panel",
@@ -29,5 +29,5 @@ def test_dag_has_all_group_tasks(dag_bag):
         assert f"insert_hashes_{group}" in task_ids
         assert f"insert_{group}" in task_ids
 
-    assert "insert_gnomad_constraints" in task_ids
+    assert "insert_gnomad_constraint" in task_ids
     assert "insert_omim_gene_panel" in task_ids

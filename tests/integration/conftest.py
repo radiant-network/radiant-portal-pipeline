@@ -419,9 +419,9 @@ def starrocks_iceberg_catalog(
 def setup_namespace(s3_fs, iceberg_client, random_test_id):
     namespace = f"{STARROCKS_ICEBERG_DB_NAME_PREFIX}_{random_test_id}"
     iceberg_client.create_namespace(namespace)
-    iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_occurrences", schema=OCCURRENCE_SCHEMA)
-    iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_variants", schema=VARIANT_SCHEMA)
-    iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_consequences", schema=CONSEQUENCE_SCHEMA)
+    iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_occurrence", schema=OCCURRENCE_SCHEMA)
+    iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_variant", schema=VARIANT_SCHEMA)
+    iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_consequence", schema=CONSEQUENCE_SCHEMA)
 
     yield namespace
 

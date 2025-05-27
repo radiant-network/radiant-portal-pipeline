@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ params.starrocks_variants }}
+INSERT OVERWRITE {{ params.starrocks_variant }}
 SELECT
     v.locus_id,
     vf.pf as pf,
@@ -32,5 +32,5 @@ SELECT
     v.aa_change,
     v.transcript_id,
     v.omim_inheritance_code
-FROM {{ params.starrocks_staging_variants }} v
-JOIN {{ params.starrocks_variants_frequencies }} vf ON vf.locus_id = v.locus_id
+FROM {{ params.starrocks_staging_variant }} v
+JOIN {{ params.starrocks_variant_frequency }} vf ON vf.locus_id = v.locus_id
