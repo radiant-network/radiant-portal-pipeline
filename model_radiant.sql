@@ -286,6 +286,8 @@ CREATE TABLE IF NOT EXISTS "document_has_patients" (
                                                        "patient_id" INTEGER REFERENCES "patient" ("id") NOT NULL,
                                                        PRIMARY KEY ("document_id", "patient_id")
 );
+
+
 -- Value Sets initial values -------------------------------------
 
 INSERT INTO "observation_categories" ("code", "name_en") VALUES
