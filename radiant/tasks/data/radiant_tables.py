@@ -14,9 +14,9 @@ GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX = "germline__snv__"
 # --- Iceberg tables
 
 ICEBERG_GERMLINE_SNV_MAPPING = {
-    "iceberg_consequences": "germline_snv_consequences",
-    "iceberg_occurrences": "germline_snv_occurrences",
-    "iceberg_variants": "germline_snv_variants",
+    "iceberg_consequence": "germline_snv_consequence",
+    "iceberg_occurrence": "germline_snv_occurrence",
+    "iceberg_variant": "germline_snv_variant",
 }
 
 ICEBERG_OPEN_DATA_MAPPING = {
@@ -26,7 +26,7 @@ ICEBERG_OPEN_DATA_MAPPING = {
     "iceberg_gnomad_genomes_v3": "gnomad_genomes_v3",
     "iceberg_spliceai": "spliceai_enriched",
     "iceberg_topmed_bravo": "topmed_bravo",
-    "iceberg_gnomad_constraints": "gnomad_constraint_v_2_1_1",
+    "iceberg_gnomad_constraint": "gnomad_constraint_v_2_1_1",
     "iceberg_omim_gene_set": "omim_gene_set",
     "iceberg_hpo_gene_set": "hpo_gene_set",
     "iceberg_orphanet_gene_set": "orphanet_gene_set",
@@ -43,21 +43,21 @@ ICEBERG_CATALOG_DATABASE = {
 # --- StarRocks tables
 
 STARROCKS_COMMON_MAPPING = {
-    "starrocks_sequencing_experiments": "sequencing_experiments",
-    "starrocks_variants_lookup": "variants_lookup",
+    "starrocks_sequencing_experiment": "sequencing_experiment",
+    "starrocks_variant_lookup": "variant_lookup",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
-    "starrocks_consequences": "consequences",
-    "starrocks_consequences_filter": "consequences_filter",
-    "starrocks_consequences_filter_partitioned": "consequences_filter_partitioned",
-    "starrocks_occurrences": "occurrences",
-    "starrocks_tmp_variants": "tmp_variants",
-    "starrocks_variants": "variants",
-    "starrocks_variants_frequencies": "variants_frequencies",
-    "starrocks_variants_partitioned": "variants_partitioned",
-    "starrocks_staging_variants": "staging_variants",
-    "starrocks_staging_variants_frequencies": "staging_variants_frequencies_part",
+    "starrocks_consequence": "consequence",
+    "starrocks_consequence_filter": "consequence_filter",
+    "starrocks_consequence_filter_partitioned": "consequence_filter_partitioned",
+    "starrocks_occurrence": "occurrence",
+    "starrocks_tmp_variant": "tmp_variant",
+    "starrocks_variant": "variant",
+    "starrocks_variant_frequency": "variant_frequency",
+    "starrocks_variant_partitioned": "variant_partitioned",
+    "starrocks_staging_variant": "staging_variant",
+    "starrocks_staging_variant_frequency": "staging_variant_frequency_part",
 }
 
 STARROCKS_OPEN_DATA_MAPPING = {
@@ -67,7 +67,7 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_gnomad_genomes_v3": "gnomad_genomes_v3",
     "starrocks_spliceai": "spliceai",
     "starrocks_topmed_bravo": "topmed_bravo",
-    "starrocks_gnomad_constraints": "gnomad_constraints",
+    "starrocks_gnomad_constraint": "gnomad_constraint",
     "starrocks_omim_gene_panel": "omim_gene_panel",
     "starrocks_hpo_gene_panel": "hpo_gene_panel",
     "starrocks_orphanet_gene_panel": "orphanet_gene_panel",

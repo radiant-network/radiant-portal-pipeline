@@ -1,10 +1,10 @@
-INSERT OVERWRITE {{ params.starrocks_variants_frequencies }}
+INSERT OVERWRITE {{ params.starrocks_variant_frequency }}
 WITH freq AS  (
     SELECT
         locus_id,
         SUM(pc) AS pc,
         SUM(pn) AS pn
-    FROM {{ params.starrocks_staging_variants_frequencies }}
+    FROM {{ params.starrocks_staging_variant_frequency }}
     GROUP BY locus_id
 )
 SELECT

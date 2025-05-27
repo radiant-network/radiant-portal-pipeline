@@ -41,8 +41,8 @@ def test_process_chromosomes(
     )
 
     table_names = iceberg_client.list_tables(setup_namespace)
-    assert (setup_namespace, "germline_snv_occurrences") in table_names
-    occ = iceberg_client.load_table(f"{setup_namespace}.germline_snv_occurrences").scan().to_arrow().to_pandas()
+    assert (setup_namespace, "germline_snv_occurrence") in table_names
+    occ = iceberg_client.load_table(f"{setup_namespace}.germline_snv_occurrence").scan().to_arrow().to_pandas()
     print(occ)
 
     assert not occ.empty, "No occurrences were written to the iceberg table"

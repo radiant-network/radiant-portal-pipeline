@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences_filter_partitioned }} (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequence_filter_partitioned }} (
   `part` tinyint(4) NOT NULL COMMENT "",
   `locus_id` bigint(20) NULL COMMENT "",
   `is_deleterious` boolean NOT NULL COMMENT "",

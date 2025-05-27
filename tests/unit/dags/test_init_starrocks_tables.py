@@ -16,18 +16,18 @@ def test_dag_has_all_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-starrocks-tables")
     task_ids = [task.task_id for task in dag.tasks]
     tables = [
-        "consequences",
-        "consequences_filter",
-        "consequences_filter_partitioned",
-        "occurrences",
+        "consequence",
+        "consequence_filter",
+        "consequence_filter_partitioned",
+        "occurrence",
         "sequencing_experiment",
-        "tmp_variants",
-        "staging_variants",
+        "tmp_variant",
+        "staging_variant",
         "variant_dict",
-        "variants",
-        "staging_variants_freq",
-        "variants_frequencies",
-        "variants_part",
+        "variant",
+        "staging_variant_freq",
+        "variant_frequency",
+        "variant_part",
     ]
     for table in tables:
         assert f"create_table_{table}" in task_ids
@@ -39,7 +39,7 @@ def test_dag_has_all_tasks(dag_bag):
         "gnomad",
         "spliceai",
         "topmed_bravo",
-        "gnomad_constraints",
+        "gnomad_constraint",
         "omim_gene_panel",
         "hpo_gene_panel",
         "orphanet_gene_panel",

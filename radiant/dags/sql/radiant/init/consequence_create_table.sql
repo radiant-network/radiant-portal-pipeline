@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequences }} (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequence }} (
     `locus_id` bigint(20) COMMENT "",
     `symbol` varchar(30) COMMENT "",
     `transcript_id` varchar(100) COMMENT "",

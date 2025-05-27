@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variants_frequencies }} (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variant_frequency }} (
     `part` INT NOT NULL,
     `locus_id` BIGINT NOT NULL,
     `pc` BIGINT,

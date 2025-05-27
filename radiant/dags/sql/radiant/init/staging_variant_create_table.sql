@@ -1,12 +1,8 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_partitioned }} (
-    part INT NOT NULL,
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variant }} (
     locus_id BIGINT NOT NULL,
-    pf DOUBLE,
     gnomad_v3_af DOUBLE,
     topmed_af DOUBLE,
     tg_af DOUBLE,
-    pc INT(11),
-    pn INT(11),
     chromosome CHAR(2),
     start BIGINT NULL COMMENT '',
     end BIGINT NULL COMMENT '',
@@ -33,7 +29,7 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_variants_partitioned }} (
     transcript_id varchar(100) COMMENT "",
     omim_inheritance_code array<varchar(5)> COMMENT ""
 )
-PARTITION BY (`part`)
+PRIMARY KEY(locus_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10
 PROPERTIES (
     "colocate_with" = "{{ params.colocate_query_group }}"

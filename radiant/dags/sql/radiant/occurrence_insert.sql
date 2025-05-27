@@ -1,4 +1,4 @@
-INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ params.starrocks_occurrences }}
+INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ params.starrocks_occurrence }}
 SELECT
     part,
 	seq_id,
@@ -51,7 +51,7 @@ SELECT
     mother_zygosity,
     transmission_mode,
     info_old_record
-FROM {{ params.iceberg_occurrences }} o
-JOIN {{ params.starrocks_tmp_variants }} v ON o.locus_hash = v.locus_hash
+FROM {{ params.iceberg_occurrence }} o
+JOIN {{ params.starrocks_tmp_variant }} v ON o.locus_hash = v.locus_hash
 WHERE part = %(part)s
 AND has_alt;

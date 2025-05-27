@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_occurrences }} (
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_occurrence }} (
     part INT NOT NULL,
     seq_id INT NOT NULL,
     locus_id bigint(20) NOT NULL,

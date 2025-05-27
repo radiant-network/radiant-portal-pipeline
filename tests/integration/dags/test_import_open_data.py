@@ -21,7 +21,7 @@ def test_open_data_iceberg_tables(
         "clinvar": 100,
         "dbnsfp": 100,
         "gnomad_genomes_v3": 100,
-        "gnomad_constraints": 100,
+        "gnomad_constraint": 100,
         "spliceai": 100,
         "topmed_bravo": 100,
         "omim_gene_set": 167,
@@ -32,7 +32,7 @@ def test_open_data_iceberg_tables(
         "clinvar": 100,
         "dbnsfp": 100,
         "gnomad_genomes_v3": 100,
-        "gnomad_constraints": 100,
+        "gnomad_constraint": 100,
         "spliceai": 100,
         "topmed_bravo": 100,
         "omim_gene_panel": 167,
@@ -48,6 +48,6 @@ def test_open_data_iceberg_tables(
             response = cursor.fetchall()
             assert response[0][0] == count, f"Table {_table} is empty"
 
-        cursor.execute(f"SELECT COUNT(1) FROM test_{random_test_id}_variants_lookup")
+        cursor.execute(f"SELECT COUNT(1) FROM test_{random_test_id}_variant_lookup")
         response = cursor.fetchall()
-        assert response[0][0] > 0, "Table variants_lookup is empty"
+        assert response[0][0] > 0, "Table variant_lookup is empty"

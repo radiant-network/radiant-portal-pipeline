@@ -18,18 +18,18 @@ with DAG(
     tasks = []
 
     tables = [
-        "consequences",
-        "consequences_filter",
-        "consequences_filter_partitioned",
-        "occurrences",
+        "consequence",
+        "consequence_filter",
+        "consequence_filter_partitioned",
+        "occurrence",
         "sequencing_experiment",
-        "tmp_variants",
-        "staging_variants",
+        "tmp_variant",
+        "staging_variant",
         "variant_dict",
-        "variants",
-        "staging_variants_freq",
-        "variants_frequencies",
-        "variants_part",
+        "variant",
+        "staging_variant_freq",
+        "variant_frequency",
+        "variant_part",
     ]
     for table in tables:
         tasks.append(
@@ -46,7 +46,7 @@ with DAG(
         "gnomad",
         "spliceai",
         "topmed_bravo",
-        "gnomad_constraints",
+        "gnomad_constraint",
         "omim_gene_panel",
         "hpo_gene_panel",
         "orphanet_gene_panel",
