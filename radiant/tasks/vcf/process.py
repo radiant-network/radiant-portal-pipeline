@@ -1,4 +1,5 @@
 import logging
+import sys
 
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
