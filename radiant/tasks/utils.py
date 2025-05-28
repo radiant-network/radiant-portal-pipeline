@@ -4,6 +4,19 @@ from functools import wraps
 from wurlitzer import pipes
 
 
+def _flush_pipes(stdout, stderr):
+    """
+    Flushes the logs to the specified file.
+    """
+    _stdout = stdout.getvalue()
+    if _stdout:
+        print(_stdout, file=sys.stdout)
+    _stderr = stderr.getvalue()
+    if _stderr:
+        print(_stderr, file=sys.stderr)
+    return _stdout, _stderr
+
+
 def capture_libc_stderr_and_check_errors(error_patterns: list[str]):
     """
     A decorator to capture stderr output and check for specific error patterns.
@@ -16,15 +29,16 @@ def capture_libc_stderr_and_check_errors(error_patterns: list[str]):
         @wraps(func)
         def wrapper(*args, **kwargs):
             with pipes() as (stdout, stderr):
-                result = func(*args, **kwargs)
-            errors = stderr.getvalue()
-            output = stdout.getvalue()
-            if output:
-                print(output, file=sys.stdout)
-            if errors:
-                print(errors, file=sys.stderr)
+                try:
+                    result = func(*args, **kwargs)
+                except Exception as e:
+                    _flush_pipes(stdout, stderr)
+                    raise e
+
+            _, errors = _flush_pipes(stdout, stderr)
             if any(pattern in errors for pattern in error_patterns):
                 raise ValueError(f"Detected error: {errors}")
+
             return result
 
         return wrapper
