@@ -186,7 +186,7 @@ class TableAccumulator:
             filter_expr = expr if filter_expr is None else And(filter_expr, expr)
         if filter_expr is None:
             raise ValueError(f"Partition filter {self.partition_filter} must contain at least one key-value pair.")
-        max_retries = 20
+        max_retries = 200
         while max_retries > 0:
             try:
                 logger.info(f"Try to commit tx for table {self.table.name()} with filter {self.partition_filter}")
@@ -204,5 +204,5 @@ class TableAccumulator:
                 logger.info(f"Commit failed: {e}. Retries left: {max_retries}")
                 time.sleep(1)
                 if max_retries <= 0:
-                    logger.error("Failed after 10 retries. Giving up.")
+                    logger.error("Failed after 200 retries. Giving up.")
                     raise e
