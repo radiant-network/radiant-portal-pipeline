@@ -9,7 +9,9 @@ def test_tracer_enabled(monkeypatch):
     tracer = get_tracer(__name__)
 
     assert tracer.resource.attributes["service.name"] == "Radiant"
-    assert tracer.span_processor._span_processors[0].span_exporter._endpoint == "http://custom_endpoint:12345/v1/traces"
+    assert (
+        tracer.span_processor._span_processors[0].span_exporter._endpoint == "http://custom_endpoint:12345/v1/traces"
+    )
 
 
 def test_tracer_disabled_by_default(monkeypatch):
