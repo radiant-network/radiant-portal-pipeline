@@ -3,17 +3,17 @@ from unittest.mock import patch
 
 import pytest
 
+from radiant.tasks.iceberg.utils import commit_files
 from radiant.tasks.vcf.experiment import Case, Experiment
-from radiant.tasks.vcf.process import process_chromosomes
+from radiant.tasks.vcf.process import process_case
 
 
-def test_process_chromosomes(
+def test_process_case(
     setup_namespace,
     iceberg_catalog_properties,
     iceberg_client,
     iceberg_container,
     indexed_vcfs,
-    s3_fs,
 ):
     case = Case(
         case_id=1,
@@ -35,14 +35,17 @@ def test_process_chromosomes(
         ],
         vcf_filepath=indexed_vcfs["test.vcf"],
     )
-    process_chromosomes(
-        ["chr1"],
+    partitions_to_commit = process_case(
         case,
-        s3_fs,
         catalog_name=iceberg_container.catalog_name,
         namespace=setup_namespace,
         catalog_properties=iceberg_catalog_properties,
     )
+
+    # Commit the files to the iceberg tables
+    for table_name, partitions in partitions_to_commit.items():
+        table = iceberg_client.load_table(table_name)
+        commit_files(table, partitions)
 
     table_names = iceberg_client.list_tables(setup_namespace)
     assert (setup_namespace, "germline_snv_occurrence") in table_names
@@ -82,13 +85,12 @@ def fake_error_logging(*args, **kwargs):
     libc.fprintf(c_stderr, b"[E:: Fake error message\n")
 
 
-def test_process_chromosomes_error(
+def test_process_case_error(
     setup_namespace,
     iceberg_catalog_properties,
     iceberg_container,
     indexed_vcfs,
     minio_container,
-    s3_fs,
 ):
     case = Case(
         case_id=1,
@@ -114,10 +116,8 @@ def test_process_chromosomes_error(
         pytest.raises(Exception) as exc,
         patch("radiant.tasks.iceberg.table_accumulator.TableAccumulator.write_files", fake_error_logging),
     ):
-        process_chromosomes(
-            ["chr1"],
+        process_case(
             case,
-            s3_fs,
             catalog_name=iceberg_container.catalog_name,
             namespace=setup_namespace,
             catalog_properties=iceberg_catalog_properties,
