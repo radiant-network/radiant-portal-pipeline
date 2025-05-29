@@ -3,6 +3,7 @@ import logging
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
 
+from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
 from radiant.tasks.tracing.trace import get_tracer
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors
@@ -30,6 +31,9 @@ def process_chromosomes(
     catalog_properties=None,
 ):
     with tracer.start_as_current_span(f"process_chromosomes_{str(chromosomes)}"):
+        occurrences_partition_commit = []
+        variants_partition_commit = []
+        consequences_partition_commit = []
         catalog = (
             load_catalog(catalog_name, **catalog_properties) if catalog_properties else load_catalog(catalog_name)
         )
@@ -40,6 +44,9 @@ def process_chromosomes(
             threads=vcf_threads,
             samples=[exp.sample_id for exp in case.experiments],
         )
+        occurrences_table_name =f"{namespace}.germline_snv_occurrence"
+        variants_table_name =f"{namespace}.germline_snv_variant"
+        consequences_table_name =f"{namespace}.germline_snv_consequence"
         if not vcf.samples:
             raise ValueError(f"Case {case.case_id} has no matching samples in the VCF file {case.vcf_filepath}")
 
@@ -50,7 +57,7 @@ def process_chromosomes(
                 logger.info(f"Starting processing chromosome: {chromosome}")
                 parsed_chromosome = chromosome.replace("chr", "")
 
-                occurrence_table = catalog.load_table(f"{namespace}.germline_snv_occurrence")
+                occurrence_table = catalog.load_table(occurrences_table_name)
                 occurrence_partition_filters = [
                     {
                         "part": case.part,
@@ -71,10 +78,10 @@ def process_chromosomes(
                     "case_id": case.case_id,
                     "chromosome": parsed_chromosome,
                 }
-                variant_table = catalog.load_table(f"{namespace}.germline_snv_variant")
+                variant_table = catalog.load_table(variants_table_name)
                 variant_buffer = TableAccumulator(variant_table, fs=fs, partition_filter=variant_csq_partition_filter)
 
-                consequence_table = catalog.load_table(f"{namespace}.germline_snv_consequence")
+                consequence_table = catalog.load_table(consequences_table_name)
                 consequence_buffer = TableAccumulator(
                     consequence_table, fs=fs, partition_filter=variant_csq_partition_filter
                 )
@@ -96,11 +103,22 @@ def process_chromosomes(
                         )
 
                 for occurrence_buffer in occurrence_buffers.values():
-                    occurrence_buffer.write_files()
-                variant_buffer.write_files()
-                consequence_buffer.write_files()
+                    occurrence_buffer.write_files(commit=False)
+                    occurrences_partition_commit.append(PartitionCommit(parquet_files=occurrence_buffer.parquet_paths, partition_filter=occurrence_buffer.partition_filter))
+
+                variant_buffer.write_files(commit=False)
+                variants_partition_commit.append(PartitionCommit(parquet_files=variant_buffer.parquet_paths, partition_filter=variant_buffer.partition_filter))
+
+                consequence_buffer.write_files(commit=False)
+                consequences_partition_commit.append(PartitionCommit(parquet_files=consequence_buffer.parquet_paths, partition_filter=consequence_buffer.partition_filter))
+
                 logger.info(
-                    f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_filepath}, chromosome {chromosome}"
+                    f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}, chromosome {chromosome}"
                 )
 
         vcf.close()
+        return {
+            occurrences_table_name: occurrences_partition_commit,
+            variants_table_name: variants_partition_commit,
+            consequences_table_name: consequences_partition_commit,
+        }

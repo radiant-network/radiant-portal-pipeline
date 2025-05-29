@@ -31,29 +31,29 @@ dag_params = {
 }
 
 with DAG(
-    dag_id=f"{NAMESPACE}-import-vcf",
-    default_args=default_args,
-    start_date=days_ago(1),
-    schedule_interval=None,
-    tags=["radiant", "iceberg"],
-    dag_display_name="Radiant - Import VCF",
-    catchup=False,
-    params=dag_params,
-    max_active_tasks=128,
+        dag_id=f"{NAMESPACE}-import-vcf",
+        default_args=default_args,
+        start_date=days_ago(1),
+        schedule_interval=None,
+        tags=["radiant", "iceberg"],
+        dag_display_name="Radiant - Import VCF",
+        catchup=False,
+        params=dag_params,
+        max_active_tasks=128,
 ) as dag:
-
     @task
     def get_cases(params):
         from radiant.tasks.vcf.experiment import Case
 
         return [Case.model_validate(c).model_dump() for c in params.get("cases", [])]
 
-    @task.external_python(pool="import_vcf", task_id="import_vcf", python=PATH_TO_PYTHON_BINARY)
-    def import_vcf(case: dict, chromosomes: list[str]):
+
+    @task.external_python(pool="import_vcf", task_id="create_parquet_files", python=PATH_TO_PYTHON_BINARY)
+    def create_parquet_files(case: dict, chromosomes: list[str]):
         import logging
         import os
         import sys
-
+        import json
         import fsspec
 
         from radiant.tasks.vcf.experiment import Case
@@ -71,11 +71,48 @@ with DAG(
         logger.info("=" * 80)
 
         namespace = os.getenv("RADIANT_ICEBERG_DATABASE", "radiant")
-        process_chromosomes(chromosomes, case, fs, namespace=namespace, vcf_threads=4)
+        res = process_chromosomes(chromosomes, case, fs, namespace=namespace, vcf_threads=4)
         logger.info(
-            f"✅ IMPORTED Experiment: {case.case_id}, file {case.vcf_filepath}, chromosome {','.join(chromosomes)}"
+            f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}, chromosome {','.join(chromosomes)}"
         )
+        return {
+            k: [json.loads(pc.model_dump_json()) for pc in v]
+            for k, v in res.items()
+        }
+
+
+    @task
+    def merge_commits(partition_lists: list[dict[str, list[dict]]]) -> dict[str, list[dict]]:
+        from collections import defaultdict
+        merged = defaultdict(list)
+        for d in partition_lists:
+            for table, partitions in d.items():
+                merged[table].extend(partitions)
+        return dict(merged)
+
+    @task.external_python(task_id="commit_partitions", python=PATH_TO_PYTHON_BINARY)
+    def commit_partitions(table_partitions: dict[str, list[dict]]):
+        import logging
+        import sys
+        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
+        logger = logging.getLogger(__name__)
+        from radiant.tasks.iceberg.partition_commit import PartitionCommit
+        from radiant.tasks.iceberg.utils import commit_files
+        from pyiceberg.catalog import load_catalog
+        catalog = load_catalog()
+        for table_name, partitions in table_partitions.items():
+            if not partitions:
+                continue
+            table = catalog.load_table(table_name)
+            parts = [PartitionCommit.model_validate(pc) for pc in partitions]
+            logger.info(f"🔁 Starting commit for table {table_name}")
+            commit_files(table, parts)
+            logger.info(f"✅ Changes commited to table {table_name}")
+
+
 
     all_cases = get_cases()
 
-    import_vcf.expand(case=all_cases, chromosomes=GROUPED_CHROMOSOMES)
+    partitions_commit = create_parquet_files.expand(case=all_cases, chromosomes=GROUPED_CHROMOSOMES)
+    merged_commit = merge_commits(partitions_commit)
+    commit_partitions(merged_commit)
