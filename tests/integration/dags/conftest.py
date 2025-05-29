@@ -65,7 +65,7 @@ def init_iceberg_tables(radiant_airflow_container):
 
 
 @pytest.fixture(scope="session")
-def init_starrocks_tables(radiant_airflow_container):
+def init_starrocks_tables(radiant_airflow_container, starrocks_jdbc_catalog):
     dag_id = f"{NAMESPACE}-init-starrocks-tables"
     radiant_airflow_container.exec(["airflow", "dags", "unpause", dag_id])
     radiant_airflow_container.exec(["airflow", "dags", "trigger", dag_id])

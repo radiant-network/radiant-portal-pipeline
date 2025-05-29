@@ -19,7 +19,7 @@ def test_import_part_with_valid_sequencing_experiments(
                 affected_status, created_at, updated_at, ingested_at)
             VALUES (
                 0, 0, 0, 0, 'germline', 'SA0001', 'P14018', '{indexed_vcfs["test.vcf"]}', 
-                'F', 'proband', affected, '2023-10-01 00:00:00', '2023-10-01 00:00:00', NULL
+                'F', 'proband', 'affected', '2023-10-01 00:00:00', '2023-10-01 00:00:00', NULL
             );
         """)
 

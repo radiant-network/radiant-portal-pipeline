@@ -11,13 +11,13 @@ SELECT
     d.url AS vcf_filepath,
     p.sex AS sex,
     IF(p.id = c.proband_id, "proband", f.relationship_to_proband) AS family_role,
-    IF(p.id = c.proband_id, "unknown", f.affected_status) AS affected_status,
+    IF(p.id = c.proband_id, "affected", f.affected_status) AS affected_status,
     se.created_on AS created_at,
     se.updated_on AS updated_at
 FROM
     {{ params.clinical_sequencing_experiment }} se
+JOIN {{ params.clinical_case }} c ON se.case_id = c.id
 LEFT JOIN {{ params.clinical_task_has_sequencing_experiment }} thse ON se.id = thse.sequencing_experiment_id
-LEFT JOIN {{ params.clinical_case }} c ON se.case_id = c.id
 LEFT JOIN {{ params.clinical_task_has_document }} thd ON thse.task_id = thd.task_id
 LEFT JOIN {{ params.clinical_document }} d ON thd.document_id = d.id
 LEFT JOIN {{ params.clinical_patient }} p ON se.patient_id = p.id
