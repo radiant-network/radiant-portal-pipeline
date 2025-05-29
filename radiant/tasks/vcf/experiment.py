@@ -3,10 +3,11 @@ from pydantic import BaseModel
 
 class Experiment(BaseModel):
     seq_id: int
+    task_id: int
     patient_id: str
     sample_id: str
     family_role: str
-    is_affected: bool
+    affected_status: str
     sex: str
 
 

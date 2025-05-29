@@ -10,10 +10,11 @@ case = Case(
     experiments=[
         Experiment(
             seq_id=1,
+            task_id=1,
             patient_id="PA001",
             sample_id="SA0001",
             family_role="proband",
-            is_affected=True,
+            affected_status="affected",
             sex="F",
         )
     ],

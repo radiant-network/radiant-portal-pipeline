@@ -1,6 +1,7 @@
 SELECT
     case_id,
     seq_id,
+    task_id,
     part,
     analysis_type,
     sample_id,
@@ -8,7 +9,7 @@ SELECT
     vcf_filepath,
     sex,
     family_role,
-    is_affected,
+    affected_status,
     created_at,
     updated_at,
     ingested_at

@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS {{ params.starrocks_occurrence }} (
     part INT NOT NULL,
     seq_id INT NOT NULL,
+    task_id INT NOT NULL,
     locus_id bigint(20) NOT NULL,
     ad_ratio FLOAT,
     gq INT,
@@ -53,7 +54,7 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_occurrence }} (
   INDEX locus_id_index (`locus_id`) USING BITMAP COMMENT ''
 )
 ENGINE=OLAP
-DUPLICATE KEY(`part`, `seq_id`, `locus_id`)
+DUPLICATE KEY(`part`, `seq_id`, `task_id`, `locus_id`)
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
 PROPERTIES (

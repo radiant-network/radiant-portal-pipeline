@@ -30,11 +30,12 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
             experiments=[
                 Experiment(
                     seq_id=row["seq_id"],
+                    task_id=row["task_id"],
                     patient_id=row["patient_id"],
                     sample_id=row["sample_id"],
                     family_role=row["family_role"],
                     sex=row["sex"],
-                    is_affected=row["is_affected"],
+                    affected_status=row["affected_status"],
                 )
                 for row in list_rows
             ],

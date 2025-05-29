@@ -22,14 +22,15 @@ with DAG(
         "consequence_filter",
         "consequence_filter_partitioned",
         "occurrence",
+        "staging_sequencing_experiment",
         "sequencing_experiment",
         "tmp_variant",
         "staging_variant",
-        "variant_dict",
+        "variant_lookup",
         "variant",
-        "staging_variant_freq",
+        "staging_variant_frequency",
         "variant_frequency",
-        "variant_part",
+        "variant_partitioned",
     ]
     for table in tables:
         tasks.append(
@@ -63,6 +64,6 @@ with DAG(
     tasks.append(
         RadiantStarRocksOperator(
             task_id="create_variant_id_udf",
-            sql=str(_RADIANT_SQL_INIT_DIR / "variant_id_udf_create.sql"),
+            sql=str(_RADIANT_SQL_INIT_DIR / "variant_id_udf.sql"),
         )
     )

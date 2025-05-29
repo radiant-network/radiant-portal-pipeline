@@ -62,6 +62,7 @@ SCHEMA = merge_schemas(
         NestedField(156, "mother_calls", ListType(256, IntegerType()), required=False),
         NestedField(157, "mother_zygosity", StringType(), required=False),
         NestedField(158, "transmission_mode", StringType(), required=False),
+        NestedField(159, "task_id", IntegerType(), required=True),
     ),
 )
 
@@ -154,6 +155,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
             "case_id": common.case_id,
             "part": common.part,
             "seq_id": exp.seq_id,
+            "task_id": exp.task_id,
             "locus": common.locus,
             "locus_hash": common.locus_hash,
             "chromosome": common.chromosome,
