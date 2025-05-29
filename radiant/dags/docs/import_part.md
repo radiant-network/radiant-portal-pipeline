@@ -19,11 +19,11 @@ We define partitions because genomic data is often too large to be processed in 
 
 ## How do we define a partition?
 
-.
+![img_1.png](img_1.png)
 
 ## How we determine what is imported on DAG runs ? 
 
-.
+(WIP)
 
 
 
