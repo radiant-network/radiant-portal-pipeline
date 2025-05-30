@@ -34,8 +34,12 @@ class Pedigree:
 
         self.father_experiment = next((exp for exp in self.experiments if exp.family_role == "father"), None)
         self.mother_experiment = next((exp for exp in self.experiments if exp.family_role == "mother"), None)
-        self.is_father_affected = self.father_experiment.is_affected if self.father_experiment else False
-        self.is_mother_affected = self.mother_experiment.is_affected if self.mother_experiment else False
+        self.is_father_affected = (
+            self.father_experiment.affected_status == "affected" if self.father_experiment else False
+        )
+        self.is_mother_affected = (
+            self.mother_experiment.affected_status == "affected" if self.mother_experiment else False
+        )
 
         self.father_seq_id = self.father_experiment.seq_id if self.father_experiment else None
         self.mother_seq_id = self.mother_experiment.seq_id if self.mother_experiment else None

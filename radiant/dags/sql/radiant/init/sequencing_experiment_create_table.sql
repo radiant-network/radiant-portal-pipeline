@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS {{ params.starrocks_sequencing_experiment }} (
     case_id INT NOT NULL,
     seq_id INT NOT NULL,
+    task_id INT NOT NULL,
     part INT NOT NULL,
     analysis_type VARCHAR(50),
     sample_id VARCHAR(255),
@@ -8,9 +9,9 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_sequencing_experiment }} (
     vcf_filepath VARCHAR(1024),
     sex VARCHAR(10),
     family_role VARCHAR(20),
-    is_affected BOOLEAN,
+    affected_status VARCHAR(20),
     created_at DATETIME,
     updated_at DATETIME,
     ingested_at DATETIME
 )
-PRIMARY KEY (case_id, seq_id)
+PRIMARY KEY (case_id, seq_id, task_id)

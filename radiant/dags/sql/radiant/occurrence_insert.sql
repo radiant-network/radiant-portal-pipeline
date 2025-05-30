@@ -2,6 +2,7 @@ INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ params.starrocks_occu
 SELECT
     part,
 	seq_id,
+	task_id,
 	v.locus_id,
     ad_ratio,
     gq,

@@ -63,9 +63,12 @@ def test_queries_are_valid(
     setup_namespace,
     open_data_iceberg_tables,
     starrocks_iceberg_catalog,
+    starrocks_jdbc_catalog,
+    postgres_clinical_seeds,
 ):
     monkeypatch.setenv("RADIANT_ICEBERG_CATALOG", starrocks_iceberg_catalog.name)
     monkeypatch.setenv("RADIANT_ICEBERG_DATABASE", setup_namespace)
+    monkeypatch.setenv("RADIANT_CLINICAL_CATALOG", starrocks_jdbc_catalog)
 
     from radiant.tasks.data.radiant_tables import (
         get_starrocks_common_mapping,

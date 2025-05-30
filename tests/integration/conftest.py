@@ -46,6 +46,7 @@ STARROCKS_USER = "root"
 STARROCKS_PWD = ""
 STARROCKS_DATABASE_PREFIX = "test"
 STARROCKS_ICEBERG_CATALOG_NAME_PREFIX = "iceberg_catalog"
+STARROCKS_JDBC_CATALOG_NAME_PREFIX = "jdbc_catalog"
 STARROCKS_ICEBERG_DB_NAME_PREFIX = "ns"
 
 AIRFLOW_API_PORT = 8080
@@ -266,20 +267,53 @@ def postgres_container(host_internal_address):
     pg_container = (
         DockerContainer("postgres:latest")
         .with_name("radiant-postgres")
-        .with_env("POSTGRES_USER", "airflow_user")
-        .with_env("POSTGRES_PASSWORD", "airflow_pass")
-        .with_env("POSTGRES_DB", "airflow_db")
+        .with_env("POSTGRES_USER", "postgres")
+        .with_env("POSTGRES_PASSWORD", "postgres")
+        .with_env("POSTGRES_DB", "postgres")
         .with_exposed_ports(5432)
         .with_command("postgres -c max_connections=1000")
     )
     pg_container.start()
-    wait_for_logs(pg_container, "database system is ready to accept connections", timeout=60)
+    wait_for_logs(pg_container, "PostgreSQL init process complete", timeout=60)
+
+    _common_args = ["psql", "postgresql://postgres:postgres@localhost:5432/postgres", "-c"]
+    pg_container.exec(_common_args + ["CREATE DATABASE airflow WITH OWNER postgres;"])
+    pg_container.exec(_common_args + ["CREATE DATABASE radiant WITH OWNER postgres;"])
+    pg_container.exec(_common_args + ["CREATE SCHEMA IF NOT EXISTS iceberg_catalog;"])
 
     pg_port = pg_container.get_exposed_port(5432)
     yield PostgresInstance(
-        host=host_internal_address, port=pg_port, user="airflow_user", password="airflow_pass", db="airflow_db"
+        host=host_internal_address, port=pg_port, user="postgres", password="postgres", db="postgres"
     )
     pg_container.stop()
+
+
+@pytest.fixture(scope="session")
+def postgres_clinical_seeds(postgres_container):
+    import psycopg2
+
+    sql_path = Path(__file__).parent.parent / "resources" / "clinical" / "create_clinical_tables.sql"
+    with open(sql_path) as f:
+        tables_sql = f.read()
+
+    sql_path = Path(__file__).parent.parent / "resources" / "clinical" / "seeds.sql"
+    with open(sql_path) as f:
+        seeds_sql = f.read()
+
+    with (
+        psycopg2.connect(
+            host="localhost",
+            port=postgres_container.port,
+            user=postgres_container.user,
+            password=postgres_container.password,
+            database="radiant",
+        ) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute(tables_sql)
+        cur.execute(seeds_sql)
+        conn.commit()
+    yield
 
 
 @pytest.fixture(scope="session")
@@ -299,6 +333,7 @@ def radiant_airflow_container(
         "RADIANT_TABLES_NAMESPACE": f"test_{random_test_id}",
         "RADIANT_ICEBERG_DATABASE": f"{STARROCKS_ICEBERG_DB_NAME_PREFIX}_{random_test_id}",
         "RADIANT_ICEBERG_CATALOG": f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}",
+        "RADIANT_CLINICAL_CATALOG": f"{STARROCKS_JDBC_CATALOG_NAME_PREFIX}_{random_test_id}",
         "PYICEBERG_CATALOG__DEFAULT__URI": f"http://{host_internal_address}:{iceberg_container.port}",
         "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": f"http://{host_internal_address}:{minio_container.api_port}",
         "PYICEBERG_CATALOG__DEFAULT__TOKEN": ICEBERG_REST_TOKEN,
@@ -412,6 +447,34 @@ def starrocks_iceberg_catalog(
         );""")
         starrocks_session.commit()
         yield StarRocksIcebergCatalog(name=catalog_name)
+        cursor.execute(f"DROP CATALOG {catalog_name};")
+
+
+@pytest.fixture(scope="session")
+def starrocks_jdbc_catalog(
+    host_internal_address,
+    starrocks_session,
+    postgres_container,
+    postgres_clinical_seeds,
+    minio_container,
+    random_test_id,
+):
+    with starrocks_session.cursor() as cursor:
+        catalog_name = f"{STARROCKS_JDBC_CATALOG_NAME_PREFIX}_{random_test_id}"
+        cursor.execute(f"""
+        CREATE EXTERNAL CATALOG '{catalog_name}'
+        COMMENT 'External Clinical Catalog'
+        PROPERTIES (
+            'driver_class'='org.postgresql.Driver',
+            'checksum'='bef0b2e1c6edcd8647c24bed31e1a4ac',
+            'driver_url'='https://repo1.maven.org/maven2/org/postgresql/postgresql/42.3.3/postgresql-42.3.3.jar',
+            'type'='jdbc',
+            'user'='{postgres_container.user}',
+            'password'='{postgres_container.password}',
+            'jdbc_uri'='jdbc:postgresql://{host_internal_address}:{postgres_container.port}/radiant'
+        );""")
+        starrocks_session.commit()
+        yield catalog_name
         cursor.execute(f"DROP CATALOG {catalog_name};")
 
 

@@ -30,10 +30,11 @@ case = Case(
     experiments=[
         Experiment(
             seq_id=1,
+            task_id=1,
             patient_id="PA001",
             sample_id="SA0001",
             family_role="proband",
-            is_affected=True,
+            affected_status="affected",
             sex="F",
         )
     ],
@@ -151,26 +152,29 @@ def test_multi_sample():
         experiments=[
             Experiment(
                 seq_id=1,
+                task_id=1,
                 patient_id="PA001",
                 sample_id="SA0001",
                 family_role="proband",
-                is_affected=True,
+                affected_status="affected",
                 sex="F",
             ),
             Experiment(
                 seq_id=2,
+                task_id=2,
                 patient_id="PA002",
                 sample_id="SA0002",
                 family_role="mother",
-                is_affected=True,
+                affected_status="affected",
                 sex="F",
             ),
             Experiment(
                 seq_id=3,
+                task_id=3,
                 patient_id="PA002",
                 sample_id="SA0003",
                 family_role="father",
-                is_affected=True,
+                affected_status="affected",
                 sex="M",
             ),
         ],

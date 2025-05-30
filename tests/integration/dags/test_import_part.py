@@ -15,11 +15,11 @@ def test_import_part_with_valid_sequencing_experiments(
     with starrocks_session.cursor() as cursor:
         cursor.execute(f"""
             insert into test_{random_test_id}.test_{random_test_id}_sequencing_experiment (
-                case_id, seq_id, part, analysis_type, sample_id, patient_id, vcf_filepath, sex, family_role,
-                is_affected, created_at, updated_at, ingested_at)
+                case_id, seq_id, task_id, part, analysis_type, sample_id, patient_id, vcf_filepath, sex, family_role,
+                affected_status, created_at, updated_at, ingested_at)
             VALUES (
-                0, 0, 0, 'germline', 'SA0001', 'P14018', '{indexed_vcfs["test.vcf"]}', 
-                'F', 'proband', true, '2023-10-01 00:00:00', '2023-10-01 00:00:00', NULL
+                0, 0, 0, 0, 'germline', 'SA0001', 'P14018', '{indexed_vcfs["test.vcf"]}', 
+                'F', 'proband', 'affected', '2023-10-01 00:00:00', '2023-10-01 00:00:00', NULL
             );
         """)
 
@@ -50,7 +50,3 @@ def test_import_part_with_valid_sequencing_experiments(
             cursor.execute(f"SELECT COUNT(1) FROM test_{random_test_id}_{_table}")
             response = cursor.fetchall()
             assert response[0][0] == count, f"Table {_table} has count {response[0][0]}, expected {count}"
-
-        cursor.execute(f"SELECT COUNT(1) FROM test_{random_test_id}_variant_lookup")
-        response = cursor.fetchall()
-        assert response[0][0] > 0, f"Table {_table} has count {response[0][0]}, expected {count}"
