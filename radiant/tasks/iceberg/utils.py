@@ -43,7 +43,7 @@ def commit_files(table:Table, partition_to_commit: list[PartitionCommit]):
                 filter_expr = expr if filter_expr is None else And(filter_expr, expr)
             if filter_expr is None:
                 raise ValueError(f"Partition filter {partition.partition_filter} must contain at least one key-value pair.")
-            tx.delete(filter_expr)
+            # tx.delete(filter_expr)
             if partition.parquet_files:
                 tx.add_files(partition.parquet_files)
 

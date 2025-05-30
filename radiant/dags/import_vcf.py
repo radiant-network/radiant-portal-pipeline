@@ -49,7 +49,7 @@ with DAG(
 
 
     @task.external_python(pool="import_vcf", task_id="create_parquet_files", python=PATH_TO_PYTHON_BINARY)
-    def create_parquet_files(case: dict, chromosomes: list[str]):
+    def create_parquet_files(case: dict):
         import logging
         import os
         import sys
@@ -67,13 +67,13 @@ with DAG(
             client_kwargs={"endpoint_url": os.environ.get("PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT")},
         )
         case = Case.model_validate(case)
-        logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}, chromosome {','.join(chromosomes)}")
+        logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
         logger.info("=" * 80)
 
         namespace = os.getenv("RADIANT_ICEBERG_DATABASE", "radiant")
-        res = process_chromosomes(chromosomes, case, fs, namespace=namespace, vcf_threads=4)
+        res = process_chromosomes(case, fs, namespace=namespace, vcf_threads=4)
         logger.info(
-            f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}, chromosome {','.join(chromosomes)}"
+            f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}"
         )
         return {
             k: [json.loads(pc.model_dump_json()) for pc in v]
@@ -113,6 +113,6 @@ with DAG(
 
     all_cases = get_cases()
 
-    partitions_commit = create_parquet_files.expand(case=all_cases, chromosomes=GROUPED_CHROMOSOMES)
+    partitions_commit = create_parquet_files.expand(case=all_cases)
     merged_commit = merge_commits(partitions_commit)
     commit_partitions(merged_commit)

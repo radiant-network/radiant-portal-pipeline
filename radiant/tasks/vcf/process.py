@@ -22,7 +22,6 @@ tracer = get_tracer(__name__)
 # Airflow will treat the task as successful if the error is not captured properly.
 @capture_libc_stderr_and_check_errors(error_patterns=["[E::"])
 def process_chromosomes(
-    chromosomes: list[str],
     case: Case,
     fs,
     catalog_name="default",
@@ -30,7 +29,7 @@ def process_chromosomes(
     vcf_threads=None,
     catalog_properties=None,
 ):
-    with tracer.start_as_current_span(f"process_chromosomes_{str(chromosomes)}"):
+    with tracer.start_as_current_span(f"process_case_{str(case.case_id)}"):
         occurrences_partition_commit = []
         variants_partition_commit = []
         consequences_partition_commit = []
@@ -52,69 +51,65 @@ def process_chromosomes(
 
         csq_header = parse_csq_header(vcf)
         pedigree = Pedigree(case, vcf.samples)
-        for chromosome in chromosomes:
-            with tracer.start_as_current_span(f"chromosome_{chromosome}"):
-                logger.info(f"Starting processing chromosome: {chromosome}")
-                parsed_chromosome = chromosome.replace("chr", "")
+        with tracer.start_as_current_span(f"vcf_case_{case.case_id}"):
+            logger.info(f"Starting processing vcf for case {case.case_id} with file {case.vcf_filepath}")
 
-                occurrence_table = catalog.load_table(occurrences_table_name)
-                occurrence_partition_filters = [
-                    {
-                        "part": case.part,
-                        "case_id": case.case_id,
-                        "seq_id": exp.seq_id,
-                        "chromosome": parsed_chromosome,
-                    }
-                    for exp in case.experiments
-                ]
-                occurrence_buffers = {
-                    occurrence_partition_filter["seq_id"]: TableAccumulator(
-                        occurrence_table, fs=fs, partition_filter=occurrence_partition_filter
-                    )
-                    for occurrence_partition_filter in occurrence_partition_filters
-                }
-
-                variant_csq_partition_filter = {
+            occurrence_table = catalog.load_table(occurrences_table_name)
+            occurrence_partition_filters = [
+                {
+                    "part": case.part,
                     "case_id": case.case_id,
-                    "chromosome": parsed_chromosome,
+                    "seq_id": exp.seq_id
                 }
-                variant_table = catalog.load_table(variants_table_name)
-                variant_buffer = TableAccumulator(variant_table, fs=fs, partition_filter=variant_csq_partition_filter)
-
-                consequence_table = catalog.load_table(consequences_table_name)
-                consequence_buffer = TableAccumulator(
-                    consequence_table, fs=fs, partition_filter=variant_csq_partition_filter
+                for exp in case.experiments
+            ]
+            occurrence_buffers = {
+                occurrence_partition_filter["seq_id"]: TableAccumulator(
+                    occurrence_table, fs=fs, partition_filter=occurrence_partition_filter
                 )
-                for record in vcf(chromosome):
-                    if len(record.ALT) <= 1:
-                        common = process_common(record, case_id=case.case_id, part=case.part)
-                        picked_consequence, consequences = process_consequence(record, csq_header, common)
-                        consequence_buffer.extend(consequences)
-                        occurrences = process_occurrence(record, pedigree, common=common)
-                        for seq_id, occ in occurrences.items():
-                            occurrence_buffers[seq_id].append(occ)
-                        variant = process_variant(record, picked_consequence, common)
-                        variant_buffer.append(variant)
+                for occurrence_partition_filter in occurrence_partition_filters
+            }
 
-                    else:
-                        logger.debug(
-                            f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_filepath}:"
-                            f" this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
-                        )
+            variant_csq_partition_filter = {
+                "case_id": case.case_id
+            }
+            variant_table = catalog.load_table(variants_table_name)
+            variant_buffer = TableAccumulator(variant_table, fs=fs, partition_filter=variant_csq_partition_filter)
 
-                for occurrence_buffer in occurrence_buffers.values():
-                    occurrence_buffer.write_files(commit=False)
-                    occurrences_partition_commit.append(PartitionCommit(parquet_files=occurrence_buffer.parquet_paths, partition_filter=occurrence_buffer.partition_filter))
+            consequence_table = catalog.load_table(consequences_table_name)
+            consequence_buffer = TableAccumulator(
+                consequence_table, fs=fs, partition_filter=variant_csq_partition_filter
+            )
+            for record in vcf:
+                if len(record.ALT) <= 1:
+                    common = process_common(record, case_id=case.case_id, part=case.part)
+                    picked_consequence, consequences = process_consequence(record, csq_header, common)
+                    consequence_buffer.extend(consequences)
+                    occurrences = process_occurrence(record, pedigree, common=common)
+                    for seq_id, occ in occurrences.items():
+                        occurrence_buffers[seq_id].append(occ)
+                    variant = process_variant(record, picked_consequence, common)
+                    variant_buffer.append(variant)
 
-                variant_buffer.write_files(commit=False)
-                variants_partition_commit.append(PartitionCommit(parquet_files=variant_buffer.parquet_paths, partition_filter=variant_buffer.partition_filter))
+                else:
+                    logger.debug(
+                        f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_filepath}:"
+                        f" this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
+                    )
 
-                consequence_buffer.write_files(commit=False)
-                consequences_partition_commit.append(PartitionCommit(parquet_files=consequence_buffer.parquet_paths, partition_filter=consequence_buffer.partition_filter))
+            for occurrence_buffer in occurrence_buffers.values():
+                occurrence_buffer.write_files(commit=False)
+                occurrences_partition_commit.append(PartitionCommit(parquet_files=occurrence_buffer.parquet_paths, partition_filter=occurrence_buffer.partition_filter))
 
-                logger.info(
-                    f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}, chromosome {chromosome}"
-                )
+            variant_buffer.write_files(commit=False)
+            variants_partition_commit.append(PartitionCommit(parquet_files=variant_buffer.parquet_paths, partition_filter=variant_buffer.partition_filter))
+
+            consequence_buffer.write_files(commit=False)
+            consequences_partition_commit.append(PartitionCommit(parquet_files=consequence_buffer.parquet_paths, partition_filter=consequence_buffer.partition_filter))
+
+            logger.info(
+                f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}"
+            )
 
         vcf.close()
         return {

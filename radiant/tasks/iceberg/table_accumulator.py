@@ -11,7 +11,7 @@ from pyiceberg.expressions import And, EqualTo
 
 logger = logging.getLogger("airflow.task")
 
-PARQUET_FILE_SIZE_MB = 256
+PARQUET_FILE_SIZE_MB = 1024
 MAX_BUFFERED_ROWS = 10000
 
 
