@@ -19,7 +19,7 @@ test-unit:
 	pytest tests/unit/
 
 test-integration:
-	pytest -m "not slow" tests/integration
+	pytest -m "not slow and not manual" tests/integration
 
 test-integration-slow:
 	pytest -m slow tests/integration

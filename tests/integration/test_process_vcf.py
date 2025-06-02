@@ -28,6 +28,7 @@ def test_process_chromosomes(
                 family_role="proband",
                 affected_status="affected",
                 sex="F",
+                experimental_strategy="wgs",
             )
         ],
         vcf_filepath=indexed_vcfs["test.vcf"],
@@ -100,6 +101,7 @@ def test_process_chromosomes_error(
                 family_role="proband",
                 affected_status="affected",
                 sex="F",
+                experimental_strategy="wgs",
             )
         ],
         vcf_filepath=indexed_vcfs["test.vcf"],

@@ -9,6 +9,7 @@ class Experiment(BaseModel):
     family_role: str
     affected_status: str
     sex: str
+    experimental_strategy: str
 
 
 class Case(BaseModel):

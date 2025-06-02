@@ -2,6 +2,7 @@ import os
 
 from radiant.dags import NAMESPACE
 
+RADIANT_STARROCKS_UDF_JAR_PATH_ENV_KEY = "RADIANT_STARROCKS_UDF_JAR_PATH"
 RADIANT_TABLES_PREFIX_ENV_KEY = "RADIANT_TABLES_NAMESPACE"
 ICEBERG_CATALOG_ENV_KEY = "RADIANT_ICEBERG_CATALOG"
 ICEBERG_DATABASE_ENV_KEY = "RADIANT_ICEBERG_DATABASE"
@@ -34,7 +35,6 @@ CLINICAL_CATALOG_DATABASE = {
 }
 
 # --- Iceberg tables
-
 ICEBERG_GERMLINE_SNV_MAPPING = {
     "iceberg_consequence": "germline_snv_consequence",
     "iceberg_occurrence": "germline_snv_occurrence",
@@ -63,11 +63,15 @@ ICEBERG_CATALOG_DATABASE = {
 
 
 # --- StarRocks tables
-
 STARROCKS_COMMON_MAPPING = {
     "starrocks_sequencing_experiment": "sequencing_experiment",
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
+    "starrocks_sequencing_experiment_delta": "sequencing_experiment_delta",
     "starrocks_variant_lookup": "variant_lookup",
+    "starrocks_udf_jar_path": os.getenv(
+        RADIANT_STARROCKS_UDF_JAR_PATH_ENV_KEY,
+        "https://github.com/radiant-network/radiant-starrocks-udf/releases/download/v1.0.1/radiant-starrocks-udf-1.0.1-jar-with-dependencies.jar",
+    ),
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {

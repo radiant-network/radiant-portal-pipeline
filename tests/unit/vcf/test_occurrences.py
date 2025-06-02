@@ -36,6 +36,7 @@ case = Case(
             family_role="proband",
             affected_status="affected",
             sex="F",
+            experimental_strategy="wgs",
         )
     ],
     vcf_filepath="",
@@ -158,6 +159,7 @@ def test_multi_sample():
                 family_role="proband",
                 affected_status="affected",
                 sex="F",
+                experimental_strategy="wgs",
             ),
             Experiment(
                 seq_id=2,
@@ -167,6 +169,7 @@ def test_multi_sample():
                 family_role="mother",
                 affected_status="affected",
                 sex="F",
+                experimental_strategy="wgs",
             ),
             Experiment(
                 seq_id=3,
@@ -176,6 +179,7 @@ def test_multi_sample():
                 family_role="father",
                 affected_status="affected",
                 sex="M",
+                experimental_strategy="wgs",
             ),
         ],
         vcf_filepath="",

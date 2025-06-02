@@ -36,6 +36,7 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
                     family_role=row["family_role"],
                     sex=row["sex"],
                     affected_status=row["affected_status"],
+                    experimental_strategy=row["experimental_strategy"],
                 )
                 for row in list_rows
             ],
