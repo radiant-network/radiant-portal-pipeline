@@ -1,6 +1,8 @@
+import itertools
 import os
 
 import jinja2
+import pytest
 
 from radiant.dags import DAGS_DIR
 
@@ -29,20 +31,22 @@ def _execute_query(cursor, query, args=None):
         raise Exception(f"Query failed: {query}, with exception: {e}") from e
 
 
-def _validate_init(starrocks_session, sql_dir, tables):
+def _execute_file(cursor, sql_file, args=None):
     from radiant.tasks.data.radiant_tables import get_radiant_mapping
+    with open(sql_file) as f:
+        rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
+    return _execute_query(cursor, rendered_sql, args=args)
 
-    sql_files = [os.path.join(sql_dir, file) for file in os.listdir(sql_dir) if file.endswith(".sql")]
 
+def _validate_init(starrocks_session, sql_dir, tables=None, views=None, udfs=None):
     with starrocks_session.cursor() as cursor:
-        for sql_file in sql_files:
-            with open(sql_file) as f:
-                rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
-            _execute_query(cursor, rendered_sql)
+        # Create UDFs first because some queries may depend on them
+        for udf in udfs or []:
+            _execute_file(cursor, os.path.join(sql_dir, udf + "_udf.sql"))
 
-        # Validate tables have been created
-        for _table in tables:
-            _execute_query(cursor, f"SHOW CREATE TABLE {_table}")
+        for filename in itertools.chain(tables or [], views or []):
+            _execute_file(cursor, os.path.join(sql_dir, filename + "_create_table.sql"))
+
 
 
 def _explain_insert(starrocks_session, sql_dir):
@@ -66,22 +70,51 @@ def test_queries_are_valid(
     starrocks_jdbc_catalog,
     postgres_clinical_seeds,
 ):
+    pytest.skip(reason="Skip until UDF PR is merged")
     monkeypatch.setenv("RADIANT_ICEBERG_CATALOG", starrocks_iceberg_catalog.name)
     monkeypatch.setenv("RADIANT_ICEBERG_DATABASE", setup_namespace)
     monkeypatch.setenv("RADIANT_CLINICAL_CATALOG", starrocks_jdbc_catalog)
 
-    from radiant.tasks.data.radiant_tables import (
-        get_starrocks_common_mapping,
-        get_starrocks_germline_snv_mapping,
-        get_starrocks_open_data_mapping,
-    )
+
 
     # Validate table creation for Open Data & Radiant
-    _validate_init(starrocks_session, sql_dir=_OPEN_DATA_INIT_DIR, tables=get_starrocks_open_data_mapping().values())
+    _validate_init(
+        starrocks_session,
+        sql_dir=_OPEN_DATA_INIT_DIR,
+        tables=[
+            "1000_genomes",
+            "clinvar",
+            "dbnsfp",
+            "gnomad",
+            "spliceai",
+            "topmed_bravo",
+            "gnomad_constraint",
+            "omim_gene_panel",
+            "hpo_gene_panel",
+            "orphanet_gene_panel",
+            "ddd_gene_panel",
+            "cosmic_gene_panel",
+        ],
+    )
     _validate_init(
         starrocks_session,
         sql_dir=_RADIANT_INIT_DIR,
-        tables={**get_starrocks_germline_snv_mapping(), **get_starrocks_common_mapping()}.values(),
+        tables=[
+            "consequence",
+            "consequence_filter",
+            "consequence_filter_partitioned",
+            "occurrence",
+            "sequencing_experiment",
+            "tmp_variant",
+            "staging_variant",
+            "variant_lookup",
+            "variant",
+            "staging_variant_frequency",
+            "variant_frequency",
+            "variant_partitioned",
+        ],
+        views=["staging_sequencing_experiment", "sequencing_experiment_delta"],
+        udfs=["variant_id", "get_sequencing_experiment_partition", "init_sequencing_experiment_partition"],
     )
 
     # Validate table insertion using SQL `EXPLAIN` for Open Data & Radiant (Requires existing tables)

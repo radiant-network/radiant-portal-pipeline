@@ -8,9 +8,9 @@ from radiant.dags.import_part import cases_output_processor
 def mock_results():
     return [
         [
-            (1, "file_1.vcf", 1, "germline", 1, 1, "patient_1", "sample_1", "role_1", "M", "affected"),
-            (1, "file_1.vcf", 1, "germline", 2, 2, "patient_2", "sample_2", "role_2", "F", "not_affected"),
-            (2, "file_2.vcf", 2, "germline", 3, 3, "patient_3", "sample_3", "role_3", "M", "affected"),
+            (1, "file_1.vcf", 1, "germline", 1, 1, "patient_1", "sample_1", "role_1", "M", "affected", "wgs"),
+            (1, "file_1.vcf", 1, "germline", 2, 2, "patient_2", "sample_2", "role_2", "F", "not_affected", "wgs"),
+            (2, "file_2.vcf", 2, "germline", 3, 3, "patient_3", "sample_3", "role_3", "M", "affected", "wgs"),
         ]
     ]
 
@@ -30,6 +30,7 @@ def mock_descriptions():
             ("family_role",),
             ("sex",),
             ("affected_status",),
+            ("experimental_strategy",),
         ]
     ]
 
