@@ -166,8 +166,8 @@ class TableAccumulator:
                 self.accumulated_pa_table = pa.concat_tables([self.accumulated_pa_table, new_pa_table])
             self.clear_rows()
 
-            # if self.accumulated_pa_table.get_total_buffer_size() >= self.parquet_file_size_mb * 1024 * 1024:
-            #     self.write_files(commit=False, merge=False)
+            if self.accumulated_pa_table.get_total_buffer_size() >= self.parquet_file_size_mb * 1024 * 1024:
+                self.write_arrow_to_iceberg()
 
     def write_files(self, commit: bool = True, merge=True) -> str | None:
         """
