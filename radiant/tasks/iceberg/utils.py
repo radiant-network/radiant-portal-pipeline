@@ -9,7 +9,6 @@ from pyiceberg.expressions import And, EqualTo
 
 logger = logging.getLogger("airflow.task")
 
-
 def merge_schemas(schema1: Schema, schema2: Schema):
     """
     Merge two Iceberg schemas into a single schema.

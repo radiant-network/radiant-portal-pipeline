@@ -98,13 +98,13 @@ def process_chromosomes(
                     )
 
             for occurrence_buffer in occurrence_buffers.values():
-                occurrence_buffer.write_files(commit=False)
+                occurrence_buffer.write_arrow_to_iceberg()
                 occurrences_partition_commit.append(PartitionCommit(parquet_files=occurrence_buffer.parquet_paths, partition_filter=occurrence_buffer.partition_filter))
 
-            variant_buffer.write_files(commit=False)
+            variant_buffer.write_arrow_to_iceberg()
             variants_partition_commit.append(PartitionCommit(parquet_files=variant_buffer.parquet_paths, partition_filter=variant_buffer.partition_filter))
 
-            consequence_buffer.write_files(commit=False)
+            consequence_buffer.write_arrow_to_iceberg()
             consequences_partition_commit.append(PartitionCommit(parquet_files=consequence_buffer.parquet_paths, partition_filter=consequence_buffer.partition_filter))
 
             logger.info(
