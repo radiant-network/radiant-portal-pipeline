@@ -167,7 +167,7 @@ class TableAccumulator:
             self.clear_rows()
 
             if self.accumulated_pa_table.get_total_buffer_size() >= self.parquet_file_size_mb * 1024 * 1024:
-                self.write_arrow_to_iceberg()
+                self.write_arrow_to_iceberg(merge=False)
 
     def write_files(self, commit: bool = True, merge=True) -> str | None:
         """
@@ -203,9 +203,10 @@ class TableAccumulator:
             self.commit_files()
         return parquet_path
 
-    def write_arrow_to_iceberg(self):
+    def write_arrow_to_iceberg(self, merge: bool = True):
         logger.info(f"Write arrow to iceberg")
-        self.merge_table(force=True)
+        if merge:
+            self.merge_table(force=True)
 
         if self.accumulated_pa_table:
             file_io = PyArrowFileIO({S3_ENDPOINT: "https://objets.juno.calculquebec.ca"})
