@@ -217,6 +217,7 @@ class TableAccumulator:
             logger.info(f"Writing {len(files)} files to iceberg")
             logger.info(f"files {files}")
             self.parquet_paths.extend([f.file_path.replace("s3a", "s3") for f in files])
+            self.accumulated_pa_table = None
 
     def commit_files(self):
         """
