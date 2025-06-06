@@ -8,6 +8,7 @@ We define partitions because genomic data is often too large to be processed in 
  By breaking the data into smaller, manageable partitions, we can efficiently import it into the data platform.
 
 *(For illustration purposes, some tables were removed from the diagram below, but they are still part of the partition.)*
+
 ![assets/img.png](img.png)
 
 ## What are the impacts of partitioning on the business logic?

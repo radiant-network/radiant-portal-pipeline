@@ -66,12 +66,8 @@ ICEBERG_CATALOG_DATABASE = {
 STARROCKS_COMMON_MAPPING = {
     "starrocks_sequencing_experiment": "sequencing_experiment",
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
-    "starrocks_sequencing_experiment_delta": "sequencing_experiment_delta",
+    "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
     "starrocks_variant_lookup": "variant_lookup",
-    "starrocks_udf_jar_path": os.getenv(
-        RADIANT_STARROCKS_UDF_JAR_PATH_ENV_KEY,
-        "https://github.com/radiant-network/radiant-starrocks-udf/releases/download/v1.0.1/radiant-starrocks-udf-1.0.1-jar-with-dependencies.jar",
-    ),
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
@@ -160,4 +156,8 @@ def get_radiant_mapping() -> dict:
     mapping.update(get_starrocks_open_data_mapping())
     mapping.update(get_iceberg_tables())
     mapping.update(get_clinical_mapping())
+    mapping["starrocks_udf_jar_path"] = os.getenv(
+        RADIANT_STARROCKS_UDF_JAR_PATH_ENV_KEY,
+        "https://github.com/radiant-network/radiant-starrocks-udf/releases/download/v1.0.0/radiant-starrocks-udf-1.0.0-jar-with-dependencies.jar",
+    )
     return mapping

@@ -1,4 +1,4 @@
-CREATE VIEW IF NOT EXISTS {{ params.starrocks_sequencing_experiment_delta }} AS
+CREATE VIEW IF NOT EXISTS {{ params.starrocks_staging_sequencing_experiment_delta }} AS
 WITH sequencing_delta AS (
     SELECT
         sse.*
@@ -71,7 +71,7 @@ enriched_max_part AS (
 	LEFT JOIN max_part mp
 	ON mp.experimental_strategy = ec.experimental_strategy
 ),
-enriched_max_count AS (
+final_data AS (
     SELECT
         emp.*,
         se.max_count as max_count
@@ -87,24 +87,23 @@ enriched_max_count AS (
     ON se.part = emp.max_part
 )
 SELECT
-	case_id,
-	seq_id,
-	task_id,
-	COALESCE(
-		case_part,
-		patient_part,
-		GET_SEQUENCING_EXPERIMENT_PARTITION(max_part, max_count),
-		INIT_SEQUENCING_EXPERIMENT_PARTITION(experimental_strategy)
-	) as part,
-	analysis_type,
-	sample_id,
-	patient_id,
-	experimental_strategy,
-	vcf_filepath,
-	sex,
-	family_role,
-	affected_status,
-	created_at,
-	updated_at
-FROM enriched_max_count
-ORDER BY case_id, seq_id, task_id
+    case_id,
+    seq_id,
+    task_id,
+    analysis_type,
+    sample_id,
+    patient_id,
+    experimental_strategy,
+    request_id,
+    request_priority,
+    vcf_filepath,
+    sex,
+    family_role,
+    affected_status,
+    created_at,
+    updated_at,
+    patient_part,
+    case_part,
+    max_part,
+    max_count
+FROM final_data

@@ -63,7 +63,7 @@ x-airflow-common:
     PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT: http://radiant-minio:9000
     PYICEBERG_CATALOG__DEFAULT__TOKEN: mysecret
     # Uncomment the following line to use locally served Radiant StarRocks UDF jar.
-    RADIANT_STARROCKS_UDF_JAR_PATH: http://host.docker.internal:8000/radiant-starrocks-udf-1.0.1-jar-with-dependencies.jar
+    # RADIANT_STARROCKS_UDF_JAR_PATH: http://host.docker.internal:8000/radiant-starrocks-udf-1.0.1-jar-with-dependencies.jar
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:postgres@postgres/airflow
@@ -299,6 +299,7 @@ services:
       - -c
       - |
         airflow pools set import_vcf 16 "Import VCF Pool"
+        airflow pools set import_part 1 "Import Partition Pool"
         airflow connections add starrocks_conn --conn-uri "mysql://root:@host.docker.internal:9030/radiant";
     depends_on:
       <<: *airflow-common-depends-on

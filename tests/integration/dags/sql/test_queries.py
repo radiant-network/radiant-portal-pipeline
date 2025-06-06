@@ -33,6 +33,7 @@ def _execute_query(cursor, query, args=None):
 
 def _execute_file(cursor, sql_file, args=None):
     from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
     with open(sql_file) as f:
         rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
     return _execute_query(cursor, rendered_sql, args=args)
@@ -46,7 +47,6 @@ def _validate_init(starrocks_session, sql_dir, tables=None, views=None, udfs=Non
 
         for filename in itertools.chain(tables or [], views or []):
             _execute_file(cursor, os.path.join(sql_dir, filename + "_create_table.sql"))
-
 
 
 def _explain_insert(starrocks_session, sql_dir):
@@ -74,8 +74,6 @@ def test_queries_are_valid(
     monkeypatch.setenv("RADIANT_ICEBERG_CATALOG", starrocks_iceberg_catalog.name)
     monkeypatch.setenv("RADIANT_ICEBERG_DATABASE", setup_namespace)
     monkeypatch.setenv("RADIANT_CLINICAL_CATALOG", starrocks_jdbc_catalog)
-
-
 
     # Validate table creation for Open Data & Radiant
     _validate_init(
@@ -114,7 +112,7 @@ def test_queries_are_valid(
             "variant_partitioned",
         ],
         views=["staging_sequencing_experiment", "sequencing_experiment_delta"],
-        udfs=["variant_id", "get_sequencing_experiment_partition", "init_sequencing_experiment_partition"],
+        udfs=["variant_id"],
     )
 
     # Validate table insertion using SQL `EXPLAIN` for Open Data & Radiant (Requires existing tables)

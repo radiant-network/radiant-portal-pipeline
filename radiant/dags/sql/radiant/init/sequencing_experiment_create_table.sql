@@ -7,6 +7,8 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_sequencing_experiment }} (
     sample_id VARCHAR(255),
     patient_id VARCHAR(255),
     experimental_strategy VARCHAR(50),
+    request_id INT,
+    request_priority VARCHAR(20),
     vcf_filepath VARCHAR(1024),
     sex VARCHAR(10),
     family_role VARCHAR(20),

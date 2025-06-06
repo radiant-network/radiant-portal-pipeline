@@ -11,14 +11,16 @@ def test_import_part_with_valid_sequencing_experiments(
     starrocks_session,
     random_test_id,
     indexed_vcfs,
+    clinical_vcf,
 ):
     with starrocks_session.cursor() as cursor:
         cursor.execute(f"""
             insert into test_{random_test_id}.test_{random_test_id}_sequencing_experiment (
-                case_id, seq_id, task_id, part, analysis_type, sample_id, patient_id, vcf_filepath, sex, family_role,
-                affected_status, created_at, updated_at, ingested_at)
+                case_id, seq_id, task_id, part, analysis_type, sample_id, patient_id, experimental_strategy, 
+                request_id, request_priority, vcf_filepath, sex, family_role, affected_status, created_at, 
+                updated_at, ingested_at)
             VALUES (
-                0, 0, 0, 0, 'germline', 'SA0001', 'P14018', '{indexed_vcfs["test.vcf"]}', 
+                0, 0, 0, 0, 'germline', 0, 0, 'wgs', 0, 'routine', '{indexed_vcfs["test.vcf"]}', 
                 'F', 'proband', 'affected', '2023-10-01 00:00:00', '2023-10-01 00:00:00', NULL
             );
         """)
