@@ -20,7 +20,7 @@ def test_import_part_with_valid_sequencing_experiments(
                 request_id, request_priority, vcf_filepath, sex, family_role, affected_status, created_at, 
                 updated_at, ingested_at)
             VALUES (
-                0, 0, 0, 0, 'germline', 0, 0, 'wgs', 0, 'routine', '{indexed_vcfs["test.vcf"]}', 
+                0, 0, 0, 0, 'germline', "SA0001", 0, 'wgs', 0, 'routine', '{indexed_vcfs["test.vcf"]}', 
                 'F', 'proband', 'affected', '2023-10-01 00:00:00', '2023-10-01 00:00:00', NULL
             );
         """)
