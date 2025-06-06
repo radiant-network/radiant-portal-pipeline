@@ -4,11 +4,14 @@ from pydantic import BaseModel
 class Experiment(BaseModel):
     seq_id: int
     task_id: int
-    patient_id: str
+    patient_id: int
     sample_id: str
     family_role: str
     affected_status: str
     sex: str
+    experimental_strategy: str
+    request_id: int
+    request_priority: str
 
 
 class Case(BaseModel):

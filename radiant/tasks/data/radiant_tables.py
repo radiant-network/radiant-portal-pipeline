@@ -67,6 +67,7 @@ ICEBERG_CATALOG_DATABASE = {
 STARROCKS_COMMON_MAPPING = {
     "starrocks_sequencing_experiment": "sequencing_experiment",
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
+    "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
     "starrocks_variant_lookup": "variant_lookup",
 }
 

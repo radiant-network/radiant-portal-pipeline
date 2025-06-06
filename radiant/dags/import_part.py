@@ -36,6 +36,9 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
                     family_role=row["family_role"],
                     sex=row["sex"],
                     affected_status=row["affected_status"],
+                    experimental_strategy=row["experimental_strategy"],
+                    request_id=row["request_id"],
+                    request_priority=row["request_priority"],
                 )
                 for row in list_rows
             ],
@@ -73,8 +76,8 @@ def import_part():
 
     fetch_sequencing_experiment_delta = RadiantStarRocksOperator(
         task_id="fetch_sequencing_experiment_delta",
-        sql="./sql/radiant/sequencing_experiment_select_delta.sql",
-        task_display_name="[StarRocks] Get Sequencing Experiments",
+        sql="./sql/radiant/sequencing_experiment_partition_select.sql",
+        task_display_name="[StarRocks] Get Sequencing Experiment for a partition",
         do_xcom_push=True,
         output_processor=cases_output_processor,
         parameters={"part": "{{ params.part }}"},

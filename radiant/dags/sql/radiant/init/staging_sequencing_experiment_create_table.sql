@@ -6,6 +6,7 @@ SELECT
     IF(REGEXP(c.type, 'heriditary*'), 'germline', 'somatic') AS analysis_type,
     se.sample_id AS sample_id,
     se.patient_id AS patient_id,
+    se.experimental_strategy AS experimental_strategy,
     se.request_id AS request_id,
     r.priority AS request_priority,
     d.url AS vcf_filepath,
@@ -23,3 +24,4 @@ LEFT JOIN {{ params.clinical_document }} d ON thd.document_id = d.id
 LEFT JOIN {{ params.clinical_patient }} p ON se.patient_id = p.id
 LEFT JOIN {{ params.clinical_family }} f ON f.family_member_id = p.id
 LEFT JOIN {{ params.clinical_request }} r ON se.request_id = r.id
+WHERE REGEXP(d.name, '\\.vcf\\.gz$')
