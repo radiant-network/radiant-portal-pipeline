@@ -93,7 +93,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
                             "end": 2000,
                             "reference": "A",
                             "alternate": "T",
-                            "sample_id": 1,
+                            "sample_id": "SA0001",
                             "dp": 30,
                             "gq": 99,
                             ...

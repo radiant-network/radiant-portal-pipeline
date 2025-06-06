@@ -62,7 +62,7 @@ def test_process_chromosomes(
     #     "reference": ["A"],
     #     "alternate": ["T"],
     #     "case_id": [1],
-    #     "sample_id": [1],
+    #     "sample_id": ["SA0001"],
     #     # Add other columns as needed
     # })
     #

@@ -63,16 +63,11 @@ with DAG(
                 sql=str(_OPEN_DATA_SQL_INIT_DIR / f"{group}_create_table.sql"),
             )
         )
-
-    udfs = [
-        "variant_id_udf",
-    ]
-    for udf in udfs:
-        tasks.append(
-            RadiantStarRocksOperator(
-                task_id=f"create_{udf}",
-                sql=str(_RADIANT_SQL_INIT_DIR / f"{udf}.sql"),
-            )
+    tasks.append(
+        RadiantStarRocksOperator(
+            task_id="create_variant_id_udf",
+            sql=str(_RADIANT_SQL_INIT_DIR / "variant_id_udf.sql"),
         )
+    )
 
     chain(*tasks)

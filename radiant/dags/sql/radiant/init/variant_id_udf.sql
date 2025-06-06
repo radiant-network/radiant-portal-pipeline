@@ -8,7 +8,10 @@ CREATE
 ) RETURNS bigint
     PROPERTIES
 (
-    "symbol" = "org.radiant.VariantIdUDF",
-    "type" = "StarrocksJar",
-    "file" = "{{ params.starrocks_udf_jar_path }}"
+    "symbol" =
+    "org.radiant.VariantIdUDF",
+    "type" =
+    "StarrocksJar",
+    "file" =
+    "https://github.com/radiant-network/radiant-starrocks-udf/releases/download/v1.0.0/radiant-starrocks-udf-1.0.0-jar-with-dependencies.jar"
 );

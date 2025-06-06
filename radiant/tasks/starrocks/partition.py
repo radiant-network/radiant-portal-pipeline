@@ -67,8 +67,11 @@ class PriorityLevel(Enum):
             case _:
                 return cls.LOW
 
-    def __gt__(self, other):
-        return other.value < self.value
+    def __gt__(self, other: "PriorityLevel") -> bool:
+        return self.value > other.value
+
+    def __lt__(self, other: "PriorityLevel") -> bool:
+        return self.value < other.value
 
 
 class SequencingExperimentPartitionAssigner:

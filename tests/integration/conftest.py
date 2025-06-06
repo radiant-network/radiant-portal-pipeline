@@ -520,9 +520,7 @@ def indexed_vcfs(s3_fs):
             if filename.endswith(".vcf"):
                 src_path = RESOURCES_DIR / filename
                 dest_path = os.path.join(tmpdir, filename + ".gz")
-
                 compress_and_index_vcf(src_path, dest_path)
-
                 s3_fs.put(dest_path, "vcf/" + filename + ".gz")
                 s3_fs.put(dest_path + ".tbi", "vcf/" + filename + ".gz.tbi")
                 output[filename] = "s3+http://vcf/" + filename + ".gz"

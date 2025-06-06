@@ -267,7 +267,7 @@ def test__partition_assigner__with_matching_patient(case_part, patient_part, max
         ([0, 1], ["unknown", "low"], [0, 1]),
     ],
 )
-def test__priority_assigner__(parts, priorities, expected_priority):
+def test__priority_assigner__assign_priorities(parts, priorities, expected_priority):
     sequencing_experiments = [
         SequencingDeltaOutput(
             case_id=0,
