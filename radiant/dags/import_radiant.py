@@ -67,58 +67,31 @@ def import_radiant():
             from radiant.tasks.starrocks.partition import SequencingExperimentPartitionAssigner
 
             assigner = SequencingExperimentPartitionAssigner()
-            rows = [
-                tuple(
-                    [
-                        row.case_id,
-                        row.seq_id,
-                        row.task_id,
-                        row.part,
-                        row.analysis_type,
-                        str(row.sample_id),
-                        row.patient_id,
-                        row.experimental_strategy,
-                        row.request_id,
-                        row.request_priority,
-                        row.vcf_filepath,
-                        row.sex,
-                        row.family_role,
-                        row.affected_status,
-                        str(row.created_at),
-                        str(row.updated_at),
-                        str(row.ingested_at),
-                    ]
-                )
-                for row in assigner.assign_partitions(delta)
-            ]
-            return ",\n".join(str(r) for r in rows)
+            return [row.__dict__ for row in assigner.assign_partitions(delta)]
 
         assigned_partitions = assign_partitions(fetch_sequencing_experiment_delta.output)
 
-        @task.short_circuit(
-            task_id="check_insert_delta",
-            task_display_name="[PyOp] Validate Prepared SQL",
-            ignore_downstream_trigger_rules=False,
-        )
-        def check_insert_delta(prepared_sql: Any) -> Any:
-            return prepared_sql
-
-        checked = check_insert_delta(assigned_partitions)
-
-        # TODO: Probably a better way to handle this...
-        insert_new_sequencing_experiment = RadiantStarRocksOperator(
-            sql="""
-            INSERT INTO {{ params.starrocks_sequencing_experiment }} (
-                case_id, seq_id, task_id, part, analysis_type, sample_id, patient_id, experimental_strategy,
-                request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
-                created_at, updated_at, ingested_at) 
-            VALUES """
-            + str(checked),
+        @task(
             task_id="insert_sequencing_experiment",
-            task_display_name="[StarRocks] Insert Partitioned Sequencing Experiment",
+            task_display_name="[PyOp] Insert New Sequencing Experiments",
         )
+        def insert_new_sequencing_experiment(sequencing_experiment: Any):
+            import jinja2
+            from airflow.hooks.base import BaseHook
 
-        (fetch_sequencing_experiment_delta >> assigned_partitions >> checked >> insert_new_sequencing_experiment)
+            from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+            with open("./dags/radiant/dags/sql/radiant/sequencing_experiment_insert.sql") as f_in:
+                _sql = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping()})
+
+            conn = BaseHook.get_connection("starrocks_conn")
+            with conn.get_hook().get_conn().cursor() as cursor:
+                cursor.executemany(
+                    _sql,
+                    sequencing_experiment,
+                )
+
+        insert_new_sequencing_experiment(assigned_partitions)
 
     fetch_sequencing_experiment = RadiantStarRocksOperator(
         task_id="fetch_sequencing_experiment",
