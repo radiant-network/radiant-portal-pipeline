@@ -76,12 +76,16 @@ def import_radiant():
             task_display_name="[PyOp] Insert New Sequencing Experiments",
         )
         def insert_new_sequencing_experiment(sequencing_experiment: Any):
+            import os
+
             import jinja2
             from airflow.hooks.base import BaseHook
 
+            from radiant.dags import DAGS_DIR
             from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
-            with open("./dags/radiant/dags/sql/radiant/sequencing_experiment_insert.sql") as f_in:
+            _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/sequencing_experiment_insert.sql")
+            with open(_path) as f_in:
                 _sql = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping()})
 
             conn = BaseHook.get_connection("starrocks_conn")
@@ -119,6 +123,7 @@ def import_radiant():
         wait_for_completion=True,
         poke_interval=30,
         pool="import_part",
+        map_index_template="Partition: {{ task.conf['part'] }}",
     ).expand(conf=priority)
 
     (start >> tg_partition_group >> fetch_sequencing_experiment >> import_parts)

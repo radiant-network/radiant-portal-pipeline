@@ -22,9 +22,14 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
     cases = []
     for case_id, grouped_rows in groupby(dict_rows, key=lambda x: x["case_id"]):
         list_rows = list(grouped_rows)
+
+        # Force the proband vcf_filepath or if not available take the first one from the case
+        _proband_files = [row["vcf_filepath"] for row in list_rows if row["family_role"] == "proband"]
+        _vcf_filepath = _proband_files[0] if _proband_files else list_rows[0]["vcf_filepath"]
+
         case = Case(
             case_id=case_id,
-            vcf_filepath=list_rows[0]["vcf_filepath"],
+            vcf_filepath=_vcf_filepath,
             part=list_rows[0]["part"],
             analysis_type=list_rows[0]["analysis_type"],
             experiments=[
