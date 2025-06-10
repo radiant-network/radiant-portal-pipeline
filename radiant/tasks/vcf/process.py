@@ -56,6 +56,7 @@ def process_chromosomes(
                         "part": case.part,
                         "case_id": case.case_id,
                         "seq_id": exp.seq_id,
+                        "task_id": exp.task_id,
                         "chromosome": parsed_chromosome,
                     }
                     for exp in case.experiments

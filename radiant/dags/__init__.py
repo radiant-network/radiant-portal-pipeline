@@ -28,8 +28,7 @@ DAGS_DIR = pathlib.Path(__file__).parent
 SQL_DIR = pathlib.Path("sql")
 
 # This is required because docs are read at DAG parse time, not a execution time.
-_dags_dir = pathlib.Path(__file__).parent
-DOCS_DIR = pathlib.Path(_dags_dir / "docs")
+DOCS_DIR = pathlib.Path(DAGS_DIR / "docs")
 
 
 def load_docs_md(file_name: str) -> str:
