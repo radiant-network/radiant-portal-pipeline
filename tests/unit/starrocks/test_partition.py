@@ -260,9 +260,9 @@ def test__partition_assigner__with_matching_patient(case_part, patient_part, max
 @pytest.mark.parametrize(
     "parts, priorities, expected_priority",
     [
-        ([0, 1, 2, 3], ["stat", "urgent", "routine", "low"], [0, 1, 2, 3]),
-        ([0, 1, 2, 3], ["low", "routine", "urgent", "stat"], [3, 2, 1, 0]),
-        ([0, 1, 2, 3], ["stat", "urgent", "stat", "low"], [0, 2, 1, 3]),
+        ([0, 1, 2, 3], ["stat", "asap", "urgent", "routine"], [0, 1, 2, 3]),
+        ([0, 1, 2, 3], ["routine", "urgent", "asap", "stat"], [3, 2, 1, 0]),
+        ([0, 1, 2, 3], ["stat", "urgent", "stat", "routine"], [0, 2, 1, 3]),
         ([0, 1, 2, 3], ["stat", "stat", "stat", "stat"], [0, 1, 2, 3]),
         ([0, 1], ["unknown", "low"], [0, 1]),
     ],

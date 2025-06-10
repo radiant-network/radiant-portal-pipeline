@@ -2,6 +2,7 @@ import os
 
 import jinja2
 import pandas as pd
+import psycopg2
 import pytest
 
 from radiant.dags import DAGS_DIR
@@ -57,11 +58,12 @@ def sequencing_experiment_tables(starrocks_session, starrocks_jdbc_catalog):
     """
     os.environ["RADIANT_CLINICAL_CATALOG"] = starrocks_jdbc_catalog
     _run_radiant_sql(
-        starrocks_session, sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "sequencing_experiment_create_table.sql")
+        starrocks_session,
+        sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_sequencing_experiment_create_table.sql"),
     )
     _run_radiant_sql(
         starrocks_session,
-        sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_sequencing_experiment_create_table.sql"),
+        sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_external_sequencing_experiment_create_table.sql"),
     )
     _run_radiant_sql(
         starrocks_session,
@@ -88,13 +90,13 @@ def test_sequencing_experiment_no_delta(starrocks_session, sequencing_experiment
     Test the case where there's no delta, i.e., the sequencing_experiment table is already fully populated.
     """
     with starrocks_session.cursor() as cursor:
-        cursor.execute("TRUNCATE TABLE sequencing_experiment;")
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
-        INSERT INTO sequencing_experiment 
+        INSERT INTO staging_sequencing_experiment 
         SELECT case_id, seq_id, task_id, 0 AS part, analysis_type, sample_id, patient_id, experimental_strategy,
             request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
             created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
-        FROM staging_sequencing_experiment
+        FROM staging_external_sequencing_experiment
         """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
@@ -110,21 +112,21 @@ def test_sequencing_experiment_existing_wgs_case_partition(
     Test computing the delta when there's an existing WGS case partition existing.
     """
     with starrocks_session.cursor() as cursor:
-        cursor.execute("TRUNCATE TABLE sequencing_experiment;")
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
-            INSERT INTO sequencing_experiment 
+            INSERT INTO staging_sequencing_experiment 
             SELECT case_id, seq_id, task_id, 0 AS part, analysis_type, sample_id, patient_id, experimental_strategy,
                 request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
                 created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
-            FROM staging_sequencing_experiment
+            FROM staging_external_sequencing_experiment
             WHERE case_id = 1 AND seq_id = 1 AND task_id = 1
         """)
         cursor.execute("""
-            INSERT INTO sequencing_experiment 
+            INSERT INTO staging_sequencing_experiment 
             SELECT case_id, seq_id, task_id, 1 AS part, analysis_type, sample_id, patient_id, experimental_strategy,
                 request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
                 created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
-            FROM staging_sequencing_experiment
+            FROM staging_external_sequencing_experiment
             WHERE case_id = 2 AND seq_id = 4 AND task_id = 4
         """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
@@ -141,13 +143,13 @@ def test_sequencing_experiment_existing_wxs_case_partition(
     Test computing the delta when there's an existing WXS case partition existing.
     """
     with starrocks_session.cursor() as cursor:
-        cursor.execute("TRUNCATE TABLE sequencing_experiment;")
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
-            INSERT INTO sequencing_experiment 
+            INSERT INTO staging_sequencing_experiment 
             SELECT case_id, seq_id, task_id, 65537 AS part, analysis_type, sample_id, patient_id, 
                 experimental_strategy, request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
                 created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
-            FROM staging_sequencing_experiment
+            FROM staging_external_sequencing_experiment
             WHERE case_id = 1 AND seq_id = 62 AND task_id = 62
         """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
@@ -155,3 +157,51 @@ def test_sequencing_experiment_existing_wxs_case_partition(
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
     assert len(result_df) == 63  # 63 total - 1 imported wxs experiments
+
+
+def test_sequencing_experiment_with_recently_updated_case(
+    postgres_container, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """
+    Test computing the delta when an existing sequencing experiment gets an update
+    """
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
+        cursor.execute("""
+            INSERT INTO staging_sequencing_experiment 
+            SELECT case_id, seq_id, task_id, 0 AS part, analysis_type, sample_id, patient_id, 
+                experimental_strategy, request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
+                created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
+            FROM staging_external_sequencing_experiment
+            WHERE case_id = 1 AND seq_id = 1 AND task_id = 1
+        """)
+        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        results = cursor.fetchall()
+
+    result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
+    assert len(result_df) == 63  # 63 total - 1 imported wxs experiments
+
+    with (
+        psycopg2.connect(
+            host="localhost",
+            port=postgres_container.port,
+            database="radiant",
+            user=postgres_container.user,
+            password=postgres_container.password,
+        ) as pg_conn,
+        pg_conn.cursor() as pg_cursor,
+    ):
+        pg_cursor.execute("""
+            UPDATE sequencing_experiment 
+            SET updated_on = date_trunc('day', NOW()) 
+            WHERE case_id = 1 AND id = 1 
+            """)
+        pg_conn.commit()
+
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        results = cursor.fetchall()
+
+    # Should capture the updated experiment
+    result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
+    assert len(result_df) == 64

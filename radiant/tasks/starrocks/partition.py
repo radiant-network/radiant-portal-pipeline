@@ -51,21 +51,21 @@ class SequencingType:
 
 class PriorityLevel(Enum):
     STAT: int = 100
-    URGENT: int = 200
-    ROUTINE: int = 300
-    LOW: int = 400
+    ASAP: int = 200
+    URGENT: int = 300
+    ROUTINE: int = 400
 
     @classmethod
     def from_string(cls, value: str) -> "PriorityLevel":
         match value.lower():
             case "stat":
                 return cls.STAT
+            case "asap":
+                return cls.ASAP
             case "urgent":
                 return cls.URGENT
-            case "routine":
-                return cls.ROUTINE
             case _:
-                return cls.LOW
+                return cls.ROUTINE
 
     def __gt__(self, other: "PriorityLevel") -> bool:
         return self.value > other.value

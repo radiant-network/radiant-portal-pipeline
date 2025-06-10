@@ -13,9 +13,8 @@ def test_import_radiant(
     indexed_vcfs,
     clinical_vcf,
 ):
-
     with starrocks_session.cursor() as cursor:
-        cursor.execute(f"TRUNCATE TABLE test_{random_test_id}.test_{random_test_id}_sequencing_experiment;")
+        cursor.execute(f"TRUNCATE TABLE test_{random_test_id}.test_{random_test_id}_staging_sequencing_experiment;")
 
     dag_id = "radiant-import"
     part_dag_id = "radiant-import-part"
@@ -31,7 +30,7 @@ def test_import_radiant(
     assert poll_dag_until_success(airflow_container=radiant_airflow_container, dag_id=dag_id, timeout=_timeout)
 
     _table_count_mapping = {
-        "sequencing_experiment": 64,
+        "staging_sequencing_experiment": 64,
         "consequence": 0,
         "consequence_filter": 0,
         "consequence_filter_partitioned": 0,
