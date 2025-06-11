@@ -23,11 +23,14 @@ def test_process_chromosomes(
             Experiment(
                 seq_id=1,
                 task_id=1,
-                patient_id="PA001",
+                patient_id=1,
                 sample_id="SA0001",
                 family_role="proband",
                 affected_status="affected",
                 sex="F",
+                experimental_strategy="wgs",
+                request_id=1,
+                request_priority="routine",
             )
         ],
         vcf_filepath=indexed_vcfs["test.vcf"],
@@ -95,11 +98,14 @@ def test_process_chromosomes_error(
             Experiment(
                 seq_id=1,
                 task_id=1,
-                patient_id="PA001",
+                patient_id=1,
                 sample_id="SA0001",
                 family_role="proband",
                 affected_status="affected",
                 sex="F",
+                experimental_strategy="wgs",
+                request_id=1,
+                request_priority="routine",
             )
         ],
         vcf_filepath=indexed_vcfs["test.vcf"],

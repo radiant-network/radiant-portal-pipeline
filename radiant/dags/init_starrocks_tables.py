@@ -1,4 +1,5 @@
 from airflow import DAG
+from airflow.utils.helpers import chain
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE, SQL_DIR
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator
@@ -22,8 +23,9 @@ with DAG(
         "consequence_filter",
         "consequence_filter_partitioned",
         "occurrence",
+        "staging_external_sequencing_experiment",
         "staging_sequencing_experiment",
-        "sequencing_experiment",
+        "staging_sequencing_experiment_delta",
         "tmp_variant",
         "staging_variant",
         "variant_lookup",
@@ -67,3 +69,5 @@ with DAG(
             sql=str(_RADIANT_SQL_INIT_DIR / "variant_id_udf.sql"),
         )
     )
+
+    chain(*tasks)

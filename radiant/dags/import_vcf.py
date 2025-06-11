@@ -48,7 +48,15 @@ with DAG(
 
         return [Case.model_validate(c).model_dump() for c in params.get("cases", [])]
 
-    @task.external_python(pool="import_vcf", task_id="import_vcf", python=PATH_TO_PYTHON_BINARY)
+    @task.external_python(
+        pool="import_vcf",
+        task_id="import_vcf",
+        python=PATH_TO_PYTHON_BINARY,
+        map_index_template=(
+            "{\"case_id\": \"{{ task.op_kwargs['case']['case_id'] }}\", "
+            "\"chromosomes\":{{ task.op_kwargs['chromosomes'] }}}"
+        ),
+    )
     def import_vcf(case: dict, chromosomes: list[str]):
         import logging
         import os

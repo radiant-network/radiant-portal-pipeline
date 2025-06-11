@@ -297,6 +297,7 @@ services:
       - -c
       - |
         airflow pools set import_vcf 16 "Import VCF Pool"
+        airflow pools set import_part 1 "Import Partition Pool"
         airflow connections add starrocks_conn --conn-uri "mysql://root:@host.docker.internal:9030/radiant";
     depends_on:
       <<: *airflow-common-depends-on

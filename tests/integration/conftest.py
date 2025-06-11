@@ -376,7 +376,8 @@ def radiant_airflow_container(
         ]
     )
     container.exec(["airflow", "pools", "set", "starrocks_insert_pool", "1", "StarRocks insert pool"])
-    container.exec(["airflow", "pools", "set", "import_vcf", "1", "VCF import pool"])
+    container.exec(["airflow", "pools", "set", "import_vcf", "8", "VCF import pool"])
+    container.exec(["airflow", "pools", "set", "import_part", "1", "Partition import pool"])
 
     yield container
     container.stop()
@@ -526,3 +527,41 @@ def indexed_vcfs(s3_fs):
                 output[filename] = "s3+http://vcf/" + filename + ".gz"
 
         yield output
+
+
+@pytest.fixture(scope="session")
+def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
+    """
+    Creates "mock" VCFs for clinical documents.
+    """
+    reference_vcf = "test.vcf"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with open(RESOURCES_DIR / reference_vcf) as f:
+            vcf_content = f.read()
+
+        with starrocks_session.cursor() as cursor:
+            cursor.execute(f"""
+                SELECT 
+                     sample_id,
+                     d.name
+                FROM {starrocks_jdbc_catalog}.public.sequencing_experiment se
+                LEFT JOIN {starrocks_jdbc_catalog}.public.task_has_sequencing_experiment thse 
+                ON se.id = thse.sequencing_experiment_id
+                LEFT JOIN {starrocks_jdbc_catalog}.public.task_has_document thd ON thse.task_id = thd.task_id
+                LEFT JOIN {starrocks_jdbc_catalog}.public.document d ON thd.document_id = d.id
+                WHERE REGEXP(d.name, '\\.vcf\\.gz$')
+                """)
+            results = cursor.fetchall()
+
+        for sample_id, document_name in results:
+            _path = document_name.replace(".gz", "")
+            src_path = os.path.join(tmpdir, f"source_{_path}")
+            dest_path = os.path.join(tmpdir, f"{_path}.gz")
+
+            with open(src_path, "w") as f:
+                _new_content = vcf_content.replace("SA0001", str(sample_id))
+                f.write(_new_content)
+
+            compress_and_index_vcf(src_path, dest_path)
+            s3_fs.put(dest_path, "vcf/" + document_name)
+            s3_fs.put(dest_path + ".tbi", "vcf/" + document_name + ".tbi")
