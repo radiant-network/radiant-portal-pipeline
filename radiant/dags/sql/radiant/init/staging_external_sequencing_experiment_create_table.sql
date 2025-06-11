@@ -3,10 +3,10 @@ SELECT
     se.case_id AS case_id,
     se.id AS seq_id,
     thse.task_id AS task_id,
-    IF(REGEXP(c.type, 'heriditary*'), 'germline', 'somatic') AS analysis_type,
+    ca.type_code AS analysis_type,
     se.sample_id AS sample_id,
     se.patient_id AS patient_id,
-    se.experimental_strategy AS experimental_strategy,
+    exp.experimental_strategy_code AS experimental_strategy,
     se.request_id AS request_id,
     r.priority AS request_priority,
     d.url AS vcf_filepath,
@@ -18,6 +18,8 @@ SELECT
 FROM
     {{ params.clinical_sequencing_experiment }} se
 JOIN {{ params.clinical_case }} c ON se.case_id = c.id
+LEFT JOIN {{ params.clinical_experiment }} exp ON exp.id = se.experiment_id
+LEFT JOIN {{ params.clinical_case_analysis }} ca ON ca.id = c.case_analysis_id
 LEFT JOIN {{ params.clinical_task_has_sequencing_experiment }} thse ON se.id = thse.sequencing_experiment_id
 LEFT JOIN {{ params.clinical_task_has_document }} thd ON thse.task_id = thd.task_id
 LEFT JOIN {{ params.clinical_document }} d ON thd.document_id = d.id
