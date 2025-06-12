@@ -1,9 +1,8 @@
 from airflow import DAG
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE, SQL_DIR
+from radiant.dags import DEFAULT_ARGS, NAMESPACE
 from radiant.tasks.data.radiant_tables import get_radiant_mapping
-
 
 with DAG(
     dag_id=f"{NAMESPACE}-init-simulated-clinical-data",
