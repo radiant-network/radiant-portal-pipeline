@@ -6,7 +6,7 @@ INSERT INTO {{ params.clinical_organization }} (id, code, name, category) VALUES
     (4, 'LDM-CHUSJ', 'Laboratoire de diagnostic moléculaire, CHU Sainte-Justine', 'diagnostic_laboratory'),
     (5, 'LDM-CHOP', 'Molecular Diagnostic Laboratory, CHOP', 'diagnostic_laboratory'),
     (6, 'CQGC', 'Quebec Clinical Genomic Center', 'research_institute')
-ON CONFLICT (code) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, code, name, category) = ROW (excluded.*);
 
 INSERT INTO {{ params.clinical_patient }} (id, mrn, managing_organization_id, sex, dob) VALUES
     (1, 'MRN-283773', 3, 'female', '2012-02-03'),
@@ -70,14 +70,14 @@ INSERT INTO {{ params.clinical_patient }} (id, mrn, managing_organization_id, se
     (59, 'MRN-283831', 2, 'male', '1984-02-09'),
     (60, 'MRN-283832', 2, 'female', '1979-07-01'),
     (61, 'MRN-283833', 2, 'female', '1971-07-25')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, mrn, managing_organization_id, sex, dob) = ROW (excluded.*);
 
 -- Cases
 
 INSERT INTO {{ params.clinical_project }} (id, code, name, description) VALUES
     (1, 'N1', 'NeuroDev Phase I', 'Phase one NeuroDev cases'),
     (2, 'N2', 'NeuroDev Phase II', 'Phase two NeuroDev cases')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, code, name, description) = ROW (excluded.*);
 
 INSERT INTO {{ params.clinical_request }} (id, priority, ordering_physician, ordering_organisation_id, order_number) VALUES
     (1, 'routine', 'Felix Laflamme', 3, '25850340'),
@@ -141,7 +141,8 @@ INSERT INTO {{ params.clinical_request }} (id, priority, ordering_physician, ord
     (59, 'routine', 'Christopher Watson', 3, '25850398'),
     (60, 'routine', 'Victoria Breton', 3, '25850399'),
     (61, 'routine', 'Antoine Paré', 3, '25850400')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, priority, ordering_physician, ordering_organisation_id, order_number) = ROW (excluded.*);
+
 
 INSERT INTO {{ params.clinical_case_analysis }} (id, code, name, type_code, panel_id, description)
 VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of this analysis'),
@@ -149,7 +150,8 @@ VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of t
         'A description of this analysis'),
        (3, 'MYOC', 'Congenital Myopathies', 'germline', NULL, 'A description of this analysis'),
        (4, 'HYPM', 'Malignant Hyperthermia', 'germline', NULL, 'A description of this analysis')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, code, name, type_code, panel_id, description) = ROW (excluded.*);
+
 
 INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, case_analysis_id, status, request_id, performer_lab_id, note, created_on, updated_on) VALUES
     (1, 3, 1, 2, 'active', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
@@ -173,7 +175,18 @@ INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, case_analysi
     (19, 55, 2, 2, 'active', 19, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (20, 58, 2, 2, 'active', 20, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (21, 60, 2, 2, 'active', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+    id = EXCLUDED.id,
+    proband_id = EXCLUDED.proband_id,
+    project_id = EXCLUDED.project_id,
+    case_analysis_id = EXCLUDED.case_analysis_id,
+    status = EXCLUDED.status,
+    request_id = EXCLUDED.request_id,
+    performer_lab_id = EXCLUDED.performer_lab_id,
+    note = EXCLUDED.note,
+    created_on = EXCLUDED.created_on,
+    updated_on = EXCLUDED.updated_on;
+
 
 INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relationship_to_proband, affected_status) VALUES
     (1, 1, 1, 'mother', 'affected'),
@@ -216,14 +229,9 @@ INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relatio
     (38, 20, 57, 'mother', 'non_affected'),
     (39, 21, 59, 'father', 'non_affected'),
     (40, 21, 61, 'mother', 'non_affected')
-ON CONFLICT (id) DO NOTHING;
-
-
-
-
+ON CONFLICT (id) DO UPDATE SET (id, case_id, family_member_id, relationship_to_proband, affected_status) = ROW (excluded.*);
 
 -- Observations
-
 INSERT INTO {{ params.clinical_observation_coding }} (
     id,
     case_id,
@@ -698,7 +706,15 @@ INSERT INTO {{ params.clinical_observation_coding }} (
       (461, 20, 58,'phenotype','HPO', 'HP:0001520', 'childhood', 'negative', 'Clinical comment'),
       (462, 20, 58,'phenotype','HPO', 'HP:0001562', 'unknown', 'negative', 'Clinical comment'),
       (463, 20, 58,'phenotype','HPO', 'HP:0001622', 'childhood', 'negative', 'Clinical comment')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id,
+    case_id,
+    patient_id,
+    observation_code,
+    coding_system,
+    code_value,
+    onset_code,
+    interpretation,
+    note) = ROW (excluded.*);
 
 
 -- Samples
@@ -826,7 +842,7 @@ INSERT INTO {{ params.clinical_sample }} (id, category, type, parent_sample_id, 
     (120, 'specimen', 'blood', NULL, NULL, 'normal', 'B-990.1'),
     (121, 'specimen', 'blood', NULL, NULL, 'normal', 'B-990.2'),
     (122, 'specimen', 'blood', NULL, NULL, 'normal', 'B-990.3')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, category, type, parent_sample_id, tissue_site, histology, submitter_sample_id) = ROW (excluded.*);
 
 
 -- Sequencing Experiment
@@ -836,7 +852,7 @@ VALUES (1, 'WXS', 'Whole Exome Sequencing', 'wxs', 'illumina', 'A description'),
        (2, 'WGS_SR', 'Short Read Whole Genome Sequencing', 'wgs', 'illumina', 'A description'),
        (3, 'WTS', 'Whole Transcriptome Sequencing', 'wts', 'illumina', 'A description'),
        (4, 'WGS_LR', 'Long Read Whole Genome Sequencing', 'wgs', 'pacbio', 'A description')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, code, name, experimental_strategy_code, platform_code, description) = ROW (excluded.*);
 
 INSERT INTO {{ params.clinical_sequencing_experiment }} (id, case_id, patient_id, sample_id, experiment_id, status, aliquot, request_id, performer_lab_id, run_name, run_alias, run_date, capture_kit, is_paired_end, read_length, created_on, updated_on) VALUES
     (1, 1, 3, 1, 2, 'completed', 'NA12892', 3, 6, '1617', 'A00516_0169', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
@@ -900,7 +916,7 @@ INSERT INTO {{ params.clinical_sequencing_experiment }} (id, case_id, patient_id
     (59, 21, 60, 59, 2, 'submitted', 'S14857', 60, 6, '1675', 'A00516_0227', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (60, 21, 61, 60, 2, 'submitted', 'S14858', 61, 6, '1676', 'A00516_0228', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (61, 21, 59, 61, 2, 'submitted', 'S14859', 59, 6, '1677', 'A00516_0229', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, case_id, patient_id, sample_id, experiment_id, status, aliquot, request_id, performer_lab_id, run_name, run_alias, run_date, capture_kit, is_paired_end, read_length, created_on, updated_on) = ROW (excluded.*);
 
 
 -- Task
@@ -908,7 +924,7 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO {{ params.clinical_pipeline }} (id, description, genome_build) VALUES
                                                            (1, 'Dragen', 'GRch38'),
                                                            (2, 'Nexflow Variant Annotation', 'GRch38')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, description, genome_build) = ROW (excluded.*);
 
 
 INSERT INTO {{ params.clinical_task }} (id, type, pipeline_id, created_on) VALUES
@@ -973,7 +989,7 @@ INSERT INTO {{ params.clinical_task }} (id, type, pipeline_id, created_on) VALUE
                                                            (59, 'ngba', 2, '2021-10-12 13:08:00'),
                                                            (60, 'ngba', 2, '2021-10-12 13:08:00'),
                                                            (61, 'ngba', 2, '2021-10-12 13:08:00')
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET (id, type, pipeline_id, created_on) = ROW (excluded.*);
 
 
 INSERT INTO {{ params.clinical_task_has_sequencing_experiment }} (
@@ -1041,7 +1057,7 @@ INSERT INTO {{ params.clinical_task_has_sequencing_experiment }} (
       (59, 59),
       (60, 60),
       (61, 61)
-ON CONFLICT(task_id, sequencing_experiment_id) DO NOTHING;
+ON CONFLICT (task_id, sequencing_experiment_id) DO UPDATE SET (task_id, sequencing_experiment_id) = ROW (excluded.*);
 
 
 INSERT INTO {{ params.clinical_document }} (id, name, data_category, data_type, format, size, url, hash) VALUES
@@ -1289,7 +1305,7 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category, data_type, 
     (242, 'FI0037927.S14029.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, 's3+http://vcf/FI0037927.S14029.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c833'),
     (243, 'FI0037928.S14857.vcf.gz', 'genomic', 'snv', 'vcf', 304055582, 's3+http://vcf/FI0037928.S14857.vcf.gz', '5d41402abc4b2a76b9719d911017c834'),
     (244, 'FI0037928.S14857.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3+http://vcf/FI0037928.S14857.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c835')
-ON CONFLICT(id) DO NOTHING;
+ON CONFLICT(id) DO UPDATE SET (id, name, data_category, data_type, format, size, url, hash) = ROW (excluded.*);
 
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id) VALUES
     (1, 1),
@@ -1536,4 +1552,4 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id) VALUE
     (61, 122),
     (61, 183),
     (61, 244)
-ON CONFLICT(task_id, document_id) DO NOTHING;
+ON CONFLICT(task_id, document_id) DO UPDATE SET (task_id, document_id) = ROW (excluded.*);
