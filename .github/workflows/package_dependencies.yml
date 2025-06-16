@@ -12,7 +12,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build and push Docker image
-        id: build mwaa base
+        id: build_mwaa_base
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
