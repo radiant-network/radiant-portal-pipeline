@@ -1,0 +1,31 @@
+name: Package DAG Dependencies
+
+on:
+  push:
+    branches: [ "SJRA-317*" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and push Docker image
+        id: build mwaa base
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          file: Dockerfile-mwaa
+          tags: radiant-binaries-builder:latest
+          push: false
+
+      - name: Extract binaries from Docker image
+        run: |
+          docker create --name temp_container radiant-binaries-builder:latest
+          docker cp temp_container:/home/airflow/.venv/radiant/wheels ./wheels
+          docker rm temp_container
+
+      - name: Zip extracted binaries
+        run: |
+          zip -r plugins.zip ./wheels
