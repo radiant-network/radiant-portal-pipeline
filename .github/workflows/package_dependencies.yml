@@ -1,9 +1,13 @@
 name: Package DAG Dependencies
 
+#on:
+#  push:
+#    tags:
+#      - 'v*'
 on:
   push:
-    tags:
-      - 'v*'
+    branches:
+      - SJRA-317*
 
 jobs:
   build:
@@ -25,11 +29,12 @@ jobs:
         run: |
           docker create --name temp_container radiant-binaries-builder:latest
           docker cp temp_container:/home/airflow/.venv/radiant/wheels ./wheels
+          docker cp temp_container:/usr/local/lib/htslib* ./lib
           docker rm temp_container
 
       - name: Zip extracted binaries
         run: |
-          zip -r plugins-${GITHUB_REF_NAME}.zip ./wheels
+          zip -r plugins-${GITHUB_REF_NAME}.zip ./wheels ./lib
 
 #
 #   TODO Uncomment this once the S3 bucket is set up
