@@ -1,13 +1,9 @@
 name: Package DAG Dependencies
 
-#on:
-#  push:
-#    tags:
-#      - 'v*'
 on:
   push:
-    branches:
-      - SJRA-317*
+    tags:
+      - 'v*'
 
 jobs:
   build:
