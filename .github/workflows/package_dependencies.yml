@@ -29,7 +29,7 @@ jobs:
         run: |
           docker create --name temp_container radiant-binaries-builder:latest
           docker cp temp_container:/home/airflow/.venv/radiant/wheels ./wheels
-          docker cp temp_container:/usr/local/lib/libhts* ./lib
+          docker cp temp_container:/usr/local/lib/libhts.so.1.21 ./lib
           docker rm temp_container
 
       - name: Zip extracted binaries
