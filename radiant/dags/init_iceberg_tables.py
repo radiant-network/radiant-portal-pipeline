@@ -43,7 +43,6 @@ with DAG(
         part_field = OCCURRENCE_SCHEMA.find_field("part")
         case_id_field = OCCURRENCE_SCHEMA.find_field("case_id")
         seq_id_field = OCCURRENCE_SCHEMA.find_field("seq_id")
-        chromosome_field = OCCURRENCE_SCHEMA.find_field("chromosome")
 
         partition_spec = PartitionSpec(
             fields=[
@@ -65,12 +64,6 @@ with DAG(
                     name=seq_id_field.name,
                     transform=IdentityTransform(),
                 ),
-                PartitionField(
-                    field_id=1003,
-                    source_id=chromosome_field.field_id,
-                    name=chromosome_field.name,
-                    transform=IdentityTransform(),
-                ),
             ]
         )
         catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec)
@@ -89,7 +82,6 @@ with DAG(
             catalog.drop_table(table_name)
 
         case_id_field = VARIANT_SCHEMA.find_field("case_id")
-        chromosome_field = VARIANT_SCHEMA.find_field("chromosome")
 
         partition_spec = PartitionSpec(
             fields=[
@@ -98,13 +90,7 @@ with DAG(
                     source_id=case_id_field.field_id,
                     name="case_id",
                     transform=IdentityTransform(),
-                ),
-                PartitionField(
-                    field_id=1003,
-                    source_id=chromosome_field.field_id,
-                    name="chromosome",
-                    transform=IdentityTransform(),
-                ),
+                )
             ]
         )
         catalog.create_table_if_not_exists(table_name, schema=VARIANT_SCHEMA, partition_spec=partition_spec)
@@ -123,7 +109,6 @@ with DAG(
             catalog.drop_table(table_name)
 
         case_id_field = CONSEQUENCE_SCHEMA.find_field("case_id")
-        chromosome_field = CONSEQUENCE_SCHEMA.find_field("chromosome")
 
         partition_spec = PartitionSpec(
             fields=[
@@ -132,13 +117,7 @@ with DAG(
                     source_id=case_id_field.field_id,
                     name="case_id",
                     transform=IdentityTransform(),
-                ),
-                PartitionField(
-                    field_id=1003,
-                    source_id=chromosome_field.field_id,
-                    name="chromosome",
-                    transform=IdentityTransform(),
-                ),
+                )
             ]
         )
         catalog.create_table_if_not_exists(table_name, schema=CONSEQUENCE_SCHEMA, partition_spec=partition_spec)
