@@ -57,6 +57,8 @@ x-airflow-common:
     AWS_REGION: us-east-1
     AWS_ACCESS_KEY_ID: admin
     AWS_SECRET_ACCESS_KEY: password
+    AWS_ENDPOINT_URL: http://radiant-minio:9000
+    AWS_ALLOW_HTTP: true
     HTS_S3_HOST: radiant-minio:9000
     HTS_S3_ADDRESS_STYLE: path
     PYICEBERG_CATALOG__DEFAULT__URI: http://radiant-iceberg-rest:8181
