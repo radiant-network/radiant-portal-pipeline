@@ -32,7 +32,7 @@ case = Case(
             seq_id=1,
             task_id=1,
             patient_id=1,
-            sample_id="SA0001",
+            aliquot="SA0001",
             family_role="proband",
             affected_status="affected",
             sex="F",
@@ -61,7 +61,7 @@ def test_one_sample():
         "end": 1000,
         "reference": "AC",
         "alternate": "A",
-        "sample_id": "SA0001",
+        "aliquot": "SA0001",
         "quality": 44,
         "filter": None,
         "info_dp": 21,
@@ -157,7 +157,7 @@ def test_multi_sample():
                 seq_id=1,
                 task_id=1,
                 patient_id=1,
-                sample_id="SA0001",
+                aliquot="SA0001",
                 family_role="proband",
                 affected_status="affected",
                 sex="F",
@@ -169,7 +169,7 @@ def test_multi_sample():
                 seq_id=2,
                 task_id=2,
                 patient_id=2,
-                sample_id="SA0002",
+                aliquot="SA0002",
                 family_role="mother",
                 affected_status="affected",
                 sex="F",
@@ -181,7 +181,7 @@ def test_multi_sample():
                 seq_id=3,
                 task_id=3,
                 patient_id=3,
-                sample_id="SA0003",
+                aliquot="SA0003",
                 family_role="father",
                 affected_status="affected",
                 sex="M",
@@ -197,19 +197,19 @@ def test_multi_sample():
 
     assert occ.get(1, None) is not None
     assert occ[1]["zygosity"] == "HOM"
-    assert occ[1]["sample_id"] == "SA0001"
+    assert occ[1]["aliquot"] == "SA0001"
     assert occ[1]["ad_total"] == 10
     assert occ[1]["ad_ref"] == 3
     assert occ[1]["ad_alt"] == 7
     assert occ.get(2, None) is not None
     assert occ[2]["zygosity"] == "HET"
-    assert occ[2]["sample_id"] == "SA0002"
+    assert occ[2]["aliquot"] == "SA0002"
     assert occ[2]["ad_total"] == 30
     assert occ[2]["ad_ref"] == 10
     assert occ[2]["ad_alt"] == 20
     assert occ.get(3, None) is not None
     assert occ[3]["zygosity"] == "HET"
-    assert occ[3]["sample_id"] == "SA0003"
+    assert occ[3]["aliquot"] == "SA0003"
     assert occ[3]["ad_total"] == 50
     assert occ[3]["ad_ref"] == 20
     assert occ[3]["ad_alt"] == 30

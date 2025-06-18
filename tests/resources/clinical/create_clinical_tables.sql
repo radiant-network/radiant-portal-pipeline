@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS "sequencing_experiment"
 
 CREATE INDEX IF NOT EXISTS idx_sequencing_experiment_case_id ON "sequencing_experiment" ("case_id");
 CREATE INDEX IF NOT EXISTS idx_sequencing_experiment_patient_id ON "sequencing_experiment" ("patient_id");
-CREATE INDEX IF NOT EXISTS idx_sequencing_experiment_sample_id ON "sequencing_experiment" ("sample_id");
+CREATE INDEX IF NOT EXISTS idx_sequencing_experiment_aliquot ON "sequencing_experiment" ("aliquot");
 
 
 CREATE TABLE "panel_has_genes"
@@ -349,8 +349,8 @@ CREATE TABLE IF NOT EXISTS "document"
     "hash"                  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_document_name ON "document" ("name");
-CREATE INDEX IF NOT EXISTS idx_document_data_type ON "document" ("data_type_code");
-CREATE INDEX IF NOT EXISTS idx_document_format ON "document" ("format_code");
+CREATE INDEX IF NOT EXISTS idx_document_data_type_code ON "document" ("data_type_code");
+CREATE INDEX IF NOT EXISTS idx_document_format_code ON "document" ("format_code");
 
 CREATE TABLE IF NOT EXISTS "task_has_document"
 (

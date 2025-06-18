@@ -12,7 +12,7 @@ SCHEMA = merge_schemas(
     Schema(
         NestedField(100, "part", IntegerType(), required=True),
         NestedField(101, "seq_id", IntegerType(), required=True),
-        NestedField(102, "sample_id", StringType(), required=True),
+        NestedField(102, "aliquot", StringType(), required=True),
         NestedField(104, "dp", IntegerType(), required=False),
         NestedField(105, "gq", IntegerType(), required=False),
         NestedField(106, "calls", ListType(202, IntegerType()), required=False),
@@ -93,7 +93,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
                             "end": 2000,
                             "reference": "A",
                             "alternate": "T",
-                            "sample_id": "SA0001",
+                            "aliquot": "SA0001",
                             "dp": 30,
                             "gq": 99,
                             ...
@@ -163,7 +163,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
             "end": common.end,
             "reference": common.reference,
             "alternate": common.alternate,
-            "sample_id": exp.sample_id,
+            "aliquot": exp.aliquot,
             "dp": dp if dp > 0 else None,
             "gq": gq if gq > 0 else None,
             "calls": calls,

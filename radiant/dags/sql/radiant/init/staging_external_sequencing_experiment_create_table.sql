@@ -4,7 +4,7 @@ SELECT
     se.id AS seq_id,
     thse.task_id AS task_id,
     ca.type_code AS analysis_type,
-    se.sample_id AS sample_id,
+    se.aliquot AS aliquot,
     se.patient_id AS patient_id,
     exp.experimental_strategy_code AS experimental_strategy,
     se.request_id AS request_id,
@@ -27,4 +27,5 @@ LEFT JOIN {{ params.clinical_patient }} p ON se.patient_id = p.id
 LEFT JOIN {{ params.clinical_family }} f ON f.family_member_id = p.id
 LEFT JOIN {{ params.clinical_request }} r ON se.request_id = r.id
 WHERE d.format_code = 'vcf'
+  AND d.data_type_code = 'snv'
   AND c.status_code in ('active', 'completed')
