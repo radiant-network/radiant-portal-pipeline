@@ -8,7 +8,7 @@ INSERT INTO organization (id, code, name, category) VALUES
     (6, 'CQGC', 'Quebec Clinical Genomic Center', 'research_institute')
 ON CONFLICT (code) DO NOTHING;
 
-INSERT INTO patient (id, mrn, managing_organization_id, sex, dob) VALUES
+INSERT INTO patient (id, mrn, managing_organization_id, sex_code, dob) VALUES
     (1, 'MRN-283773', 3, 'female', '2012-02-03'),
     (2, 'MRN-283774', 3, 'male', '1970-01-30'),
     (3, 'MRN-283775', 3, 'male', '1973-03-23'),
@@ -79,7 +79,7 @@ INSERT INTO project (id, code, name, description) VALUES
     (2, 'N2', 'NeuroDev Phase II', 'Phase two NeuroDev cases')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO request (id, priority, ordering_physician, ordering_organisation_id, order_number) VALUES
+INSERT INTO request (id, priority_code, ordering_physician, ordering_organisation_id, order_number) VALUES
     (1, 'routine', 'Felix Laflamme', 3, '25850340'),
     (2, 'routine', 'Melissa Lopez', 3, '25850341'),
     (3, 'routine', 'Christopher Watson', 3, '25850342'),
@@ -178,7 +178,7 @@ INSERT INTO "case" (id, proband_id, project_id, case_analysis_id, status, reques
     (21, 60, 2, 2, 'active', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO "family" (id, case_id, family_member_id, relationship_to_proband, affected_status) VALUES
+INSERT INTO "family" (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code) VALUES
     (1, 1, 1, 'mother', 'affected'),
     (2, 1, 2, 'father', 'non_affected'),
     (3, 2, 5, 'father', 'non_affected'),

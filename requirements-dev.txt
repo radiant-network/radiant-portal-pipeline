@@ -8,3 +8,5 @@ psycopg2-binary==2.9.10
 ruff==0.11.4
 pymysql
 cyvcf2
+# Needed for filesystem abstraction in tests
+fs>=2.4.16

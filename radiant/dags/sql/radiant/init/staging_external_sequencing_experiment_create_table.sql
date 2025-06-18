@@ -8,11 +8,11 @@ SELECT
     se.patient_id AS patient_id,
     exp.experimental_strategy_code AS experimental_strategy,
     se.request_id AS request_id,
-    r.priority AS request_priority,
+    r.priority_code AS request_priority,
     d.url AS vcf_filepath,
-    p.sex AS sex,
-    IF(p.id = c.proband_id, "proband", f.relationship_to_proband) AS family_role,
-    IF(p.id = c.proband_id, "affected", f.affected_status) AS affected_status,
+    p.sex_code AS sex,
+    IF(p.id = c.proband_id, "proband", f.relationship_to_proband_code) AS family_role,
+    IF(p.id = c.proband_id, "affected", f.affected_status_code) AS affected_status,
     se.created_on AS created_at,
     se.updated_on AS updated_at
 FROM
