@@ -8,7 +8,7 @@ INSERT INTO {{ params.clinical_organization }} (id, code, name, category) VALUES
     (6, 'CQGC', 'Quebec Clinical Genomic Center', 'research_institute')
 ON CONFLICT (id) DO UPDATE SET (id, code, name, category) = ROW (excluded.*);
 
-INSERT INTO {{ params.clinical_patient }} (id, mrn, managing_organization_id, sex, dob) VALUES
+INSERT INTO {{ params.clinical_patient }} (id, mrn, managing_organization_id, sex_code, dob) VALUES
     (1, 'MRN-283773', 3, 'female', '2012-02-03'),
     (2, 'MRN-283774', 3, 'male', '1970-01-30'),
     (3, 'MRN-283775', 3, 'male', '1973-03-23'),
@@ -70,7 +70,7 @@ INSERT INTO {{ params.clinical_patient }} (id, mrn, managing_organization_id, se
     (59, 'MRN-283831', 2, 'male', '1984-02-09'),
     (60, 'MRN-283832', 2, 'female', '1979-07-01'),
     (61, 'MRN-283833', 2, 'female', '1971-07-25')
-ON CONFLICT (id) DO UPDATE SET (id, mrn, managing_organization_id, sex, dob) = ROW (excluded.*);
+ON CONFLICT (id) DO UPDATE SET (id, mrn, managing_organization_id, sex_code, dob) = ROW (excluded.*);
 
 -- Cases
 
@@ -79,7 +79,7 @@ INSERT INTO {{ params.clinical_project }} (id, code, name, description) VALUES
     (2, 'N2', 'NeuroDev Phase II', 'Phase two NeuroDev cases')
 ON CONFLICT (id) DO UPDATE SET (id, code, name, description) = ROW (excluded.*);
 
-INSERT INTO {{ params.clinical_request }} (id, priority, ordering_physician, ordering_organisation_id, order_number) VALUES
+INSERT INTO {{ params.clinical_request }} (id, priority_code, ordering_physician, ordering_organisation_id, order_number) VALUES
     (1, 'routine', 'Felix Laflamme', 3, '25850340'),
     (2, 'routine', 'Melissa Lopez', 3, '25850341'),
     (3, 'routine', 'Christopher Watson', 3, '25850342'),
@@ -141,7 +141,7 @@ INSERT INTO {{ params.clinical_request }} (id, priority, ordering_physician, ord
     (59, 'routine', 'Christopher Watson', 3, '25850398'),
     (60, 'routine', 'Victoria Breton', 3, '25850399'),
     (61, 'routine', 'Antoine Paré', 3, '25850400')
-ON CONFLICT (id) DO UPDATE SET (id, priority, ordering_physician, ordering_organisation_id, order_number) = ROW (excluded.*);
+ON CONFLICT (id) DO UPDATE SET (id, priority_code, ordering_physician, ordering_organisation_id, order_number) = ROW (excluded.*);
 
 
 INSERT INTO {{ params.clinical_case_analysis }} (id, code, name, type_code, panel_id, description)
@@ -188,7 +188,7 @@ ON CONFLICT (id) DO UPDATE SET
     updated_on = EXCLUDED.updated_on;
 
 
-INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relationship_to_proband, affected_status) VALUES
+INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code) VALUES
     (1, 1, 1, 'mother', 'affected'),
     (2, 1, 2, 'father', 'non_affected'),
     (3, 2, 5, 'father', 'non_affected'),
@@ -229,7 +229,7 @@ INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relatio
     (38, 20, 57, 'mother', 'non_affected'),
     (39, 21, 59, 'father', 'non_affected'),
     (40, 21, 61, 'mother', 'non_affected')
-ON CONFLICT (id) DO UPDATE SET (id, case_id, family_member_id, relationship_to_proband, affected_status) = ROW (excluded.*);
+ON CONFLICT (id) DO UPDATE SET (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code) = ROW (excluded.*);
 
 -- Observations
 INSERT INTO {{ params.clinical_observation_coding }} (
