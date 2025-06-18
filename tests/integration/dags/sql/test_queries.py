@@ -22,7 +22,7 @@ _MOCK_PARAMS = {
     "seq_id": 1,
     "task_id": 1,
     "analysis_type": "wgs",
-    "sample_id": 1,
+    "aliquot": "SA0001",
     "patient_id": 3,
     "experimental_strategy": "wgs",
     "request_id": 1,

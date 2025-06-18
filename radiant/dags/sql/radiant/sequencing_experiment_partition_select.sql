@@ -4,7 +4,7 @@ SELECT
     task_id,
     part,
     analysis_type,
-    sample_id,
+    aliquot,
     patient_id,
     experimental_strategy,
     request_id,
