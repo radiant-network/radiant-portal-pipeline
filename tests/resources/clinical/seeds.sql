@@ -1,5 +1,5 @@
 
-INSERT INTO organization (id, code, name, category) VALUES
+INSERT INTO organization (id, code, name, category_code) VALUES
     (1, 'CHOP', 'Children Hospital of Philadelphia', 'healthcare_provider'),
     (2, 'UCSF', 'University of California San-Francisco', 'healthcare_provider'),
     (3, 'CHUSJ', 'Centre hospitalier universitaire Sainte-Justine', 'healthcare_provider'),
@@ -8,7 +8,7 @@ INSERT INTO organization (id, code, name, category) VALUES
     (6, 'CQGC', 'Quebec Clinical Genomic Center', 'research_institute')
 ON CONFLICT (code) DO NOTHING;
 
-INSERT INTO patient (id, mrn, managing_organization_id, sex_code, dob) VALUES
+INSERT INTO patient (id, mrn, managing_organization_id, sex_code, date_of_birth) VALUES
     (1, 'MRN-283773', 3, 'female', '2012-02-03'),
     (2, 'MRN-283774', 3, 'male', '1970-01-30'),
     (3, 'MRN-283775', 3, 'male', '1973-03-23'),
@@ -154,7 +154,7 @@ VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of t
        (4, 'HYPM', 'Malignant Hyperthermia', 'germline', NULL, 'A description of this analysis')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO "case" (id, proband_id, project_id, case_analysis_id, status, request_id, performer_lab_id, note, created_on, updated_on) VALUES
+INSERT INTO "case" (id, proband_id, project_id, case_analysis_id, status_code, request_id, performer_lab_id, note, created_on, updated_on) VALUES
     (1, 3, 1, 2, 'active', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (2, 4, 1, 2, 'active', 2, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (3, 8, 1, 2, 'active', 3, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
@@ -172,10 +172,10 @@ INSERT INTO "case" (id, proband_id, project_id, case_analysis_id, status, reques
     (15, 42, 2, 2, 'active', 15, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (16, 44, 2, 2, 'active', 16, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (17, 47, 2, 2, 'active', 17, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (18, 50, 2, 2, 'active', 18, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (19, 55, 2, 2, 'active', 19, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (20, 58, 2, 2, 'active', 20, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (21, 60, 2, 2, 'active', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00')
+    (18, 50, 2, 2, 'incomplete', 18, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (19, 55, 2, 2, 'incomplete', 19, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (20, 58, 2, 2, 'completed', 20, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (21, 60, 2, 2, 'completed', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO "family" (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code) VALUES
@@ -235,7 +235,7 @@ INSERT INTO "observation_coding" (
     coding_system,
     code_value,
     onset_code,
-    interpretation,
+    interpretation_code,
     note
 ) VALUES
       (1, 16, 44,'phenotype','HPO', 'HP:0001263', 'unknown', 'negative', 'Clinical comment'),
@@ -706,7 +706,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Samples
 
-INSERT INTO "sample" (id, category, type, parent_sample_id, tissue_site, histology, submitter_sample_id) VALUES
+INSERT INTO "sample" (id, category_code, type_code, parent_sample_id, tissue_site, histology_code, submitter_sample_id) VALUES
     (1, 'sample', 'dna', 62, NULL, 'normal', 'S13224'),
     (2, 'sample', 'dna', 63, NULL, 'normal', 'S13225'),
     (3, 'sample', 'dna', 64, NULL, 'normal', 'S13226'),
@@ -905,7 +905,7 @@ INSERT INTO "sequencing_experiment" (id, case_id, patient_id, sample_id, experim
     (61, 21, 59, 61, 2, 'submitted', 'S14859', 59, 6, '1677', 'A00516_0229', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (62, 1, 1, 62, 1, 'completed', 'S14860', 62, 6, '1677', 'A00516_0230', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (63, 1, 2, 63, 1, 'completed', 'S14861', 63, 6, '1677', 'A00516_0231', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (64,1, 3, 64, 1, 'completed', 'S14862', 64, 6, '1677', 'A00516_0232', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00')
+    (64, 1, 3, 64, 1, 'completed', 'S14862', 64, 6, '1677', 'A00516_0232', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00')
 ON CONFLICT (id) DO NOTHING;
 
 
@@ -917,7 +917,7 @@ INSERT INTO "pipeline" (id, description, genome_build) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 
-INSERT INTO "task" (id, type, pipeline_id, created_on) VALUES
+INSERT INTO "task" (id, type_code, pipeline_id, created_on) VALUES
                                                            (1, 'ngba', 2, '2021-10-12 13:08:00'),
                                                            (2, 'ngba', 2, '2021-10-12 13:08:00'),
                                                            (3, 'ngba', 2, '2021-10-12 13:08:00'),
@@ -1056,7 +1056,7 @@ INSERT INTO "task_has_sequencing_experiment" (
 ON CONFLICT(task_id, sequencing_experiment_id) DO NOTHING;
 
 
-INSERT INTO "document" (id, name, data_category, data_type, format, size, url, hash) VALUES
+INSERT INTO "document" (id, name, data_category_code, data_type_code, format_code, size, url, hash) VALUES
     (1, 'FI0037662.S13230.cram', 'genomic', 'alignment', 'cram', 110187385978, 's3+http://vcf/FI0037662.S13230.cram', '5d41402abc4b2a76b9719d911017c592'),
     (2, 'FI0037662.S13230.cram.crai', 'genomic', 'alignment', 'crai', 2453667, 's3+http://vcf/FI0037662.S13230.cram.crai', '5d41402abc4b2a76b9719d911017c593'),
     (3, 'FI0037665.S13228.cram', 'genomic', 'alignment', 'cram', 109940425359, 's3+http://vcf/FI0037665.S13228.cram', '5d41402abc4b2a76b9719d911017c594'),
@@ -1301,9 +1301,9 @@ INSERT INTO "document" (id, name, data_category, data_type, format, size, url, h
     (242, 'FI0037927.S14029.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, 's3+http://vcf/FI0037927.S14029.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c833'),
     (243, 'FI0037928.S14857.vcf.gz', 'genomic', 'snv', 'vcf', 304055582, 's3+http://vcf/FI0037928.S14857.vcf.gz', '5d41402abc4b2a76b9719d911017c834'),
     (244, 'FI0037928.S14857.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3+http://vcf/FI0037928.S14857.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c835'),
-    (245, 'FI0038028.S14957.vcf.gz', 'genomic', 'snv', 'tbi', 2411724, 's3+http://vcf/FI0038028.S14957.vcf.gz', '5d41402abc4b2a76b9719d911017c835'),
-    (246, 'FI0038128.S15157.vcf.gz', 'genomic', 'snv', 'tbi', 2411724, 's3+http://vcf/FI0038128.S15157.vcf.gz', '5d41402abc4b2a76b9719d911017c835'),
-    (247, 'FI0038328.S15357.vcf.gz', 'genomic', 'snv', 'tbi', 2411724, 's3+http://vcf/FI0038328.S15357.vcf.gz', '5d41402abc4b2a76b9719d911017c835')
+    (245, 'FI0038028.S14957.vcf.gz', 'genomic', 'snv', 'vcf', 2411724, 's3+http://vcf/FI0038028.S14957.vcf.gz', '5d41402abc4b2a76b9719d911017c835'),
+    (246, 'FI0038128.S15157.vcf.gz', 'genomic', 'snv', 'vcf', 2411724, 's3+http://vcf/FI0038128.S15157.vcf.gz', '5d41402abc4b2a76b9719d911017c835'),
+    (247, 'FI0038328.S15357.vcf.gz', 'genomic', 'snv', 'vcf', 2411724, 's3+http://vcf/FI0038328.S15357.vcf.gz', '5d41402abc4b2a76b9719d911017c835')
 ON CONFLICT(id) DO NOTHING;
 
 INSERT INTO "task_has_document" (task_id, document_id) VALUES

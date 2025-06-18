@@ -26,4 +26,5 @@ LEFT JOIN {{ params.clinical_document }} d ON thd.document_id = d.id
 LEFT JOIN {{ params.clinical_patient }} p ON se.patient_id = p.id
 LEFT JOIN {{ params.clinical_family }} f ON f.family_member_id = p.id
 LEFT JOIN {{ params.clinical_request }} r ON se.request_id = r.id
-WHERE REGEXP(d.name, '\\.vcf\\.gz$')
+WHERE d.format_code = 'vcf'
+  AND c.status_code in ('active', 'completed')
