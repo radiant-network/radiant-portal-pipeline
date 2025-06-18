@@ -1303,7 +1303,7 @@ INSERT INTO "document" (id, name, data_category_code, data_type_code, format_cod
     (244, 'FI0037928.S14857.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3+http://vcf/FI0037928.S14857.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c835'),
     (245, 'FI0038028.S14957.vcf.gz', 'genomic', 'snv', 'vcf', 2411724, 's3+http://vcf/FI0038028.S14957.vcf.gz', '5d41402abc4b2a76b9719d911017c835'),
     (246, 'FI0038128.S15157.vcf.gz', 'genomic', 'snv', 'vcf', 2411724, 's3+http://vcf/FI0038128.S15157.vcf.gz', '5d41402abc4b2a76b9719d911017c835'),
-    (247, 'FI0038328.S15357.vcf.gz', 'genomic', 'snv', 'vcf', 2411724, 's3+http://vcf/FI0038328.S15357.vcf.gz', '5d41402abc4b2a76b9719d911017c835')
+    (247, 'FI0038328.S15357.vcf.gz', 'genomic', 'alignment', 'vcf', 2411724, 's3+http://vcf/FI0038328.S15357.vcf.gz', '5d41402abc4b2a76b9719d911017c835')
 ON CONFLICT(id) DO NOTHING;
 
 INSERT INTO "task_has_document" (task_id, document_id) VALUES

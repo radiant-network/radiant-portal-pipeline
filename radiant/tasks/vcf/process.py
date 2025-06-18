@@ -40,7 +40,7 @@ def process_case(
             case.vcf_filepath,
             strict_gt=True,
             threads=vcf_threads,
-            samples=[exp.sample_id for exp in case.experiments],
+            samples=[exp.aliquot for exp in case.experiments],
         )
         occurrences_table_name = f"{namespace}.germline_snv_occurrence"
         variants_table_name = f"{namespace}.germline_snv_variant"

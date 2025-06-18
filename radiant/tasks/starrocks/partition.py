@@ -12,7 +12,7 @@ class SequencingDeltaCommon(BaseModel):
     seq_id: int
     task_id: int
     analysis_type: str
-    sample_id: int
+    aliquot: str
     patient_id: int
     experimental_strategy: str
     request_id: int
