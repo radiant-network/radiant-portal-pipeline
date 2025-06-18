@@ -28,7 +28,7 @@ class Pedigree:
         self.experiments = []
         # We save the experiments in the order of the samples in the VCF file
         for vcf_sample in vcf_samples:
-            experiment = next((exp for exp in case.experiments if exp.sample_id == vcf_sample), None)
+            experiment = next((exp for exp in case.experiments if exp.aliquot == vcf_sample), None)
             if experiment:
                 self.experiments.append(experiment)
 

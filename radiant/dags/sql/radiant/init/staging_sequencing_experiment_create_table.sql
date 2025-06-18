@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_sequencing_experiment }} 
     task_id INT NOT NULL,
     part INT NOT NULL,
     analysis_type VARCHAR(50),
-    sample_id VARCHAR(255),
+    aliquot VARCHAR(255),
     patient_id VARCHAR(255),
     experimental_strategy VARCHAR(50),
     request_id INT,

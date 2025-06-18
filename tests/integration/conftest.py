@@ -542,7 +542,7 @@ def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
         with starrocks_session.cursor() as cursor:
             cursor.execute(f"""
                 SELECT 
-                     sample_id,
+                     aliquot,
                      d.name
                 FROM {starrocks_jdbc_catalog}.public.sequencing_experiment se
                 LEFT JOIN {starrocks_jdbc_catalog}.public.task_has_sequencing_experiment thse 
@@ -553,13 +553,13 @@ def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
                 """)
             results = cursor.fetchall()
 
-        for sample_id, document_name in results:
+        for aliquot, document_name in results:
             _path = document_name.replace(".gz", "")
             src_path = os.path.join(tmpdir, f"source_{_path}")
             dest_path = os.path.join(tmpdir, f"{_path}.gz")
 
             with open(src_path, "w") as f:
-                _new_content = vcf_content.replace("SA0001", str(sample_id))
+                _new_content = vcf_content.replace("SA0001", str(aliquot))
                 f.write(_new_content)
 
             compress_and_index_vcf(src_path, dest_path)

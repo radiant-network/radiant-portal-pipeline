@@ -5,7 +5,7 @@ class Experiment(BaseModel):
     seq_id: int
     task_id: int
     patient_id: int
-    sample_id: str
+    aliquot: str
     family_role: str
     affected_status: str
     sex: str
