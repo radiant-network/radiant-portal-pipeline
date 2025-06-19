@@ -185,7 +185,7 @@ def test_sequencing_experiment_with_recently_updated_case(
         psycopg2.connect(
             host="localhost",
             port=postgres_container.port,
-            database="radiant",
+            database=postgres_container.radiant_db,
             user=postgres_container.user,
             password=postgres_container.password,
         ) as pg_conn,
