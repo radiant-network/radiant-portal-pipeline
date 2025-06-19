@@ -6,8 +6,7 @@ INSERT INTO {{ params.clinical_organization }} (id, code, name, category_code ) 
     (3, 'CHUSJ', 'Centre hospitalier universitaire Sainte-Justine', 'healthcare_provider'),
     (4, 'LDM-CHUSJ', 'Laboratoire de diagnostic moléculaire, CHU Sainte-Justine', 'diagnostic_laboratory'),
     (5, 'LDM-CHOP', 'Molecular Diagnostic Laboratory, CHOP', 'diagnostic_laboratory'),
-    (6, 'CQGC', 'Quebec Clinical Genomic Center', 'research_institute')
-ON CONFLICT (id) DO UPDATE SET (id, code, name, category_code) = ROW (excluded.*);
+    (6, 'CQGC', 'Quebec Clinical Genomic Center', 'research_institute');
 
 TRUNCATE {{ params.clinical_patient }} CASCADE;
 INSERT INTO {{ params.clinical_patient }} (id, mrn, managing_organization_id, sex_code, date_of_birth) VALUES
@@ -71,15 +70,13 @@ INSERT INTO {{ params.clinical_patient }} (id, mrn, managing_organization_id, se
     (58, 'MRN-283830', 2, 'female', '1994-06-26'),
     (59, 'MRN-283831', 2, 'male', '1984-02-09'),
     (60, 'MRN-283832', 2, 'female', '1979-07-01'),
-    (61, 'MRN-283833', 2, 'female', '1971-07-25')
-ON CONFLICT (id) DO UPDATE SET (id, mrn, managing_organization_id, sex_code, date_of_birth) = ROW (excluded.*);
+    (61, 'MRN-283833', 2, 'female', '1971-07-25');
 
 -- Cases
 TRUNCATE {{ params.clinical_project }} CASCADE;
 INSERT INTO {{ params.clinical_project }} (id, code, name, description) VALUES
     (1, 'N1', 'NeuroDev Phase I', 'Phase one NeuroDev cases'),
-    (2, 'N2', 'NeuroDev Phase II', 'Phase two NeuroDev cases')
-ON CONFLICT (id) DO UPDATE SET (id, code, name, description) = ROW (excluded.*);
+    (2, 'N2', 'NeuroDev Phase II', 'Phase two NeuroDev cases');
 
 TRUNCATE {{ params.clinical_request }} CASCADE;
 INSERT INTO {{ params.clinical_request }} (id, priority_code, ordering_physician, ordering_organisation_id, order_number) VALUES
@@ -143,8 +140,7 @@ INSERT INTO {{ params.clinical_request }} (id, priority_code, ordering_physician
     (58, 'routine', 'Melissa Lopez', 3, '25850397'),
     (59, 'routine', 'Christopher Watson', 3, '25850398'),
     (60, 'routine', 'Victoria Breton', 3, '25850399'),
-    (61, 'routine', 'Antoine Paré', 3, '25850400')
-ON CONFLICT (id) DO UPDATE SET (id, priority_code, ordering_physician, ordering_organisation_id, order_number) = ROW (excluded.*);
+    (61, 'routine', 'Antoine Paré', 3, '25850400');
 
 TRUNCATE {{ params.clinical_case_analysis }} CASCADE;
 INSERT INTO {{ params.clinical_case_analysis }} (id, code, name, type_code, panel_id, description)
@@ -152,8 +148,7 @@ VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of t
        (2, 'IDGD', 'Intellectual Deficiency and Global Developmental Delay', 'germline', NULL,
         'A description of this analysis'),
        (3, 'MYOC', 'Congenital Myopathies', 'germline', NULL, 'A description of this analysis'),
-       (4, 'HYPM', 'Malignant Hyperthermia', 'germline', NULL, 'A description of this analysis')
-ON CONFLICT (id) DO UPDATE SET (id, code, name, type_code, panel_id, description) = ROW (excluded.*);
+       (4, 'HYPM', 'Malignant Hyperthermia', 'germline', NULL, 'A description of this analysis');
 
 TRUNCATE {{ params.clinical_case }} CASCADE;
 INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, case_analysis_id, status_code, request_id, performer_lab_id, note, created_on, updated_on) VALUES
@@ -177,18 +172,7 @@ INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, case_analysi
     (18, 50, 2, 2, 'active', 18, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (19, 55, 2, 2, 'active', 19, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (20, 58, 2, 2, 'active', 20, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (21, 60, 2, 2, 'active', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00')
-ON CONFLICT (id) DO UPDATE SET
-    id = EXCLUDED.id,
-    proband_id = EXCLUDED.proband_id,
-    project_id = EXCLUDED.project_id,
-    case_analysis_id = EXCLUDED.case_analysis_id,
-    status_code = EXCLUDED.status_code,
-    request_id = EXCLUDED.request_id,
-    performer_lab_id = EXCLUDED.performer_lab_id,
-    note = EXCLUDED.note,
-    created_on = EXCLUDED.created_on,
-    updated_on = EXCLUDED.updated_on;
+    (21, 60, 2, 2, 'active', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00');
 
 TRUNCATE {{ params.clinical_family }} CASCADE;
 INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code) VALUES
@@ -231,8 +215,7 @@ INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relatio
     (37, 20, 56, 'father', 'affected'),
     (38, 20, 57, 'mother', 'non_affected'),
     (39, 21, 59, 'father', 'non_affected'),
-    (40, 21, 61, 'mother', 'non_affected')
-ON CONFLICT (id) DO UPDATE SET (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code) = ROW (excluded.*);
+    (40, 21, 61, 'mother', 'non_affected');
 
 -- Observations
 TRUNCATE {{ params.clinical_observation_coding }} CASCADE;
@@ -709,16 +692,7 @@ INSERT INTO {{ params.clinical_observation_coding }} (
       (460, 20, 58,'phenotype','HPO', 'HP:0001511', 'childhood', 'negative', 'Clinical comment'),
       (461, 20, 58,'phenotype','HPO', 'HP:0001520', 'childhood', 'negative', 'Clinical comment'),
       (462, 20, 58,'phenotype','HPO', 'HP:0001562', 'unknown', 'negative', 'Clinical comment'),
-      (463, 20, 58,'phenotype','HPO', 'HP:0001622', 'childhood', 'negative', 'Clinical comment')
-ON CONFLICT (id) DO UPDATE SET (id,
-    case_id,
-    patient_id,
-    observation_code,
-    coding_system,
-    code_value,
-    onset_code,
-    interpretation_code,
-    note) = ROW (excluded.*);
+      (463, 20, 58,'phenotype','HPO', 'HP:0001622', 'childhood', 'negative', 'Clinical comment');
 
 
 -- Samples
@@ -845,8 +819,7 @@ INSERT INTO {{ params.clinical_sample }} (id, category_code, type_code, parent_s
     (119, 'specimen', 'blood', NULL, NULL, 'normal', 'B-958.3'),
     (120, 'specimen', 'blood', NULL, NULL, 'normal', 'B-990.1'),
     (121, 'specimen', 'blood', NULL, NULL, 'normal', 'B-990.2'),
-    (122, 'specimen', 'blood', NULL, NULL, 'normal', 'B-990.3')
-ON CONFLICT (id) DO UPDATE SET (id, category_code, type_code, parent_sample_id, tissue_site, histology_code, submitter_sample_id) = ROW (excluded.*);
+    (122, 'specimen', 'blood', NULL, NULL, 'normal', 'B-990.3');
 
 
 -- Sequencing Experiment
@@ -855,8 +828,7 @@ INSERT INTO {{ params.clinical_experiment }} (id, code, name, experimental_strat
 VALUES (1, 'WXS', 'Whole Exome Sequencing', 'wxs', 'illumina', 'A description'),
        (2, 'WGS_SR', 'Short Read Whole Genome Sequencing', 'wgs', 'illumina', 'A description'),
        (3, 'WTS', 'Whole Transcriptome Sequencing', 'wts', 'illumina', 'A description'),
-       (4, 'WGS_LR', 'Long Read Whole Genome Sequencing', 'wgs', 'pacbio', 'A description')
-ON CONFLICT (id) DO UPDATE SET (id, code, name, experimental_strategy_code, platform_code, description) = ROW (excluded.*);
+       (4, 'WGS_LR', 'Long Read Whole Genome Sequencing', 'wgs', 'pacbio', 'A description');
 
 TRUNCATE {{ params.clinical_sequencing_experiment }} CASCADE;
 INSERT INTO {{ params.clinical_sequencing_experiment }} (id, case_id, patient_id, sample_id, experiment_id, status, aliquot, request_id, performer_lab_id, run_name, run_alias, run_date, capture_kit, is_paired_end, read_length, created_on, updated_on) VALUES
@@ -920,8 +892,7 @@ INSERT INTO {{ params.clinical_sequencing_experiment }} (id, case_id, patient_id
     (58, 20, 56, 58, 2, 'submitted', 'S14788', 56, 6, '1674', 'A00516_0226', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (59, 21, 60, 59, 2, 'submitted', 'S14857', 60, 6, '1675', 'A00516_0227', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (60, 21, 61, 60, 2, 'submitted', 'S14858', 61, 6, '1676', 'A00516_0228', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (61, 21, 59, 61, 2, 'submitted', 'S14859', 59, 6, '1677', 'A00516_0229', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00')
-ON CONFLICT (id) DO UPDATE SET (id, case_id, patient_id, sample_id, experiment_id, status, aliquot, request_id, performer_lab_id, run_name, run_alias, run_date, capture_kit, is_paired_end, read_length, created_on, updated_on) = ROW (excluded.*);
+    (61, 21, 59, 61, 2, 'submitted', 'S14859', 59, 6, '1677', 'A00516_0229', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00');
 
 
 -- Task
@@ -993,8 +964,7 @@ INSERT INTO {{ params.clinical_task }} (id, type_code, pipeline_id, created_on) 
                                                            (58, 'ngba', 2, '2021-10-12 13:08:00'),
                                                            (59, 'ngba', 2, '2021-10-12 13:08:00'),
                                                            (60, 'ngba', 2, '2021-10-12 13:08:00'),
-                                                           (61, 'ngba', 2, '2021-10-12 13:08:00')
-ON CONFLICT (id) DO UPDATE SET (id, type_code, pipeline_id, created_on) = ROW (excluded.*);
+                                                           (61, 'ngba', 2, '2021-10-12 13:08:00');
 
 TRUNCATE {{ params.clinical_task_has_sequencing_experiment }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_sequencing_experiment }} (
@@ -1061,8 +1031,7 @@ INSERT INTO {{ params.clinical_task_has_sequencing_experiment }} (
       (58, 58),
       (59, 59),
       (60, 60),
-      (61, 61)
-ON CONFLICT (task_id, sequencing_experiment_id) DO UPDATE SET (task_id, sequencing_experiment_id) = ROW (excluded.*);
+      (61, 61);
 
 TRUNCATE {{ params.clinical_document }} CASCADE;
 INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_type_code, format_code, size, url, hash) VALUES
@@ -1309,8 +1278,7 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (241, 'FI0037927.S14029.vcf.gz', 'genomic', 'snv', 'vcf', 307243253, 's3+http://vcf/FI0037927.S14029.vcf.gz', '5d41402abc4b2a76b9719d911017c832'),
     (242, 'FI0037927.S14029.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, 's3+http://vcf/FI0037927.S14029.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c833'),
     (243, 'FI0037928.S14857.vcf.gz', 'genomic', 'snv', 'vcf', 304055582, 's3+http://vcf/FI0037928.S14857.vcf.gz', '5d41402abc4b2a76b9719d911017c834'),
-    (244, 'FI0037928.S14857.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3+http://vcf/FI0037928.S14857.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c835')
-ON CONFLICT(id) DO UPDATE SET (id, name, data_category_code, data_type_code, format_code, size, url, hash) = ROW (excluded.*);
+    (244, 'FI0037928.S14857.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3+http://vcf/FI0037928.S14857.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c835');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id) VALUES
@@ -1557,5 +1525,4 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id) VALUE
     (61, 61),
     (61, 122),
     (61, 183),
-    (61, 244)
-ON CONFLICT(task_id, document_id) DO UPDATE SET (task_id, document_id) = ROW (excluded.*);
+    (61, 244);
