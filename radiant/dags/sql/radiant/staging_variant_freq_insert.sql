@@ -1,17 +1,53 @@
 INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ params.starrocks_staging_variant_frequency }}
-WITH patients_total_count AS (
-    SELECT
-        COUNT(DISTINCT s.patient_id) AS cnt
-    FROM {{ params.starrocks_staging_sequencing_experiment }} s where s.seq_id in (select seq_id from {{ params.starrocks_occurrence }} where part=%(part)s)
-),
-freqs as (
-    SELECT o.part,
-        o.locus_id,
-        COUNT(DISTINCT patient_id) AS pc,
-        (SELECT cnt FROM patients_total_count) AS pn
-    FROM {{ params.starrocks_occurrence }} o
-    JOIN {{ params.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.seq_id
-    WHERE o.part = %(part)s
-    GROUP BY locus_id, o.part
-)
-SELECT part, locus_id, pc, pn from freqs;
+WITH patients_total_count
+         AS (SELECT COUNT(DISTINCT CASE WHEN s.experimental_strategy = 'wgs' then s.patient_id end)                   AS cnt_wgs,
+                    COUNT(DISTINCT CASE
+                                       WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'affected'
+                                           then s.patient_id end)                                                  AS cnt_wgs_affected,
+                    COUNT(DISTINCT CASE
+                                       WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'not_affected'
+                                           then s.patient_id end)                                                  AS cnt_wgs_not_affected,
+                    COUNT(DISTINCT CASE WHEN s.experimental_strategy = 'wxs' then s.patient_id end)                        AS cnt_wxs,
+                    COUNT(DISTINCT CASE
+                                       WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'affected'
+                                           then s.patient_id end)                                                  AS cnt_wxs_affected,
+                    COUNT(DISTINCT CASE
+                                       WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'not_affected'
+                                           then s.patient_id end)                                                  AS cnt_wxs_not_affected
+             FROM {{ params.starrocks_staging_sequencing_experiment }} s
+             where s.seq_id in (select seq_id from  {{ params.starrocks_occurrence }} where part = 1)),
+     freqs as (SELECT o.part,
+                      o.locus_id,
+                      COUNT(distinct CASE WHEN s.experimental_strategy = 'wgs' then patient_id end)                   AS pc_wgs,
+                      COUNT(distinct CASE
+                                         WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'affected'
+                                             then patient_id end)                                                  AS pc_wgs_affected,
+                      COUNT(distinct CASE
+                                         WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'not_affected'
+                                             then patient_id end)                                                  AS pc_wgs_not_affected,
+                      COUNT(distinct CASE WHEN s.experimental_strategy = 'wxs' then patient_id end)                        AS pc_wxs,
+                      COUNT(distinct CASE
+                                         WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'affected'
+                                             then patient_id end)                                                  AS pc_wxs_affected,
+                      COUNT(distinct CASE
+                                         WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'not_affected'
+                                             then patient_id end)                                                  AS pc_wxs_not_affected
+               FROM  {{ params.starrocks_occurrence }} o
+                        JOIN {{ params.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.seq_id
+               WHERE o.part = %(part)s
+               GROUP BY locus_id, o.part)
+SELECT part,
+       locus_id,
+       pc_wgs,
+       pc_wgs_affected,
+       pc_wgs_not_affected,
+       (SELECT cnt_wgs FROM patients_total_count)                 AS pn_wgs,
+       (SELECT cnt_wgs_affected FROM patients_total_count)     AS pn_wgs_affected,
+       (SELECT cnt_wgs_not_affected FROM patients_total_count) AS pn_wgs_not_affected,
+       pc_wxs,
+       pc_wxs_affected,
+       pc_wxs_not_affected,
+       (SELECT cnt_wxs FROM patients_total_count)                 AS pn_wxs,
+       (SELECT cnt_wxs_affected FROM patients_total_count)     AS pn_wxs_affected,
+       (SELECT cnt_wxs_not_affected FROM patients_total_count) AS pn_wxs_not_affected
+from freqs
