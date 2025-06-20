@@ -28,6 +28,10 @@ CLINICAL_MAPPING = {
     "clinical_task_has_sequencing_experiment": "task_has_sequencing_experiment",
     "clinical_task_has_document": "task_has_document",
     "clinical_request": "request",
+    "clinical_organization": "organization",
+    "clinical_project": "project",
+    "clinical_observation_coding": "observation_coding",
+    "clinical_pipeline": "pipeline",
 }
 
 CLINICAL_CATALOG_DATABASE = {
