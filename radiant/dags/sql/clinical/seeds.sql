@@ -1,6 +1,6 @@
 
 TRUNCATE {{ params.clinical_organization }} CASCADE;
-INSERT INTO organization (id, code, name, category_code) VALUES
+INSERT INTO {{ params.clinical_organization }} (id, code, name, category_code) VALUES
     (1, 'CHOP', 'Children Hospital of Philadelphia', 'healthcare_provider'),
     (2, 'UCSF', 'University of California San-Francisco', 'healthcare_provider'),
     (3, 'CHUSJ', 'Centre hospitalier universitaire Sainte-Justine', 'healthcare_provider'),
@@ -10,7 +10,7 @@ INSERT INTO organization (id, code, name, category_code) VALUES
 ;
 
 TRUNCATE {{ params.clinical_patient }} CASCADE;
-INSERT INTO patient (id, mrn, managing_organization_id, sex_code, date_of_birth) VALUES
+INSERT INTO {{ params.clinical_patient }} (id, mrn, managing_organization_id, sex_code, date_of_birth) VALUES
     (1, 'MRN-283773', 3, 'female', '2012-02-03'),
     (2, 'MRN-283774', 3, 'male', '1970-01-30'),
     (3, 'MRN-283775', 3, 'female', '1973-03-23'),
@@ -76,13 +76,13 @@ INSERT INTO patient (id, mrn, managing_organization_id, sex_code, date_of_birth)
 
 -- Cases
 TRUNCATE {{ params.clinical_project }} CASCADE;
-INSERT INTO project (id, code, name, description) VALUES
+INSERT INTO {{ params.clinical_project }} (id, code, name, description) VALUES
     (1, 'N1', 'NeuroDev Phase I', 'Phase one NeuroDev cases'),
     (2, 'N2', 'NeuroDev Phase II', 'Phase two NeuroDev cases')
 ;
 
 TRUNCATE {{ params.clinical_request }} CASCADE;
-INSERT INTO request (id, priority_code, ordering_physician, ordering_organisation_id, order_number) VALUES
+INSERT INTO {{ params.clinical_request }} (id, priority_code, ordering_physician, ordering_organisation_id, order_number) VALUES
     (1, 'routine', 'Felix Laflamme', 3, '25850340'),
     (2, 'routine', 'Melissa Lopez', 3, '25850341'),
     (3, 'routine', 'Christopher Watson', 3, '25850342'),
@@ -150,7 +150,7 @@ INSERT INTO request (id, priority_code, ordering_physician, ordering_organisatio
 ;
 
 TRUNCATE {{ params.clinical_case_analysis }} CASCADE;
-INSERT INTO "case_analysis" (id, code, name, type_code, panel_id, description)
+INSERT INTO {{ params.clinical_case_analysis }} (id, code, name, type_code, panel_id, description)
 VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of this analysis'),
        (2, 'IDGD', 'Intellectual Deficiency and Global Developmental Delay', 'germline', NULL,
         'A description of this analysis'),
@@ -159,7 +159,7 @@ VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of t
 ;
 
 TRUNCATE {{ params.clinical_case }} CASCADE;
-INSERT INTO "case" (id, proband_id, project_id, case_analysis_id, status_code, primary_condition, request_id, performer_lab_id, note, created_on, updated_on) VALUES
+INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, case_analysis_id, status_code, primary_condition, request_id, performer_lab_id, note, created_on, updated_on) VALUES
     (1, 3, 1, 1, 'active', 'neurodevelopmental disorder (MONDO:0700092)', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (2, 4, 1, 1, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 2, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (3, 8, 1, 1, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 3, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
@@ -184,7 +184,7 @@ INSERT INTO "case" (id, proband_id, project_id, case_analysis_id, status_code, p
 ;
 
 TRUNCATE {{ params.clinical_family }} CASCADE;
-INSERT INTO "family" (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code) VALUES
+INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code) VALUES
     (1, 1, 1, 'mother', 'affected'),
     (2, 1, 2, 'father', 'non_affected'),
     (3, 2, 5, 'father', 'non_affected'),
@@ -230,7 +230,7 @@ INSERT INTO "family" (id, case_id, family_member_id, relationship_to_proband_cod
 
 -- Observations
 TRUNCATE {{ params.clinical_observation_coding }} CASCADE;
-INSERT INTO "observation_coding" (
+INSERT INTO {{ params.clinical_observation_coding }} (
     id,
     case_id,
     patient_id,
@@ -709,7 +709,7 @@ INSERT INTO "observation_coding" (
 
 -- Samples
 TRUNCATE {{ params.clinical_sample }} CASCADE;
-INSERT INTO "sample" (id, category_code, type_code, parent_sample_id, tissue_site, histology_code, submitter_sample_id) VALUES
+INSERT INTO {{ params.clinical_sample }} (id, category_code, type_code, parent_sample_id, tissue_site, histology_code, submitter_sample_id) VALUES
 (1, 'sample', 'dna', 62, NULL, 'normal', 'NA12878'),
 (2, 'sample', 'dna', 63, NULL, 'normal', 'NA12891'),
 (3, 'sample', 'dna', 64, NULL, 'normal', 'NA12892'),
@@ -837,7 +837,7 @@ INSERT INTO "sample" (id, category_code, type_code, parent_sample_id, tissue_sit
 
 -- Sequencing Experiment
 TRUNCATE {{ params.clinical_experiment }} CASCADE;
-INSERT INTO "experiment" (id, code, name, experimental_strategy_code, platform_code, description)
+INSERT INTO {{ params.clinical_experiment }} (id, code, name, experimental_strategy_code, platform_code, description)
 VALUES (1, 'WXS', 'Whole Exome Sequencing', 'wxs', 'illumina', 'A description'),
        (2, 'WGS_SR', 'Short Read Whole Genome Sequencing', 'wgs', 'illumina', 'A description'),
        (3, 'WTS', 'Whole Transcriptome Sequencing', 'wts', 'illumina', 'A description'),
@@ -845,7 +845,7 @@ VALUES (1, 'WXS', 'Whole Exome Sequencing', 'wxs', 'illumina', 'A description'),
 ;
 
 TRUNCATE {{ params.clinical_sequencing_experiment }} CASCADE;
-INSERT INTO "sequencing_experiment" (id, case_id, patient_id, sample_id, experiment_id, status, aliquot, request_id, performer_lab_id, run_name, run_alias, run_date, capture_kit, is_paired_end, read_length, created_on, updated_on) VALUES
+INSERT INTO {{ params.clinical_sequencing_experiment }} (id, case_id, patient_id, sample_id, experiment_id, status, aliquot, request_id, performer_lab_id, run_name, run_alias, run_date, capture_kit, is_paired_end, read_length, created_on, updated_on) VALUES
         (1, 1, 3, 1, 2, 'completed', 'NA12892_NA12892', 1, 6, 1617, 'A00516_0169', '2021-08-17', NULL, True, 151, '2021-10-12 13:08:00', '2021-10-12 13:08:00'),
         (2, 1, 1, 2, 2, 'completed', 'NA12891_NA12891', 2, 6, 1618, 'A00516_0170', '2021-08-17', NULL, True, 151, '2021-10-12 13:08:00', '2021-10-12 13:08:00'),
         (3, 1, 2, 3, 2, 'completed', 'NA12878_NA12878', 3, 6, 1619, 'A00516_0171', '2021-08-17', NULL, True, 151, '2021-10-12 13:08:00', '2021-10-12 13:08:00'),
@@ -912,13 +912,13 @@ INSERT INTO "sequencing_experiment" (id, case_id, patient_id, sample_id, experim
 
 -- Task
 TRUNCATE {{ params.clinical_pipeline }} CASCADE;
-INSERT INTO "pipeline" (id, description, genome_build) VALUES
+INSERT INTO {{ params.clinical_pipeline }} (id, description, genome_build) VALUES
                                                            (1, 'Dragen', 'GRch38'),
                                                            (2, 'Nexflow Variant Annotation', 'GRch38')
 ;
 
 TRUNCATE {{ params.clinical_task }} CASCADE;
-INSERT INTO "task" (id, type_code, pipeline_id, created_on) VALUES
+INSERT INTO {{ params.clinical_task }} (id, type_code, pipeline_id, created_on) VALUES
     (1, 'ngba', 2, '2021-10-12 13:08:00'),
     (2, 'ngba', 2, '2021-10-12 13:08:00'),
     (3, 'ngba', 2, '2021-10-12 13:08:00'),
@@ -943,7 +943,7 @@ INSERT INTO "task" (id, type_code, pipeline_id, created_on) VALUES
 ;
 
 TRUNCATE {{ params.clinical_task_has_sequencing_experiment }} CASCADE;
-INSERT INTO "task_has_sequencing_experiment" (
+INSERT INTO {{ params.clinical_task_has_sequencing_experiment }} (
     task_id,
     sequencing_experiment_id
 ) VALUES
@@ -1011,7 +1011,7 @@ INSERT INTO "task_has_sequencing_experiment" (
 ;
 
 TRUNCATE {{ params.clinical_document }} CASCADE;
-INSERT INTO "document" (id, name, data_category_code, data_type_code, format_code, size, url, hash) VALUES
+INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_type_code, format_code, size, url, hash) VALUES
     (1, 'FI0037662.S13230.cram', 'genomic', 'alignment', 'cram', 110187385978, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c592'),
     (2, 'FI0037662.S13230.cram.crai', 'genomic', 'alignment', 'crai', 2453667, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c593'),
     (3, 'FI0037665.S13228.cram', 'genomic', 'alignment', 'cram', 109940425359, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c594'),
@@ -1257,7 +1257,7 @@ INSERT INTO "document" (id, name, data_category_code, data_type_code, format_cod
 ;
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
-INSERT INTO "task_has_document" (task_id, document_id) VALUES
+INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id) VALUES
     (1, 28),
     (1, 27),
     (1, 61),
