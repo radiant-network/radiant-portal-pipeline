@@ -1,16 +1,36 @@
 INSERT OVERWRITE {{ params.starrocks_variant_frequency }}
-WITH freq AS  (
-    SELECT
-        locus_id,
-        SUM(pc) AS pc,
-        SUM(pn) AS pn
-    FROM {{ params.starrocks_staging_variant_frequency }}
-    GROUP BY locus_id
-)
-SELECT
-    locus_id,
-    pc,
-    pn,
-    pc / pn AS pf
+WITH freq AS (SELECT locus_id,
+                     SUM(pc_wgs)                 AS pc_wgs,
+                     SUM(pc_wgs_affected)     AS pc_wgs_affected,
+                     SUM(pc_wgs_not_affected) AS pc_wgs_not_affected,
+                     SUM(pn_wgs)                 AS pn_wgs,
+                     SUM(pn_wgs_affected)     AS pn_wgs_affected,
+                     SUM(pn_wgs_not_affected) AS pn_wgs_not_affected,
+                     SUM(pc_wxs)                 AS pc_wxs,
+                     SUM(pc_wxs_affected)     AS pc_wxs_affected,
+                     SUM(pc_wxs_not_affected) AS pc_wxs_not_affected,
+                     SUM(pn_wxs)                 AS pn_wxs,
+                     SUM(pn_wxs_affected)     AS pn_wxs_affected,
+                     SUM(pn_wxs_not_affected) AS pn_wxs_not_affected
+              FROM {{ params.starrocks_staging_variant_frequency }}
+              GROUP BY locus_id)
+SELECT locus_id,
+       pc_wgs,
+       pn_wgs,
+       pc_wgs / pn_wgs                                 AS pf_wgs,
+       pc_wgs_affected,
+       pn_wgs_affected,
+       pc_wgs_affected / pn_wgs_affected         AS pf_wgs_affected,
+       pc_wgs_not_affected,
+       pn_wgs_not_affected,
+       pc_wgs_not_affected / pn_wgs_not_affected AS pf_wgs_not_affected,
+       pc_wxs,
+       pn_wxs,
+       pc_wxs / pn_wxs                                 AS pf_wxs,
+       pc_wxs_affected,
+       pn_wxs_affected,
+       pc_wxs_affected / pn_wxs_affected         AS pf_wxs_affected,
+       pc_wxs_not_affected,
+       pn_wxs_not_affected,
+       pc_wxs_not_affected / pn_wxs_not_affected AS pf_wxs_not_affected
 FROM freq
-;
