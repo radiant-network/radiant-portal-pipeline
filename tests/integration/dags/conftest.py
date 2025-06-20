@@ -1,7 +1,7 @@
 import pytest
 
 from radiant.dags import NAMESPACE
-from tests.utils.dags import get_pyarrow_table_from_csv, poll_dag_until_success
+from tests.utils.dags import get_pyarrow_table_from_csv, poll_dag_until_success, trigger_dag, unpause_dag
 
 
 def create_and_append_table(iceberg_client, namespace, table_name, file_path, json_fields=None, is_clinvar=False):
@@ -58,8 +58,8 @@ def open_data_iceberg_tables(
 @pytest.fixture(scope="session")
 def init_iceberg_tables(radiant_airflow_container):
     dag_id = f"{NAMESPACE}-init-iceberg-tables"
-    radiant_airflow_container.exec(["airflow", "dags", "unpause", dag_id])
-    radiant_airflow_container.exec(["airflow", "dags", "trigger", dag_id])
+    unpause_dag(radiant_airflow_container, dag_id)
+    trigger_dag(radiant_airflow_container, dag_id)
     assert poll_dag_until_success(airflow_container=radiant_airflow_container, dag_id=dag_id, timeout=180)
     yield
 
@@ -67,8 +67,8 @@ def init_iceberg_tables(radiant_airflow_container):
 @pytest.fixture(scope="session")
 def init_starrocks_tables(radiant_airflow_container, starrocks_jdbc_catalog):
     dag_id = f"{NAMESPACE}-init-starrocks-tables"
-    radiant_airflow_container.exec(["airflow", "dags", "unpause", dag_id])
-    radiant_airflow_container.exec(["airflow", "dags", "trigger", dag_id])
+    unpause_dag(radiant_airflow_container, dag_id)
+    trigger_dag(radiant_airflow_container, dag_id)
     assert poll_dag_until_success(airflow_container=radiant_airflow_container, dag_id=dag_id, timeout=180)
     yield
 
