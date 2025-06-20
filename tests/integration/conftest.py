@@ -37,7 +37,10 @@ ICEBERG_REST_PORT = 8181
 ICEBERG_REST_CATALOG_NAME = "radiant"
 ICEBERG_REST_TOKEN = "mysecret"
 
-STARROCKS_HOSTNAME = "radiant-starrocks-allin1"
+POSTGRES_PORT = 5432
+
+STARROCKS_FE_HOSTNAME = "radiant-starrocks-fe"
+STARROCKS_ALLIN1_HOSTNAME = "radiant-starrocks-allin1"
 STARROCKS_IMAGE = "starrocks/allin1-ubuntu:3.4.2"
 STARROCKS_FE_HTTP_PORT = 8030
 STARROCKS_BE_HTTP_PORT = 8040
@@ -97,12 +100,13 @@ class StarRocksIcebergDatabase:
 
 
 class PostgresInstance:
-    def __init__(self, host, port, user, password, db):
+    def __init__(self, host, port, user, password, airflow_db, radiant_db):
         self.host = host
         self.port = port
         self.user = user
         self.password = password
-        self.db = db
+        self.airflow_db = airflow_db
+        self.radiant_db = radiant_db
 
 
 class RadiantAirflowInstance:
@@ -212,19 +216,32 @@ def starrocks_container(minio_container, random_test_id):
     test_db_name = f"{STARROCKS_DATABASE_PREFIX}_{random_test_id}"
 
     for container in client.containers.list():
-        if STARROCKS_HOSTNAME in container.name:
+        if STARROCKS_FE_HOSTNAME in container.name:
             ports = container.attrs["NetworkSettings"]["Ports"]
             query_port = ports[f"{STARROCKS_QUERY_PORT}/tcp"][0]["HostPort"]
             fe_http_port = ports[f"{STARROCKS_FE_HTTP_PORT}/tcp"][0]["HostPort"]
-            be_http_port = ports[f"{STARROCKS_BE_HTTP_PORT}/tcp"][0]["HostPort"]
-            yield StarRocksEnvironment(
-                "localhost", query_port, fe_http_port, be_http_port, STARROCKS_USER, STARROCKS_PWD, test_db_name
-            )
+
+            with (
+                pymysql.connect(
+                    host="localhost",
+                    port=int(query_port),
+                    user=STARROCKS_USER,
+                    password=STARROCKS_PWD,
+                ) as connection,
+                connection.cursor() as cursor,
+            ):
+                cursor.execute(f"CREATE DATABASE IF NOT EXISTS {test_db_name};")
+                connection.commit()
+                yield StarRocksEnvironment(
+                    "localhost", query_port, fe_http_port, None, STARROCKS_USER, STARROCKS_PWD, test_db_name
+                )
+                cursor.execute(f"DROP DATABASE IF EXISTS {test_db_name};")
+                connection.commit()
             return
 
     container = (
         DockerContainer(STARROCKS_IMAGE)
-        .with_name(STARROCKS_HOSTNAME)
+        .with_name(STARROCKS_ALLIN1_HOSTNAME)
         .with_exposed_ports(STARROCKS_QUERY_PORT, STARROCKS_FE_HTTP_PORT, STARROCKS_BE_HTTP_PORT)
     )
     container.start()
@@ -263,7 +280,34 @@ def starrocks_container(minio_container, random_test_id):
 # Airflow cannot be run in standalone mode for proper DAG testing because the SequentialExecutor
 # does not support parallelism, making it unsuitable for testing. A LocalExecutor requires a non-sqlite database.
 @pytest.fixture(scope="session")
-def postgres_container(host_internal_address):
+def postgres_container(host_internal_address, random_test_id):
+    client = docker.from_env()
+
+    for container in client.containers.list():
+        if "postgres" in container.name:
+            ports = container.attrs["NetworkSettings"]["Ports"]
+            pg_port = ports[f"{POSTGRES_PORT}/tcp"][0]["HostPort"]
+            pg_host = ports[f"{POSTGRES_PORT}/tcp"][0]["HostIp"]
+
+            _common_args = ["psql", "postgresql://postgres:postgres@localhost:5432/postgres", "-c"]
+            container.exec_run(_common_args + [f"CREATE DATABASE test_{random_test_id}_airflow WITH OWNER postgres;"])
+            container.exec_run(_common_args + [f"CREATE DATABASE test_{random_test_id}_radiant WITH OWNER postgres;"])
+            container.exec_run(_common_args + [f"CREATE SCHEMA IF NOT EXISTS test_{random_test_id}_iceberg_catalog;"])
+
+            yield PostgresInstance(
+                host=pg_host,
+                port=pg_port,
+                user="postgres",
+                password="postgres",
+                airflow_db=f"test_{random_test_id}_airflow",
+                radiant_db=f"test_{random_test_id}_radiant",
+            )
+
+            container.exec_run(_common_args + [f"DROP DATABASE test_{random_test_id}_airflow WITH (force);"])
+            container.exec_run(_common_args + [f"DROP DATABASE test_{random_test_id}_radiant WITH (force);"])
+            container.exec_run(_common_args + [f"DROP SCHEMA test_{random_test_id}_iceberg_catalog WITH (force);"])
+            return
+
     pg_container = (
         DockerContainer("postgres:latest")
         .with_name("radiant-postgres")
@@ -283,7 +327,12 @@ def postgres_container(host_internal_address):
 
     pg_port = pg_container.get_exposed_port(5432)
     yield PostgresInstance(
-        host=host_internal_address, port=pg_port, user="postgres", password="postgres", db="postgres"
+        host=host_internal_address,
+        port=pg_port,
+        user="postgres",
+        password="postgres",
+        radiant_db="radiant",
+        airflow_db="airflow",
     )
     pg_container.stop()
 
@@ -306,7 +355,7 @@ def postgres_clinical_seeds(postgres_container):
             port=postgres_container.port,
             user=postgres_container.user,
             password=postgres_container.password,
-            database="radiant",
+            database=postgres_container.radiant_db,
         ) as conn,
         conn.cursor() as cur,
     ):
@@ -323,23 +372,47 @@ def radiant_airflow_container(
     client = docker.from_env()
 
     for container in client.containers.list():
-        if "radiant-airflow" in container.name:
-            ports = container.attrs["NetworkSettings"]["Ports"]
-            query_port = ports[f"{AIRFLOW_API_PORT}/tcp"][0]["HostPort"]
-            yield RadiantAirflowInstance("localhost", query_port)
+        if "airflow-webserver" in container.name:
+            container.exec_run(["airflow", "connections", "delete", "starrocks_conn"])
+            container.exec_run(
+                [
+                    "airflow",
+                    "connections",
+                    "add",
+                    "starrocks_conn",
+                    "--conn-uri",
+                    (
+                        f"mysql://{starrocks_container.user}:{starrocks_container.password}"
+                        f"@{host_internal_address}:{starrocks_container.query_port}"
+                        f"/{starrocks_container.database}"
+                    ),
+                ]
+            )
+            yield container
+            container.exec_run(["airflow", "connections", "delete", "starrocks_conn"])
+            container.exec_run(
+                [
+                    "airflow",
+                    "connections",
+                    "add",
+                    "starrocks_conn",
+                    "--conn-uri",
+                    (
+                        f"mysql://{starrocks_container.user}:{starrocks_container.password}"
+                        f"@{host_internal_address}:{starrocks_container.query_port}"
+                        f"/radiant"
+                    ),
+                ]
+            )
             return
 
     env_vars = {
-        "RADIANT_TABLES_NAMESPACE": f"test_{random_test_id}",
-        "RADIANT_ICEBERG_DATABASE": f"{STARROCKS_ICEBERG_DB_NAME_PREFIX}_{random_test_id}",
-        "RADIANT_ICEBERG_CATALOG": f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}",
-        "RADIANT_CLINICAL_CATALOG": f"{STARROCKS_JDBC_CATALOG_NAME_PREFIX}_{random_test_id}",
         "PYICEBERG_CATALOG__DEFAULT__URI": f"http://{host_internal_address}:{iceberg_container.port}",
         "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": f"http://{host_internal_address}:{minio_container.api_port}",
         "PYICEBERG_CATALOG__DEFAULT__TOKEN": ICEBERG_REST_TOKEN,
         "AIRFLOW__CORE__DAGS_FOLDER": "/opt/airflow/radiant/dags",
         "AIRFLOW__CORE__EXECUTOR": "LocalExecutor",
-        "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": f"postgresql+psycopg2://{postgres_container.user}:{postgres_container.password}@{postgres_container.host}:{postgres_container.port}/{postgres_container.db}",
+        "AIRFLOW__DATABASE__SQL_ALCHEMY_CONN": f"postgresql+psycopg2://{postgres_container.user}:{postgres_container.password}@{postgres_container.host}:{postgres_container.port}/{postgres_container.airflow_db}",
         "PYTHONPATH": "$PYTHONPATH:/opt/airflow",
         "HTS_S3_HOST": f"{host_internal_address}:{minio_container.api_port}",
         "HTS_S3_ADDRESS_STYLE": "path",
@@ -429,7 +502,14 @@ def starrocks_iceberg_catalog(
     host_internal_address, starrocks_session, iceberg_container, minio_container, random_test_id
 ):
     with starrocks_session.cursor() as cursor:
-        catalog_name = f"{STARROCKS_ICEBERG_CATALOG_NAME_PREFIX}_{random_test_id}"
+        catalog_name = "radiant_iceberg_catalog"
+
+        cursor.execute("SHOW CATALOGS;")
+        catalog_exists = catalog_name in [row[0] for row in cursor.fetchall()]
+        if catalog_exists:
+            cursor.execute(f"DROP CATALOG {catalog_name};")
+            starrocks_session.commit()
+
         cursor.execute(f"""
         CREATE EXTERNAL CATALOG '{catalog_name}'
         COMMENT 'External catalog to Apache Iceberg on MinIO'
@@ -449,6 +529,25 @@ def starrocks_iceberg_catalog(
         starrocks_session.commit()
         yield StarRocksIcebergCatalog(name=catalog_name)
         cursor.execute(f"DROP CATALOG {catalog_name};")
+        starrocks_session.commit()
+        if catalog_exists:
+            cursor.execute("""CREATE EXTERNAL CATALOG 'radiant_iceberg_catalog'
+              COMMENT 'External catalog to Apache Iceberg on MinIO'
+              PROPERTIES
+              (
+                'type'='iceberg',
+                'iceberg.catalog.type'='rest',
+                'iceberg.catalog.uri'='http://radiant-iceberg-rest:8181',
+                'iceberg.catalog.token' = 'mysecret',
+                'aws.s3.region'='us-east-1',
+                'aws.s3.access_key'='admin',
+                'aws.s3.secret_key'='password',
+                'aws.s3.endpoint'='http://radiant-minio:9000',
+                'aws.s3.enable_path_style_access'='true',
+                'client.factory'='com.starrocks.connector.share.iceberg.IcebergAwsClientFactory'
+              );
+            """)
+            starrocks_session.commit()
 
 
 @pytest.fixture(scope="session")
@@ -461,7 +560,13 @@ def starrocks_jdbc_catalog(
     random_test_id,
 ):
     with starrocks_session.cursor() as cursor:
-        catalog_name = f"{STARROCKS_JDBC_CATALOG_NAME_PREFIX}_{random_test_id}"
+        catalog_name = "radiant_jdbc"
+        cursor.execute("SHOW CATALOGS;")
+        catalog_exists = catalog_name in [row[0] for row in cursor.fetchall()]
+        if catalog_exists:
+            cursor.execute(f"DROP CATALOG {catalog_name};")
+            starrocks_session.commit()
+
         cursor.execute(f"""
         CREATE EXTERNAL CATALOG '{catalog_name}'
         COMMENT 'External Clinical Catalog'
@@ -472,23 +577,50 @@ def starrocks_jdbc_catalog(
             'type'='jdbc',
             'user'='{postgres_container.user}',
             'password'='{postgres_container.password}',
-            'jdbc_uri'='jdbc:postgresql://{host_internal_address}:{postgres_container.port}/radiant'
+            'jdbc_uri'='jdbc:postgresql://{host_internal_address}:{postgres_container.port}/{postgres_container.radiant_db}'
         );""")
         starrocks_session.commit()
         yield catalog_name
         cursor.execute(f"DROP CATALOG {catalog_name};")
+        starrocks_session.commit()
+        if catalog_exists:
+            cursor.execute("""CREATE EXTERNAL CATALOG radiant_jdbc
+              PROPERTIES (
+                'driver_class'='org.postgresql.Driver',
+                'checksum'='bef0b2e1c6edcd8647c24bed31e1a4ac',
+                'driver_url'='https://repo1.maven.org/maven2/org/postgresql/postgresql/42.3.3/postgresql-42.3.3.jar',
+                'type'='jdbc',
+                'user'='postgres',
+                'password'='postgres',
+                'jdbc_uri'='jdbc:postgresql://postgres:5432/radiant'
+                )
+            """)
+            starrocks_session.commit()
 
 
 @pytest.fixture(scope="session")
 def setup_namespace(s3_fs, iceberg_client, random_test_id):
-    namespace = f"{STARROCKS_ICEBERG_DB_NAME_PREFIX}_{random_test_id}"
-    iceberg_client.create_namespace(namespace)
+    namespace = "radiant"
+    _exists = iceberg_client.namespace_exists(namespace)
+    if _exists:
+        iceberg_client.create_namespace_if_not_exists(f"tmp_{random_test_id}_{namespace}")
+        for table in ["germline_snv_occurrence", "germline_snv_variant", "germline_snv_consequence"]:
+            if iceberg_client.table_exists(f"{namespace}.{table}"):
+                iceberg_client.rename_table(f"{namespace}.{table}", f"tmp_{random_test_id}_{namespace}.{table}")
+    else:
+        iceberg_client.create_namespace(namespace)
+
     iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_occurrence", schema=OCCURRENCE_SCHEMA)
     iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_variant", schema=VARIANT_SCHEMA)
     iceberg_client.create_table_if_not_exists(f"{namespace}.germline_snv_consequence", schema=CONSEQUENCE_SCHEMA)
-
     yield namespace
 
+    if _exists:
+        for table in ["germline_snv_occurrence", "germline_snv_variant", "germline_snv_consequence"]:
+            if iceberg_client.table_exists(f"{namespace}.{table}"):
+                iceberg_client.drop_table(f"{namespace}.{table}")
+            iceberg_client.rename_table(f"tmp_{random_test_id}_{namespace}.{table}", f"{namespace}.{table}")
+        iceberg_client.drop_namespace(f"tmp_{random_test_id}_{namespace}")
 
 VCF_SOURCE_DIR = "resources/vcf"
 
