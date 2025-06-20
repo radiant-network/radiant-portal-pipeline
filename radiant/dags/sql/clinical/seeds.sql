@@ -82,7 +82,7 @@ INSERT INTO {{ params.clinical_project }} (id, code, name, description) VALUES
 ;
 
 TRUNCATE {{ params.clinical_request }} CASCADE;
-INSERT INTO {{ params.clinical_request }} (id, priority_code, ordering_physician, ordering_organisation_id, order_number) VALUES
+INSERT INTO {{ params.clinical_request }} (id, priority_code, ordering_physician, ordering_organization_id, order_number) VALUES
     (1, 'routine', 'Felix Laflamme', 3, '25850340'),
     (2, 'routine', 'Melissa Lopez', 3, '25850341'),
     (3, 'routine', 'Christopher Watson', 3, '25850342'),
