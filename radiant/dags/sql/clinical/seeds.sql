@@ -845,7 +845,7 @@ VALUES (1, 'WXS', 'Whole Exome Sequencing', 'wxs', 'illumina', 'A description'),
 ;
 
 TRUNCATE {{ params.clinical_sequencing_experiment }} CASCADE;
-INSERT INTO {{ params.clinical_sequencing_experiment }} (id, case_id, patient_id, sample_id, experiment_id, status, aliquot, request_id, performer_lab_id, run_name, run_alias, run_date, capture_kit, is_paired_end, read_length, created_on, updated_on) VALUES
+INSERT INTO {{ params.clinical_sequencing_experiment }} (id, case_id, patient_id, sample_id, experiment_id, status_code, aliquot, request_id, performer_lab_id, run_name, run_alias, run_date, capture_kit, is_paired_end, read_length, created_on, updated_on) VALUES
         (1, 1, 3, 1, 2, 'completed', 'NA12892_NA12892', 1, 6, 1617, 'A00516_0169', '2021-08-17', NULL, True, 151, '2021-10-12 13:08:00', '2021-10-12 13:08:00'),
         (2, 1, 1, 2, 2, 'completed', 'NA12891_NA12891', 2, 6, 1618, 'A00516_0170', '2021-08-17', NULL, True, 151, '2021-10-12 13:08:00', '2021-10-12 13:08:00'),
         (3, 1, 2, 3, 2, 'completed', 'NA12878_NA12878', 3, 6, 1619, 'A00516_0171', '2021-08-17', NULL, True, 151, '2021-10-12 13:08:00', '2021-10-12 13:08:00'),
