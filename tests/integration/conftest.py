@@ -622,6 +622,7 @@ def setup_namespace(s3_fs, iceberg_client, random_test_id):
             iceberg_client.rename_table(f"tmp_{random_test_id}_{namespace}.{table}", f"{namespace}.{table}")
         iceberg_client.drop_namespace(f"tmp_{random_test_id}_{namespace}")
 
+
 VCF_SOURCE_DIR = "resources/vcf"
 
 

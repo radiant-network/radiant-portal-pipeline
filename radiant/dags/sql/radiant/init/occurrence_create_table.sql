@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_occurrence }} (
     info_dp INT,
     info_haplotype_score FLOAT,
     phased BOOLEAN NOT NULL,
-    parental_origin VARCHAR(10),
+    parental_origin VARCHAR(25),
     father_dp INT,
     father_gq INT,
     father_ad_ref INT,
