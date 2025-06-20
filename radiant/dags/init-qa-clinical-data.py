@@ -17,7 +17,7 @@ with DAG(
 
     # PostgreSQL Operator
     init_data = SQLExecuteQueryOperator(
-        conn_id="postgres_conn",
+        conn_id="radiant_postgres_conn",
         task_id="init_clinical_data",
         task_display_name="[PG] Init Clinical Data",
         sql="./sql/clinical/seeds.sql",
