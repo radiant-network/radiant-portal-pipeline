@@ -1,5 +1,6 @@
 # Minimal Airflow runtime needed for external_python task
 apache-airflow==2.10.5
+apache-airflow-providers-common-sql==1.21.0
 
 # Core iceberg dependency with S3 support
 pyiceberg[s3fs]==0.9.0
