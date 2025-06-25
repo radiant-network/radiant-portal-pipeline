@@ -30,7 +30,7 @@ jobs:
 
       - name: Zip extracted binaries
         run: |
-          zip -r plugins-${GITHUB_REF_NAME}.zip ./wheels ./lib
+          zip -r plugins.zip ./wheels ./lib
 
 #
 #   TODO Uncomment this once the S3 bucket is set up
@@ -42,9 +42,15 @@ jobs:
 #          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 #          aws-region: us-east-1
 #
-#      - name: Upload binaries to S3
+#      - name: Upload plugin to S3
 #        uses: aws-actions/aws-s3-cp@v1
 #        with:
 #          source: plugins.zip
-#          destination: s3://your-bucket-name/binaries/
+#          destination: s3://radiant-tst-airflow-qa/plugins/plugins.zip
+#
+#      - name: Upload startup script to S3
+#        uses: aws-actions/aws-s3-cp@v1
+#        with:
+#          source: startup.sh
+#          destination: s3://radiant-tst-airflow-qa/startup/startup.sh
 #
