@@ -24,7 +24,7 @@ def test_process_case(
                 seq_id=1,
                 task_id=1,
                 patient_id=1,
-                sample_id="SA0001",
+                aliquot="SA0001",
                 family_role="proband",
                 affected_status="affected",
                 sex="F",
@@ -53,7 +53,7 @@ def test_process_case(
     print(occ)
 
     assert not occ.empty, "No occurrences were written to the iceberg table"
-    assert ((occ["sample_id"] == "SA0001") & (occ["case_id"] == 1)).any(), (
+    assert ((occ["aliquot"] == "SA0001") & (occ["case_id"] == 1)).any(), (
         "Expected sample/case not found in occurrences"
     )
     assert all(occ["chromosome"] == "1"), "Unexpected chromosome values in output"
@@ -65,7 +65,7 @@ def test_process_case(
     #     "reference": ["A"],
     #     "alternate": ["T"],
     #     "case_id": [1],
-    #     "sample_id": ["SA0001"],
+    #     "aliquot": ["SA0001"],
     #     # Add other columns as needed
     # })
     #
@@ -101,7 +101,7 @@ def test_process_case_error(
                 seq_id=1,
                 task_id=1,
                 patient_id=1,
-                sample_id="SA0001",
+                aliquot="SA0001",
                 family_role="proband",
                 affected_status="affected",
                 sex="F",

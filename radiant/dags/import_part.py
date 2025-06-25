@@ -37,7 +37,7 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
                     seq_id=row["seq_id"],
                     task_id=row["task_id"],
                     patient_id=row["patient_id"],
-                    sample_id=row["sample_id"],
+                    aliquot=row["aliquot"],
                     family_role=row["family_role"],
                     sex=row["sex"],
                     affected_status=row["affected_status"],

@@ -29,7 +29,7 @@ def mock_descriptions():
             ("experimental_strategy",),
             ("request_id",),
             ("request_priority",),
-            ("sample_id",),
+            ("aliquot",),
             ("family_role",),
             ("sex",),
             ("affected_status",),
