@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
 
-from radiant.dags import NAMESPACE
+from radiant.dags import ICEBERG_NAMESPACE, NAMESPACE
 
 PATH_TO_PYTHON_BINARY = "/home/airflow/.venv/radiant/bin/python"
 default_args = {
@@ -123,8 +123,8 @@ with DAG(
         catalog.create_table_if_not_exists(table_name, schema=CONSEQUENCE_SCHEMA, partition_spec=partition_spec)
 
     (
-        init_database(NAMESPACE)
-        >> create_germline_occurrence_table(NAMESPACE)
-        >> create_germline_variant_table(NAMESPACE)
-        >> create_germline_consequences_table(NAMESPACE)
+        init_database(ICEBERG_NAMESPACE)
+        >> create_germline_occurrence_table(ICEBERG_NAMESPACE)
+        >> create_germline_variant_table(ICEBERG_NAMESPACE)
+        >> create_germline_consequences_table(ICEBERG_NAMESPACE)
     )

@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.helpers import chain
 
-from radiant.dags import ICEBERG_COMMON_TASK_PARAMS, NAMESPACE
+from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
 
 default_args = {"owner": "radiant"}
@@ -33,7 +33,6 @@ with DAG(
                 task_display_name=f"{group} Insert Hashes",
                 sql=f"./sql/open_data/{group}_insert_hashes.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
-                params=ICEBERG_COMMON_TASK_PARAMS,
                 trigger_rule="none_failed",
             )
         )
@@ -43,7 +42,6 @@ with DAG(
                 task_display_name=f"{group} Insert Data",
                 sql=f"./sql/open_data/{group}_insert.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
-                params=ICEBERG_COMMON_TASK_PARAMS,
             )
         )
 
@@ -54,7 +52,6 @@ with DAG(
                 task_display_name=f"{group} Insert Data",
                 sql=f"./sql/open_data/{group}_insert.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
-                params=ICEBERG_COMMON_TASK_PARAMS,
             )
         )
 
