@@ -154,7 +154,7 @@ VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of t
        (4, 'HYPM', 'Malignant Hyperthermia', 'germline', NULL, 'A description of this analysis')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO "case" (id, proband_id, project_id, case_analysis_id, status_code, request_id, performer_lab_id, note, created_on, updated_on) VALUES
+INSERT INTO "cases" (id, proband_id, project_id, case_analysis_id, status_code, request_id, performer_lab_id, note, created_on, updated_on) VALUES
     (1, 3, 1, 2, 'active', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (2, 4, 1, 2, 'active', 2, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (3, 8, 1, 2, 'active', 3, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),

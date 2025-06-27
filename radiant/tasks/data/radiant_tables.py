@@ -16,7 +16,7 @@ GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX = "germline__snv__"
 
 # --- Clinical tables
 CLINICAL_MAPPING = {
-    "clinical_case": "`case`",
+    "clinical_case": "`cases`",
     "clinical_case_analysis": "case_analysis",
     "clinical_sequencing_experiment": "sequencing_experiment",
     "clinical_experiment": "experiment",
