@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM public.ecr.aws/amazonlinux/amazonlinux:2023
+FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023.7.20250609.0
 
 # Create directory and give airflow user ownership
 # to the virtual environment directory
@@ -6,8 +6,9 @@ USER root
 ENV PYTHON_VERSION=3.11
 
 # Install dependencies for htslib
-RUN yum groupinstall -y "Development Tools" && \
-    yum install -y \
+RUN dnf install -y mariadb105-devel
+RUN dnf groupinstall -y "Development Tools" && \
+    dnf install -y \
         bzip2-devel \
         curl-devel \
         libcurl-devel \
@@ -17,8 +18,9 @@ RUN yum groupinstall -y "Development Tools" && \
         libpsl-devel \
         python${PYTHON_VERSION} \
         python${PYTHON_VERSION}-pip \
-        python${PYTHON_VERSION}-devel && \
-    yum clean all
+        python${PYTHON_VERSION}-devel \
+        pkgconfig && \
+    dnf clean all
 
 ARG LIBCURL_VERSION=8.13.0
 RUN curl -L -O https://curl.se/download/curl-${LIBCURL_VERSION}.tar.gz && \
