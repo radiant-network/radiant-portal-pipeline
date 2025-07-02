@@ -5,14 +5,22 @@ cat /etc/system-release
 
 readonly PLUGINS_DIR="/usr/local/airflow/plugins"
 
-echo "Expanding LD_LIBRARY_PATH..."
-export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${PLUGINS_DIR}/lib/"
-env | grep LD_LIBRARY_PATH
-echo "Done expanding LD_LIBRARY_PATH."
-
 echo "Installing Python dependencies..."
 pip install ${PLUGINS_DIR}/wheels/*.whl --find-links ${PLUGINS_DIR}/wheels
 echo "Done installing Python dependencies."
+
+echo "Exporting libraries..."
+sudo cp ${PLUGINS_DIR}/lib/libhts.so.1.21 /usr/lib/libhts.so.1.21
+sudo chmod +x /usr/lib/libhts.so.1.21
+sudo rm -f /usr/lib/libhts.so.3
+sudo ln -s /usr/lib/libhts.so.1.21 /usr/lib/libhts.so.3
+sudo rm -f /usr/lib/libhts.so
+sudo ln -s /usr/lib/libhts.so.1.21 /usr/lib/libhts.so
+echo "Done exporting libraries."
+
+echo "Setting up LD_LIBRARY_PATH..."
+export LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH"
+echo "LD_LIBRARY_PATH is now set to: $LD_LIBRARY_PATH"
 
 echo "Configuring Radiant environment..."
 export RADIANT_ICEBERG_NAMESPACE="radiant_qa"

@@ -3,8 +3,8 @@ apache-airflow==2.10.3
 apache-airflow-providers-common-sql==1.21.0
 apache-airflow-providers-mysql==5.7.3
 
-# Core iceberg dependency with S3 support
-pyiceberg[s3fs]==0.9.0
+# Core iceberg dependency with S3 support & Glue catalog
+pyiceberg[s3fs,glue]==0.9.0
 
 pyarrow==19.0.1
 
@@ -14,3 +14,5 @@ wurlitzer==3.1.1
 # Needed for observability
 opentelemetry-sdk==1.33.1
 opentelemetry-exporter-otlp==1.33.1
+
+# Force some versions to speed up the build

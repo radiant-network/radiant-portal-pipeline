@@ -1,13 +1,16 @@
+import logging
+
 from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
 
-from radiant.dags import NAMESPACE
+from radiant.dags import ICEBERG_NAMESPACE, NAMESPACE
 
-PATH_TO_PYTHON_BINARY = "/home/airflow/.venv/radiant/bin/python"
 default_args = {
     "owner": "radiant",
 }
+
+LOGGER = logging.getLogger(__name__)
 
 with DAG(
     dag_id=f"{NAMESPACE}-init-iceberg-tables",
@@ -19,14 +22,14 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    @task.external_python(task_id="init_database", python=PATH_TO_PYTHON_BINARY)
+    @task.python(task_id="init_database")
     def init_database(namespace):
         from pyiceberg.catalog import load_catalog
 
         catalog = load_catalog("default")
         catalog.create_namespace_if_not_exists(namespace)
 
-    @task.external_python(task_id="create_germline_occurrence_table", python=PATH_TO_PYTHON_BINARY)
+    @task.python(task_id="create_germline_occurrence_table")
     def create_germline_occurrence_table(namespace):
         from pyiceberg.catalog import load_catalog
         from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -68,7 +71,7 @@ with DAG(
         )
         catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec)
 
-    @task.external_python(task_id="create_germline_variant_table", python=PATH_TO_PYTHON_BINARY)
+    @task.python(task_id="create_germline_variant_table")
     def create_germline_variant_table(namespace):
         from pyiceberg.catalog import load_catalog
         from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -95,7 +98,7 @@ with DAG(
         )
         catalog.create_table_if_not_exists(table_name, schema=VARIANT_SCHEMA, partition_spec=partition_spec)
 
-    @task.external_python(task_id="create_germline_consequence_table", python=PATH_TO_PYTHON_BINARY)
+    @task.python(task_id="create_germline_consequence_table")
     def create_germline_consequences_table(namespace):
         from pyiceberg.catalog import load_catalog
         from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -123,8 +126,8 @@ with DAG(
         catalog.create_table_if_not_exists(table_name, schema=CONSEQUENCE_SCHEMA, partition_spec=partition_spec)
 
     (
-        init_database(NAMESPACE)
-        >> create_germline_occurrence_table(NAMESPACE)
-        >> create_germline_variant_table(NAMESPACE)
-        >> create_germline_consequences_table(NAMESPACE)
+        init_database(ICEBERG_NAMESPACE)
+        >> create_germline_occurrence_table(ICEBERG_NAMESPACE)
+        >> create_germline_variant_table(ICEBERG_NAMESPACE)
+        >> create_germline_consequences_table(ICEBERG_NAMESPACE)
     )
