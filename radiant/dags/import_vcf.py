@@ -1,3 +1,5 @@
+import os
+
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Param
@@ -9,7 +11,7 @@ default_args = {
     "owner": "radiant",
 }
 
-PATH_TO_PYTHON_BINARY = "/home/airflow/.venv/radiant/bin/python"
+PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
 
 GROUPED_CHROMOSOMES = [
     ["chrM", "chr18", "chr1"],
@@ -48,10 +50,10 @@ with DAG(
 
         return [Case.model_validate(c).model_dump() for c in params.get("cases", [])]
 
-    @task.python(
+    @task.external_python(
         pool="import_vcf",
         task_id="create_parquet_files",
-        # python=PATH_TO_PYTHON_BINARY,
+        python=PATH_TO_PYTHON_BINARY,
         map_index_template=("Case: {{ task.op_kwargs['case']['case_id'] }}"),
     )
     def create_parquet_files(case: dict):
@@ -121,7 +123,7 @@ with DAG(
                 merged[table].extend(partitions)
         return dict(merged)
 
-    @task.python(task_id="commit_partitions")  # , python=PATH_TO_PYTHON_BINARY)
+    @task.external_python(task_id="commit_partitions" , python=PATH_TO_PYTHON_BINARY)
     def commit_partitions(table_partitions: dict[str, list[dict]]):
         import logging
         import sys

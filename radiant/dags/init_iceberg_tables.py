@@ -1,4 +1,5 @@
 import logging
+import os
 
 from airflow import DAG
 from airflow.decorators import task
@@ -9,6 +10,8 @@ from radiant.dags import ICEBERG_NAMESPACE, NAMESPACE
 default_args = {
     "owner": "radiant",
 }
+
+PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,14 +25,14 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    @task.python(task_id="init_database")
+    @task.external_python(task_id="init_database", python=PATH_TO_PYTHON_BINARY)
     def init_database(namespace):
         from pyiceberg.catalog import load_catalog
 
         catalog = load_catalog("default")
         catalog.create_namespace_if_not_exists(namespace)
 
-    @task.python(task_id="create_germline_occurrence_table")
+    @task.external_python(task_id="create_germline_occurrence_table", python=PATH_TO_PYTHON_BINARY)
     def create_germline_occurrence_table(namespace):
         from pyiceberg.catalog import load_catalog
         from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -71,7 +74,7 @@ with DAG(
         )
         catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec)
 
-    @task.python(task_id="create_germline_variant_table")
+    @task.external_python(task_id="create_germline_variant_table", python=PATH_TO_PYTHON_BINARY)
     def create_germline_variant_table(namespace):
         from pyiceberg.catalog import load_catalog
         from pyiceberg.partitioning import PartitionField, PartitionSpec
@@ -98,7 +101,7 @@ with DAG(
         )
         catalog.create_table_if_not_exists(table_name, schema=VARIANT_SCHEMA, partition_spec=partition_spec)
 
-    @task.python(task_id="create_germline_consequence_table")
+    @task.external_python(task_id="create_germline_consequence_table", python=PATH_TO_PYTHON_BINARY)
     def create_germline_consequences_table(namespace):
         from pyiceberg.catalog import load_catalog
         from pyiceberg.partitioning import PartitionField, PartitionSpec

@@ -9,6 +9,10 @@ echo "Installing Python dependencies..."
 pip install ${PLUGINS_DIR}/wheels/*.whl --find-links ${PLUGINS_DIR}/wheels
 echo "Done installing Python dependencies."
 
+echo "Exporting RADIANT_PYTHON_PATH..."
+export RADIANT_PYTHON_PATH="/usr/local/bin/python3"
+echo "RADIANT_PYTHON_PATH is now set to: $RADIANT_PYTHON_PATH"
+
 echo "Exporting libraries..."
 sudo cp ${PLUGINS_DIR}/lib/libhts.so.1.21 /usr/lib/libhts.so.1.21
 sudo chmod +x /usr/lib/libhts.so.1.21
