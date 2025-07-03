@@ -64,7 +64,6 @@ with DAG(
 
         import boto3
 
-        from radiant.dags import ICEBERG_NAMESPACE
         from radiant.tasks.vcf.experiment import Case
         from radiant.tasks.vcf.process import process_case
 

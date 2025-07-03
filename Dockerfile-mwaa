@@ -58,7 +58,7 @@ RUN python${PYTHON_VERSION} -m venv /home/airflow/.venv/radiant && \
 RUN CYVCF2_HTSLIB_MODE=EXTERNAL pip wheel --no-binary cyvcf2 cyvcf2 -w /home/airflow/.venv/radiant/wheels
 
 # Copy requirements and install dependencies with uv
-COPY requirements.txt /home/airflow/.venv/radiant/requirements.txt
+COPY requirements-mwaa.txt /home/airflow/.venv/radiant/requirements.txt
 RUN uv pip compile /home/airflow/.venv/radiant/requirements.txt --output-file /home/airflow/.venv/radiant/requirements.lock.txt
 
 RUN /home/airflow/.venv/radiant/bin/pip wheel -w /home/airflow/.venv/radiant/wheels -r /home/airflow/.venv/radiant/requirements.lock.txt
