@@ -59,6 +59,7 @@ with DAG(
     def create_parquet_files(case: dict):
         import json
         import logging
+        import os
         import sys
         from urllib import parse
 

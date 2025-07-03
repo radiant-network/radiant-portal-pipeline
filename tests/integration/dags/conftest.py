@@ -6,8 +6,9 @@ from tests.utils.dags import get_pyarrow_table_from_csv, poll_dag_until_success,
 
 def create_and_append_table(iceberg_client, namespace, table_name, file_path, json_fields=None, is_clinvar=False):
     content = get_pyarrow_table_from_csv(csv_path=file_path, sep="\t", json_fields=json_fields, is_clinvar=is_clinvar)
-    iceberg_client.create_table_if_not_exists(f"{namespace}.{table_name}", schema=content.schema)
-    iceberg_client.load_table(f"{namespace}.{table_name}").append(df=content)
+    if iceberg_client.namespace_exists(namespace):
+        iceberg_client.create_table_if_not_exists(f"{namespace}.{table_name}", schema=content.schema)
+        iceberg_client.load_table(f"{namespace}.{table_name}").append(df=content)
 
 
 @pytest.fixture(scope="session")
@@ -44,15 +45,19 @@ def open_data_iceberg_tables(
         "hpo_gene_set": None,
         "orphanet_gene_set": None,
     }
-    for table, json_fields in tables.items():
-        create_and_append_table(
-            iceberg_client,
-            setup_namespace,
-            f"{table}",
-            resources_dir / "open_data" / f"{table}.tsv",
-            json_fields=json_fields,
-            is_clinvar=(table == "clinvar"),
-        )
+
+    # This is hackish to avoid referencing the airflow container that might not be available in some
+    # runtime environments (i.e. GHA) when running either integration tests or slow tests
+    for namespace in ["radiant_iceberg_namespace", setup_namespace]:
+        for table, json_fields in tables.items():
+            create_and_append_table(
+                iceberg_client,
+                namespace,
+                f"{table}",
+                resources_dir / "open_data" / f"{table}.tsv",
+                json_fields=json_fields,
+                is_clinvar=(table == "clinvar"),
+            )
 
 
 @pytest.fixture(scope="session")
