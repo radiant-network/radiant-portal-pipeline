@@ -12,11 +12,7 @@ def create_and_append_table(iceberg_client, namespace, table_name, file_path, js
 
 @pytest.fixture(scope="session")
 def open_data_iceberg_tables(
-    starrocks_iceberg_catalog,
-    setup_namespace,
-    iceberg_client,
-    resources_dir,
-    random_test_id,
+    starrocks_iceberg_catalog, iceberg_client, setup_namespace, resources_dir, random_test_id
 ):
     # Json fields are required for certain .tsv files to properly handle types
     tables = {
@@ -50,7 +46,7 @@ def open_data_iceberg_tables(
     }
 
     # This is hackish to avoid referencing the airflow container that might not be available in some
-    # runtime environments (i.e. GHA)
+    # runtime environments (i.e. GHA) when running either integration tests or slow tests
     for namespace in ["radiant_iceberg_namespace", setup_namespace]:
         for table, json_fields in tables.items():
             create_and_append_table(
