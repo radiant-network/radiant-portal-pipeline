@@ -15,7 +15,7 @@ WITH patients_total_count
                                        WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'not_affected'
                                            then s.patient_id end)                                                  AS cnt_wxs_not_affected
              FROM {{ params.starrocks_staging_sequencing_experiment }} s
-             where s.seq_id in (select seq_id from  {{ params.starrocks_occurrence }} where part = 1)),
+             where s.seq_id in (select seq_id from  {{ params.starrocks_occurrence }} where part = %(part)s)),
      freqs as (SELECT o.part,
                       o.locus_id,
                       COUNT(distinct CASE WHEN s.experimental_strategy = 'wgs' then patient_id end)                   AS pc_wgs,
@@ -39,15 +39,15 @@ WITH patients_total_count
 SELECT part,
        locus_id,
        pc_wgs,
-       pc_wgs_affected,
-       pc_wgs_not_affected,
        (SELECT cnt_wgs FROM patients_total_count)                 AS pn_wgs,
+       pc_wgs_affected,
        (SELECT cnt_wgs_affected FROM patients_total_count)     AS pn_wgs_affected,
+       pc_wgs_not_affected,
        (SELECT cnt_wgs_not_affected FROM patients_total_count) AS pn_wgs_not_affected,
        pc_wxs,
-       pc_wxs_affected,
-       pc_wxs_not_affected,
        (SELECT cnt_wxs FROM patients_total_count)                 AS pn_wxs,
+       pc_wxs_affected,
        (SELECT cnt_wxs_affected FROM patients_total_count)     AS pn_wxs_affected,
+       pc_wxs_not_affected,
        (SELECT cnt_wxs_not_affected FROM patients_total_count) AS pn_wxs_not_affected
 from freqs

@@ -13,6 +13,7 @@ from pyiceberg.catalog.rest import RestCatalog
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.waiting_utils import wait_for_logs
 
+from radiant.dags import ICEBERG_NAMESPACE
 from radiant.tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
 from radiant.tasks.vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
@@ -600,7 +601,7 @@ def starrocks_jdbc_catalog(
 
 @pytest.fixture(scope="session")
 def setup_namespace(s3_fs, iceberg_client, random_test_id):
-    namespace = "radiant"
+    namespace = ICEBERG_NAMESPACE
     _exists = iceberg_client.namespace_exists(namespace)
     if _exists:
         iceberg_client.create_namespace_if_not_exists(f"tmp_{random_test_id}_{namespace}")

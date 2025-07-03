@@ -109,7 +109,8 @@ with DAG(
         logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
         logger.info("=" * 80)
 
-        res = process_case(case, namespace=ICEBERG_NAMESPACE, vcf_threads=4)
+        namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant")
+        res = process_case(case, namespace=namespace, vcf_threads=4)
         logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
         return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}
 

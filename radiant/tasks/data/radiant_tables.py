@@ -3,8 +3,6 @@ import os
 from radiant.dags import NAMESPACE
 
 RADIANT_TABLES_PREFIX_ENV_KEY = "RADIANT_TABLES_NAMESPACE"
-ICEBERG_CATALOG_ENV_KEY = "RADIANT_ICEBERG_CATALOG"
-ICEBERG_DATABASE_ENV_KEY = "RADIANT_ICEBERG_DATABASE"
 
 CLINICAL_CATALOG_ENV_KEY = "RADIANT_CLINICAL_CATALOG"
 CLINICAL_DATABASE_ENV_KEY = "RADIANT_CLINICAL_DATABASE"
@@ -16,7 +14,7 @@ GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX = "germline__snv__"
 
 # --- Clinical tables
 CLINICAL_MAPPING = {
-    "clinical_case": "`case`",
+    "clinical_case": "`cases`",
     "clinical_case_analysis": "case_analysis",
     "clinical_sequencing_experiment": "sequencing_experiment",
     "clinical_experiment": "experiment",
@@ -64,7 +62,7 @@ ICEBERG_OPEN_DATA_MAPPING = {
 
 ICEBERG_CATALOG_DATABASE = {
     "iceberg_catalog": os.getenv("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog"),
-    "iceberg_database": os.getenv("RADIANT_ICEBERG_DATABASE", "radiant"),
+    "iceberg_database": os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant"),
 }
 
 
