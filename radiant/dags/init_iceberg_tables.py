@@ -1,13 +1,19 @@
+import logging
+import os
+
 from airflow import DAG
 from airflow.decorators import task
 from airflow.utils.dates import days_ago
 
 from radiant.dags import ICEBERG_NAMESPACE, NAMESPACE
 
-PATH_TO_PYTHON_BINARY = "/home/airflow/.venv/radiant/bin/python"
 default_args = {
     "owner": "radiant",
 }
+
+PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
+
+LOGGER = logging.getLogger(__name__)
 
 with DAG(
     dag_id=f"{NAMESPACE}-init-iceberg-tables",

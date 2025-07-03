@@ -1,0 +1,56 @@
+name: Package DAG Dependencies
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and push Docker image
+        id: build_mwaa_base
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          file: Dockerfile-mwaa
+          tags: radiant-binaries-builder:latest
+          push: false
+
+      - name: Extract binaries from Docker image
+        run: |
+          docker create --name temp_container radiant-binaries-builder:latest
+          docker cp temp_container:/home/airflow/.venv/radiant/wheels ./wheels
+          docker cp temp_container:/usr/local/lib/libhts.so.1.21 ./lib
+          docker rm temp_container
+
+      - name: Zip extracted binaries
+        run: |
+          zip -r plugins.zip ./wheels ./lib
+
+#
+#   TODO Uncomment this once the S3 bucket is set up
+#
+#      - name: Configure AWS Credentials
+#        uses: aws-actions/configure-aws-credentials@v4
+#        with:
+#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#          aws-region: us-east-1
+#
+#      - name: Upload plugin to S3
+#        uses: aws-actions/aws-s3-cp@v1
+#        with:
+#          source: plugins.zip
+#          destination: s3://radiant-tst-airflow-qa/plugins/plugins.zip
+#
+#      - name: Upload startup script to S3
+#        uses: aws-actions/aws-s3-cp@v1
+#        with:
+#          source: startup.sh
+#          destination: s3://radiant-tst-airflow-qa/startup/startup.sh
+#
