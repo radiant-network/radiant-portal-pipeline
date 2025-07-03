@@ -1146,8 +1146,8 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (132, 'FI0037866.S14757.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2453667, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c723'),
     (133, 'FI0037867.S14746.vcf.gz', 'genomic', 'snv', 'vcf', 315914977, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c724'),
     (134, 'FI0037867.S14746.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2432696, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c725'),
-    (135, 'CEPH-1463.exomiser.vcf.gz', 'genomic', 'snv', 'vcf', 303866839, 's3://radiant-tst-datalake-qa/raw_input/variants.CEPH-1463.snv.vep.vcf.gz', '5d41402abc4b2a76b9719d911017c726'),
-    (136, 'CEPH-1463.exomiser.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, 's3://radiant-tst-datalake-qa/raw_input/variants.CEPH-1463.snv.vep.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c727'),
+    (135, 'CEPH-1463.exomiser.vcf.gz', 'genomic', 'snv', 'vcf', 303866839, 's3://cqdg-qa-file-import/radiant/variants.CEPH-1463.snv.vep.vcf.gz', '5d41402abc4b2a76b9719d911017c726'),
+    (136, 'CEPH-1463.exomiser.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, 's3://cqdg-qa-file-import/radiant/variants.CEPH-1463.snv.vep.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c727'),
     (137, 'FI0037869.S14741.vcf.gz', 'genomic', 'snv', 'vcf', 330647470, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c728'),
     (138, 'FI0037869.S14741.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2443182, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c729'),
     (139, 'FI0037870.S14745.vcf.gz', 'genomic', 'snv', 'vcf', 320822312, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c730'),
@@ -1242,8 +1242,8 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (232, 'FI0037921.S14859.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c823'),
     (233, 'FI0037922.S14750.vcf.gz', 'genomic', 'snv', 'vcf', 304716185, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c824'),
     (234, 'FI0037922.S14750.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c825'),
-    (235, 'SH032.exomiser.vcf.gz', 'genomic', 'snv', 'vcf', 307610255, 's3://radiant-tst-datalake-qa/raw_input/variants.SH032.snv.vep.vcf.gz', '5d41402abc4b2a76b9719d911017c826'),
-    (236, 'SH032.exomiser.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3://radiant-tst-datalake-qa/raw_input/variants.SH032.snv.vep.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c827'),
+    (235, 'SH032.exomiser.vcf.gz', 'genomic', 'snv', 'vcf', 307610255, 's3://cqdg-qa-file-import/radiant/variants.SH032.snv.vep.vcf.gz', '5d41402abc4b2a76b9719d911017c826'),
+    (236, 'SH032.exomiser.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3://cqdg-qa-file-import/radiant/variants.SH032.snv.vep.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c827'),
     (237, 'FI0037925.S14131.vcf.gz', 'genomic', 'snv', 'vcf', 382111580, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c828'),
     (238, 'FI0037925.S14131.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2453667, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c829'),
     (239, 'FI0037926.S13235.vcf.gz', 'genomic', 'snv', 'vcf', 298078699, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c830'),
@@ -1252,8 +1252,8 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (242, 'FI0037927.S14029.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c833'),
     (243, 'FI0037928.S14857.vcf.gz', 'genomic', 'snv', 'vcf', 304055582, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c834'),
     (244, 'FI0037928.S14857.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c835'),
-    (245, 'CEPH-1463.exomiser.variants.tsv', 'genomic', 'snv', 'tsv', 31230, 's3://radiant-tst-datalake-qa/raw_input/CEPH-1463.exomiser.variants.tsv', '5d41402abc4b2a76b9719d911017c836'),
-    (246, 'SH032.HG00513.exomiser.variants.tsv', 'genomic', 'snv', 'tsv', 12340, 's3://radiant-tst-datalake-qa/raw_input/SH032.HG00513.exomiser.variants.tsv', '5d41402abc4b2a76b9719d911017c837')
+    (245, 'CEPH-1463.exomiser.variants.tsv', 'genomic', 'snv', 'tsv', 31230, 's3://cqdg-qa-file-import/radiant/CEPH-1463.exomiser.variants.tsv', '5d41402abc4b2a76b9719d911017c836'),
+    (246, 'SH032.HG00513.exomiser.variants.tsv', 'genomic', 'snv', 'tsv', 12340, 's3://cqdg-qa-file-import/radiant/SH032.HG00513.exomiser.variants.tsv', '5d41402abc4b2a76b9719d911017c837')
 ;
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
