@@ -20,7 +20,7 @@ RUN curl -L -O https://curl.se/download/curl-${LIBCURL_VERSION}.tar.gz && \
 RUN curl -L -O https://github.com/samtools/htslib/releases/download/1.21/htslib-1.21.tar.bz2 && \
     tar -xvf htslib-1.21.tar.bz2 && \
     cd htslib-1.21 && \
-    ./configure --enable-libcurl --enable-s3 && \
+    ./configure --enable-libcurl && \
     make && \
     make install && \
     cd .. && \
