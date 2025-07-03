@@ -123,7 +123,7 @@ with DAG(
                 merged[table].extend(partitions)
         return dict(merged)
 
-    @task.external_python(task_id="commit_partitions" , python=PATH_TO_PYTHON_BINARY)
+    @task.external_python(task_id="commit_partitions", python=PATH_TO_PYTHON_BINARY)
     def commit_partitions(table_partitions: dict[str, list[dict]]):
         import logging
         import sys
