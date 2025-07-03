@@ -160,27 +160,27 @@ VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of t
 
 TRUNCATE {{ params.clinical_case }} CASCADE;
 INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, case_analysis_id, status_code, primary_condition, request_id, performer_lab_id, note, created_on, updated_on) VALUES
-    (1, 3, 1, 1, 'active', 'neurodevelopmental disorder (MONDO:0700092)', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (2, 4, 1, 1, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 2, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (3, 8, 1, 1, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 3, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (4, 10, 1, 2, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 4, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (5, 15, 1, 1, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 5, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (6, 16, 1, 1, 'draft', 'neurodevelopmental disorder (MONDO:0700092)', 6, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (7, 20, 1, 1, 'revoke', 'neurodevelopmental disorder (MONDO:0700092)', 7, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (8, 22, 1, 1, 'completed', 'neurodevelopmental disorder (MONDO:0700092)', 8, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (9, 23, 1, 1, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 9, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (10, 27, 2, 2, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 10, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (11, 30, 2, 1, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 11, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (12, 34, 2, 1, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 12, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (13, 37, 2, 1, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 13, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (14, 39, 2, 2, 'draft', 'neurodevelopmental disorder (MONDO:0700092)', 14, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (15, 42, 2, 1, 'draft', 'neurodevelopmental disorder (MONDO:0700092)', 15, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (16, 44, 2, 1, 'draft', 'neurodevelopmental disorder (MONDO:0700092)', 16, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (17, 47, 2, 2, 'draft', 'neurodevelopmental disorder (MONDO:0700092)', 17, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (18, 50, 2, 2, 'revoke', 'neurodevelopmental disorder (MONDO:0700092)', 18, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (19, 55, 2, 2, 'revoke', 'neurodevelopmental disorder (MONDO:0700092)', 19, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (20, 58, 2, 2, 'revoke', 'neurodevelopmental disorder (MONDO:0700092)', 20, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (21, 60, 2, 2, 'incomplete', 'neurodevelopmental disorder (MONDO:0700092)', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00')
+    (1, 3, 1, 1, 'active', 'MONDO:0700092', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (2, 4, 1, 1, 'incomplete', 'MONDO:0700092', 2, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (3, 8, 1, 1, 'incomplete', 'MONDO:0700092', 3, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (4, 10, 1, 2, 'incomplete', 'MONDO:0700092', 4, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (5, 15, 1, 1, 'incomplete', 'MONDO:0700092', 5, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (6, 16, 1, 1, 'draft', 'MONDO:0700092', 6, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (7, 20, 1, 1, 'revoke', 'MONDO:0700092', 7, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (8, 22, 1, 1, 'completed', 'MONDO:0700092', 8, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (9, 23, 1, 1, 'incomplete', 'MONDO:0700092', 9, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (10, 27, 2, 2, 'incomplete', 'MONDO:0700092', 10, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (11, 30, 2, 1, 'incomplete', 'MONDO:0700092', 11, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (12, 34, 2, 1, 'incomplete', 'MONDO:0700092', 12, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (13, 37, 2, 1, 'incomplete', 'MONDO:0700092', 13, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (14, 39, 2, 2, 'draft', 'MONDO:0700092', 14, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (15, 42, 2, 1, 'draft', 'MONDO:0700092', 15, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (16, 44, 2, 1, 'draft', 'MONDO:0700092', 16, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (17, 47, 2, 2, 'draft', 'MONDO:0700092', 17, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (18, 50, 2, 2, 'revoke', 'MONDO:0700092', 18, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (19, 55, 2, 2, 'revoke', 'MONDO:0700092', 19, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (20, 58, 2, 2, 'revoke', 'MONDO:0700092', 20, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (21, 60, 2, 2, 'incomplete', 'MONDO:0700092', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00')
 ;
 
 TRUNCATE {{ params.clinical_family }} CASCADE;
