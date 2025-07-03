@@ -42,6 +42,9 @@ def process_case(
             threads=vcf_threads,
             samples=[exp.aliquot for exp in case.experiments],
         )
+        if case.index_vcf_filepath:
+            vcf.set_index(index_path=case.index_vcf_filepath)
+
         occurrences_table_name = f"{namespace}.germline_snv_occurrence"
         variants_table_name = f"{namespace}.germline_snv_variant"
         consequences_table_name = f"{namespace}.germline_snv_consequence"

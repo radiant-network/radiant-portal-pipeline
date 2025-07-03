@@ -20,3 +20,4 @@ class Case(BaseModel):
     vcf_filepath: str
     analysis_type: str
     experiments: list[Experiment]
+    index_vcf_filepath: str | None = None
