@@ -122,7 +122,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
 
     info_fields = record.INFO
     quality = int(record.QUAL) if record.QUAL is not None else None
-    filter = record.FILTER
+    filter = record.FILTER or "PASS"
     old_record = info_fields.get("OLD_RECORD", None)
     baseq_ranksum = info_fields.get("BaseQRankSum", None)
     fs = info_fields.get("FS", None)

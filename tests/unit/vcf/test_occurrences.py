@@ -63,7 +63,7 @@ def test_one_sample():
         "alternate": "A",
         "aliquot": "SA0001",
         "quality": 44,
-        "filter": None,
+        "filter": "PASS",
         "info_dp": 21,
         "info_excess_het": 0.0,
         "info_fs": 0.0,
@@ -130,14 +130,14 @@ def test_filter_pass():
     v = variant("test_occurrence_filter.vcf", 1)
     occ = process_occurrence(v, Pedigree(case, ["SA0001"]), common).get(1, None)
     assert occ is not None
-    assert occ["filter"] is None
+    assert occ["filter"] == "PASS"
 
 
 def test_filter_empty():
     v = variant("test_occurrence_filter.vcf", 2)
     occ = process_occurrence(v, Pedigree(case, ["SA0001"]), common).get(1, None)
     assert occ is not None
-    assert occ["filter"] is None
+    assert occ["filter"] == "PASS"
 
 
 def test_filter_defined():
