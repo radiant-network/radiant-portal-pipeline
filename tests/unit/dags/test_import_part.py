@@ -67,6 +67,7 @@ def test_dag_contains_all_tasks(dag_bag):
         "fetch_sequencing_experiment_delta",
         "sanity_check_cases",
         "import_vcf",
+        "load_exomiser_files",
         "refresh_iceberg_tables",
         "extract_case_ids",
         "insert_variant_hashes",
