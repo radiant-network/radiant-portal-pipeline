@@ -188,7 +188,9 @@ def import_part():
                 LOGGER.info(f"Loading Exomiser file {_params['tsv_filepath']}...")
                 _sql = load_exomiser_sql.format(
                     label=f"{_params['label']}",
-                    temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
+                    temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)"
+                    if _part_exists
+                    else "PARTITION (p%(part)s)",
                 )
                 cursor.execute(_sql, _params)
 
