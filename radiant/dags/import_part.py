@@ -15,7 +15,6 @@ from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
 from radiant.tasks.vcf.experiment import Case, Experiment
 
-
 LOGGER = logging.getLogger(__name__)
 
 
@@ -162,12 +161,14 @@ def import_part():
             for exp in _case.experiments:
                 if not exp.exomiser_filepath:
                     continue
-                _parameters.append({
-                    "part": _case.part,
-                    "seq_id": exp.seq_id,
-                    "tsv_filepath": exp.exomiser_filepath,
-                    "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(int(time.time()))}"
-                })
+                _parameters.append(
+                    {
+                        "part": _case.part,
+                        "seq_id": exp.seq_id,
+                        "tsv_filepath": exp.exomiser_filepath,
+                        "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(int(time.time()))}",
+                    }
+                )
                 _seq_ids.append(exp.seq_id)
 
         with conn.get_hook().get_conn().cursor() as cursor:
@@ -210,7 +211,6 @@ def import_part():
                 cursor.execute(insert_part_delta_sql, {"seq_ids": _seq_ids, "part": part})
                 LOGGER.info(f"Swapping temporary partition tp{part} with partition p{part}...")
                 cursor.execute(swap_partition_sql, {"part": part})
-
 
     @task(task_id="extract_case_ids", task_display_name="[PyOp] Extract Case IDs")
     def extract_case_ids(cases) -> dict[str, list[Any]]:

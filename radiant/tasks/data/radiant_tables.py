@@ -111,6 +111,7 @@ STARROCKS_BROKER_AWS_CONFIG = {
     "starrocks_aws_secret_key": os.getenv("AWS_SECRET_ACCESS_KEY", "password"),
 }
 
+
 def get_iceberg_germline_snv_mapping() -> dict:
     _catalog = ICEBERG_CATALOG_DATABASE["iceberg_catalog"]
     _database = ICEBERG_CATALOG_DATABASE["iceberg_database"]
