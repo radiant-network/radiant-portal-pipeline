@@ -98,6 +98,7 @@ SELECT
     request_id,
     request_priority,
     vcf_filepath,
+    exomiser_filepath,
     sex,
     family_role,
     affected_status,
