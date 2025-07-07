@@ -28,7 +28,7 @@ FROM (
         se.request_id AS request_id,
         r.priority_code AS request_priority,
         CASE WHEN d.format_code = 'vcf' THEN d.url ELSE NULL END AS vcf_filepath,
-	    CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END AS exomiser_filepath,
+        CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END AS exomiser_filepath,
         p.sex_code AS sex,
         IF(p.id = c.proband_id, "proband", f.relationship_to_proband_code) AS family_role,
         IF(p.id = c.proband_id, "affected", f.affected_status_code) AS affected_status,
