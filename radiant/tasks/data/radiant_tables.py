@@ -73,6 +73,7 @@ STARROCKS_COMMON_MAPPING = {
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
     "starrocks_variant_lookup": "variant_lookup",
+    "starrocks_staging_exomiser": "raw_exomiser",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
@@ -103,6 +104,12 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_ddd_gene_panel": "ddd_gene_panel",
 }
 
+STARROCKS_BROKER_AWS_CONFIG = {
+    "starrocks_aws_region": os.getenv("AWS_REGION", "us-east-1"),
+    "starrocks_aws_endpoint": os.getenv("AWS_ENDPOINT_URL", "http://localhost:9001"),
+    "starrocks_aws_access_key": os.getenv("AWS_ACCESS_KEY_ID", "admin"),
+    "starrocks_aws_secret_key": os.getenv("AWS_SECRET_ACCESS_KEY", "password"),
+}
 
 def get_iceberg_germline_snv_mapping() -> dict:
     _catalog = ICEBERG_CATALOG_DATABASE["iceberg_catalog"]
@@ -141,6 +148,10 @@ def get_starrocks_common_mapping() -> dict:
     return {key: f"{namespace}{value}" for key, value in STARROCKS_COMMON_MAPPING.items()}
 
 
+def get_starrocks_aws_broker_config() -> dict:
+    return STARROCKS_BROKER_AWS_CONFIG
+
+
 def get_clinical_mapping() -> dict:
     _catalog = CLINICAL_CATALOG_DATABASE["clinical_catalog"]
     _database = CLINICAL_CATALOG_DATABASE["clinical_database"]
@@ -156,6 +167,7 @@ def get_radiant_mapping() -> dict:
             **STARROCKS_COLOCATE_GROUP_MAPPING,
         }.items()
     }
+    mapping.update(get_starrocks_aws_broker_config())
     mapping.update(get_starrocks_common_mapping())
     mapping.update(get_starrocks_germline_snv_mapping())
     mapping.update(get_starrocks_open_data_mapping())

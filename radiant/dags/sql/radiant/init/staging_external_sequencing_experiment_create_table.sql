@@ -9,7 +9,8 @@ SELECT
     exp.experimental_strategy_code AS experimental_strategy,
     se.request_id AS request_id,
     r.priority_code AS request_priority,
-    d.url AS vcf_filepath,
+    CASE WHEN d.format_code = 'vcf' THEN d.url ELSE NULL END AS vcf_filepath,
+    CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END AS exomiser_filepath,
     p.sex_code AS sex,
     IF(p.id = c.proband_id, "proband", f.relationship_to_proband_code) AS family_role,
     IF(p.id = c.proband_id, "affected", f.affected_status_code) AS affected_status,
@@ -26,6 +27,6 @@ LEFT JOIN {{ params.clinical_document }} d ON thd.document_id = d.id
 LEFT JOIN {{ params.clinical_patient }} p ON se.patient_id = p.id
 LEFT JOIN {{ params.clinical_family }} f ON f.family_member_id = p.id
 LEFT JOIN {{ params.clinical_request }} r ON se.request_id = r.id
-WHERE d.format_code = 'vcf'
-  AND d.data_type_code = 'snv'
+WHERE (d.format_code = 'vcf' AND d.data_type_code = 'snv')
+   OR (d.format_code = 'tsv' AND d.data_type_code = 'exomiser')
   AND c.status_code in ('active', 'completed')

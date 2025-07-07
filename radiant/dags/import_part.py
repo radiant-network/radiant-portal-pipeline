@@ -1,4 +1,5 @@
 import datetime
+import logging
 from collections.abc import Sequence
 from itertools import groupby
 from typing import Any
@@ -13,6 +14,9 @@ from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
 from radiant.tasks.vcf.experiment import Case, Experiment
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def cases_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
@@ -44,6 +48,7 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
                     experimental_strategy=row["experimental_strategy"],
                     request_id=row["request_id"],
                     request_priority=row["request_priority"],
+                    exomiser_filepath=row.get("exomiser_filepath", None),
                 )
                 for row in list_rows
             ],
@@ -103,6 +108,109 @@ def import_part():
         wait_for_completion=True,
         poke_interval=2,
     )
+
+    @task(task_id="load_exomiser_files", task_display_name="[PyOp] Load Exomiser Files")
+    def load_exomiser_files(cases: object, part: object) -> None:
+        import os
+        import time
+
+        import jinja2
+        from airflow.hooks.base import BaseHook
+
+        from radiant.dags import DAGS_DIR
+        from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+        _query_params = get_radiant_mapping() | {"broker_load_timeout": 7200}
+
+        _check_part_exists_sql = """
+        SHOW PARTITIONS FROM {{ params.starrocks_staging_exomiser }} WHERE PartitionName='p%(part)s'
+        """
+        _check_part_exists_sql = jinja2.Template(_check_part_exists_sql).render({"params": _query_params})
+
+        clean_temp_part_part_sql = """
+        ALTER TABLE {{ params.starrocks_staging_exomiser }} 
+        DROP TEMPORARY PARTITION IF EXISTS tp%(part)s;
+        """
+        clean_temp_part_part_sql = jinja2.Template(clean_temp_part_part_sql).render({"params": _query_params})
+
+        create_tmp_part_sql = """
+        ALTER TABLE {{ params.starrocks_staging_exomiser }}
+        ADD TEMPORARY PARTITION IF NOT EXISTS tp%(part)s VALUES IN ('%(part)s');
+        """
+        create_tmp_part_sql = jinja2.Template(create_tmp_part_sql).render({"params": _query_params})
+
+        _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/staging_exomiser_insert_partition_delta.sql")
+        with open(_path) as f_in:
+            insert_part_delta_sql = jinja2.Template(f_in.read()).render({"params": _query_params})
+
+        swap_partition_sql = """
+        ALTER TABLE {{ params.starrocks_staging_exomiser }}
+        REPLACE PARTITION (p%(part)s) WITH TEMPORARY PARTITION (tp%(part)s);            
+        """
+        swap_partition_sql = jinja2.Template(swap_partition_sql).render({"params": _query_params})
+
+        _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/staging_exomiser_load.sql")
+        with open(_path) as f_in:
+            load_exomiser_sql = jinja2.Template(f_in.read()).render({"params": _query_params})
+
+        conn = BaseHook.get_connection("starrocks_conn")
+
+        _parameters = []
+        _seq_ids = []
+        for case in cases:
+            _case = Case.model_validate(case)
+            for exp in _case.experiments:
+                if not exp.exomiser_filepath:
+                    continue
+                _parameters.append({
+                    "part": _case.part,
+                    "seq_id": exp.seq_id,
+                    "tsv_filepath": exp.exomiser_filepath,
+                    "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(int(time.time()))}"
+                })
+                _seq_ids.append(exp.seq_id)
+
+        with conn.get_hook().get_conn().cursor() as cursor:
+            # Execute the SQL to check if the partition exists
+            LOGGER.info("Checking if partition exists...")
+            cursor.execute(_check_part_exists_sql, {"part": part})
+            _part_exists = bool(cursor.fetchone())
+            LOGGER.info(f"Partition p{part} exists: {_part_exists}")
+
+            if _part_exists:
+                LOGGER.info(f"Cleaning temporary partition tp{part}...")
+                cursor.execute(clean_temp_part_part_sql, {"part": part})
+                LOGGER.info(f"Creating temporary partition tp{part}...")
+                cursor.execute(create_tmp_part_sql, {"part": part})
+
+            for _params in _parameters:
+                LOGGER.info(f"Loading Exomiser file {_params['tsv_filepath']}...")
+                _sql = load_exomiser_sql.format(
+                    label=f"{_params['label']}",
+                    temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
+                )
+                cursor.execute(_sql, _params)
+
+                _i = 0
+                while True:
+                    cursor.execute("SELECT STATE FROM information_schema.loads WHERE LABEL = %(label)s", _params)
+                    load_state = cursor.fetchone()
+                    LOGGER.info(f"Load state for label {_params['label']}: {load_state}")
+                    if not load_state or load_state[0] == "FINISHED":
+                        break
+                    if load_state[0] == "CANCELLED":
+                        raise RuntimeError(f"Load for label {_params['label']} was cancelled.")
+                    time.sleep(2)
+                    _i += 1
+                    if _i > 30:
+                        raise TimeoutError(f"Load for label {_params['label']} did not finish in time.")
+
+            if _part_exists:
+                LOGGER.info(f"Inserting partition delta for part {part}...")
+                cursor.execute(insert_part_delta_sql, {"seq_ids": _seq_ids, "part": part})
+                LOGGER.info(f"Swapping temporary partition tp{part} with partition p{part}...")
+                cursor.execute(swap_partition_sql, {"part": part})
+
 
     @task(task_id="extract_case_ids", task_display_name="[PyOp] Extract Case IDs")
     def extract_case_ids(cases) -> dict[str, list[Any]]:
@@ -226,6 +334,7 @@ def import_part():
         start
         >> fetch_sequencing_experiment_delta
         >> import_vcf
+        >> load_exomiser_files(cases=cases, part="{{ params.part }}")
         >> refresh_iceberg_tables
         >> insert_hashes
         >> overwrite_tmp_variants
