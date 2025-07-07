@@ -103,7 +103,7 @@ def import_radiant():
                 {
                     **row,
                     "exomiser_filepaths": None
-                    if row.get("exomiser_filepaths") == []
+                    if not row.get("exomiser_filepaths")
                     else row.get("exomiser_filepaths"),
                 }
                 for row in sequencing_experiment
