@@ -12,7 +12,7 @@ class Experiment(BaseModel):
     experimental_strategy: str
     request_id: int
     request_priority: str
-    exomiser_filepath: str | None = None
+    exomiser_filepaths: list[str] | None = None
 
 
 class Case(BaseModel):

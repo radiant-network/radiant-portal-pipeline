@@ -18,7 +18,7 @@ class SequencingDeltaCommon(BaseModel):
     request_id: int
     request_priority: str
     vcf_filepath: str | None = None
-    exomiser_filepath: str | None = None
+    exomiser_filepaths: list[str] | None = None
     sex: str
     family_role: str
     affected_status: str

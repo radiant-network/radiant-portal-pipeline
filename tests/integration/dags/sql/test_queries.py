@@ -28,7 +28,7 @@ _MOCK_PARAMS = {
     "request_id": 1,
     "request_priority": "routine",
     "vcf_filepath": "s3+http://vcf/test.vcf.gz",
-    "exomiser_filepath": "s3+http://tsv/test.tsv.gz",
+    "exomiser_filepaths": ["s3+http://tsv/test.tsv.gz"],
     "sex": "male",
     "family_role": "proband",
     "affected_status": "affected",

@@ -19,6 +19,8 @@ LOGGER = logging.getLogger(__name__)
 
 
 def cases_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
+    import json
+
     column_names = [desc[0] for desc in descriptions[0]]
     dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
 
@@ -47,7 +49,9 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
                     experimental_strategy=row["experimental_strategy"],
                     request_id=row["request_id"],
                     request_priority=row["request_priority"],
-                    exomiser_filepath=row.get("exomiser_filepath", None),
+                    exomiser_filepaths=json.loads(row["exomiser_filepaths"])
+                    if isinstance(row.get("exomiser_filepaths"), str)
+                    else row.get("exomiser_filepaths", None),
                 )
                 for row in list_rows
             ],
@@ -159,17 +163,21 @@ def import_part():
         for case in cases:
             _case = Case.model_validate(case)
             for exp in _case.experiments:
-                if not exp.exomiser_filepath:
+                if not exp.exomiser_filepaths:
                     continue
                 _parameters.append(
                     {
                         "part": _case.part,
                         "seq_id": exp.seq_id,
-                        "tsv_filepath": exp.exomiser_filepath,
+                        "tsv_filepaths": exp.exomiser_filepaths,
                         "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(int(time.time()))}",
                     }
                 )
                 _seq_ids.append(exp.seq_id)
+
+        if not _parameters:
+            LOGGER.info("No Exomiser files to load, skipping...")
+            return
 
         with conn.get_hook().get_conn().cursor() as cursor:
             # Execute the SQL to check if the partition exists
@@ -185,14 +193,18 @@ def import_part():
                 cursor.execute(create_tmp_part_sql, {"part": part})
 
             for _params in _parameters:
-                LOGGER.info(f"Loading Exomiser file {_params['tsv_filepath']}...")
-                _sql = load_exomiser_sql.format(
-                    label=f"{_params['label']}",
-                    temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)"
-                    if _part_exists
-                    else "PARTITION (p%(part)s)",
-                )
-                cursor.execute(_sql, _params)
+                LOGGER.info(f"Loading Exomiser file {_params['tsv_filepaths']}...")
+                _paths = _params.pop("tsv_filepaths")
+                for tsv_filepath in _paths:
+                    LOGGER.info(f"Executing \nSQL: {load_exomiser_sql}\n with params: {_params}")
+                    _params["tsv_filepath"] = tsv_filepath
+                    _sql = load_exomiser_sql.format(
+                        label=f"{_params['label']}",
+                        temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)"
+                        if _part_exists
+                        else "",
+                    )
+                    cursor.execute(_sql, _params)
 
                 _i = 0
                 while True:
