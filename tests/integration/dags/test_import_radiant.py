@@ -30,7 +30,7 @@ def test_import_radiant(
     assert poll_dag_until_success(airflow_container=radiant_airflow_container, dag_id=dag_id, timeout=_timeout)
 
     _table_count_mapping = {
-        "staging_sequencing_experiment": [57],
+        "staging_sequencing_experiment": [63],
         "germline__snv__consequence": [0],
         "germline__snv__consequence_filter": [0],
         "germline__snv__consequence_filter_partitioned": [0],
