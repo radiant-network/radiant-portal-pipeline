@@ -17,7 +17,7 @@ class SequencingDeltaCommon(BaseModel):
     experimental_strategy: str
     request_id: int
     request_priority: str
-    vcf_filepath: str
+    vcf_filepath: str | None = None
     exomiser_filepath: str | None = None
     sex: str
     family_role: str
