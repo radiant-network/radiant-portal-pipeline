@@ -98,6 +98,17 @@ def import_radiant():
                 _sql = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping()})
 
             conn = BaseHook.get_connection("starrocks_conn")
+
+            sequencing_experiment = [
+                {
+                    **row,
+                    "exomiser_filepaths": None
+                    if row.get("exomiser_filepaths") == []
+                    else row.get("exomiser_filepaths"),
+                }
+                for row in sequencing_experiment
+            ]
+
             with conn.get_hook().get_conn().cursor() as cursor:
                 cursor.executemany(
                     _sql,
