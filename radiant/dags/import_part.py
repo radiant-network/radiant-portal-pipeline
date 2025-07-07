@@ -200,9 +200,7 @@ def import_part():
                     _params["tsv_filepath"] = tsv_filepath
                     _sql = load_exomiser_sql.format(
                         label=f"{_params['label']}",
-                        temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)"
-                        if _part_exists
-                        else "",
+                        temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
                     )
                     cursor.execute(_sql, _params)
 
