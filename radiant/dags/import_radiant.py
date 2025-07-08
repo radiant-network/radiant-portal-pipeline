@@ -19,6 +19,7 @@ std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=1
 
 def experiment_delta_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     import json
+
     from radiant.tasks.starrocks.partition import SequencingDeltaInput
 
     column_names = [desc[0] for desc in descriptions[0]]
@@ -36,6 +37,7 @@ def experiment_delta_output_processor(results: list[Any], descriptions: list[Seq
 
 def experiment_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     import json
+
     from radiant.tasks.starrocks.partition import SequencingDeltaOutput
 
     column_names = [desc[0] for desc in descriptions[0]]
