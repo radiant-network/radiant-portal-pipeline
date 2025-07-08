@@ -45,9 +45,11 @@ FROM (
     LEFT JOIN {{ params.clinical_patient }} p ON se.patient_id = p.id
     LEFT JOIN {{ params.clinical_family }} f ON f.family_member_id = p.id
     LEFT JOIN {{ params.clinical_request }} r ON se.request_id = r.id
-    WHERE (d.format_code = 'vcf' AND d.data_type_code = 'snv')
-       OR (d.format_code = 'tsv' AND d.data_type_code = 'exomiser')
-      AND c.status_code in ('active', 'completed')
+    WHERE (
+        (d.format_code = 'vcf' AND d.data_type_code = 'snv')
+        OR (d.format_code = 'tsv' AND d.data_type_code = 'exomiser')
+    )
+    AND c.status_code in ('active', 'completed')
 ) se
 GROUP BY
     case_id,
