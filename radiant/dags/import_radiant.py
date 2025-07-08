@@ -109,6 +109,10 @@ def import_radiant():
                 for row in sequencing_experiment
             ]
 
+            # TODO : Remove this after testing
+            for seq_exp in sequencing_experiment:
+                logger.info(f"Processing Sequencing Experiment: {seq_exp}")
+
             with conn.get_hook().get_conn().cursor() as cursor:
                 cursor.executemany(
                     _sql,
