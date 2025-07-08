@@ -52,14 +52,15 @@ SELECT
     mother_zygosity,
     transmission_mode,
     info_old_record,
+    e.moi AS exomiser_moi,
     e.acmg_classification AS exomiser_acmg_classification,
     e.acmg_evidence AS exomiser_acmg_evidence,
     e.variant_score AS exomiser_variant_score,
     e.gene_combined_score AS exomiser_gene_combined_score
 FROM {{ params.iceberg_occurrence }} o
 JOIN {{ params.starrocks_tmp_variant }} v ON o.locus_hash = v.locus_hash
-JOIN {{ params.starrocks_staging_exomiser }} e
+LEFT JOIN {{ params.starrocks_exomiser }} e
     ON o.seq_id = e.seq_id
-   AND o.locus_hash = e.locus_hash
+   AND v.locus_id = e.locus_id
 WHERE o.part = %(part)s
 AND has_alt;

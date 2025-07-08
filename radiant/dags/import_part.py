@@ -154,7 +154,7 @@ def import_part():
 
         _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/staging_exomiser_load.sql")
         with open(_path) as f_in:
-            load_exomiser_sql = jinja2.Template(f_in.read()).render({"params": _query_params})
+            load_staging_exomiser_sql = jinja2.Template(f_in.read()).render({"params": _query_params})
 
         conn = BaseHook.get_connection("starrocks_conn")
 
@@ -196,9 +196,9 @@ def import_part():
                 LOGGER.info(f"Loading Exomiser file {_params['tsv_filepaths']}...")
                 _paths = _params.pop("tsv_filepaths")
                 for tsv_filepath in _paths:
-                    LOGGER.info(f"Executing \nSQL: {load_exomiser_sql}\n with params: {_params}")
+                    LOGGER.info(f"Executing \nSQL: {load_staging_exomiser_sql}\n with params: {_params}")
                     _params["tsv_filepath"] = tsv_filepath
-                    _sql = load_exomiser_sql.format(
+                    _sql = load_staging_exomiser_sql.format(
                         label=f"{_params['label']}",
                         temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
                     )
@@ -250,6 +250,14 @@ def import_part():
         task_display_name="[StarRocks] Insert Variants Tmp tables",
         submit_task_options=std_submit_task_opts,
         parameters=case_ids,
+    )
+
+    insert_exomiser = RadiantStarRocksOperator(
+        task_id="insert_exomiser",
+        sql="./sql/radiant/exomiser_insert.sql",
+        task_display_name="[StarRocks] Insert Exomiser",
+        submit_task_options=std_submit_task_opts,
+        parameters={"part": "{{ params.part }}"},
     )
 
     insert_occurrences = RadiantStarRocksOperator(
@@ -350,6 +358,7 @@ def import_part():
         >> refresh_iceberg_tables
         >> insert_hashes
         >> overwrite_tmp_variants
+        >> insert_exomiser
         >> insert_occurrences
         >> insert_stg_variants_freq
         >> aggregate_variants_frequencies

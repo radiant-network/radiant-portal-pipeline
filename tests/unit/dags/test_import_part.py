@@ -72,6 +72,7 @@ def test_dag_contains_all_tasks(dag_bag):
         "extract_case_ids",
         "insert_variant_hashes",
         "overwrite_tmp_variant",
+        "insert_exomiser",
         "insert_occurrence",
         "insert_stg_variant_freq",
         "aggregate_variant_freq",

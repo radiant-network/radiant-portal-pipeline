@@ -24,6 +24,7 @@ with DAG(
         "consequence_filter_partitioned",
         "occurrence",
         "staging_exomiser",
+        "exomiser",
         "staging_external_sequencing_experiment",
         "staging_sequencing_experiment",
         "staging_sequencing_experiment_delta",

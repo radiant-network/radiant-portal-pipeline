@@ -122,6 +122,7 @@ def test_queries_are_valid(
             "consequence_filter",
             "consequence_filter_partitioned",
             "staging_exomiser",
+            "exomiser",
             "occurrence",
             "staging_sequencing_experiment",
             "tmp_variant",
