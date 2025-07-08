@@ -19,7 +19,6 @@ std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=1
 
 def experiment_delta_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     import json
-
     from radiant.tasks.starrocks.partition import SequencingDeltaInput
 
     column_names = [desc[0] for desc in descriptions[0]]
@@ -36,10 +35,18 @@ def experiment_delta_output_processor(results: list[Any], descriptions: list[Seq
 
 
 def experiment_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
+    import json
     from radiant.tasks.starrocks.partition import SequencingDeltaOutput
 
     column_names = [desc[0] for desc in descriptions[0]]
     dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
+    for row in dict_rows:
+        ef = row.get("exomiser_filepaths")
+        if isinstance(ef, str):
+            try:
+                row["exomiser_filepaths"] = json.loads(ef)
+            except json.JSONDecodeError:
+                row["exomiser_filepaths"] = []
     delta = [vars(SequencingDeltaOutput(**row)) for row in dict_rows]
     return [delta]
 
