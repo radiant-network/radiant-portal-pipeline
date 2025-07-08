@@ -85,6 +85,7 @@ def import_radiant():
             task_display_name="[PyOp] Insert New Sequencing Experiments",
         )
         def insert_new_sequencing_experiment(sequencing_experiment: Any):
+            import json
             import os
 
             import jinja2
@@ -104,7 +105,7 @@ def import_radiant():
                     **row,
                     "exomiser_filepaths": None
                     if not row.get("exomiser_filepaths")
-                    else row.get("exomiser_filepaths"),
+                    else json.dumps(row.get("exomiser_filepaths")),
                 }
                 for row in sequencing_experiment
             ]
