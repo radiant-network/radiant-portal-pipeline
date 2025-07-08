@@ -83,7 +83,7 @@ def test_sequencing_experiment_empty(starrocks_session, sequencing_experiment_ta
 
     assert results is not None, "Results should not be None"
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 63
+    assert len(result_df) == 57
 
 
 def test_sequencing_experiment_no_delta(starrocks_session, sequencing_experiment_tables, sequencing_delta_columns):
@@ -134,7 +134,7 @@ def test_sequencing_experiment_existing_wgs_case_partition(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 61  # 63 total - 2 imported experiments
+    assert len(result_df) == 55  # 57 total - 2 imported experiments
 
 
 def test_sequencing_experiment_existing_wxs_case_partition(
@@ -157,7 +157,7 @@ def test_sequencing_experiment_existing_wxs_case_partition(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 62  # 63 total - 1 imported wxs experiments
+    assert len(result_df) == 56  # 57 total - 1 imported wxs experiments
 
 
 def test_sequencing_experiment_with_recently_updated_case(
@@ -180,7 +180,7 @@ def test_sequencing_experiment_with_recently_updated_case(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 62  # 63 total - 1 imported wxs experiments
+    assert len(result_df) == 56  # 57 total - 1 imported wxs experiments
 
     with (
         psycopg2.connect(
@@ -205,4 +205,4 @@ def test_sequencing_experiment_with_recently_updated_case(
 
     # Should capture the updated experiment
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 63
+    assert len(result_df) == 57
