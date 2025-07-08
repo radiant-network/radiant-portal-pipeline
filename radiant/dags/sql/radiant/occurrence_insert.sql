@@ -59,7 +59,12 @@ SELECT
     e.gene_combined_score AS exomiser_gene_combined_score
 FROM {{ params.iceberg_occurrence }} o
 JOIN {{ params.starrocks_tmp_variant }} v ON o.locus_hash = v.locus_hash
-LEFT JOIN {{ params.starrocks_exomiser }} e
+LEFT JOIN (
+     SELECT
+        *
+     FROM {{ params.starrocks_exomiser }} e
+     WHERE e.variant_rank = 1
+) e
     ON o.seq_id = e.seq_id
    AND v.locus_id = e.locus_id
 WHERE o.part = %(part)s
