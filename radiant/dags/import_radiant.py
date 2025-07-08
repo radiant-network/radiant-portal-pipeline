@@ -30,7 +30,6 @@ def pre_process_exomiser_filepaths(dict_rows):
     return dict_rows
 
 
-
 def experiment_delta_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     from radiant.tasks.starrocks.partition import SequencingDeltaInput
 
