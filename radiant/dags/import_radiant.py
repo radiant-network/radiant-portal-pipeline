@@ -17,13 +17,9 @@ logger = logging.getLogger(__name__)
 std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=10)
 
 
-def experiment_delta_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
+def pre_process_exomiser_filepaths(dict_rows):
     import json
 
-    from radiant.tasks.starrocks.partition import SequencingDeltaInput
-
-    column_names = [desc[0] for desc in descriptions[0]]
-    dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
     for row in dict_rows:
         ef = row.get("exomiser_filepaths")
         if isinstance(ef, str):
@@ -31,24 +27,26 @@ def experiment_delta_output_processor(results: list[Any], descriptions: list[Seq
                 row["exomiser_filepaths"] = json.loads(ef)
             except json.JSONDecodeError:
                 row["exomiser_filepaths"] = []
+    return dict_rows
+
+
+
+def experiment_delta_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
+    from radiant.tasks.starrocks.partition import SequencingDeltaInput
+
+    column_names = [desc[0] for desc in descriptions[0]]
+    dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
+    dict_rows = pre_process_exomiser_filepaths(dict_rows)
     delta = [vars(SequencingDeltaInput(**row)) for row in dict_rows]
     return [delta]
 
 
 def experiment_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
-    import json
-
     from radiant.tasks.starrocks.partition import SequencingDeltaOutput
 
     column_names = [desc[0] for desc in descriptions[0]]
     dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
-    for row in dict_rows:
-        ef = row.get("exomiser_filepaths")
-        if isinstance(ef, str):
-            try:
-                row["exomiser_filepaths"] = json.loads(ef)
-            except json.JSONDecodeError:
-                row["exomiser_filepaths"] = []
+    dict_rows = pre_process_exomiser_filepaths(dict_rows)
     delta = [vars(SequencingDeltaOutput(**row)) for row in dict_rows]
     return [delta]
 
@@ -118,10 +116,6 @@ def import_radiant():
                 }
                 for row in sequencing_experiment
             ]
-
-            # TODO : Remove this after testing
-            for seq_exp in sequencing_experiment:
-                logger.info(f"Processing Sequencing Experiment: {seq_exp}")
 
             with conn.get_hook().get_conn().cursor() as cursor:
                 cursor.executemany(

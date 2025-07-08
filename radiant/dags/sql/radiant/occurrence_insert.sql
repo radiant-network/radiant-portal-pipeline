@@ -1,9 +1,9 @@
 INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ params.starrocks_occurrence }}
 SELECT
     o.part,
-	o.seq_id,
-	o.task_id,
-	v.locus_id,
+    o.seq_id,
+    o.task_id,
+    v.locus_id,
     ad_ratio,
     gq,
     dp,
