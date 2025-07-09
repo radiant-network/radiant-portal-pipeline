@@ -73,6 +73,8 @@ STARROCKS_COMMON_MAPPING = {
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
     "starrocks_variant_lookup": "variant_lookup",
+    "starrocks_staging_exomiser": "raw_exomiser",
+    "starrocks_exomiser": "exomiser",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {

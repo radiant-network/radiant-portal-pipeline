@@ -1,9 +1,9 @@
 INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ params.starrocks_occurrence }}
 SELECT
-    part,
-	seq_id,
-	task_id,
-	v.locus_id,
+    o.part,
+    o.seq_id,
+    o.task_id,
+    v.locus_id,
     ad_ratio,
     gq,
     dp,
@@ -51,8 +51,21 @@ SELECT
     mother_calls,
     mother_zygosity,
     transmission_mode,
-    info_old_record
+    info_old_record,
+    e.moi AS exomiser_moi,
+    e.acmg_classification AS exomiser_acmg_classification,
+    e.acmg_evidence AS exomiser_acmg_evidence,
+    e.variant_score AS exomiser_variant_score,
+    e.gene_combined_score AS exomiser_gene_combined_score
 FROM {{ params.iceberg_occurrence }} o
 JOIN {{ params.starrocks_tmp_variant }} v ON o.locus_hash = v.locus_hash
-WHERE part = %(part)s
+LEFT JOIN (
+     SELECT
+        *
+     FROM {{ params.starrocks_exomiser }} e
+     WHERE e.variant_rank = 1
+) e
+    ON o.seq_id = e.seq_id
+   AND v.locus_id = e.locus_id
+WHERE o.part = %(part)s
 AND has_alt;

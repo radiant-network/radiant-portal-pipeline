@@ -28,6 +28,7 @@ _MOCK_PARAMS = {
     "request_id": 1,
     "request_priority": "routine",
     "vcf_filepath": "s3+http://vcf/test.vcf.gz",
+    "exomiser_filepaths": ["s3+http://tsv/test.tsv.gz"],
     "sex": "male",
     "family_role": "proband",
     "affected_status": "affected",
@@ -72,6 +73,11 @@ def _explain_insert(starrocks_session, sql_dir):
         for sql_file in sql_files:
             with open(sql_file) as f:
                 rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
+
+            if "staging_exomiser" in sql_file:
+                # "EXPLAIN" not supported with "LOAD"
+                continue
+
             _execute_query(cursor, f"EXPLAIN {rendered_sql}", args=_MOCK_PARAMS)
 
 
@@ -115,6 +121,8 @@ def test_queries_are_valid(
             "consequence",
             "consequence_filter",
             "consequence_filter_partitioned",
+            "staging_exomiser",
+            "exomiser",
             "occurrence",
             "staging_sequencing_experiment",
             "tmp_variant",

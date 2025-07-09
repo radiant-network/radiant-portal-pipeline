@@ -1252,8 +1252,8 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (242, 'FI0037927.S14029.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c833'),
     (243, 'FI0037928.S14857.vcf.gz', 'genomic', 'snv', 'vcf', 304055582, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c834'),
     (244, 'FI0037928.S14857.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3://cqdg-prod-file-workspace/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c835'),
-    (245, 'CEPH-1463.exomiser.variants.tsv', 'genomic', 'snv', 'tsv', 31230, 's3://cqdg-qa-file-import/radiant/CEPH-1463.exomiser.variants.tsv', '5d41402abc4b2a76b9719d911017c836'),
-    (246, 'SH032.HG00513.exomiser.variants.tsv', 'genomic', 'snv', 'tsv', 12340, 's3://cqdg-qa-file-import/radiant/SH032.HG00513.exomiser.variants.tsv', '5d41402abc4b2a76b9719d911017c837')
+    (245, 'CEPH-1463.exomiser.variants.tsv', 'genomic', 'exomiser', 'tsv', 31230, 's3://cqdg-qa-file-import/radiant/CEPH-1463.exomiser.variants.tsv', '5d41402abc4b2a76b9719d911017c836'),
+    (246, 'SH032.HG00513.exomiser.variants.tsv', 'genomic', 'exomiser', 'tsv', 12340, 's3://cqdg-qa-file-import/radiant/SH032.HG00513.exomiser.variants.tsv', '5d41402abc4b2a76b9719d911017c837')
 ;
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;

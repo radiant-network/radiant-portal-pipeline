@@ -48,7 +48,7 @@ with DAG(
     def get_cases(params):
         from radiant.tasks.vcf.experiment import Case
 
-        return [Case.model_validate(c).model_dump() for c in params.get("cases", [])]
+        return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
 
     @task.external_python(
         pool="import_vcf",

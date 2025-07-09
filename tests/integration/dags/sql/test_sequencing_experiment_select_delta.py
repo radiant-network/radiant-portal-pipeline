@@ -24,6 +24,7 @@ def sequencing_delta_columns():
         "request_id",
         "request_priority",
         "vcf_filepath",
+        "exomiser_filepaths",
         "sex",
         "family_role",
         "affected_status",
@@ -94,7 +95,7 @@ def test_sequencing_experiment_no_delta(starrocks_session, sequencing_experiment
         cursor.execute("""
         INSERT INTO staging_sequencing_experiment 
         SELECT case_id, seq_id, task_id, 0 AS part, analysis_type, aliquot, patient_id, experimental_strategy,
-            request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
+            request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, family_role, affected_status, 
             created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
         FROM staging_external_sequencing_experiment
         """)
@@ -116,7 +117,7 @@ def test_sequencing_experiment_existing_wgs_case_partition(
         cursor.execute("""
             INSERT INTO staging_sequencing_experiment 
             SELECT case_id, seq_id, task_id, 0 AS part, analysis_type, aliquot, patient_id, experimental_strategy,
-                request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
+                request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, family_role, affected_status, 
                 created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
             FROM staging_external_sequencing_experiment
             WHERE case_id = 1 AND seq_id = 1 AND task_id = 1
@@ -124,7 +125,7 @@ def test_sequencing_experiment_existing_wgs_case_partition(
         cursor.execute("""
             INSERT INTO staging_sequencing_experiment 
             SELECT case_id, seq_id, task_id, 1 AS part, analysis_type, aliquot, patient_id, experimental_strategy,
-                request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
+                request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, family_role, affected_status, 
                 created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
             FROM staging_external_sequencing_experiment
             WHERE case_id = 2 AND seq_id = 4 AND task_id = 4
@@ -147,8 +148,8 @@ def test_sequencing_experiment_existing_wxs_case_partition(
         cursor.execute("""
             INSERT INTO staging_sequencing_experiment 
             SELECT case_id, seq_id, task_id, 65537 AS part, analysis_type, aliquot, patient_id, 
-                experimental_strategy, request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
-                created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
+                experimental_strategy, request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, 
+                family_role, affected_status, created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
             FROM staging_external_sequencing_experiment
             WHERE case_id = 1 AND seq_id = 62 AND task_id = 62
         """)
@@ -170,8 +171,8 @@ def test_sequencing_experiment_with_recently_updated_case(
         cursor.execute("""
             INSERT INTO staging_sequencing_experiment 
             SELECT case_id, seq_id, task_id, 0 AS part, analysis_type, aliquot, patient_id, 
-                experimental_strategy, request_id, request_priority, vcf_filepath, sex, family_role, affected_status, 
-                created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
+               experimental_strategy, request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, 
+               family_role, affected_status, created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
             FROM staging_external_sequencing_experiment
             WHERE case_id = 1 AND seq_id = 1 AND task_id = 1
         """)

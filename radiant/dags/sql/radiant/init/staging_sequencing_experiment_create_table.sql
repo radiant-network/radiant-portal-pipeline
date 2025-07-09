@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_sequencing_experiment }} 
     request_id INT,
     request_priority VARCHAR(20),
     vcf_filepath VARCHAR(1024),
+    exomiser_filepaths ARRAY<VARCHAR(1024)>,
     sex VARCHAR(10),
     family_role VARCHAR(20),
     affected_status VARCHAR(20),
