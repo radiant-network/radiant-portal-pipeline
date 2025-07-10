@@ -116,6 +116,7 @@ def import_part():
     def load_exomiser_files(cases: object, part: object) -> None:
         import os
         import time
+        import uuid
 
         import jinja2
         from airflow.hooks.base import BaseHook
@@ -170,7 +171,7 @@ def import_part():
                         "part": _case.part,
                         "seq_id": exp.seq_id,
                         "tsv_filepaths": exp.exomiser_filepaths,
-                        "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(int(time.time()))}",
+                        "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(uuid.uuid4().hex)}",
                     }
                 )
                 _seq_ids.append(exp.seq_id)
