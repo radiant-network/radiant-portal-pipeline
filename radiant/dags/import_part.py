@@ -116,6 +116,7 @@ def import_part():
     def load_exomiser_files(cases: object, part: object) -> None:
         import os
         import time
+        import uuid
 
         import jinja2
         from airflow.hooks.base import BaseHook
@@ -170,7 +171,7 @@ def import_part():
                         "part": _case.part,
                         "seq_id": exp.seq_id,
                         "tsv_filepaths": exp.exomiser_filepaths,
-                        "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(int(time.time()))}",
+                        "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(uuid.uuid4().hex)}",
                     }
                 )
                 _seq_ids.append(exp.seq_id)
@@ -192,6 +193,20 @@ def import_part():
                 LOGGER.info(f"Creating temporary partition tp{part}...")
                 cursor.execute(create_tmp_part_sql, {"part": part})
 
+            if os.getenv("STARROCKS_BROKER_USE_INSTANCE_PROFILE", "false").lower() == "true":
+                broker_configuration = f"""
+                    'aws.s3.use_instance_profile' = 'true',
+                    'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}'
+                """
+            else:
+                broker_configuration = f"""
+                    'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}',
+                    'aws.s3.endpoint' = '{os.getenv("AWS_ENDPOINT_URL", "s3.amazonaws.com")}',
+                    'aws.s3.enable_path_style_access' = 'true',
+                    'aws.s3.access_key' = '{os.getenv("AWS_ACCESS_KEY_ID", "access_key")}',
+                    'aws.s3.secret_key' = '{os.getenv("AWS_SECRET_ACCESS_KEY", "secret_key")}'
+                """
+
             for _params in _parameters:
                 LOGGER.info(f"Loading Exomiser file {_params['tsv_filepaths']}...")
                 _paths = _params.pop("tsv_filepaths")
@@ -201,6 +216,7 @@ def import_part():
                     _sql = load_staging_exomiser_sql.format(
                         label=f"{_params['label']}",
                         temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
+                        broker_configuration=broker_configuration,
                     )
                     cursor.execute(_sql, _params)
 
@@ -354,11 +370,9 @@ def import_part():
         start
         >> fetch_sequencing_experiment_delta
         >> import_vcf
-        >> load_exomiser_files(cases=cases, part="{{ params.part }}")
         >> refresh_iceberg_tables
         >> insert_hashes
         >> overwrite_tmp_variants
-        >> insert_exomiser
         >> insert_occurrences
         >> insert_stg_variants_freq
         >> aggregate_variants_frequencies

@@ -15,8 +15,8 @@ class SequencingDeltaCommon(BaseModel):
     aliquot: str
     patient_id: int
     experimental_strategy: str
-    request_id: int
-    request_priority: str
+    request_id: int | None = None
+    request_priority: str | None = None
     vcf_filepath: str | None = None
     exomiser_filepaths: list[str] | None = None
     sex: str
@@ -57,7 +57,9 @@ class PriorityLevel(Enum):
     ROUTINE: int = 400
 
     @classmethod
-    def from_string(cls, value: str) -> "PriorityLevel":
+    def from_string(cls, value: str | None) -> "PriorityLevel":
+        if value is None:
+            return cls.ROUTINE
         match value.lower():
             case "stat":
                 return cls.STAT

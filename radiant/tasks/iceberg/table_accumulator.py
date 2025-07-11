@@ -12,7 +12,9 @@ from radiant.tasks.iceberg.utils import dataframe_to_data_files
 
 logger = logging.getLogger("airflow.task")
 
-PARQUET_FILE_SIZE_MB = 1024
+PARQUET_FILE_SIZE_MB = 500  # Keep this value slightly lower than size of
+# TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
+# otherwise there is a risk to write small parquet files.
 MAX_BUFFERED_ROWS = 10000
 
 
@@ -132,6 +134,7 @@ class TableAccumulator:
         Clear the in-memory row buffer.
         """
         self.rows.clear()
+        # gc.collect()
 
     def merge_table(self, force: bool = False):
         """
