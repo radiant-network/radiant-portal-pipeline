@@ -373,6 +373,7 @@ def import_part():
         >> refresh_iceberg_tables
         >> insert_hashes
         >> overwrite_tmp_variants
+        >> insert_exomiser
         >> insert_occurrences
         >> insert_stg_variants_freq
         >> aggregate_variants_frequencies
