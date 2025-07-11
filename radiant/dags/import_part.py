@@ -196,15 +196,15 @@ def import_part():
             if os.getenv("STARROCKS_BROKER_USE_INSTANCE_PROFILE", "false").lower() == "true":
                 broker_configuration = f"""
                     'aws.s3.use_instance_profile' = 'true',
-                    'aws.s3.region' = '{os.getenv('AWS_REGION', 'us-east-1')}'
+                    'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}'
                 """
             else:
                 broker_configuration = f"""
-                    'aws.s3.region' = '{os.getenv('AWS_REGION', 'us-east-1')}',
-                    'aws.s3.endpoint' = '{os.getenv('AWS_ENDPOINT_URL', 's3.amazonaws.com')}',
+                    'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}',
+                    'aws.s3.endpoint' = '{os.getenv("AWS_ENDPOINT_URL", "s3.amazonaws.com")}',
                     'aws.s3.enable_path_style_access' = 'true',
-                    'aws.s3.access_key' = '{os.getenv('AWS_ACCESS_KEY_ID', 'access_key')}',
-                    'aws.s3.secret_key' = '{os.getenv('AWS_SECRET_ACCESS_KEY', 'secret_key')}'
+                    'aws.s3.access_key' = '{os.getenv("AWS_ACCESS_KEY_ID", "access_key")}',
+                    'aws.s3.secret_key' = '{os.getenv("AWS_SECRET_ACCESS_KEY", "secret_key")}'
                 """
 
             for _params in _parameters:
