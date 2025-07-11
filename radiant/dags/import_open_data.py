@@ -1,9 +1,15 @@
+import logging
+
 from airflow import DAG
+from airflow.decorators import task
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.helpers import chain
 
 from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
+
+LOGGER = logging.getLogger(__name__)
+
 
 default_args = {"owner": "radiant"}
 variant_group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
@@ -55,4 +61,30 @@ with DAG(
             )
         )
 
-    chain(start, *data_tasks)
+
+    # TODO : Import RCV files here in a Python operator
+    @task(task_id="load_raw_clinvar_rcv_summary", task_display_name="[PyOp] Load Raw ClinVar RCV Summary")
+    def load_raw_clinvar_rcv_summary(filepaths: list[str] | None) -> None:
+        if not filepaths:
+            LOGGER.warning(...)
+            return
+
+        import os
+        import time
+
+        import jinja2
+        from airflow.hooks.base import BaseHook
+
+        from radiant.dags import DAGS_DIR
+        from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+    load_raw_clinvar_rcv_summary = load_raw_clinvar_rcv_summary(files=files)
+
+    insert_clinvar_rcv_summary = RadiantStarRocksOperator(
+        task_id="insert_clinvar_rcv_summary",
+        task_display_name="[StarRocks] ClinVar RCV Summary Insert Data",
+        sql="./sql/open_data/clinvar_rcv_summary_insert.sql",
+        submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+    )
+
+    chain(start, *data_tasks, insert_clinvar_rcv_summary)
