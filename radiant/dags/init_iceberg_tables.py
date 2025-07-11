@@ -48,7 +48,6 @@ with DAG(
 
         part_field = OCCURRENCE_SCHEMA.find_field("part")
         case_id_field = OCCURRENCE_SCHEMA.find_field("case_id")
-        seq_id_field = OCCURRENCE_SCHEMA.find_field("seq_id")
 
         partition_spec = PartitionSpec(
             fields=[
@@ -62,12 +61,6 @@ with DAG(
                     field_id=1001,
                     source_id=case_id_field.field_id,
                     name=case_id_field.name,
-                    transform=IdentityTransform(),
-                ),
-                PartitionField(
-                    field_id=1002,
-                    source_id=seq_id_field.field_id,
-                    name=seq_id_field.name,
                     transform=IdentityTransform(),
                 ),
             ]

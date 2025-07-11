@@ -57,16 +57,8 @@ def process_case(
             logger.info(f"Starting processing vcf for case {case.case_id} with file {case.vcf_filepath}")
 
             occurrence_table = catalog.load_table(occurrences_table_name)
-            occurrence_partition_filters = [
-                {"part": case.part, "case_id": case.case_id, "seq_id": exp.seq_id, "task_id": exp.task_id}
-                for exp in case.experiments
-            ]
-            occurrence_buffers = {
-                occurrence_partition_filter["seq_id"]: TableAccumulator(
-                    occurrence_table, partition_filter=occurrence_partition_filter
-                )
-                for occurrence_partition_filter in occurrence_partition_filters
-            }
+            occurrence_partition_filter = {"part": case.part, "case_id": case.case_id}
+            occurrence_buffer = TableAccumulator(occurrence_table, partition_filter=occurrence_partition_filter)
 
             variant_csq_partition_filter = {"case_id": case.case_id}
             variant_table = catalog.load_table(variants_table_name)
@@ -80,8 +72,7 @@ def process_case(
                     picked_consequence, consequences = process_consequence(record, csq_header, common)
                     consequence_buffer.extend(consequences)
                     occurrences = process_occurrence(record, pedigree, common=common)
-                    for seq_id, occ in occurrences.items():
-                        occurrence_buffers[seq_id].append(occ)
+                    occurrence_buffer.extend(list(occurrences.values()))
                     variant = process_variant(record, picked_consequence, common)
                     variant_buffer.append(variant)
 
@@ -91,14 +82,14 @@ def process_case(
                         f" this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
                     )
 
-            for occurrence_buffer in occurrence_buffers.values():
-                occurrence_buffer.write_files()
-                occurrences_partition_commit.append(
-                    PartitionCommit(
-                        parquet_files=occurrence_buffer.parquet_paths,
-                        partition_filter=occurrence_buffer.partition_filter,
-                    )
+            #### End of VCF file processing, flush buffers ####
+            occurrence_buffer.write_files()
+            occurrences_partition_commit.append(
+                PartitionCommit(
+                    parquet_files=occurrence_buffer.parquet_paths,
+                    partition_filter=occurrence_buffer.partition_filter,
                 )
+            )
 
             variant_buffer.write_files()
             variants_partition_commit.append(
