@@ -1,4 +1,4 @@
-LOAD LABEL radiant.{label}
+LOAD LABEL {database_name}.{label}
 (
     DATA INFILE(%(tsv_filepath)s)
     INTO TABLE {{ params.starrocks_staging_exomiser }} {temporary_partition_clause}

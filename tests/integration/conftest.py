@@ -479,6 +479,7 @@ def s3_fs(minio_container):
     )
     fs.mkdirs("warehouse", exist_ok=True)
     fs.mkdirs("vcf", exist_ok=True)
+    fs.mkdirs("opendata", exist_ok=True)
     return fs
 
 
@@ -699,3 +700,14 @@ def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
             compress_and_index_vcf(src_path, dest_path)
             s3_fs.put(dest_path, "vcf/" + document_name)
             s3_fs.put(dest_path + ".tbi", "vcf/" + document_name + ".tbi")
+
+
+@pytest.fixture(scope="session")
+def clinvar_rcv_summary_ndjson(s3_fs):
+    """
+    Uploads the ClinVar RCV summary JSON to S3.
+    """
+    src_path = RESOURCES_DIR / "open_data" / "clinvar_rcv_summary.ndjson"
+    dest_path = "opendata/"
+    s3_fs.put(src_path, dest_path)
+    yield dest_path

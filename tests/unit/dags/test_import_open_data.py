@@ -18,7 +18,7 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "ddd_gene_panel",
         "cosmic_gene_panel",
     ]
-    assert len(dag.tasks) == 1 + len(gene_group_ids) + len(variant_group_ids) * 2
+    assert len(dag.tasks) == 3 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_dag_has_all_group_tasks(dag_bag):

@@ -103,6 +103,8 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_orphanet_gene_panel": "orphanet_gene_panel",
     "starrocks_cosmic_gene_panel": "cosmic_gene_panel",
     "starrocks_ddd_gene_panel": "ddd_gene_panel",
+    "starrocks_clinvar_rcv_summary": "clinvar_rcv_summary",
+    "starrocks_raw_clinvar_rcv_summary": "raw_clinvar_rcv_summary",
 }
 
 
