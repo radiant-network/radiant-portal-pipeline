@@ -73,7 +73,6 @@ with DAG(
             )
         )
 
-    # TODO : Import RCV files here in a Python operator
     @task(task_id="load_raw_clinvar_rcv_summary", task_display_name="[PyOp] Load Raw ClinVar RCV Summary")
     def load_raw_clinvar_rcv_summary(rcv_summary_filepaths) -> None:
         LOGGER.warning(f"Processing RCV filepaths: {rcv_summary_filepaths}")
