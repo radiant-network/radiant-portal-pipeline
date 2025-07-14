@@ -18,6 +18,7 @@ def test_import_open_data(
 
     _table_count_mapping = {
         "raw_clinvar_rcv_summary": [5],
+        "clinvar_rcv_summary": [5],
     }
 
     with starrocks_session.cursor() as cursor:
