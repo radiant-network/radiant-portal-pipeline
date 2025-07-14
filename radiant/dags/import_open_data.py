@@ -75,9 +75,9 @@ with DAG(
 
     # TODO : Import RCV files here in a Python operator
     @task(task_id="load_raw_clinvar_rcv_summary", task_display_name="[PyOp] Load Raw ClinVar RCV Summary")
-    def load_raw_clinvar_rcv_summary(filepaths) -> None:
-        LOGGER.warning(f"Processing RCV filepaths: {filepaths}")
-        if not filepaths:
+    def load_raw_clinvar_rcv_summary(rcv_summary_filepaths) -> None:
+        LOGGER.warning(f"Processing RCV filepaths: {rcv_summary_filepaths}")
+        if not rcv_summary_filepaths:
             LOGGER.warning("No RCV filepaths provided, skipping load.")
             return
 
@@ -129,7 +129,7 @@ with DAG(
             cursor.execute(_prepared_truncate_sql)
 
             LOGGER.warning(f"Loading raw ClinVar RCV Summary data. SQL:\n {_prepared_load_sql}")
-            cursor.execute(_prepared_load_sql, {"filepaths": filepaths})
+            cursor.execute(_prepared_load_sql, {"rcv_summary_filepaths": rcv_summary_filepaths})
 
             _i = 0
             while True:
@@ -155,6 +155,6 @@ with DAG(
     chain(
         start,
         *data_tasks,
-        load_raw_clinvar_rcv_summary(filepaths="{{ params.raw_rcv_filepaths }}"),
+        load_raw_clinvar_rcv_summary(rcv_summary_filepaths="{{ params.raw_rcv_filepaths }}"),
         insert_clinvar_rcv_summary,
     )

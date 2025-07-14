@@ -74,7 +74,7 @@ def _explain_insert(starrocks_session, sql_dir):
             with open(sql_file) as f:
                 rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
 
-            if "staging_exomiser" in sql_file:
+            if "staging_exomiser" in sql_file or "load" in sql_file.lower():
                 # "EXPLAIN" not supported with "LOAD"
                 continue
 
@@ -112,6 +112,8 @@ def test_queries_are_valid(
             "orphanet_gene_panel",
             "ddd_gene_panel",
             "cosmic_gene_panel",
+            "raw_clinvar_rcv_summary",
+            "clinvar_rcv_summary",
         ],
     )
     _validate_init(

@@ -9,7 +9,7 @@ def create_and_append_table(iceberg_client, namespace, table_name, file_path, js
     if iceberg_client.namespace_exists(namespace):
         if iceberg_client.table_exists(f"{namespace}.{table_name}"):
             return
-        iceberg_client.create_table_if_not_exists(f"{namespace}.{table_name}", schema=content.schema)
+        iceberg_client.create_table(f"{namespace}.{table_name}", schema=content.schema)
         iceberg_client.load_table(f"{namespace}.{table_name}").append(df=content)
 
 
