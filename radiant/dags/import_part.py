@@ -217,6 +217,7 @@ def import_part():
                         label=f"{_params['label']}",
                         temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
                         broker_configuration=broker_configuration,
+                        database_name=conn.schema,
                     )
                     cursor.execute(_sql, _params)
 
