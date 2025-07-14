@@ -711,7 +711,3 @@ def clinvar_rcv_summary_ndjson(s3_fs):
     dest_path = "opendata/"
     s3_fs.put(src_path, dest_path)
     yield dest_path
-
-
-def test_cv(clinvar_rcv_summary_ndjson):
-    pass

@@ -25,9 +25,9 @@ gene_group_ids = [
 
 dag_params = {
     "raw_rcv_filepaths": Param(
-        default=[],
+        default=None,
         description="RCV filepaths to load into the raw ClinVar RCV Summary table.",
-        schema={"type": "array", "items": {"type": "string"}},
+        type=["array", "null"],
     ),
 }
 
@@ -82,6 +82,7 @@ with DAG(
             return
 
         import os
+        import time
         import uuid
 
         import jinja2
@@ -90,6 +91,7 @@ with DAG(
         from radiant.dags import DAGS_DIR
         from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
+        conn = BaseHook.get_connection("starrocks_conn")
         _query_params = get_radiant_mapping() | {"broker_load_timeout": 7200}
 
         _truncate_sql = """
@@ -115,18 +117,33 @@ with DAG(
                 'aws.s3.secret_key' = '{os.getenv("AWS_SECRET_ACCESS_KEY", "secret_key")}'
             """
 
+        _label = f"raw_clinvar_rcv_summary_load_{str(uuid.uuid4().hex)}"
         _prepared_load_sql = raw_clinvar_rcv_summary_load_sql.format(
-            label=f"raw_clinvar_rcv_summary_load_{str(uuid.uuid4().hex)}",
+            label=_label,
             broker_configuration=broker_configuration,
+            database_name=conn.schema,
         )
 
-        conn = BaseHook.get_connection("starrocks_conn")
         with conn.get_hook().get_conn().cursor() as cursor:
-            LOGGER.warning("Truncating raw ClinVar RCV Summary table.")
+            LOGGER.warning(f"Truncating raw ClinVar RCV Summary table. \nSQL:\n {_prepared_truncate_sql}")
             cursor.execute(_prepared_truncate_sql)
 
             LOGGER.warning(f"Loading raw ClinVar RCV Summary data. SQL:\n {_prepared_load_sql}")
             cursor.execute(_prepared_load_sql, {"filepaths": filepaths})
+
+            _i = 0
+            while True:
+                cursor.execute(f"SELECT STATE FROM information_schema.loads WHERE LABEL = '{_label}'")
+                load_state = cursor.fetchone()
+                LOGGER.info(f"Load state for label {_label}: {load_state}")
+                if not load_state or load_state[0] == "FINISHED":
+                    break
+                if load_state[0] == "CANCELLED":
+                    raise RuntimeError(f"Load for label {_label} was cancelled.")
+                time.sleep(2)
+                _i += 1
+                if _i > 30:
+                    raise TimeoutError(f"Load for label {_label} did not finish in time.")
 
     insert_clinvar_rcv_summary = RadiantStarRocksOperator(
         task_id="insert_clinvar_rcv_summary",

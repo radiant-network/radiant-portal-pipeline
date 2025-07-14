@@ -370,6 +370,7 @@ def import_part():
         start
         >> fetch_sequencing_experiment_delta
         >> import_vcf
+        >> load_exomiser_files(cases=cases, part="{{ params.part }}")
         >> refresh_iceberg_tables
         >> insert_hashes
         >> overwrite_tmp_variants

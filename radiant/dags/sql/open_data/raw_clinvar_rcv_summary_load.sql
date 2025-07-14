@@ -1,4 +1,4 @@
-LOAD LABEL radiant.{label} (
+LOAD LABEL {database_name}.{label} (
     DATA INFILE %(filepaths)s
     INTO TABLE {{ params.starrocks_raw_clinvar_rcv_summary }}
     COLUMNS TERMINATED BY "\t"

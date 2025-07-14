@@ -7,6 +7,8 @@ from tests.utils.dags import get_pyarrow_table_from_csv, poll_dag_until_success,
 def create_and_append_table(iceberg_client, namespace, table_name, file_path, json_fields=None, is_clinvar=False):
     content = get_pyarrow_table_from_csv(csv_path=file_path, sep="\t", json_fields=json_fields, is_clinvar=is_clinvar)
     if iceberg_client.namespace_exists(namespace):
+        if iceberg_client.table_exists(f"{namespace}.{table_name}"):
+            return
         iceberg_client.create_table_if_not_exists(f"{namespace}.{table_name}", schema=content.schema)
         iceberg_client.load_table(f"{namespace}.{table_name}").append(df=content)
 
