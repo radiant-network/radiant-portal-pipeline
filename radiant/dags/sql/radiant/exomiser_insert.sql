@@ -10,7 +10,7 @@ select e.part,
        ROW_NUMBER() OVER (PARTITION BY e.locus_hash, seq_id ORDER BY gene_combined_score DESC) AS variant_rank,
        rank,
        e.symbol,
-       acmg_classification,
+       lower(acmg_classification),
        acmg_evidence
 FROM {{ params.starrocks_staging_exomiser }} e
 JOIN {{ params.starrocks_tmp_variant }} v ON e.locus_hash = v.locus_hash

@@ -1,4 +1,4 @@
-
+TRUNCATE "organization" CASCADE;
 INSERT INTO organization (id, code, name, category_code) VALUES
     (1, 'CHOP', 'Children Hospital of Philadelphia', 'healthcare_provider'),
     (2, 'UCSF', 'University of California San-Francisco', 'healthcare_provider'),
@@ -8,6 +8,7 @@ INSERT INTO organization (id, code, name, category_code) VALUES
     (6, 'CQGC', 'Quebec Clinical Genomic Center', 'research_institute')
 ON CONFLICT (code) DO NOTHING;
 
+TRUNCATE "patient" CASCADE;
 INSERT INTO patient (id, mrn, managing_organization_id, sex_code, date_of_birth) VALUES
     (1, 'MRN-283773', 3, 'female', '2012-02-03'),
     (2, 'MRN-283774', 3, 'male', '1970-01-30'),
@@ -74,11 +75,13 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Cases
 
+TRUNCATE "project" CASCADE;
 INSERT INTO project (id, code, name, description) VALUES
     (1, 'N1', 'NeuroDev Phase I', 'Phase one NeuroDev cases'),
     (2, 'N2', 'NeuroDev Phase II', 'Phase two NeuroDev cases')
 ON CONFLICT (id) DO NOTHING;
 
+TRUNCATE "request" CASCADE;
 INSERT INTO request (id, priority_code, ordering_physician, ordering_organization_id, order_number) VALUES
     (1, 'routine', 'Felix Laflamme', 3, '25850340'),
     (2, 'routine', 'Melissa Lopez', 3, '25850341'),
@@ -146,6 +149,7 @@ INSERT INTO request (id, priority_code, ordering_physician, ordering_organizatio
     (64, 'routine', 'Rose Desrochers', 3, '2585040')
 ON CONFLICT (id) DO NOTHING;
 
+TRUNCATE "case_analysis" CASCADE;
 INSERT INTO "case_analysis" (id, code, name, type_code, panel_id, description)
 VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of this analysis'),
        (2, 'IDGD', 'Intellectual Deficiency and Global Developmental Delay', 'germline', NULL,
@@ -154,6 +158,7 @@ VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of t
        (4, 'HYPM', 'Malignant Hyperthermia', 'germline', NULL, 'A description of this analysis')
 ON CONFLICT (id) DO NOTHING;
 
+TRUNCATE "cases" CASCADE;
 INSERT INTO "cases" (id, proband_id, project_id, case_analysis_id, status_code, request_id, performer_lab_id, note, created_on, updated_on) VALUES
     (1, 3, 1, 2, 'active', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (2, 4, 1, 2, 'active', 2, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
@@ -178,6 +183,7 @@ INSERT INTO "cases" (id, proband_id, project_id, case_analysis_id, status_code, 
     (21, 60, 2, 2, 'completed', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00')
 ON CONFLICT (id) DO NOTHING;
 
+TRUNCATE "family" CASCADE;
 INSERT INTO "family" (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code) VALUES
     (1, 1, 1, 'mother', 'affected'),
     (2, 1, 2, 'father', 'non_affected'),
@@ -226,7 +232,7 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- Observations
-
+TRUNCATE "observation_coding" CASCADE;
 INSERT INTO "observation_coding" (
     id,
     case_id,
@@ -705,7 +711,7 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- Samples
-
+TRUNCATE "sample" CASCADE;
 INSERT INTO "sample" (id, category_code, type_code, parent_sample_id, tissue_site, histology_code, submitter_sample_id) VALUES
     (1, 'sample', 'dna', 62, NULL, 'normal', 'S13224'),
     (2, 'sample', 'dna', 63, NULL, 'normal', 'S13225'),
@@ -833,7 +839,7 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- Sequencing Experiment
-
+TRUNCATE "experiment" CASCADE;
 INSERT INTO "experiment" (id, code, name, experimental_strategy_code, platform_code, description)
 VALUES (1, 'WXS', 'Whole Exome Sequencing', 'wxs', 'illumina', 'A description'),
        (2, 'WGS_SR', 'Short Read Whole Genome Sequencing', 'wgs', 'illumina', 'A description'),
@@ -841,6 +847,7 @@ VALUES (1, 'WXS', 'Whole Exome Sequencing', 'wxs', 'illumina', 'A description'),
        (4, 'WGS_LR', 'Long Read Whole Genome Sequencing', 'wgs', 'pacbio', 'A description')
 ON CONFLICT (id) DO NOTHING;
 
+TRUNCATE "sequencing_experiment" CASCADE;
 INSERT INTO "sequencing_experiment" (id, case_id, patient_id, sample_id, experiment_id, status_code, aliquot, request_id, performer_lab_id, run_name, run_alias, run_date, capture_kit, is_paired_end, read_length, created_on, updated_on) VALUES
     (1, 1, 3, 1, 2, 'completed', 'NA12892', 3, 6, '1617', 'A00516_0169', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (2, 1, 1, 2, 2, 'completed', 'NA12891', 1, 6, '1618', 'A00516_0170', '2021-08-17', 'SureSelect Custom DNA Target', TRUE, 151, '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
@@ -910,13 +917,13 @@ ON CONFLICT (id) DO NOTHING;
 
 
 -- Task
-
+TRUNCATE "pipeline" CASCADE;
 INSERT INTO "pipeline" (id, description, genome_build) VALUES
                                                            (1, 'Dragen', 'GRch38'),
                                                            (2, 'Nexflow Variant Annotation', 'GRch38')
 ON CONFLICT (id) DO NOTHING;
 
-
+TRUNCATE "task" CASCADE;
 INSERT INTO "task" (id, type_code, pipeline_id, created_on) VALUES
                                                            (1, 'ngba', 2, '2021-10-12 13:08:00'),
                                                            (2, 'ngba', 2, '2021-10-12 13:08:00'),
@@ -984,7 +991,7 @@ INSERT INTO "task" (id, type_code, pipeline_id, created_on) VALUES
                                                            (64, 'ngba', 2, '2021-10-12 13:08:00')
 ON CONFLICT (id) DO NOTHING;
 
-
+TRUNCATE "task_has_sequencing_experiment" CASCADE;
 INSERT INTO "task_has_sequencing_experiment" (
     task_id,
     sequencing_experiment_id
@@ -1055,7 +1062,7 @@ INSERT INTO "task_has_sequencing_experiment" (
       (64, 64)
 ON CONFLICT(task_id, sequencing_experiment_id) DO NOTHING;
 
-
+TRUNCATE "document" CASCADE;
 INSERT INTO "document" (id, name, data_category_code, data_type_code, format_code, size, url, hash) VALUES
     (1, 'FI0037662.S13230.cram', 'genomic', 'alignment', 'cram', 110187385978, 's3+http://vcf/FI0037662.S13230.cram', '5d41402abc4b2a76b9719d911017c592'),
     (2, 'FI0037662.S13230.cram.crai', 'genomic', 'alignment', 'crai', 2453667, 's3+http://vcf/FI0037662.S13230.cram.crai', '5d41402abc4b2a76b9719d911017c593'),
@@ -1303,11 +1310,14 @@ INSERT INTO "document" (id, name, data_category_code, data_type_code, format_cod
     (244, 'FI0037928.S14857.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2411724, 's3+http://vcf/FI0037928.S14857.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c835'),
     (245, 'FI0038028.S14957.vcf.gz', 'genomic', 'snv', 'vcf', 2411724, 's3+http://vcf/FI0038028.S14957.vcf.gz', '5d41402abc4b2a76b9719d911017c835'),
     (246, 'FI0038128.S15157.vcf.gz', 'genomic', 'snv', 'vcf', 2411724, 's3+http://vcf/FI0038128.S15157.vcf.gz', '5d41402abc4b2a76b9719d911017c835'),
-    (247, 'FI0038328.S15357.vcf.gz', 'genomic', 'alignment', 'vcf', 2411724, 's3+http://vcf/FI0038328.S15357.vcf.gz', '5d41402abc4b2a76b9719d911017c835')
+    (247, 'FI0038328.S15357.vcf.gz', 'genomic', 'alignment', 'vcf', 2411724, 's3+http://vcf/FI0038328.S15357.vcf.gz', '5d41402abc4b2a76b9719d911017c835'),
+    (248, 'sample.tsv', 'genomic', 'exomiser', 'tsv', 2411724, 's3://exomiser/sample.variants.tsv', '5d41402abc4b2a76b9719d911017c835')
 ON CONFLICT(id) DO NOTHING;
 
+TRUNCATE "task_has_document" CASCADE;
 INSERT INTO "task_has_document" (task_id, document_id) VALUES
     (1, 1),
+    (1, 248),
     (1, 62),
     (1, 123),
     (1, 184),
