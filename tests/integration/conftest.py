@@ -703,7 +703,6 @@ def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
             s3_fs.put(dest_path + ".tbi", "vcf/" + document_name + ".tbi")
 
 
-
 @pytest.fixture(scope="session")
 def sample_exomiser_tsv(s3_fs):
     """
