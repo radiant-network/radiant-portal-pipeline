@@ -10,12 +10,13 @@ from radiant.tasks.data.radiant_tables import get_radiant_mapping
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
 
-def test_raw_exomiser_load(
-    starrocks_session, init_starrocks_tables, host_internal_address, minio_container, sample_exomiser_tsv
-):
+def test_raw_exomiser_load(starrocks_session, host_internal_address, minio_container, sample_exomiser_tsv):
     """
     Test the loading of raw Exomiser data into StarRocks.
     """
+    with open(os.path.join(_SQL_DIR, "radiant/init/staging_exomiser_create_table.sql")) as f_in:
+        create_table_sql = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping()})
+
     with open(os.path.join(_SQL_DIR, "radiant/staging_exomiser_load.sql")) as f_in:
         query = f_in.read()
 
@@ -45,6 +46,7 @@ def test_raw_exomiser_load(
     }
 
     with starrocks_session.cursor() as cursor:
+        cursor.execute(create_table_sql)
         cursor.execute(rendered_sql, params)
         _ = cursor.fetchall()
 
@@ -63,11 +65,9 @@ def test_raw_exomiser_load(
 
         cursor.execute(f"SELECT rank, acmg_classification, acmg_evidence FROM {db_name}.raw_exomiser ORDER BY rank")
         results = cursor.fetchall()
-
-        assert len(results) == 4
         assert results == (
-            (1, 'pathogenic', '["PM2","PP3","PS4"]'),
-            (2, 'likely_pathogenic', '["PS1","PM1"]'),
-            (3, 'uncertain_significance', '["PP5"]'),
-            (4, 'uncertain_significance', None)
+            (1, "pathogenic", '["PM2","PP3","PS4"]'),
+            (2, "likely_pathogenic", '["PS1","PM1"]'),
+            (3, "uncertain_significance", '["PP5"]'),
+            (4, "uncertain_significance", None),
         )
