@@ -5,14 +5,14 @@ WITH patients_total_count
                                        WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'affected'
                                            then s.patient_id end)                                                  AS cnt_wgs_affected,
                     COUNT(DISTINCT CASE
-                                       WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'not_affected'
+                                       WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'non_affected'
                                            then s.patient_id end)                                                  AS cnt_wgs_not_affected,
                     COUNT(DISTINCT CASE WHEN s.experimental_strategy = 'wxs' then s.patient_id end)                        AS cnt_wxs,
                     COUNT(DISTINCT CASE
                                        WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'affected'
                                            then s.patient_id end)                                                  AS cnt_wxs_affected,
                     COUNT(DISTINCT CASE
-                                       WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'not_affected'
+                                       WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'non_affected'
                                            then s.patient_id end)                                                  AS cnt_wxs_not_affected
              FROM {{ params.starrocks_staging_sequencing_experiment }} s
              where s.seq_id in (select seq_id from  {{ params.starrocks_occurrence }} where part = %(part)s)),
@@ -23,14 +23,14 @@ WITH patients_total_count
                                          WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'affected'
                                              then patient_id end)                                                  AS pc_wgs_affected,
                       COUNT(distinct CASE
-                                         WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'not_affected'
+                                         WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'non_affected'
                                              then patient_id end)                                                  AS pc_wgs_not_affected,
                       COUNT(distinct CASE WHEN s.experimental_strategy = 'wxs' then patient_id end)                        AS pc_wxs,
                       COUNT(distinct CASE
                                          WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'affected'
                                              then patient_id end)                                                  AS pc_wxs_affected,
                       COUNT(distinct CASE
-                                         WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'not_affected'
+                                         WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'non_affected'
                                              then patient_id end)                                                  AS pc_wxs_not_affected
                FROM  {{ params.starrocks_occurrence }} o
                         JOIN {{ params.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.seq_id
