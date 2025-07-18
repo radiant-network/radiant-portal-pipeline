@@ -9,7 +9,7 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-starrocks-tables")
-    assert len(dag.tasks) == 31  # 16 radiant tables + 13 open data tables + 1 create function + 1 start task
+    assert len(dag.tasks) == 32  # 16 radiant tables + 14 open data tables + 1 create function + 1 start task
 
 
 def test_dag_has_all_tasks(dag_bag):
