@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_variant_partitioned }} (
     is_mane_select BOOLEAN NULL COMMENT '',
     is_mane_plus BOOLEAN NULL COMMENT '',
     is_canonical BOOLEAN NULL COMMENT '',
-    rsnumber ARRAY<VARCHAR(15)> NULL COMMENT '',
+    rsnumber VARCHAR(20) NULL COMMENT '',
     reference VARCHAR(2000),
     alternate VARCHAR(2000),
     mane_select varchar(200) NULL,
