@@ -103,6 +103,7 @@ def test_queries_are_valid(
             "1000_genomes",
             "clinvar",
             "dbnsfp",
+            "dbsnp",
             "gnomad",
             "spliceai",
             "topmed_bravo",
