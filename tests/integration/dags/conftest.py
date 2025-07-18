@@ -37,6 +37,7 @@ def open_data_iceberg_tables(
             "clnsigscv",
         ],
         "dbnsfp": None,
+        "dbsnp": None,
         "gnomad_genomes_v3": None,
         "gnomad_constraint_v_2_1_1": None,
         "spliceai_enriched": ["max_score"],
