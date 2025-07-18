@@ -30,8 +30,8 @@ LOAD LABEL {database_name}.{label}
         end = end,
         reference = reference,
         alternate = alternate,
-        acmg_classification = acmg_classification,
-        acmg_evidence = split(acmg_evidence, ",")
+        acmg_classification = lower(acmg_classification),
+        acmg_evidence = IF(acmg_evidence = "", NULL, split(acmg_evidence, ","))
      )
      where contributing_variant=1
  )
