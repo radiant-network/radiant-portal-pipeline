@@ -61,6 +61,7 @@ with DAG(
         import logging
         import os
         import sys
+        import tempfile
         from urllib import parse
 
         import boto3
@@ -71,15 +72,7 @@ with DAG(
         logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
         logger = logging.getLogger(__name__)
 
-        def generate_presigned_url(s3_path, expiration=3600):
-            """
-            Generate a presigned URL to share an S3 object
-
-            :param bucket_name: string
-            :param object_key: string
-            :param expiration: Time in seconds for the presigned URL to remain valid (default: 1 hour)
-            :return: Presigned URL as string. If error, returns None.
-            """
+        def download_s3_file(s3_path, dest_dir):
             s3_client = boto3.client("s3")
 
             def extract_bucket_key(s3_path):
@@ -89,29 +82,29 @@ with DAG(
                 return bucket, key
 
             bucket_name, object_key = extract_bucket_key(s3_path)
+            local_path = os.path.join(dest_dir, os.path.basename(object_key))
             try:
-                response = s3_client.generate_presigned_url(
-                    "get_object", Params={"Bucket": bucket_name, "Key": object_key}, ExpiresIn=expiration
-                )
+                s3_client.download_file(bucket_name, object_key, local_path)
             except Exception as e:
-                print(f"Error generating presigned URL: {e}")
+                print(f"Error downloading S3 file: {e}")
                 return None
+            return local_path
 
-            return response
+        logger.info("Downloading VCF and index files to a temporary directory")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            vcf_local = download_s3_file(case["vcf_filepath"], tmpdir)
+            index_local = download_s3_file(case["vcf_filepath"] + ".tbi", tmpdir)
+            case["vcf_filepath"] = vcf_local
+            case["index_vcf_filepath"] = index_local
 
-        logger.info("Generating presigned URLs for VCF and index files")
-        url = generate_presigned_url(case["vcf_filepath"], expiration=7200)
-        index_url = generate_presigned_url(case["vcf_filepath"] + ".tbi", expiration=7200)
-        case["vcf_filepath"] = url
-        case["index_vcf_filepath"] = index_url
+            case = Case.model_validate(case)
+            logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
+            logger.info("=" * 80)
 
-        case = Case.model_validate(case)
-        logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
-        logger.info("=" * 80)
+            namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant")
+            res = process_case(case, namespace=namespace, vcf_threads=4)
+            logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
 
-        namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant")
-        res = process_case(case, namespace=namespace, vcf_threads=4)
-        logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
         return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}
 
     @task

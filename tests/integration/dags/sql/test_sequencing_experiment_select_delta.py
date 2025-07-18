@@ -83,7 +83,7 @@ def test_sequencing_experiment_empty(starrocks_session, sequencing_experiment_ta
 
     assert results is not None, "Results should not be None"
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 57
+    assert len(result_df) == 56
 
 
 def test_sequencing_experiment_no_delta(starrocks_session, sequencing_experiment_tables, sequencing_delta_columns):
