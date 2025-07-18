@@ -1,13 +1,14 @@
 import csv
 import os
-import jinja2
 
+import jinja2
 import pandas as pd
 
 from radiant.dags import DAGS_DIR
 from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
+
 
 def _reset_table(starrocks_session, table_name):
     _radiant_mapping = get_radiant_mapping()
@@ -23,7 +24,7 @@ def _reset_table(starrocks_session, table_name):
 
 def load_tsv(starrocks_session, table_name, tsv_path):
     rows = pd.read_csv(tsv_path, delimiter="\t", quoting=csv.QUOTE_NONE)
-    rows = rows.replace(to_replace=float('nan'), value=None).to_dict(orient="records")
+    rows = rows.replace(to_replace=float("nan"), value=None).to_dict(orient="records")
     columns = list(rows[0].keys())
     insert_sql = f"""
         INSERT INTO {table_name} ({", ".join(columns)})
