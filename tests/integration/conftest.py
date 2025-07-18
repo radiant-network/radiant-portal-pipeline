@@ -709,9 +709,9 @@ def sample_exomiser_tsv(s3_fs):
     Uploads the sample Exomiser TSV to S3.
     """
     src_path = RESOURCES_DIR / "exomiser" / "sample.variants.tsv"
-    dest_path = "exomiser/sample.variants.tsv"
+    dest_path = "exomiser/"
     s3_fs.put(src_path, dest_path)
-    yield dest_path
+    yield f"{dest_path}sample.variants.tsv"
 
 
 @pytest.fixture(scope="session")

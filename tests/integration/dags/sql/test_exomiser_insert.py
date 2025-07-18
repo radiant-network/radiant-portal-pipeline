@@ -24,7 +24,6 @@ def test_raw_exomiser_load(starrocks_session, host_internal_address, minio_conta
     rendered_sql = jinja2.Template(query).render({"params": get_radiant_mapping() | {"broker_load_timeout": 7200}})
 
     db_name = starrocks_session.db.decode("utf-8")
-    _host = "radiant-minio" if host_internal_address == "host.docker.internal" else host_internal_address
 
     _label = f"test_raw_exomiser_load_{str(uuid.uuid4().hex)}"
     rendered_sql = rendered_sql.format(
@@ -33,7 +32,7 @@ def test_raw_exomiser_load(starrocks_session, host_internal_address, minio_conta
         temporary_partition_clause="",
         broker_configuration=f"""
             'aws.s3.region' = 'us-east-1',
-            'aws.s3.endpoint' = 'http://{_host}:{minio_container.api_port}',
+            'aws.s3.endpoint' = 'http://{host_internal_address}:{minio_container.api_port}',
             'aws.s3.enable_path_style_access' = 'true',
             'aws.s3.access_key' = '{minio_container.access_key}',
             'aws.s3.secret_key' = '{minio_container.secret_key}'
