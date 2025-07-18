@@ -48,6 +48,7 @@ with DAG(
         "1000_genomes",
         "clinvar",
         "dbnsfp",
+        "dbsnp",
         "gnomad",
         "spliceai",
         "topmed_bravo",
