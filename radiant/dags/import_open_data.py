@@ -13,7 +13,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 default_args = {"owner": "radiant"}
-variant_group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+variant_group_ids = ["1000_genomes", "clinvar", "dbnsfp", "dbsnp", "gnomad", "spliceai", "topmed_bravo"]
 gene_group_ids = [
     "gnomad_constraint",
     "omim_gene_panel",

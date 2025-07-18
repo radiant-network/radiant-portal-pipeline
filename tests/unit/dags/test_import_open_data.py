@@ -9,7 +9,7 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
-    variant_group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+    variant_group_ids = ["1000_genomes", "clinvar", "dbnsfp", "dbsnp", "gnomad", "spliceai", "topmed_bravo"]
     gene_group_ids = [
         "gnomad_constraint",
         "omim_gene_panel",
@@ -24,7 +24,7 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
 def test_dag_has_all_group_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
     task_ids = [task.task_id for task in dag.tasks]
-    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "gnomad", "spliceai", "topmed_bravo"]
+    group_ids = ["1000_genomes", "clinvar", "dbnsfp", "dbsnp", "gnomad", "spliceai", "topmed_bravo"]
     for group in group_ids:
         assert f"insert_hashes_{group}" in task_ids
         assert f"insert_{group}" in task_ids
