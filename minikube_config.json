@@ -1,0 +1,32 @@
+{
+  "apiVersion": "v1",
+  "kind": "Config",
+  "clusters": [
+    {
+      "name": "radiant",
+      "cluster": {
+        "server": "https://host.docker.internal:62392",
+        "certificate-authority": "/home/airflow/.minikube/ca.crt"
+      }
+    }
+  ],
+  "users": [
+    {
+      "name": "radiant-sa",
+      "user": {
+        "token": "eyJhbGciOiJSUzI1NiIsImtpZCI6Ik9GSDdyTVd1eGV2M2NzNHBfWDA1czFqUVA2azRsVkdudkZOTTdtczhDMkkifQ.eyJhdWQiOlsiaHR0cHM6Ly9rdWJlcm5ldGVzLmRlZmF1bHQuc3ZjLmNsdXN0ZXIubG9jYWwiXSwiZXhwIjoxNzUyNzc2ODM2LCJpYXQiOjE3NTI3NzMyMzYsImlzcyI6Imh0dHBzOi8va3ViZXJuZXRlcy5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsIiwianRpIjoiMjhmYjMxMjUtNWRlYi00MWQxLTg1MDAtM2Q3NGMxOGRkYjIwIiwia3ViZXJuZXRlcy5pbyI6eyJuYW1lc3BhY2UiOiJyYWRpYW50Iiwic2VydmljZWFjY291bnQiOnsibmFtZSI6InJhZGlhbnQtc2EiLCJ1aWQiOiIyMmJmMzc3Yi1lODdiLTRjMjYtODY5YS1jODU3NGJlZTEyMjcifX0sIm5iZiI6MTc1Mjc3MzIzNiwic3ViIjoic3lzdGVtOnNlcnZpY2VhY2NvdW50OnJhZGlhbnQ6cmFkaWFudC1zYSJ9.mwTkEK83ZEaFDZOzcO7p2yT8ttco0kY4fBfZNm7w5bWd5-NjwoctMBaHq-Qzy7xGcWDfozddUw73ha4YSjKf6lgfZ2MQ7HUwJN-GcGXJSwIL9W2Rg_YLuxEO374e0MV1I6YdAyQslfA-6Iy80oGJBluGM2uDTTYy50_dSxsXBNgbi0W27QbPCmNQbW63Jf80oz8WIFRr13RINu8rPlmj4MdbTVqruma_TxlL1fIlwfLY1hdy1TSvlyG6DKPc5gD4NzfySfi0nK22wEDj1l7f5S_L1Lozs426zXsmIo13bI0FFu_S-gHrIo_1Yt1tEMH-4mR5UO0bZtWgBk250ePxnA"
+      }
+    }
+  ],
+  "contexts": [
+    {
+      "name": "radiant-admin",
+      "context": {
+        "cluster": "radiant",
+        "user": "radiant-sa",
+        "namespace": "radiant"
+      }
+    }
+  ],
+  "current-context": "radiant-admin"
+}
