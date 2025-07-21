@@ -46,7 +46,7 @@ def open_data_iceberg_tables(
         "cosmic_gene_set": ["tumour_types_germline"],
         "ddd_gene_set": None,
         "hpo_gene_set": None,
-        "orphanet_gene_set": None,
+        "orphanet_gene_set": ["type_of_inheritance"],
     }
 
     # This is hackish to avoid referencing the airflow container that might not be available in some

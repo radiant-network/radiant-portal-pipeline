@@ -1,95 +1,95 @@
 gene_symbol	name	disorder_id	type_of_inheritance
-TP53	Li-Fraumeni syndrome	ORPHA:524	Autosomal dominant
-BRCA1	Hereditary breast and ovarian cancer	ORPHA:145	Autosomal dominant
-BRCA2	Hereditary breast and ovarian cancer	ORPHA:145	Autosomal dominant
-CFTR	Cystic fibrosis	ORPHA:586	Autosomal recessive
-FGFR3	Achondroplasia	ORPHA:33	Autosomal dominant
-FBN1	Marfan syndrome	ORPHA:284	Autosomal dominant
-HBB	Beta-thalassemia	ORPHA:848	Autosomal recessive
-DMD	Duchenne muscular dystrophy	ORPHA:98896	X-linked recessive
-SMN1	Spinal muscular atrophy	ORPHA:70	Autosomal recessive
-PAH	Phenylketonuria	ORPHA:716	Autosomal recessive
-GBA	Gaucher disease	ORPHA:355	Autosomal recessive
-GAA	Pompe disease	ORPHA:365	Autosomal recessive
-IDUA	Mucopolysaccharidosis I	ORPHA:558	Autosomal recessive
-COL1A1	Osteogenesis imperfecta	ORPHA:666	Autosomal dominant
-COL1A2	Osteogenesis imperfecta	ORPHA:666	Autosomal dominant
-F8	Hemophilia A	ORPHA:903	X-linked recessive
-F9	Hemophilia B	ORPHA:904	X-linked recessive
-MECP2	Rett syndrome	ORPHA:778	X-linked dominant
-TSC1	Tuberous sclerosis	ORPHA:805	Autosomal dominant
-TSC2	Tuberous sclerosis	ORPHA:805	Autosomal dominant
-NF1	Neurofibromatosis type 1	ORPHA:636	Autosomal dominant
-NF2	Neurofibromatosis type 2	ORPHA:637	Autosomal dominant
-VHL	Von Hippel-Lindau disease	ORPHA:477	Autosomal dominant
-MLH1	Lynch syndrome	ORPHA:110	Autosomal dominant
-MSH2	Lynch syndrome	ORPHA:110	Autosomal dominant
-APC	Familial adenomatous polyposis	ORPHA:120	Autosomal dominant
-RET	Multiple endocrine neoplasia type 2	ORPHA:643	Autosomal dominant
-MEN1	Multiple endocrine neoplasia type 1	ORPHA:643	Autosomal dominant
-G6PD	Glucose-6-phosphate dehydrogenase deficiency	ORPHA:35524	X-linked recessive
-ABCD1	Adrenoleukodystrophy	ORPHA:43	X-linked recessive
-OTC	Ornithine transcarbamylase deficiency	ORPHA:792	X-linked recessive
-LAMP2	Danons disease	ORPHA:353	X-linked dominant
-GLA	Fabry disease	ORPHA:324	X-linked recessive
-ALPL	Hypophosphatasia	ORPHA:481	Autosomal recessive
-PHEX	X-linked hypophosphatemia	ORPHA:998	X-linked dominant
-PCSK9	Familial hypercholesterolemia	ORPHA:3312	Autosomal dominant
-LDLR	Familial hypercholesterolemia	ORPHA:3312	Autosomal dominant
-MYH7	Hypertrophic cardiomyopathy	ORPHA:217604	Autosomal dominant
-MYBPC3	Hypertrophic cardiomyopathy	ORPHA:217604	Autosomal dominant
-RYR1	Central core disease	ORPHA:1721	Autosomal dominant
-RYR2	Catecholaminergic polymorphic ventricular tachycardia	ORPHA:140	Autosomal dominant
-SCN1A	Dravet syndrome	ORPHA:33069	Autosomal dominant
-SCN2A	Epileptic encephalopathy, early infantile, 11	ORPHA:33069	Autosomal dominant
-KCNQ1	Long QT syndrome	ORPHA:26793	Autosomal dominant
-KCNH2	Long QT syndrome	ORPHA:26793	Autosomal dominant
-KCNE1	Long QT syndrome	ORPHA:26793	Autosomal recessive
-KCNE2	Long QT syndrome	ORPHA:26793	Autosomal dominant
-CACNA1C	Timothy syndrome	ORPHA:210548	Autosomal dominant
-DSP	Arrhythmogenic right ventricular dysplasia	ORPHA:98860	Autosomal dominant
-PKP2	Arrhythmogenic right ventricular dysplasia	ORPHA:98860	Autosomal dominant
-DSG2	Arrhythmogenic right ventricular dysplasia	ORPHA:98860	Autosomal dominant
-DSC2	Arrhythmogenic right ventricular dysplasia	ORPHA:98860	Autosomal dominant
-JUP	Naxos disease	ORPHA:98861	Autosomal recessive
-TTN	Dilated cardiomyopathy	ORPHA:145377	Autosomal dominant
-LMNA	Emery-Dreifuss muscular dystrophy	ORPHA:98897	Autosomal dominant
-EMD	Emery-Dreifuss muscular dystrophy	ORPHA:98897	X-linked recessive
-SMARCB1	Rhabdoid tumor predisposition syndrome	ORPHA:52423	Autosomal dominant
-SMARCA4	Coffin-Siris syndrome	ORPHA:1991	Autosomal dominant
-ARID1A	Coffin-Siris syndrome	ORPHA:1991	Autosomal dominant
-ARID1B	Coffin-Siris syndrome	ORPHA:1991	Autosomal dominant
-CREBBP	Rubinstein-Taybi syndrome	ORPHA:783	Autosomal dominant
-EP300	Rubinstein-Taybi syndrome	ORPHA:783	Autosomal dominant
-PTEN	Cowden syndrome	ORPHA:1369	Autosomal dominant
-CDKN2A	Familial melanoma	ORPHA:324	Autosomal dominant
-RB1	Retinoblastoma	ORPHA:790	Autosomal dominant
-WT1	Wilms tumor	ORPHA:363	Autosomal dominant
-SDHB	Paraganglioma	ORPHA:324	Autosomal dominant
-SDHD	Paraganglioma	ORPHA:324	Autosomal dominant
-KIT	Piebaldism	ORPHA:79224	Autosomal dominant
-PDGFRA	Gastrointestinal stromal tumor	ORPHA:99781	Autosomal dominant
-JAK2	Polycythemia vera	ORPHA:779	Autosomal dominant
-FLT3	Acute myeloid leukemia	ORPHA:518	Autosomal dominant
-IDH1	Acute myeloid leukemia	ORPHA:518	Autosomal dominant
-IDH2	Acute myeloid leukemia	ORPHA:518	Autosomal dominant
-GATA2	Emberger syndrome	ORPHA:300751	Autosomal dominant
-RUNX1	Familial platelet disorder with propensity to acute myelogenous leukemia	ORPHA:98861	Autosomal dominant
-NPM1	Acute myeloid leukemia	ORPHA:518	Autosomal dominant
-TET2	Myelodysplastic syndrome	ORPHA:497	Autosomal dominant
-ASXL1	Myelodysplastic syndrome	ORPHA:497	Autosomal dominant
-EZH2	Myelodysplastic syndrome	ORPHA:497	Autosomal dominant
-DNMT3A	Myelodysplastic syndrome	ORPHA:497	Autosomal dominant
-SF3B1	Myelodysplastic syndrome	ORPHA:497	Autosomal dominant
-SRSF2	Myelodysplastic syndrome	ORPHA:497	Autosomal dominant
-U2AF1	Myelodysplastic syndrome	ORPHA:497	Autosomal dominant
-TP63	Ectrodactyly, ectodermal dysplasia, and cleft lip/palate syndrome	ORPHA:2681	Autosomal dominant
-FGFR1	Kallmann syndrome	ORPHA:478	Autosomal dominant
-FGFR2	Apert syndrome	ORPHA:52	Autosomal dominant
-FGFR3	Thanatophoric dysplasia	ORPHA:998	Autosomal dominant
-ERBB2	Charcot-Marie-Tooth disease	ORPHA:166024	Autosomal dominant
-ERBB3	Charcot-Marie-Tooth disease	ORPHA:166024	Autosomal dominant
-ERBB4	Charcot-Marie-Tooth disease	ORPHA:166024	Autosomal dominant
-CDK4	Melanoma, cutaneous malignant, 3	ORPHA:324	Autosomal dominant
-CDK6	Megalencephaly-polymicrogyria-polydactyly-hydrocephalus syndrome	ORPHA:210548	Autosomal dominant
-MDM2	Li-Fraumeni syndrome	ORPHA:524	Autosomal dominant
+TP53	Li-Fraumeni syndrome	ORPHA:524	["Autosomal dominant"]
+BRCA1	Hereditary breast and ovarian cancer	ORPHA:145	["Autosomal dominant"]
+BRCA2	Hereditary breast and ovarian cancer	ORPHA:145	["Autosomal dominant"]
+CFTR	Cystic fibrosis	ORPHA:586	["Autosomal recessive"]
+FGFR3	Achondroplasia	ORPHA:33	["Autosomal dominant"]
+FBN1	Marfan syndrome	ORPHA:284	["Autosomal dominant"]
+HBB	Beta-thalassemia	ORPHA:848	["Autosomal recessive"]
+DMD	Duchenne muscular dystrophy	ORPHA:98896	["X-linked recessive"]
+SMN1	Spinal muscular atrophy	ORPHA:70	["Autosomal recessive"]
+PAH	Phenylketonuria	ORPHA:716	["Autosomal recessive"]
+GBA	Gaucher disease	ORPHA:355	["Autosomal recessive"]
+GAA	Pompe disease	ORPHA:365	["Autosomal recessive"]
+IDUA	Mucopolysaccharidosis I	ORPHA:558	["Autosomal recessive"]
+COL1A1	Osteogenesis imperfecta	ORPHA:666	["Autosomal dominant"]
+COL1A2	Osteogenesis imperfecta	ORPHA:666	["Autosomal dominant"]
+F8	Hemophilia A	ORPHA:903	["X-linked recessive"]
+F9	Hemophilia B	ORPHA:904	["X-linked recessive"]
+MECP2	Rett syndrome	ORPHA:778	["X-linked dominant"]
+TSC1	Tuberous sclerosis	ORPHA:805	["Autosomal dominant"]
+TSC2	Tuberous sclerosis	ORPHA:805	["Autosomal dominant"]
+NF1	Neurofibromatosis type 1	ORPHA:636	["Autosomal dominant"]
+NF2	Neurofibromatosis type 2	ORPHA:637	["Autosomal dominant"]
+VHL	Von Hippel-Lindau disease	ORPHA:477	["Autosomal dominant"]
+MLH1	Lynch syndrome	ORPHA:110	["Autosomal dominant"]
+MSH2	Lynch syndrome	ORPHA:110	["Autosomal dominant"]
+APC	Familial adenomatous polyposis	ORPHA:120	["Autosomal dominant"]
+RET	Multiple endocrine neoplasia type 2	ORPHA:643	["Autosomal dominant"]
+MEN1	Multiple endocrine neoplasia type 1	ORPHA:643	["Autosomal dominant"]
+G6PD	Glucose-6-phosphate dehydrogenase deficiency	ORPHA:35524	["X-linked recessive"]
+ABCD1	Adrenoleukodystrophy	ORPHA:43	["X-linked recessive"]
+OTC	Ornithine transcarbamylase deficiency	ORPHA:792	["X-linked recessive"]
+LAMP2	Danons disease	ORPHA:353	["X-linked dominant"]
+GLA	Fabry disease	ORPHA:324	["X-linked recessive"]
+ALPL	Hypophosphatasia	ORPHA:481	["Autosomal recessive"]
+PHEX	X-linked hypophosphatemia	ORPHA:998	["X-linked dominant"]
+PCSK9	Familial hypercholesterolemia	ORPHA:3312	["Autosomal dominant"]
+LDLR	Familial hypercholesterolemia	ORPHA:3312	["Autosomal dominant"]
+MYH7	Hypertrophic cardiomyopathy	ORPHA:217604	["Autosomal dominant"]
+MYBPC3	Hypertrophic cardiomyopathy	ORPHA:217604	["Autosomal dominant"]
+RYR1	Central core disease	ORPHA:1721	["Autosomal dominant"]
+RYR2	Catecholaminergic polymorphic ventricular tachycardia	ORPHA:140	["Autosomal dominant"]
+SCN1A	Dravet syndrome	ORPHA:33069	["Autosomal dominant"]
+SCN2A	Epileptic encephalopathy, early infantile, 11	ORPHA:33069	["Autosomal dominant"]
+KCNQ1	Long QT syndrome	ORPHA:26793	["Autosomal dominant"]
+KCNH2	Long QT syndrome	ORPHA:26793	["Autosomal dominant"]
+KCNE1	Long QT syndrome	ORPHA:26793	["Autosomal recessive"]
+KCNE2	Long QT syndrome	ORPHA:26793	["Autosomal dominant"]
+CACNA1C	Timothy syndrome	ORPHA:210548	["Autosomal dominant"]
+DSP	Arrhythmogenic right ventricular dysplasia	ORPHA:98860	["Autosomal dominant"]
+PKP2	Arrhythmogenic right ventricular dysplasia	ORPHA:98860	["Autosomal dominant"]
+DSG2	Arrhythmogenic right ventricular dysplasia	ORPHA:98860	["Autosomal dominant"]
+DSC2	Arrhythmogenic right ventricular dysplasia	ORPHA:98860	["Autosomal dominant"]
+JUP	Naxos disease	ORPHA:98861	["Autosomal recessive"]
+TTN	Dilated cardiomyopathy	ORPHA:145377	["Autosomal dominant"]
+LMNA	Emery-Dreifuss muscular dystrophy	ORPHA:98897	["Autosomal dominant"]
+EMD	Emery-Dreifuss muscular dystrophy	ORPHA:98897	["X-linked recessive"]
+SMARCB1	Rhabdoid tumor predisposition syndrome	ORPHA:52423	["Autosomal dominant"]
+SMARCA4	Coffin-Siris syndrome	ORPHA:1991	["Autosomal dominant"]
+ARID1A	Coffin-Siris syndrome	ORPHA:1991	["Autosomal dominant"]
+ARID1B	Coffin-Siris syndrome	ORPHA:1991	["Autosomal dominant"]
+CREBBP	Rubinstein-Taybi syndrome	ORPHA:783	["Autosomal dominant"]
+EP300	Rubinstein-Taybi syndrome	ORPHA:783	["Autosomal dominant"]
+PTEN	Cowden syndrome	ORPHA:1369	["Autosomal dominant"]
+CDKN2A	Familial melanoma	ORPHA:324	["Autosomal dominant"]
+RB1	Retinoblastoma	ORPHA:790	["Autosomal dominant"]
+WT1	Wilms tumor	ORPHA:363	["Autosomal dominant"]
+SDHB	Paraganglioma	ORPHA:324	["Autosomal dominant"]
+SDHD	Paraganglioma	ORPHA:324	["Autosomal dominant"]
+KIT	Piebaldism	ORPHA:79224	["Autosomal dominant"]
+PDGFRA	Gastrointestinal stromal tumor	ORPHA:99781	["Autosomal dominant"]
+JAK2	Polycythemia vera	ORPHA:779	["Autosomal dominant"]
+FLT3	Acute myeloid leukemia	ORPHA:518	["Autosomal dominant"]
+IDH1	Acute myeloid leukemia	ORPHA:518	["Autosomal dominant"]
+IDH2	Acute myeloid leukemia	ORPHA:518	["Autosomal dominant"]
+GATA2	Emberger syndrome	ORPHA:300751	["Autosomal dominant"]
+RUNX1	Familial platelet disorder with propensity to acute myelogenous leukemia	ORPHA:98861	["Autosomal dominant"]
+NPM1	Acute myeloid leukemia	ORPHA:518	["Autosomal dominant"]
+TET2	Myelodysplastic syndrome	ORPHA:497	["Autosomal dominant"]
+ASXL1	Myelodysplastic syndrome	ORPHA:497	["Autosomal dominant"]
+EZH2	Myelodysplastic syndrome	ORPHA:497	["Autosomal dominant"]
+DNMT3A	Myelodysplastic syndrome	ORPHA:497	["Autosomal dominant"]
+SF3B1	Myelodysplastic syndrome	ORPHA:497	["Autosomal dominant"]
+SRSF2	Myelodysplastic syndrome	ORPHA:497	["Autosomal dominant"]
+U2AF1	Myelodysplastic syndrome	ORPHA:497	["Autosomal dominant"]
+TP63	Ectrodactyly, ectodermal dysplasia, and cleft lip/palate syndrome	ORPHA:2681	["Autosomal dominant"]
+FGFR1	Kallmann syndrome	ORPHA:478	["Autosomal dominant"]
+FGFR2	Apert syndrome	ORPHA:52	["Autosomal dominant"]
+FGFR3	Thanatophoric dysplasia	ORPHA:998	["Autosomal dominant"]
+ERBB2	Charcot-Marie-Tooth disease	ORPHA:166024	["Autosomal dominant"]
+ERBB3	Charcot-Marie-Tooth disease	ORPHA:166024	["Autosomal dominant"]
+ERBB4	Charcot-Marie-Tooth disease	ORPHA:166024	["Autosomal dominant"]
+CDK4	Melanoma, cutaneous malignant, 3	ORPHA:324	["Autosomal dominant"]
+CDK6	Megalencephaly-polymicrogyria-polydactyly-hydrocephalus syndrome	ORPHA:210548	["Autosomal dominant"]
+MDM2	Li-Fraumeni syndrome	ORPHA:524	["Autosomal dominant"]
