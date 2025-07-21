@@ -420,6 +420,7 @@ def radiant_airflow_container(
         "AWS_ACCESS_KEY_ID": "admin",
         "AWS_SECRET_ACCESS_KEY": "password",
         "AWS_REGION": "us-east-1",
+        "AWS_ENDPOINT_URL": f"http://{host_internal_address}:{minio_container.api_port}",
     }
 
     container = (

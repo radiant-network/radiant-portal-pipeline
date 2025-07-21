@@ -12,6 +12,7 @@ def test_import_radiant(
     random_test_id,
     indexed_vcfs,
     clinical_vcf,
+    sample_exomiser_tsv,
 ):
     with starrocks_session.cursor() as cursor:
         cursor.execute(f"TRUNCATE TABLE test_{random_test_id}.staging_sequencing_experiment;")
@@ -36,10 +37,10 @@ def test_import_radiant(
         "germline__snv__consequence_filter_partitioned": [0],
         "germline__snv__occurrence": [38, 40],
         "germline__snv__variant": [2],
-        "germline__snv__variant_frequency": [2],
+        "germline__snv__variant_frequency": [1],
         "germline__snv__variant_partitioned": [2, 4],
         "germline__snv__staging_variant": [2],
-        "germline__snv__staging_variant_frequency_part": [2, 4],
+        "germline__snv__staging_variant_frequency_part": [1, 4],
     }
 
     with starrocks_session.cursor() as cursor:
