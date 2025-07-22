@@ -33,6 +33,38 @@ def download_s3_file(s3_path, dest_dir):
     return local_path
 
 
+def merge_commits(partition_lists: list[dict[str, list[dict]]]) -> dict[str, list[dict]]:
+    from collections import defaultdict
+
+    merged = defaultdict(list)
+    for d in partition_lists:
+        for table, partitions in d.items():
+            merged[table].extend(partitions)
+    return dict(merged)
+
+
+def commit_partitions(table_partitions: dict[str, list[dict]]):
+    import logging
+    import sys
+
+    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
+    logger = logging.getLogger(__name__)
+    from pyiceberg.catalog import load_catalog
+
+    from radiant.tasks.iceberg.partition_commit import PartitionCommit
+    from radiant.tasks.iceberg.utils import commit_files
+
+    catalog = load_catalog()
+    for table_name, partitions in table_partitions.items():
+        if not partitions:
+            continue
+        table = catalog.load_table(table_name)
+        parts = [PartitionCommit.model_validate(pc) for pc in partitions]
+        logger.info(f"🔁 Starting commit for table {table_name}")
+        commit_files(table, parts)
+        logger.info(f"✅ Changes commited to table {table_name}")
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -55,3 +87,8 @@ if __name__ == "__main__":
         namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant")
         res = process_case(case, namespace=namespace, vcf_threads=4)
         logger.warning(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
+
+
+        merged = merge_commits(res)
+
+        commit_partitions(merged)
