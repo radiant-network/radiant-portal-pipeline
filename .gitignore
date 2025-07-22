@@ -178,3 +178,7 @@ logs
 
 # VCF
 *.gz.tbi
+
+
+# POC
+dkr_fs/*

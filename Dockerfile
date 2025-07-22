@@ -32,12 +32,15 @@ RUN /home/airflow/.venv/radiant/bin/pip install --no-deps -r /home/airflow/.venv
 
 # Setup Radiant code
 COPY ./radiant /home/airflow/radiant
-COPY ./scripts/import_vcf_for_case.py /home/airflow/radiant/import_vcf_for_case.py
+COPY ./poc-ecs-k8s/import_vcf_for_case.py /home/airflow/import_vcf_for_case.py
+COPY ./poc-ecs-k8s/run.sh /home/airflow/run.sh
+
 
 # Setup Kubernetes client
 COPY dkr_fs/minikube/ /home/airflow/.minikube
 COPY dkr_fs/kube/ /home/airflow/.kube
 
 USER root
+RUN chmod +x /home/airflow/run.sh
 RUN chmod -R 777 /home/airflow/.minikube
 RUN chmod -R 777 /home/airflow/.kube
