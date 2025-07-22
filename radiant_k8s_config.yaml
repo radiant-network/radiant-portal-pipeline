@@ -1,18 +1,32 @@
 apiVersion: v1
-kind: Config
 clusters:
-- name: radiant
-  cluster:
-    server: https://host.docker.internal:62392
-    certificate-authority-data: dXNlcnM6CiAgLSBuYW1lOiBtaW5pa3ViZQogICAgdXNlcjoKICAgICAgY2xpZW50LWNlcnRpZmljYXRlOiAvVXNlcnMva2FybHJpdGNoaWUvLm1pbmlrdWJlL3Byb2ZpbGVzL21pbmlrdWJlL2NsaWVudC5jcnQKICAgICAgY2xpZW50LWtleTogL1VzZXJzL2thcmxyaXRjaGllLy5taW5pa3ViZS9wcm9maWxlcy9taW5pa3ViZS9jbGllbnQua2V5CmNsdXN0ZXJzOgogIC0gY2x1c3RlcjoKICAgICAgY2VydGlmaWNhdGUtYXV0aG9yaXR5OiAvVXNlcnMva2FybHJpdGNoaWUvLm1pbmlrdWJlL2NhLmNydAogICAgICBleHRlbnNpb25zOgogICAgICAgIC0gZXh0ZW5zaW9uOgogICAgICAgICAgICBsYXN0LXVwZGF0ZTogVGh1LCAxNyBKdWwgMjAyNSAxMTozNToxMiBFRFQKICAgICAgICAgICAgcHJvdmlkZXI6IG1pbmlrdWJlLnNpZ3MuazhzLmlvCiAgICAgICAgICAgIHZlcnNpb246IHYxLjM2LjAKICAgICAgICAgIG5hbWU6IGNsdXN0ZXJfaW5mbwogICAgICBzZXJ2ZXI6IGh0dHBzOi8vMTI3LjAuMC4xOjYyMzkyCiAgICBuYW1lOiBtaW5pa3ViZQpjb250ZXh0czoKICAtIGNvbnRleHQ6CiAgICAgIGNsdXN0ZXI6IG1pbmlrdWJlCiAgICAgIGV4dGVuc2lvbnM6CiAgICAgICAgLSBleHRlbnNpb246CiAgICAgICAgICAgIGxhc3QtdXBkYXRlOiBUaHUsIDE3IEp1bCAyMDI1IDExOjM1OjEyIEVEVAogICAgICAgICAgICBwcm92aWRlcjogbWluaWt1YmUuc2lncy5rOHMuaW8KICAgICAgICAgICAgdmVyc2lvbjogdjEuMzYuMAogICAgICAgICAgbmFtZTogY29udGV4dF9pbmZvCiAgICAgIG5hbWVzcGFjZTogZGVmYXVsdAogICAgICB1c2VyOiBtaW5pa3ViZQogICAgbmFtZTogbWluaWt1YmUKYXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCnByZWZlcmVuY2VzOiB7fQpjdXJyZW50LWNvbnRleHQ6IG1pbmlrdWJlCg==
-users:
-- name: radiant-sa
-  user:
-    token: eyJhbGciOiJSUzI1NiIsImtpZCI6Ik9GSDdyTVd1eGV2M2NzNHBfWDA1czFqUVA2azRsVkdudkZOTTdtczhDMkkifQ.eyJhdWQiOlsiaHR0cHM6Ly9rdWJlcm5ldGVzLmRlZmF1bHQuc3ZjLmNsdXN0ZXIubG9jYWwiXSwiZXhwIjoxNzUyNzc2ODM2LCJpYXQiOjE3NTI3NzMyMzYsImlzcyI6Imh0dHBzOi8va3ViZXJuZXRlcy5kZWZhdWx0LnN2Yy5jbHVzdGVyLmxvY2FsIiwianRpIjoiMjhmYjMxMjUtNWRlYi00MWQxLTg1MDAtM2Q3NGMxOGRkYjIwIiwia3ViZXJuZXRlcy5pbyI6eyJuYW1lc3BhY2UiOiJyYWRpYW50Iiwic2VydmljZWFjY291bnQiOnsibmFtZSI6InJhZGlhbnQtc2EiLCJ1aWQiOiIyMmJmMzc3Yi1lODdiLTRjMjYtODY5YS1jODU3NGJlZTEyMjcifX0sIm5iZiI6MTc1Mjc3MzIzNiwic3ViIjoic3lzdGVtOnNlcnZpY2VhY2NvdW50OnJhZGlhbnQ6cmFkaWFudC1zYSJ9.mwTkEK83ZEaFDZOzcO7p2yT8ttco0kY4fBfZNm7w5bWd5-NjwoctMBaHq-Qzy7xGcWDfozddUw73ha4YSjKf6lgfZ2MQ7HUwJN-GcGXJSwIL9W2Rg_YLuxEO374e0MV1I6YdAyQslfA-6Iy80oGJBluGM2uDTTYy50_dSxsXBNgbi0W27QbPCmNQbW63Jf80oz8WIFRr13RINu8rPlmj4MdbTVqruma_TxlL1fIlwfLY1hdy1TSvlyG6DKPc5gD4NzfySfi0nK22wEDj1l7f5S_L1Lozs426zXsmIo13bI0FFu_S-gHrIo_1Yt1tEMH-4mR5UO0bZtWgBk250ePxnA
+- cluster:
+    certificate-authority: /home/airflow/.minikube/ca.crt
+    extensions:
+    - extension:
+        last-update: Tue, 22 Jul 2025 08:47:29 EDT
+        provider: minikube.sigs.k8s.io
+        version: v1.36.0
+      name: cluster_info
+    server: https://host.docker.internal:63000
+  name: minikube
 contexts:
-- name: radiant-admin
-  context:
-    cluster: radiant
-    user: radiant-sa
-    namespace: radiant
-current-context: radiant-admin
+- context:
+    cluster: minikube
+    extensions:
+    - extension:
+        last-update: Tue, 22 Jul 2025 08:47:29 EDT
+        provider: minikube.sigs.k8s.io
+        version: v1.36.0
+      name: context_info
+    namespace: default
+    user: minikube
+  name: minikube
+current-context: minikube
+kind: Config
+preferences: {}
+users:
+- name: minikube
+  user:
+    client-certificate: /home/airflow/.minikube/profiles/minikube/client.crt
+    client-key: /home/airflow/.minikube/profiles/minikube/client.key

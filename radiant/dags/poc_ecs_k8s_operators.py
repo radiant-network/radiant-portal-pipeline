@@ -1,16 +1,27 @@
+import logging
+
 from airflow import DAG
+
+LOGGER = logging.getLogger(__name__)
 
 
 def create_portable_task(task_id):
+    import os
+    import urllib3
     from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    os.environ["PYTHONHTTPSVERIFY"] = "0"
+    os.environ["REQUESTS_CA_BUNDLE"] = ""
 
     return KubernetesPodOperator(
         kubernetes_conn_id="kubernetes_conn",
         task_id=task_id,
         name="run-on-k8s",
         namespace="radiant",
-        image="radiant-airflow:latest",
-        cmds=["python", "-m", "pip", "freeze"],
+        image="radiant-airflow",
+        image_pull_policy="Never",
+        cmds=["bash", "-c", "source /home/airflow/.venv/radiant/bin/activate && python -m pip freeze"],
         get_logs=True,
         is_delete_operator_pod=True,
     )
