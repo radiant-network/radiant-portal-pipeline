@@ -6,13 +6,13 @@ from testcontainers.core.container import DockerContainer, wait_for_logs
 def docker_container():
     import time
     _IMAGE_NAME = "radiant-k8s-operator:latest"
-    with DockerContainer(_IMAGE_NAME).with_command("standalone") as container:
-        time.sleep(5)
+    with DockerContainer(_IMAGE_NAME).with_command("sleep 20") as container:
+        time.sleep(3)
         yield container
 
 
 def test_docker_image_contains_cyvcf(docker_container):
-    exit_code, output = docker_container.exec('/bin/bash -c "pip freeze"')
+    exit_code, output = docker_container.exec('pip freeze')
     assert exit_code == 0
     assert b"cyvcf2" in output
     assert b"wurlitzer" in output
