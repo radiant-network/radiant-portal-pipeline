@@ -1,56 +1,40 @@
-import logging
 
 from airflow import DAG
+from airflow.decorators import task
 
-LOGGER = logging.getLogger(__name__)
+
 
 
 def create_portable_task(task_id):
+    import os
     from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 
-    return KubernetesPodOperator(
-        kubernetes_conn_id="kubernetes_conn",
-        task_id=task_id,
-        name="run-on-k8s",
-        namespace="radiant",
-        image="radiant-airflow:latest",
-        image_pull_policy="IfNotPresent",
-        cmds=["bash", "-c", "cd", "/home/airflow", "&&", "./run.sh"],
-        get_logs=True,
-        is_delete_operator_pod=True,
-        env_vars={
-            "AWS_REGION": "us-east-1",
-            "AWS_ACCESS_KEY_ID": "admin",
-            "AWS_SECRET_ACCESS_KEY": "password",
-            "AWS_ENDPOINT_URL": "http://host.docker.internal:9000",
-            "AWS_ALLOW_HTTP": "true",
-            "PYICEBERG_CATALOG__DEFAULT__URI": "http://host.docker.internal:8181",
-            "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": "http://host.docker.internal:9000",
-            "PYICEBERG_CATALOG__DEFAULT__TOKEN": "mysecret",
-            "RADIANT_ICEBERG_NAMESPACE": "radiant_iceberg_namespace",
-        }
-    )
-    # else:
-    #     from airflow.providers.amazon.aws.operators.ecs import ECSOperator
-    #     return ECSOperator(
-    #         task_id=task_id,
-    #         cluster="my-cluster",
-    #         task_definition="my-task-def",
-    #         launch_type="FARGATE",
-    #         overrides={
-    #             "containerOverrides": [{
-    #                 "name": "my-container",
-    #                 "command": ["python", "my_script.py"]
-    #             }]
-    #         },
-    #         network_configuration={
-    #             "awsvpcConfiguration": {
-    #                 "subnets": ["subnet-abc123"],
-    #                 "assignPublicIp": "ENABLED",
-    #                 "securityGroups": ["sg-abc123"]
-    #             }
-    #         },
-    #     )
+    use_aws = os.environ.get("RADIANT_VCF_USE_AWS", "false").lower() == "true"
+
+    if not use_aws:
+        from airflow.providers.amazon.aws.operators.ecs import EcsRunTaskOperator
+        return EcsRunTaskOperator(
+            task_id=task_id,
+            cluster=os.getenv("AWS_ECS_CLUSTER"),
+            task_definition="my-task-def",
+            launch_type="FARGATE",
+            overrides={
+                "containerOverrides": [{
+                    "name": "radiant-airflow",
+                    "command": [
+                        "/home/airflow/.venv/radiant/bin/python", "import_vcf_for_case.py",
+                        "--case", "{{ params.case }}"
+                    ]
+                }]
+            },
+            network_configuration={
+                "awsvpcConfiguration": {
+                    "subnets": os.environ.get("AWS_ECS_SUBNETS", "").split(","),
+                    "assignPublicIp": "ENABLED",
+                    "securityGroups": os.environ.get("AWS_ECS_SECURITY_GROUPS", "").split(",")
+                }
+            },
+        )
 
 
 with DAG(
@@ -60,4 +44,26 @@ with DAG(
     tags=["radiant", "poc", "manual"],
     dag_display_name="[POC] ECS/K8s Operators",
 ) as dag:
-    task = create_portable_task("run_compute")
+
+    @task.kubernetes(
+        kubernetes_conn_id="kubernetes_conn",
+        name="run-on-k8s",
+        namespace="radiant",
+        image="radiant-k8s-operator:latest",
+        image_pull_policy="IfNotPresent",
+        get_logs=True,
+        is_delete_operator_pod=True,
+        do_xcom_push=True,
+        env_vars={
+            "PYTHONPATH": "/opt/airflow",
+            "LD_LIBRARY_PATH": "/usr/local/lib:$LD_LIBRARY_PATH",
+        },
+    )
+    def run_k8s():
+        import logging
+        LOGGER = logging.getLogger(__name__)
+        for i in range(10):
+            LOGGER.warning(f"Running task {i}")
+        return [i for i in range(10)]
+
+    run_k8s()

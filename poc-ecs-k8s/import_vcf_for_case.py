@@ -28,18 +28,17 @@ def download_s3_file(s3_path, dest_dir):
     try:
         s3_client.download_file(bucket_name, object_key, local_path)
     except Exception as e:
-        print(f"Error downloading S3 file: {e}")
-        return None
+        raise Exception(f"Error downloading S3 file: {e}")
+
     return local_path
 
 
-def merge_commits(partition_lists: list[dict[str, list[dict]]]) -> dict[str, list[dict]]:
+def merge_commits(partition_lists: dict[str, list[dict]]) -> dict[str, list[dict]]:
     from collections import defaultdict
 
     merged = defaultdict(list)
-    for d in partition_lists:
-        for table, partitions in d.items():
-            merged[table].extend(partitions)
+    for table, partitions in partition_lists.items():
+        merged[table].extend(partitions)
     return dict(merged)
 
 
@@ -71,24 +70,34 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Import VCF for case")
     parser.add_argument("--case", required=True, help="Case JSON string")
     args = parser.parse_args()
+
+    logger.info(f"Command line arguments: {args}")
+
     case = json.loads(args.case)
 
-    logger.warning("Downloading VCF and index files to a temporary directory")
+    logger.info("Downloading VCF and index files to a temporary directory")
     with tempfile.TemporaryDirectory() as tmpdir:
         vcf_local = download_s3_file(case["vcf_filepath"], tmpdir)
         index_local = download_s3_file(case["vcf_filepath"] + ".tbi", tmpdir)
         case["vcf_filepath"] = vcf_local
         case["index_vcf_filepath"] = index_local
 
+        print(case)
+
         case = Case.model_validate(case)
-        logger.warning(f"🔁 STARTING IMPORT for Case: {case.case_id}")
-        logger.warning("=" * 80)
+        logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
+        logger.info("=" * 80)
 
         namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant")
         res = process_case(case, namespace=namespace, vcf_threads=4)
-        logger.warning(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
+        logger.info(f"🔁 Parquet files created: {case.case_id}, file {case.vcf_filepath}")
 
+        logger.info(f"🔁 Partition lists: {res}")
 
+        logger.info("🔁 Merging commits from all tables")
         merged = merge_commits(res)
 
+        logger.info("🔁 Merging completed, committing partitions")
         commit_partitions(merged)
+
+        logger.info("✅ All done!")

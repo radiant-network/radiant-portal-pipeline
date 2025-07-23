@@ -54,27 +54,29 @@ def commit_files(table: Table, partition_to_commit: list[PartitionCommit]):
         logger.info(f"No partitions to commit for table {table.name()} partition filter")
         return
 
-    # Create filter expression for multi-column partition
-    table.refresh()
-    tx = table.transaction()
-    for partition in partition_to_commit:
-        filter_expr = None
-        for col, val in partition.partition_filter.items():
-            expr = EqualTo(col, val)
-            filter_expr = expr if filter_expr is None else And(filter_expr, expr)
-        if filter_expr is None:
-            raise ValueError(
-                f"Partition filter {partition.partition_filter} must contain at least one key-value pair."
-            )
-        tx.delete(filter_expr)
-        if partition.parquet_files:
-            tx.add_files(partition.parquet_files)
+    def _commit_transaction(table):
+        # Create filter expression for multi-column partition
+        table.refresh()
+        tx = table.transaction()
+        for partition in partition_to_commit:
+            filter_expr = None
+            for col, val in partition.partition_filter.items():
+                expr = EqualTo(col, val)
+                filter_expr = expr if filter_expr is None else And(filter_expr, expr)
+            if filter_expr is None:
+                raise ValueError(
+                    f"Partition filter {partition.partition_filter} must contain at least one key-value pair."
+                )
+            tx.delete(filter_expr)
+            if partition.parquet_files:
+                tx.add_files(partition.parquet_files)
+        tx.commit_transaction()
+        logger.info("Successfully overwrite partitions")
 
     max_retries = 20
     while max_retries > 0:
         try:
-            tx.commit_transaction()
-            logger.info("Successfully overwrite partitions")
+            _commit_transaction(table=table)
             break
         except CommitFailedException as e:
             max_retries -= 1
