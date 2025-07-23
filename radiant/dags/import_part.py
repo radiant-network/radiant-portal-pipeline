@@ -7,7 +7,6 @@ from typing import Any
 from airflow.decorators import dag, task
 from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
-from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
@@ -103,6 +102,7 @@ def import_part():
     @task(task_id="prepare_cases", task_display_name="[PyOp] Prepare Cases")
     def prepare_cases(cases: Any) -> list[dict[str, str]]:
         import json
+
         return [{"case": json.dumps(c)} for c in cases]
 
     cases = check_cases(fetch_sequencing_experiment_delta.output)
@@ -118,10 +118,7 @@ def import_part():
             namespace="radiant",
             image="radiant-k8s-operator:latest",
             image_pull_policy="Never",
-            cmds=[
-                "python", "/opt/radiant/import_vcf_for_case.py",
-                "--case", "{{ params.case | tojson }}"
-            ],
+            cmds=["python", "/opt/radiant/import_vcf_for_case.py", "--case", "{{ params.case | tojson }}"],
             get_logs=True,
             is_delete_operator_pod=False,
             env_vars={
@@ -136,7 +133,7 @@ def import_part():
                 "RADIANT_ICEBERG_NAMESPACE": "radiant_iceberg_namespace",
                 "PYTHONPATH": "/opt/airflow",
                 "LD_LIBRARY_PATH": "/usr/local/lib:$LD_LIBRARY_PATH",
-            }
+            },
         )
 
     @task(task_id="load_exomiser_files", task_display_name="[PyOp] Load Exomiser Files")
@@ -397,7 +394,7 @@ def import_part():
     (
         start
         >> fetch_sequencing_experiment_delta
-        >> create_portable_task("import_vcf_for_case").expand(params=prepared_cases)
+        >> create_portable_task("import_vcf").expand(params=prepared_cases)
         >> load_exomiser_files(cases=cases, part="{{ params.part }}")
         >> refresh_iceberg_tables
         >> insert_hashes
