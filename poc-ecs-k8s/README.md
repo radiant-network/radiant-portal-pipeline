@@ -27,7 +27,7 @@ The following sections contains the necessary steps to set up a local Kubernetes
 
 ### 3. Airflow Kubernetes Connection
 
-1. Copy the local `.minikube` directory to the `dkr_fs` directory: `cp -r ~/.minikube dkr_fs` 
+1. Copy the local `.minikube` directory to the `dkr_fs` directory: `cp -r ~/.minikube/* dkr_fs/.minikube/` 
 2. Extract the kube config to a JSON file:
 
 ```
