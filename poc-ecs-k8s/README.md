@@ -61,7 +61,7 @@ With:
 
 Leave the other fields as default.
 
-## 4. Building the Docker Image for Minikube
+### 4. Building the Docker Image for Minikube
 
 The minikube cluster has its own Docker repository. We need to build the operator's image in this repository.
 
@@ -77,7 +77,7 @@ eval $(minikube -p minikube docker-env)
 make build-docker-k8s-operator
 ```
 
-## 5. Running a DAG with Kubernetes Operator
+### 5. Running a DAG with Kubernetes Operator
 
 There are 2 ways to test the Kubernetes operator in Airflow:
 
