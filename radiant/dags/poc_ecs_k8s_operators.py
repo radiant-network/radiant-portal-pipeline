@@ -13,7 +13,7 @@ with DAG(
         kubernetes_conn_id="kubernetes_conn",
         name="run-on-k8s",
         namespace="radiant",
-        image="radiant-k8s-operator:latest",
+        image="radiant-vcf-operator:latest",
         image_pull_policy="IfNotPresent",
         get_logs=True,
         is_delete_operator_pod=True,

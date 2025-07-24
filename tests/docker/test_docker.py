@@ -6,7 +6,7 @@ from testcontainers.core.container import DockerContainer
 def docker_container():
     import time
 
-    _IMAGE_NAME = "radiant-k8s-operator:latest"
+    _IMAGE_NAME = "radiant-vcf-operator:latest"
     with DockerContainer(_IMAGE_NAME).with_command("sleep 20") as container:
         time.sleep(3)
         yield container

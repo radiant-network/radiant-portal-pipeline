@@ -116,11 +116,11 @@ def import_part():
             task_id=task_id,
             name="import-vcf-for-case",
             namespace="radiant",
-            image="radiant-k8s-operator:latest",
+            image="radiant-vcf-operator:latest",
             image_pull_policy="Never",
             cmds=["python", "/opt/radiant/import_vcf_for_case.py", "--case", "{{ params.case | tojson }}"],
             get_logs=True,
-            is_delete_operator_pod=False,
+            is_delete_operator_pod=True,
             env_vars={
                 "AWS_REGION": "us-east-1",
                 "AWS_ACCESS_KEY_ID": "admin",

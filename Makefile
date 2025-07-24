@@ -3,10 +3,10 @@
 build-docker-airflow:
 	docker build -t radiant-airflow:latest .
 
-build-docker-k8s-operator:
-	docker build -f Dockerfile-k8s-operator -t radiant-k8s-operator:latest .
+build-docker-vcf-operator:
+	docker build -f Dockerfile-vcf-operator -t radiant-vcf-operator:latest .
 
-build-docker: build-docker-airflow build-docker-k8s-operator
+build-docker: build-docker-airflow build-docker-vcf-operator
 
 install:
 	pip install -r requirements.txt
