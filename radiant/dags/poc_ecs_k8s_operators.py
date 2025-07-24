@@ -1,7 +1,6 @@
 from airflow import DAG
 from airflow.decorators import task
 
-
 with DAG(
     dag_id="POC-ecs-k8s-operators",
     schedule_interval=None,
