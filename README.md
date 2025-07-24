@@ -24,7 +24,7 @@ This repository contains the different files and scripts used to run the Radiant
 Build the airflow docker image :
 
 ```
-docker build . -f docker/airflow.Dockerfile -t radiant-network/airflow-cyvcf2:2.10.5
+make build-docker
 ```
 
 Deploy stack :

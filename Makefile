@@ -1,7 +1,12 @@
 .PHONY: all
 
-build-docker:
+build-docker-airflow:
 	docker build -t radiant-airflow:latest .
+
+build-docker-vcf-operator:
+	docker build -f Dockerfile-vcf-operator -t radiant-vcf-operator:latest .
+
+build-docker: build-docker-airflow build-docker-vcf-operator
 
 install:
 	pip install -r requirements.txt
