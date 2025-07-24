@@ -82,8 +82,6 @@ if __name__ == "__main__":
         case["vcf_filepath"] = vcf_local
         case["index_vcf_filepath"] = index_local
 
-        print(case)
-
         case = Case.model_validate(case)
         logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
         logger.info("=" * 80)
