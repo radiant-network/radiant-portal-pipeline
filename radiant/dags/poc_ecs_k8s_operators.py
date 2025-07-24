@@ -2,43 +2,6 @@ from airflow import DAG
 from airflow.decorators import task
 
 
-def create_portable_task(task_id):
-    import os
-
-
-    use_aws = os.environ.get("RADIANT_VCF_USE_AWS", "false").lower() == "true"
-
-    if not use_aws:
-        from airflow.providers.amazon.aws.operators.ecs import EcsRunTaskOperator
-
-        return EcsRunTaskOperator(
-            task_id=task_id,
-            cluster=os.getenv("AWS_ECS_CLUSTER"),
-            task_definition="my-task-def",
-            launch_type="FARGATE",
-            overrides={
-                "containerOverrides": [
-                    {
-                        "name": "radiant-airflow",
-                        "command": [
-                            "/home/airflow/.venv/radiant/bin/python",
-                            "import_vcf_for_case.py",
-                            "--case",
-                            "{{ params.case }}",
-                        ],
-                    }
-                ]
-            },
-            network_configuration={
-                "awsvpcConfiguration": {
-                    "subnets": os.environ.get("AWS_ECS_SUBNETS", "").split(","),
-                    "assignPublicIp": "ENABLED",
-                    "securityGroups": os.environ.get("AWS_ECS_SECURITY_GROUPS", "").split(","),
-                }
-            },
-        )
-
-
 with DAG(
     dag_id="POC-ecs-k8s-operators",
     schedule_interval=None,
