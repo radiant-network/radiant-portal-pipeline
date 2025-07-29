@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM python:3.12
+FROM --platform=linux/amd64 python:3.12
 
 USER root
 
@@ -23,11 +23,4 @@ RUN pip install -r /opt/radiant/requirements.txt
 
 # Setup Radiant code
 COPY ./radiant /opt/airflow/radiant
-
-# Setup Kubernetes client
-COPY dkr_fs/.minikube/ /opt/radiant/.minikube
 COPY poc-ecs-k8s/import_vcf_for_case.py /opt/radiant/import_vcf_for_case.py
-
-USER root
-RUN chmod -R 777 /opt/radiant/.minikube
-

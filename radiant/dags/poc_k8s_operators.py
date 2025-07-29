@@ -2,11 +2,11 @@ from airflow import DAG
 from airflow.decorators import task
 
 with DAG(
-    dag_id="POC-ecs-k8s-operators",
+    dag_id="POC-k8s-operators",
     schedule_interval=None,
     catchup=False,
     tags=["radiant", "poc", "manual"],
-    dag_display_name="[POC] ECS/K8s Operators",
+    dag_display_name="[POC] K8s Operators",
 ) as dag:
 
     @task.kubernetes(
