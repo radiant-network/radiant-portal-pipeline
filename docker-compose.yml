@@ -92,10 +92,10 @@ x-airflow-common:
     AIRFLOW__TRACES__OTEL_ON: "False"
 
     # Radiant-specific OTEL span collection
-    RADIANT_OTLP_COLLECTOR_HTTP_ENDPOINT: "http://host.docker.internal:8889"
+    RADIANT_OTLP_COLLECTOR_HTTP_ENDPOINT: "http://otel-collector:8889"
 
     # Airflow-bundled OTEL METRICS
-    AIRFLOW__METRICS__OTEL_HOST: "host.docker.internal"
+    AIRFLOW__METRICS__OTEL_HOST: "otel-collector"
     AIRFLOW__METRICS__OTEL_PORT: "8889"
     AIRFLOW__METRICS__OTEL_PREFIX: "airflow"
     AIRFLOW__METRICS__OTEL_INTERVAL_MILLISECONDS: 60000
@@ -104,7 +104,7 @@ x-airflow-common:
     AIRFLOW__METRICS__OTEL_SSL_ACTIVE: "False"
 
     # Airflow-bundled OTEL TRACES
-    AIRFLOW__TRACES__OTEL_HOST: "host.docker.internal"
+    AIRFLOW__TRACES__OTEL_HOST: "otel-collector"
     AIRFLOW__TRACES__OTEL_PORT: "8889"
     AIRFLOW__TRACES__OTEL_SERVICE: "Airflow"
     AIRFLOW__TRACES__OTEL_DEBUGGING_ON: "False"
