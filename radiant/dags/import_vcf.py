@@ -53,6 +53,7 @@ with DAG(
     @task.kubernetes(
         kubernetes_conn_id="kubernetes_conn",
         task_id="create_parquet_files",
+        map_index_template="Case: {{ task.op_kwargs['case']['case_id'] }}",
         name="import-vcf-for-case",
         namespace="radiant",
         image="radiant-vcf-operator:latest",
