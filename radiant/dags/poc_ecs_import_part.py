@@ -120,7 +120,7 @@ def import_part():
         return ecs.EcsRunTaskOperator.partial(
             pool="poc_ecs_import_vcf",
             task_id=task_id,
-            task_definition="airflow_ecs_operator_task:9",
+            task_definition="airflow_ecs_operator_task:11",
             cluster=ECS_CLUSTER,
             launch_type="FARGATE",
             awslogs_group="apps-qa/radiant-etl",
