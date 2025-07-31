@@ -28,6 +28,7 @@ def download_s3_file(s3_path, dest_dir):
     try:
         s3_client.download_file(bucket_name, object_key, local_path)
     except Exception as e:
+        logger.error(f"Error downloading S3 file Bucket:[{bucket_name}], ObjectKey: [{object_key}] Filepath:[{local_path}]: {e}")
         raise Exception(f"Error downloading S3 file: {e}")
 
     return local_path
