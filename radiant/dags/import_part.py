@@ -7,6 +7,7 @@ from typing import Any
 from airflow.decorators import dag, task
 from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
@@ -99,42 +100,17 @@ def import_part():
     def check_cases(cases: Any) -> Any:
         return cases
 
-    @task(task_id="prepare_cases", task_display_name="[PyOp] Prepare Cases")
-    def prepare_cases(cases: Any) -> list[dict[str, str]]:
-        import json
-
-        return [{"case": json.dumps(c)} for c in cases]
-
     cases = check_cases(fetch_sequencing_experiment_delta.output)
-    prepared_cases = prepare_cases(cases)
 
-    def create_portable_task(task_id):
-        from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
-
-        return KubernetesPodOperator.partial(
-            kubernetes_conn_id="kubernetes_conn",
-            task_id=task_id,
-            name="import-vcf-for-case",
-            namespace="radiant",
-            image="radiant-vcf-operator:latest",
-            image_pull_policy="Never",
-            cmds=["python", "/opt/radiant/import_vcf_for_case.py", "--case", "{{ params.case | tojson }}"],
-            get_logs=True,
-            is_delete_operator_pod=True,
-            env_vars={
-                "AWS_REGION": "us-east-1",
-                "AWS_ACCESS_KEY_ID": "admin",
-                "AWS_SECRET_ACCESS_KEY": "password",
-                "AWS_ENDPOINT_URL": "http://host.docker.internal:9000",
-                "AWS_ALLOW_HTTP": "true",
-                "PYICEBERG_CATALOG__DEFAULT__URI": "http://host.docker.internal:8181",
-                "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": "http://host.docker.internal:9000",
-                "PYICEBERG_CATALOG__DEFAULT__TOKEN": "mysecret",
-                "RADIANT_ICEBERG_NAMESPACE": "radiant_iceberg_namespace",
-                "PYTHONPATH": "/opt/airflow",
-                "LD_LIBRARY_PATH": "/usr/local/lib:$LD_LIBRARY_PATH",
-            },
-        )
+    import_vcf = TriggerDagRunOperator(
+        task_id="import_vcf",
+        task_display_name="[DAG] Import VCF into Iceberg",
+        trigger_dag_id=f"{NAMESPACE}-import-vcf",
+        conf={"cases": cases},
+        reset_dag_run=True,
+        wait_for_completion=True,
+        poke_interval=2,
+    )
 
     @task(task_id="load_exomiser_files", task_display_name="[PyOp] Load Exomiser Files")
     def load_exomiser_files(cases: object, part: object) -> None:
@@ -394,7 +370,7 @@ def import_part():
     (
         start
         >> fetch_sequencing_experiment_delta
-        >> create_portable_task("import_vcf").expand(params=prepared_cases)
+        >> import_vcf
         >> load_exomiser_files(cases=cases, part="{{ params.part }}")
         >> refresh_iceberg_tables
         >> insert_hashes

@@ -50,11 +50,29 @@ with DAG(
 
         return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
 
-    @task.external_python(
-        pool="import_vcf",
+    @task.kubernetes(
+        kubernetes_conn_id="kubernetes_conn",
         task_id="create_parquet_files",
-        python=PATH_TO_PYTHON_BINARY,
-        map_index_template=("Case: {{ task.op_kwargs['case']['case_id'] }}"),
+        name="import-vcf-for-case",
+        namespace="radiant",
+        image="radiant-vcf-operator:latest",
+        image_pull_policy="Never",
+        get_logs=True,
+        is_delete_operator_pod=True,
+        do_xcom_push=True,
+        env_vars={
+            "AWS_REGION": "us-east-1",
+            "AWS_ACCESS_KEY_ID": "admin",
+            "AWS_SECRET_ACCESS_KEY": "password",
+            "AWS_ENDPOINT_URL": "http://host.docker.internal:9000",
+            "AWS_ALLOW_HTTP": "true",
+            "PYICEBERG_CATALOG__DEFAULT__URI": "http://host.docker.internal:8181",
+            "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": "http://host.docker.internal:9000",
+            "PYICEBERG_CATALOG__DEFAULT__TOKEN": "mysecret",
+            "RADIANT_ICEBERG_NAMESPACE": "radiant_iceberg_namespace",
+            "PYTHONPATH": "/opt/radiant",
+            "LD_LIBRARY_PATH": "/usr/local/lib:$LD_LIBRARY_PATH",
+        },
     )
     def create_parquet_files(case: dict):
         import json

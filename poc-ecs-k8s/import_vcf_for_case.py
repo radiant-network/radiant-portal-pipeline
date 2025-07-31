@@ -91,12 +91,5 @@ if __name__ == "__main__":
         res = process_case(case, namespace=namespace, vcf_threads=4)
         logger.info(f"🔁 Parquet files created: {case.case_id}, file {case.vcf_filepath}")
 
-        logger.info(f"🔁 Partition lists: {res}")
-
-        logger.info("🔁 Merging commits from all tables")
-        merged = merge_commits(res)
-
-        logger.info("🔁 Merging completed, committing partitions")
-        commit_partitions(merged)
-
-        logger.info("✅ All done!")
+        # Push this as XCom
+        logger.info({k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()})
