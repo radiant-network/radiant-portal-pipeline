@@ -1,27 +1,21 @@
 import datetime
 import logging
-import os
 from collections.abc import Sequence
 from itertools import groupby
 from typing import Any
 
 from airflow.decorators import dag, task
-from airflow.models import Param, Variable
+from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.utils.task_group import TaskGroup
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE
+from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
 from radiant.tasks.vcf.experiment import Case, Experiment
 
 LOGGER = logging.getLogger(__name__)
-
-def parse_list(env_val):
-    return [v.strip() for v in env_val.split(",") if v.strip()]
-
-ECS_CLUSTER = Variable.get("AWS_ECS_CLUSTER", default_var=os.environ.get("AWS_ECS_CLUSTER"))
-ECS_SUBNETS = parse_list(Variable.get("AWS_ECS_SUBNETS", default_var=os.environ.get("AWS_ECS_SUBNETS", "")))
-ECS_SECURITY_GROUPS = parse_list(Variable.get("AWS_ECS_SECURITY_GROUPS", default_var=os.environ.get("AWS_ECS_SECURITY_GROUPS", "")))
 
 
 def cases_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
@@ -82,11 +76,12 @@ std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=1
     schedule=None,
     catchup=False,
     default_args=DEFAULT_ARGS,
-    tags=["poc", "radiant", "scheduled"],
-    dag_display_name="[POC] ECS Import Part",
-    dag_id=f"POC-ECS-{NAMESPACE}-import-part",
+    tags=["poc"],
+    dag_display_name="[POC ECS] Radiant - Import for a partition",
+    dag_id=f"poc-{NAMESPACE}-import-part",
     params=dag_params,
     render_template_as_native_obj=True,
+    doc_md=load_docs_md("import_part.md"),
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def import_part():
@@ -105,56 +100,17 @@ def import_part():
     def check_cases(cases: Any) -> Any:
         return cases
 
-    @task(task_id="prepare_cases", task_display_name="[PyOp] Prepare Cases")
-    def prepare_cases(cases: Any) -> list[dict[str, str]]:
-        import json
-
-        return [{"case": json.dumps(c)} for c in cases]
-
     cases = check_cases(fetch_sequencing_experiment_delta.output)
-    prepared_cases = prepare_cases(cases)
 
-    def create_portable_task(task_id):
-        from airflow.providers.amazon.aws.operators import ecs
-
-        return ecs.EcsRunTaskOperator.partial(
-            pool="poc_ecs_import_vcf",
-            task_id=task_id,
-            task_definition="airflow_ecs_operator_task:11",
-            cluster=ECS_CLUSTER,
-            launch_type="FARGATE",
-            awslogs_group="apps-qa/radiant-etl",
-            awslogs_region="us-east-1",
-            awslogs_stream_prefix="ecs/radiant-operator-qa-etl-container",  # There's a bug in the 9.2.0 provider that forces to add the container name as well
-            awslogs_fetch_interval=datetime.timedelta(seconds=5),
-            overrides={
-                "containerOverrides": [
-                    {
-                        "name": "radiant-operator-qa-etl-container",
-                        "command": [
-                            "python /opt/radiant/import_vcf_for_case.py --case {{ params.case | tojson }}"
-                        ],
-                        "environment": [
-                            {"name": "PYTHONPATH", "value": "/opt/radiant"},
-                            {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
-                            {"name": "RADIANT_ICEBERG_NAMESPACE", "value": "radiant_qa"},
-                            {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
-                            {"name": "STARROCKS_BROKER_USE_INSTANCE_PROFILE", "value": "true"}
-                        ]
-                    }
-                ]
-            },
-            network_configuration={
-                "awsvpcConfiguration": {
-                    "subnets": ECS_SUBNETS,
-                    "assignPublicIp": "DISABLED",
-                    "securityGroups": ECS_SECURITY_GROUPS
-                }
-            },
-
-            aws_conn_id="aws_default",
-            region_name="us-east-1"
-        )
+    import_vcf = TriggerDagRunOperator(
+        task_id="import_vcf",
+        task_display_name="[DAG] Import VCF into Iceberg",
+        trigger_dag_id=f"poc-ecs-{NAMESPACE}-import-vcf",
+        conf={"cases": cases},
+        reset_dag_run=True,
+        wait_for_completion=True,
+        poke_interval=2,
+    )
 
     @task(task_id="load_exomiser_files", task_display_name="[PyOp] Load Exomiser Files")
     def load_exomiser_files(cases: object, part: object) -> None:
@@ -295,12 +251,137 @@ def import_part():
         task_display_name="[StarRocks] Refresh Iceberg Tables",
     ).expand(params=[{"table": v} for v in get_iceberg_germline_snv_mapping().values()])
 
+    case_ids = extract_case_ids(cases)
+
+    insert_hashes = RadiantStarRocksOperator(
+        task_id="insert_variant_hashes",
+        sql="./sql/radiant/variant_insert_hashes.sql",
+        task_display_name="[StarRocks] Insert Variants Hashes into Lookup",
+        submit_task_options=std_submit_task_opts,
+        parameters=case_ids,
+    )
+
+    overwrite_tmp_variants = RadiantStarRocksOperator(
+        task_id="overwrite_tmp_variant",
+        sql="./sql/radiant/tmp_variant_insert.sql",
+        task_display_name="[StarRocks] Insert Variants Tmp tables",
+        submit_task_options=std_submit_task_opts,
+        parameters=case_ids,
+    )
+
+    insert_exomiser = RadiantStarRocksOperator(
+        task_id="insert_exomiser",
+        sql="./sql/radiant/exomiser_insert.sql",
+        task_display_name="[StarRocks] Insert Exomiser",
+        submit_task_options=std_submit_task_opts,
+        parameters={"part": "{{ params.part }}"},
+    )
+
+    insert_occurrences = RadiantStarRocksOperator(
+        task_id="insert_occurrence",
+        sql="./sql/radiant/occurrence_insert.sql",
+        task_display_name="[StarRocks] Insert Occurrences Part",
+        submit_task_options=std_submit_task_opts,
+        parameters={"part": "{{ params.part }}"},
+    )
+
+    insert_stg_variants_freq = RadiantStarRocksOperator(
+        task_id="insert_stg_variant_freq",
+        sql="./sql/radiant/staging_variant_freq_insert.sql",
+        task_display_name="[StarRocks] Insert Stg Variants Freq Part",
+        submit_task_options=std_submit_task_opts,
+        parameters={"part": "{{ params.part }}"},
+    )
+
+    aggregate_variants_frequencies = RadiantStarRocksOperator(
+        task_id="aggregate_variant_freq",
+        task_display_name="[StarRocks] Aggregate all variants frequencies",
+        sql="./sql/radiant/variant_frequency_insert.sql",
+        submit_task_options=std_submit_task_opts,
+    )
+
+    with TaskGroup(group_id="variant") as tg_variants:
+        insert_staging_variants = RadiantStarRocksOperator(
+            task_id="insert_staging_variant",
+            task_display_name="[StarRocks] Insert Staging Variants",
+            sql="./sql/radiant/staging_variant_insert.sql",
+            submit_task_options=std_submit_task_opts,
+        )
+
+        insert_variants_with_freqs = RadiantStarRocksOperator(
+            task_id="insert_variant",
+            task_display_name="[StarRocks] Insert Variants",
+            sql="./sql/radiant/variant_insert.sql",
+            submit_task_options=std_submit_task_opts,
+        )
+
+        @task(task_id="compute_parts")
+        def compute_part(params):
+            _magic = 10
+            variant_part = int(params["part"]) // _magic
+            return {
+                "variant_part": variant_part,
+                "part_lower": variant_part * _magic,
+                "part_upper": (variant_part + 1) * _magic,
+            }
+
+        _compute_part = compute_part()
+
+        insert_variants_part = RadiantStarRocksOperator(
+            task_id="insert_variant_part",
+            sql="./sql/radiant/variant_part_insert_part.sql",
+            task_display_name="[StarRocks] Insert Variants Part",
+            submit_task_options=std_submit_task_opts,
+            parameters=_compute_part,
+        )
+
+        insert_staging_variants >> insert_variants_with_freqs >> insert_variants_part
+
+    with TaskGroup(group_id="consequence") as tg_consequences:
+        import_consequences = RadiantStarRocksOperator(
+            task_id="import_consequence",
+            sql="./sql/radiant/consequence_insert.sql",
+            task_display_name="[StarRocks] Insert Consequences",
+            submit_task_options=std_submit_task_opts,
+            parameters=case_ids,
+        )
+
+        import_consequences_filter = RadiantStarRocksOperator(
+            task_id="import_consequence_filter",
+            sql="./sql/radiant/consequence_filter_insert.sql",
+            task_display_name="[StarRocks] Insert Consequences Filter",
+            submit_task_options=std_submit_task_opts,
+        )
+
+        insert_consequences_filter_part = RadiantStarRocksOperator(
+            task_id="insert_consequence_filter_part",
+            sql="./sql/radiant/consequence_filter_insert_part.sql",
+            task_display_name="[StarRocks] Insert Consequences Filter Part",
+            submit_task_options=std_submit_task_opts,
+            parameters={"part": "{{ params.part }}"},
+        )
+
+        import_consequences >> import_consequences_filter >> insert_consequences_filter_part
+
+    update_sequencing_experiments = EmptyOperator(
+        task_id="update_sequencing_experiment", task_display_name="[TODO] Update Sequencing Experiments"
+    )
+
     (
         start
         >> fetch_sequencing_experiment_delta
-        >> create_portable_task("import_vcf").expand(params=prepared_cases)
+        >> import_vcf
         >> load_exomiser_files(cases=cases, part="{{ params.part }}")
         >> refresh_iceberg_tables
+        >> insert_hashes
+        >> overwrite_tmp_variants
+        >> insert_exomiser
+        >> insert_occurrences
+        >> insert_stg_variants_freq
+        >> aggregate_variants_frequencies
+        >> tg_variants
+        >> tg_consequences
+        >> update_sequencing_experiments
     )
 
 
