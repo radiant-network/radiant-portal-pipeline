@@ -23,4 +23,4 @@ RUN pip install -r /opt/radiant/requirements.txt
 
 # Setup Radiant code
 COPY radiant /opt/radiant/radiant
-COPY poc-ecs-k8s/import_vcf_for_case.py /opt/radiant/import_vcf_for_case.py
+COPY radiant/scripts/import_vcf_for_case.py /opt/radiant/import_vcf_for_case.py
