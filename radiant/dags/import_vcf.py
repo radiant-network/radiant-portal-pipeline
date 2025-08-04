@@ -1,13 +1,15 @@
+import logging
 import os
 from datetime import timedelta
 
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Param, Variable
-from airflow.providers.amazon.aws.operators import ecs
 from airflow.utils.dates import days_ago
 
 from radiant.dags import NAMESPACE
+
+LOGGER = logging.getLogger(__name__)
 
 
 def parse_list(env_val):
@@ -19,7 +21,7 @@ ECS_SUBNETS = parse_list(Variable.get("AWS_ECS_SUBNETS", default_var=os.environ.
 ECS_SECURITY_GROUPS = parse_list(
     Variable.get("AWS_ECS_SECURITY_GROUPS", default_var=os.environ.get("AWS_ECS_SECURITY_GROUPS", ""))
 )
-USE_ECS = Variable.get("USE_AWS_ECS", default_var="false").lower() == "true"
+USE_ECS = Variable.get("RADIANT_IMPORT_VCF_USE_AWS_ECS", default_var="false").lower() == "true"
 
 
 default_args = {
@@ -66,6 +68,12 @@ with DAG(
         return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
 
     if USE_ECS:
+        try:
+            from airflow.providers.amazon.aws.operators import ecs
+        except ImportError as ie:
+            LOGGER.error("ECS operator not found. Please install the required provider.")
+            raise ie
+
         create_parquet_files = ecs.EcsRunTaskOperator.partial(
             pool="poc_ecs_import_vcf",
             task_id="create_parquet_files_ecs",
@@ -104,6 +112,15 @@ with DAG(
         )
 
     else:
+        try:
+            from importlib.util import find_spec
+
+            if find_spec("airflow.providers.cncf.kubernetes.operators.pod") is None:
+                LOGGER.error("Kubernetes provider not found. Please install the required provider.")
+                raise ImportError("Kubernetes provider not found.")
+        except ImportError as ie:
+            LOGGER.error("Kubernetes provider not found. Please install the required provider.")
+            raise ie
 
         @task.kubernetes(
             kubernetes_conn_id="kubernetes_conn",
@@ -215,6 +232,11 @@ with DAG(
 
     all_cases = get_cases()
 
-    partitions_commit = create_parquet_files.expand(case=all_cases)
-    merged_commit = merge_commits(partitions_commit)
+    if USE_ECS:
+        partitions_commit = create_parquet_files.expand(params=all_cases)
+        merged_commit = merge_commits(partitions_commit.output)
+    else:
+        partitions_commit = create_parquet_files.expand(case=all_cases)
+        merged_commit = merge_commits(partitions_commit)
+
     commit_partitions(merged_commit)
