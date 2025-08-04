@@ -20,22 +20,11 @@ RUN dnf groupinstall -y "Development Tools" && \
         pkgconfig && \
     dnf clean all
 
-ARG LIBCURL_VERSION=8.13.0
-RUN curl -L -O https://curl.se/download/curl-${LIBCURL_VERSION}.tar.gz && \
-    tar -xzf curl-${LIBCURL_VERSION}.tar.gz && \
-    cd curl-${LIBCURL_VERSION} && \
-    ./configure --with-ssl --prefix=/usr/local && \
-    make -j$(nproc) && \
-    make install && \
-    ldconfig && \
-    cd .. && \
-    rm -rf curl-${LIBCURL_VERSION} curl-${LIBCURL_VERSION}.tar.gz
-
-# Install htslib with flag enable-s3
+# Install htslib
 RUN curl -L -O https://github.com/samtools/htslib/releases/download/1.21/htslib-1.21.tar.bz2 && \
     tar -xvf htslib-1.21.tar.bz2 && \
     cd htslib-1.21 && \
-    ./configure --enable-libcurl && \
+    ./configure && \
     make && \
     make install && \
     cd .. && \

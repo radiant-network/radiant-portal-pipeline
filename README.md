@@ -12,11 +12,8 @@ This repository contains the different files and scripts used to run the Radiant
 
 ### Structure
 
-- `dags` directory contains the DAGs used to run the pipeline.
-- `dags/lib` directory contains the libraries used in the DAGs.
-- `lib` contains Airflow-specific components to support ETL pipelines.
-- `tasks` directory contains the python tasks used in the DAGs.
-- `docker` contain specific airflow image with dependencies to run the pipeline.
+- `radiant/dags` directory contains the DAGs used to run the pipeline.
+- `radiant/dags/task` directory contains the libraries used in the DAGs.
 
 
 ### Airflow dev stack
@@ -49,3 +46,22 @@ The following are examples and should be adjusted to your environment:
 - `Schema`: `poc_starrocks`
 - `Login`: `root`
 - `Password`: (leave empty)
+
+## Documentation
+
+### Requirements files
+
+| Requirements File Name     | Purpose                                                                            |
+|----------------------------|------------------------------------------------------------------------------------|
+| `requirements.txt`         | Main dependencies required to run the Radiant ETL pipeline.                        |
+| `requirements-dev.txt`     | Development dependencies such as testing and linting tools.                        |
+| `requirements-airflow.txt` | Dependencies needed for Kubernetes-based deployment. Airflow version `2.10.5`.     |
+| `requirements-mwaa.txt`    | Dependencies needed for the MWAA (AWS)-based deployment. Airflow version `2.10.3`. |
+
+### Dockerfiles
+
+| Dockerfile                | Purpose                                                                            |
+|---------------------------|------------------------------------------------------------------------------------|
+| `Dockerfile`              | Main image used by webserver, scheduler, etc... in Kubernetes-based deployments.   |
+| `Dockerfile-mwaa`         | Used as a dependencies builder to create an initialization package for MWAA.       |
+| `Dockerfile-vcf-operator` | Used at the pod images for running VCF import task (for both K8S/ECS deployments). |

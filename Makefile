@@ -6,6 +6,9 @@ build-docker-airflow:
 build-docker-vcf-operator:
 	docker build -f Dockerfile-vcf-operator -t radiant-vcf-operator:latest .
 
+build-docker-mwaa:
+	docker build -f Dockerfile-mwaa -t radiant-mwaa:latest .
+
 build-docker: build-docker-airflow build-docker-vcf-operator
 
 install:
