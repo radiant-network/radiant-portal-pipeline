@@ -3,9 +3,9 @@ from pyiceberg.schema import NestedField, Schema
 from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, StringType
 
 from radiant.tasks.iceberg.utils import merge_schemas
-from radiant.tasks.vcf.common import SCHEMA as COMMON_SCHEMA
-from radiant.tasks.vcf.common import Common
 from radiant.tasks.vcf.pedigree import Pedigree
+from radiant.tasks.vcf.snv.germline.common import SCHEMA as COMMON_SCHEMA
+from radiant.tasks.vcf.snv.germline.common import Common
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,

@@ -76,7 +76,7 @@ with DAG(
         import boto3
 
         from radiant.tasks.vcf.experiment import Case
-        from radiant.tasks.vcf.process import process_case
+        from radiant.tasks.vcf.snv.germline.process import process_case
 
         logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
         logger = logging.getLogger(__name__)

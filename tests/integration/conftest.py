@@ -9,9 +9,9 @@ import pysam
 from pyiceberg.catalog.rest import RestCatalog
 
 from radiant.dags import ICEBERG_NAMESPACE
-from radiant.tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
-from radiant.tasks.vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
-from radiant.tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
+from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
+from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as OCCURRENCE_SCHEMA
+from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
 
 USE_DOCKER_FIXTURES = os.getenv("USE_DOCKER_FIXTURES", "false").lower() == "true"
 if USE_DOCKER_FIXTURES:

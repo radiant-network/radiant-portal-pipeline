@@ -1,6 +1,6 @@
-from radiant.tasks.vcf.common import Common
-from radiant.tasks.vcf.consequence import parse_csq_header, process_consequence
 from radiant.tasks.vcf.experiment import Case, Experiment
+from radiant.tasks.vcf.snv.germline.common import Common
+from radiant.tasks.vcf.snv.germline.consequence import parse_csq_header, process_consequence
 from tests.unit.vcf.vcf_test_utils import variant, vcf
 
 case = Case(
