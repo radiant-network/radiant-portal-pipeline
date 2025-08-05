@@ -17,6 +17,8 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "orphanet_gene_panel",
         "ddd_gene_panel",
         "cosmic_gene_panel",
+        "mondo_term",
+        "hpo_term"
     ]
     assert len(dag.tasks) == 3 + len(gene_group_ids) + len(variant_group_ids) * 2
 

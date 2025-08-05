@@ -59,6 +59,8 @@ ICEBERG_OPEN_DATA_MAPPING = {
     "iceberg_orphanet_gene_set": "orphanet_gene_set",
     "iceberg_cosmic_gene_set": "cosmic_gene_set",
     "iceberg_ddd_gene_set": "ddd_gene_set",
+    "iceberg_mondo_term": "mondo_term",
+    "iceberg_hpo_term": "hpo_term",
 }
 
 ICEBERG_CATALOG_DATABASE = {
@@ -102,6 +104,8 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_gnomad_constraint": "gnomad_constraint",
     "starrocks_omim_gene_panel": "omim_gene_panel",
     "starrocks_hpo_gene_panel": "hpo_gene_panel",
+    "starrocks_hpo_term": "hpo_term",
+    "starrocks_mondo_term": "mondo_term",
     "starrocks_orphanet_gene_panel": "orphanet_gene_panel",
     "starrocks_cosmic_gene_panel": "cosmic_gene_panel",
     "starrocks_ddd_gene_panel": "ddd_gene_panel",
