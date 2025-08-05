@@ -46,6 +46,8 @@ def open_data_iceberg_tables(
         "cosmic_gene_set": ["tumour_types_germline"],
         "ddd_gene_set": None,
         "hpo_gene_set": None,
+        "hpo_term": None,
+        "mondo_term": None,
         "orphanet_gene_set": ["type_of_inheritance"],
     }
 

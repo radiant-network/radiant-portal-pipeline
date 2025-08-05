@@ -110,6 +110,8 @@ def test_queries_are_valid(
             "gnomad_constraint",
             "omim_gene_panel",
             "hpo_gene_panel",
+            "mondo_term",
+            "hpo_term",
             "orphanet_gene_panel",
             "ddd_gene_panel",
             "cosmic_gene_panel",

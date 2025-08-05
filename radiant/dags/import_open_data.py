@@ -21,6 +21,8 @@ gene_group_ids = [
     "orphanet_gene_panel",
     "ddd_gene_panel",
     "cosmic_gene_panel",
+    "mondo_term",
+    "hpo_term",
 ]
 
 dag_params = {
