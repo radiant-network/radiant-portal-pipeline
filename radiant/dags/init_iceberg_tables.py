@@ -25,6 +25,15 @@ with DAG(
     catchup=False,
 ) as dag:
 
+    @task
+    def get_namespace():
+        """Get the Iceberg namespace from conf or use the one defined in environment variable or use default."""
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        dag_conf = context["dag_run"].conf or {}
+        return dag_conf.get("RADIANT_ICEBERG_NAMESPACE", ICEBERG_NAMESPACE)
+
     @task.external_python(task_id="init_database", python=PATH_TO_PYTHON_BINARY)
     def init_database(namespace):
         from pyiceberg.catalog import load_catalog
@@ -121,9 +130,10 @@ with DAG(
         )
         catalog.create_table_if_not_exists(table_name, schema=CONSEQUENCE_SCHEMA, partition_spec=partition_spec)
 
+    namespace_task = get_namespace()
     (
-        init_database(ICEBERG_NAMESPACE)
-        >> create_germline_occurrence_table(ICEBERG_NAMESPACE)
-        >> create_germline_variant_table(ICEBERG_NAMESPACE)
-        >> create_germline_consequences_table(ICEBERG_NAMESPACE)
+        init_database(namespace_task)
+        >> create_germline_occurrence_table(namespace_task)
+        >> create_germline_variant_table(namespace_task)
+        >> create_germline_consequences_table(namespace_task)
     )

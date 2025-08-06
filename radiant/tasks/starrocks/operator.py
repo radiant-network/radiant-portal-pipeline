@@ -147,5 +147,16 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
 
 class RadiantStarRocksOperator(StarRocksSQLExecuteQueryOperator):
     def __init__(self, params: MutableMapping | None = None, radiant_params: dict | None = None, *args, **kwargs):
-        self.radiant_params = radiant_params or get_radiant_mapping()
+        self.radiant_params = radiant_params or {}
         super().__init__(*args, params={**(params or {}), **self.radiant_params}, **kwargs)
+
+    def render_template_fields(self, context, jinja_env=None):
+        dag_conf_params = context.get("dag_run").conf or {}
+        dynamic_mapping = get_radiant_mapping(dag_conf_params)
+
+        # Merge into self.params before rendering
+        params = {"params": {**self.params, **self.radiant_params, **dynamic_mapping}}
+
+        _context = {**context, **params}
+
+        return super().render_template_fields(_context, jinja_env=jinja_env)

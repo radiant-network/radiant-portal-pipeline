@@ -3,6 +3,8 @@ name: Test Pipeline
 on:
   pull_request:
     branches: [ "**" ]
+env:
+  USE_DOCKER_FIXTURES: "true"
 
 jobs:
   run-tests:

@@ -4,6 +4,13 @@ import os
 import jinja2
 
 from radiant.dags import DAGS_DIR
+from radiant.tasks.data.radiant_tables import (
+    CLINICAL_CATALOG_ENV_KEY,
+    CLINICAL_DATABASE_ENV_KEY,
+    RADIANT_DATABASE_ENV_KEY,
+    RADIANT_ICEBERG_CATALOG_ENV_KEY,
+    RADIANT_ICEBERG_DATABASE_ENV_KEY,
+)
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
@@ -85,15 +92,17 @@ def test_queries_are_valid(
     monkeypatch,
     iceberg_client,
     starrocks_session,
-    setup_namespace,
+    starrocks_database,
+    setup_iceberg_namespace,
     open_data_iceberg_tables,
     starrocks_iceberg_catalog,
     starrocks_jdbc_catalog,
-    postgres_clinical_seeds,
 ):
-    monkeypatch.setenv("RADIANT_ICEBERG_CATALOG", starrocks_iceberg_catalog.name)
-    monkeypatch.setenv("RADIANT_ICEBERG_DATABASE", setup_namespace)
-    monkeypatch.setenv("RADIANT_CLINICAL_CATALOG", starrocks_jdbc_catalog)
+    monkeypatch.setenv(RADIANT_ICEBERG_CATALOG_ENV_KEY, starrocks_iceberg_catalog.catalog)
+    monkeypatch.setenv(RADIANT_ICEBERG_DATABASE_ENV_KEY, setup_iceberg_namespace)
+    monkeypatch.setenv(CLINICAL_CATALOG_ENV_KEY, starrocks_jdbc_catalog.catalog)
+    monkeypatch.setenv(CLINICAL_DATABASE_ENV_KEY, starrocks_jdbc_catalog.database)
+    monkeypatch.setenv(RADIANT_DATABASE_ENV_KEY, starrocks_database.database)
 
     # Validate table creation for Open Data & Radiant
     _validate_init(

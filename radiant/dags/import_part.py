@@ -102,11 +102,21 @@ def import_part():
 
     cases = check_cases(fetch_sequencing_experiment_delta.output)
 
+    @task(task_id="prepare_config", task_display_name="[PyOp] Prepare Config")
+    def prepare_config(cases: Any) -> Any:
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        conf = context["dag_run"].conf or {}
+        conf["cases"] = cases
+        return conf
+
+    _prepare_config = prepare_config(cases)
     import_vcf = TriggerDagRunOperator(
         task_id="import_vcf",
         task_display_name="[DAG] Import VCF into Iceberg",
         trigger_dag_id=f"{NAMESPACE}-import-vcf",
-        conf={"cases": cases},
+        conf=_prepare_config,
         reset_dag_run=True,
         wait_for_completion=True,
         poke_interval=2,
@@ -120,11 +130,14 @@ def import_part():
 
         import jinja2
         from airflow.hooks.base import BaseHook
+        from airflow.operators.python import get_current_context
 
         from radiant.dags import DAGS_DIR
         from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
-        _query_params = get_radiant_mapping() | {"broker_load_timeout": 7200}
+        context = get_current_context()
+        conf = context["dag_run"].conf or {}
+        _query_params = get_radiant_mapping(conf) | {"broker_load_timeout": 7200}
 
         _check_part_exists_sql = """
         SHOW PARTITIONS FROM {{ params.starrocks_staging_exomiser }} WHERE PartitionName='p%(part)s'
@@ -213,12 +226,16 @@ def import_part():
                 for tsv_filepath in _paths:
                     _params["tsv_filepath"] = tsv_filepath
                     LOGGER.info(f"Executing exomiser load with params: {_params}")
+                    _database_name = _query_params["starrocks_staging_exomiser"].split(".")[0]
+                    _table_name = _query_params["starrocks_staging_exomiser"].split(".")[1]
                     _sql = load_staging_exomiser_sql.format(
                         label=f"{_params['label']}",
                         temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
                         broker_configuration=broker_configuration,
-                        database_name=conn.schema,
+                        database_name=_database_name,
+                        table_name=_table_name,
                     )
+
                     cursor.execute(_sql, _params)
 
                 _i = 0
@@ -245,11 +262,20 @@ def import_part():
     def extract_case_ids(cases) -> dict[str, list[Any]]:
         return {"case_ids": [c["case_id"] for c in cases]}
 
+    @task
+    def get_tables_to_refresh():
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        dag_conf = context["dag_run"].conf or {}
+
+        return [{"table": v} for v in get_iceberg_germline_snv_mapping(dag_conf).values()]
+
     refresh_iceberg_tables = RadiantStarRocksOperator.partial(
         task_id="refresh_iceberg_tables",
         sql="REFRESH EXTERNAL TABLE {{ params.table }}",
         task_display_name="[StarRocks] Refresh Iceberg Tables",
-    ).expand(params=[{"table": v} for v in get_iceberg_germline_snv_mapping().values()])
+    ).expand(params=get_tables_to_refresh())
 
     case_ids = extract_case_ids(cases)
 

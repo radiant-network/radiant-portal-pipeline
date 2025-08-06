@@ -13,7 +13,6 @@ from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTas
 
 logger = logging.getLogger(__name__)
 
-
 std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=10)
 
 
@@ -96,13 +95,16 @@ def import_radiant():
 
             import jinja2
             from airflow.hooks.base import BaseHook
+            from airflow.operators.python import get_current_context
 
             from radiant.dags import DAGS_DIR
             from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
+            context = get_current_context()
+            dag_conf = context["dag_run"].conf or {}
             _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/sequencing_experiment_insert.sql")
             with open(_path) as f_in:
-                _sql = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping()})
+                _sql = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping(dag_conf)})
 
             conn = BaseHook.get_connection("starrocks_conn")
 
@@ -138,7 +140,11 @@ def import_radiant():
         from radiant.tasks.starrocks.partition import SequencingExperimentPriorityAssigner
 
         prioritized = SequencingExperimentPriorityAssigner.assign_priorities(sequencing_experiment_to_process)
-        return [{"part": part} for part in prioritized]
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        dag_conf = context["dag_run"].conf or {}
+        return [{**dag_conf, **{"part": part}} for part in prioritized]
 
     priority = assign_priority(fetch_sequencing_experiment.output)
 
