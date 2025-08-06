@@ -66,7 +66,9 @@ with DAG(
         from radiant.tasks.vcf.experiment import Case
 
         if USE_ECS:
-            return [{"case": Case.model_validate(c).model_dump()} for c in params.get("cases", []) if c.get("vcf_filepath")]
+            return [
+                {"case": Case.model_validate(c).model_dump()} for c in params.get("cases", []) if c.get("vcf_filepath")
+            ]
 
         return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
 
@@ -216,7 +218,7 @@ with DAG(
         logger = logging.getLogger(__name__)
 
         if isinstance(partition_lists[0], str):
-            logger.warning(f"Received partition lists as string")
+            logger.warning("Received partition lists as string")
             _parsed_partitions = []
             for part in partition_lists:
                 _parsed_partitions.append(json.loads(part))
