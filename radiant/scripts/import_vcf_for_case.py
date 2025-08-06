@@ -93,5 +93,6 @@ if __name__ == "__main__":
         res = process_case(case, namespace=namespace, vcf_threads=4)
         logger.info(f"🔁 Parquet files created: {case.case_id}, file {case.vcf_filepath}")
 
-        # Push this as XCom
-        logger.info({k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()})
+        # Push this as XCom by printing the result
+        # We use `print` instead of logging to avoid having to parse and clean the log output
+        print({k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()})

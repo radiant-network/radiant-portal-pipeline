@@ -65,6 +65,9 @@ with DAG(
     def get_cases(params):
         from radiant.tasks.vcf.experiment import Case
 
+        if USE_ECS:
+            return [{"case": Case.model_validate(c).model_dump()} for c in params.get("cases", []) if c.get("vcf_filepath")]
+
         return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
 
     if USE_ECS:
@@ -75,8 +78,8 @@ with DAG(
             raise ie
 
         create_parquet_files = ecs.EcsRunTaskOperator.partial(
-            pool="poc_ecs_import_vcf",
-            task_id="create_parquet_files_ecs",
+            pool="import_vcf",
+            task_id="create_parquet_files",
             task_definition="airflow_ecs_operator_task:13",
             cluster=ECS_CLUSTER,
             launch_type="FARGATE",
@@ -89,7 +92,7 @@ with DAG(
                 "containerOverrides": [
                     {
                         "name": "radiant-operator-qa-etl-container",
-                        "command": ["python /opt/radiant/import_vcf_for_case.py --case {{ params.case | tojson }}"],
+                        "command": ["python /opt/radiant/import_vcf_for_case.py --case '{{ params.case | tojson }}'"],
                         "environment": [
                             {"name": "PYTHONPATH", "value": "/opt/radiant"},
                             {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
@@ -124,6 +127,7 @@ with DAG(
 
         @task.kubernetes(
             kubernetes_conn_id="kubernetes_conn",
+            pool="import_vcf",
             task_id="create_parquet_files",
             map_index_template="Case: {{ task.op_kwargs['case']['case_id'] }}",
             name="import-vcf-for-case",
@@ -196,11 +200,27 @@ with DAG(
                 res = process_case(case, namespace=namespace, vcf_threads=4)
                 logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
 
-            return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}
+            return json.dumps({k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()})
 
     @task
-    def merge_commits(partition_lists: list[dict[str, list[dict]]]) -> dict[str, list[dict]]:
+    def merge_commits(partition_lists: list[dict[str, list[dict]]] | list[str]) -> dict[str, list[dict]]:
+        if not partition_lists:
+            return {}
+
+        import json
+        import logging
+        import sys
         from collections import defaultdict
+
+        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
+        logger = logging.getLogger(__name__)
+
+        if isinstance(partition_lists[0], str):
+            logger.warning(f"Received partition lists as string")
+            _parsed_partitions = []
+            for part in partition_lists:
+                _parsed_partitions.append(json.loads(part))
+            partition_lists = _parsed_partitions
 
         merged = defaultdict(list)
         for d in partition_lists:
