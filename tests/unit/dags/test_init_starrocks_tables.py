@@ -47,7 +47,7 @@ def test_dag_has_all_tasks(dag_bag):
         "ddd_gene_panel",
         "cosmic_gene_panel",
         "mondo_term",
-        "hpo_term"
+        "hpo_term",
     ]
     for group in group_ids:
         assert f"create_{group}" in task_ids

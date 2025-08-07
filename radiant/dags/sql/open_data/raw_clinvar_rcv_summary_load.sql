@@ -1,6 +1,6 @@
 LOAD LABEL {database_name}.{label} (
     DATA INFILE %(rcv_summary_filepaths)s
-    INTO TABLE {{ params.starrocks_raw_clinvar_rcv_summary }}
+    INTO TABLE {table_name}
     COLUMNS TERMINATED BY "\t"
     FORMAT AS "json"
 )

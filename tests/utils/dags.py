@@ -3,45 +3,48 @@ import time
 
 import pandas as pd
 import pyarrow as pa
-
-
-def _exec_command(airflow_container, command: list[str]):
-    if hasattr(airflow_container, "exec"):
-        return airflow_container.exec(command)
-    elif hasattr(airflow_container, "exec_run"):
-        return airflow_container.exec_run(command)
-    else:
-        raise ValueError("The airflow_container does not support exec or exec_run methods.")
+import requests
 
 
 def unpause_dag(airflow_container, dag_id: str) -> None:
-    """
-    Unpauses the specified Airflow DAG.
-    """
-    _exec_command(airflow_container, ["airflow", "dags", "unpause", dag_id])
-    print(f"DAG {dag_id} unpaused.")
+    unpause_url = f"{airflow_container.endpoint}/api/v1/dags/{dag_id}"
+    response = requests.patch(
+        unpause_url,
+        auth=(airflow_container.username, airflow_container.password),
+        headers={"Content-Type": "application/json"},
+        json={"is_paused": False},
+    )
+
+    # 2. Check response
+    if response.status_code == 200:
+        print(f"DAG '{dag_id}' is now unpaused.")
+    else:
+        raise RuntimeError(f"Failed to unpause DAG: {response.status_code} {response.text}")
 
 
-def trigger_dag(airflow_container, dag_id: str, conf: str = None) -> None:
-    """
-    Triggers the specified Airflow DAG.
-    """
-    _cmd = ["airflow", "dags", "trigger", dag_id]
-    if conf:
-        _cmd.extend(["--conf", conf])
-    _exec_command(airflow_container, _cmd)
-    print(f"DAG {dag_id} triggered.")
+def trigger_dag(airflow_container, dag_id: str, run_id: str, conf: dict = None) -> str:
+    trigger_url = f"{airflow_container.endpoint}/api/v1/dags/{dag_id}/dagRuns"
+
+    response = requests.post(
+        trigger_url,
+        auth=(airflow_container.username, airflow_container.password),
+        json={"dag_run_id": run_id, "conf": conf or {}},
+    )
+
+    if response.status_code != 200:
+        raise RuntimeError(f"Failed to trigger DAG: {response.status_code} {response.text}")
+    return run_id
 
 
-def poll_dag_until_success(airflow_container, dag_id, timeout=120) -> bool:
+def poll_dag_until_success(airflow_container, dag_id, run_id, timeout=120) -> bool:
     """
-    Polls the Airflow container until the specified task is successful or the timeout is reached.
+    Polls the Airflow container until the specified task is successful, or the timeout is reached.
     """
     start_time = time.time()
+    status_url = f"{airflow_container.endpoint}/api/v1/dags/{dag_id}/dagRuns/{run_id}"
     while True:
-        _state = json.loads(
-            _exec_command(airflow_container, ["airflow", "dags", "list-runs", "--dag-id", dag_id, "-o", "json"]).output
-        )[0].get("state")
+        resp = requests.get(status_url, auth=(airflow_container.username, airflow_container.password))
+        _state = resp.json()["state"]
         if _state == "success":
             print(f"Task {dag_id} succeeded.")
             return True

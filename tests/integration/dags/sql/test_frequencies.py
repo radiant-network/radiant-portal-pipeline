@@ -5,17 +5,16 @@ import jinja2
 import pandas as pd
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.data.radiant_tables import get_radiant_mapping
+from radiant.tasks.data.radiant_tables import RADIANT_DATABASE_ENV_KEY, get_radiant_mapping
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
 
-def _reset_table(starrocks_session, table_name):
-    _radiant_mapping = get_radiant_mapping()
+def _reset_table(starrocks_session, table_name, mapping):
     with open(os.path.join(_SQL_DIR, f"radiant/init/{table_name}_create_table.sql")) as f_in:
-        create_table_sql = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping()})
+        create_table_sql = jinja2.Template(f_in.read()).render({"params": mapping})
 
-    table_name = _radiant_mapping.get(f"starrocks_{table_name}")
+    table_name = mapping.get(f"starrocks_{table_name}")
 
     with starrocks_session.cursor() as cursor:
         cursor.execute(create_table_sql)
@@ -39,25 +38,29 @@ def load_tsv(starrocks_session, table_name, tsv_path):
         cursor.executemany(insert_sql, values)
 
 
-def test_staging_variant_frequencies_calculation(starrocks_session, resources_dir):
+def test_staging_variant_frequencies_calculation(starrocks_session, resources_dir, starrocks_database):
     """
     Test the frequencies calculation for variants.
     """
+    conf = {
+        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
+    }
+    mapping = get_radiant_mapping(conf)
     for table_name in ["occurrence", "staging_sequencing_experiment", "staging_variant_frequency"]:
-        _reset_table(starrocks_session, table_name)
+        _reset_table(starrocks_session, table_name, mapping)
 
     # Insert some test data into the occurrence table
-    occurrence_table_name = get_radiant_mapping().get("starrocks_occurrence")
-    seq_exp_table = get_radiant_mapping().get("starrocks_staging_sequencing_experiment")
+    occurrence_table_name = mapping.get("starrocks_occurrence")
+    seq_exp_table = mapping.get("starrocks_staging_sequencing_experiment")
 
     load_tsv(starrocks_session, occurrence_table_name, resources_dir / "radiant/occurrence.tsv")
     load_tsv(starrocks_session, seq_exp_table, resources_dir / "radiant/staging_sequencing_experiment.tsv")
 
     with open(os.path.join(_SQL_DIR, "radiant/staging_variant_freq_insert.sql")) as f_in:
-        variant_freq_insert = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping()})
+        variant_freq_insert = jinja2.Template(f_in.read()).render({"params": mapping})
 
     _select_sql = "SELECT * FROM {{ params.starrocks_staging_variant_frequency }}"
-    _select_sql = jinja2.Template(_select_sql).render({"params": get_radiant_mapping()})
+    _select_sql = jinja2.Template(_select_sql).render({"params": mapping})
 
     _params = {"part": 0}
 

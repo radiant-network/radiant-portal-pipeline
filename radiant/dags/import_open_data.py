@@ -88,12 +88,16 @@ with DAG(
 
         import jinja2
         from airflow.hooks.base import BaseHook
+        from airflow.operators.python import get_current_context
 
         from radiant.dags import DAGS_DIR
         from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
+        context = get_current_context()
+        dag_conf = context["dag_run"].conf or {}
+
         conn = BaseHook.get_connection("starrocks_conn")
-        _query_params = get_radiant_mapping() | {"broker_load_timeout": 7200}
+        _query_params = get_radiant_mapping(dag_conf) | {"broker_load_timeout": 7200}
 
         _truncate_sql = """
         TRUNCATE TABLE {{ params.starrocks_raw_clinvar_rcv_summary }};
@@ -119,15 +123,18 @@ with DAG(
             """
 
         _label = f"raw_clinvar_rcv_summary_load_{str(uuid.uuid4().hex)}"
+        _database_name = _query_params["starrocks_raw_clinvar_rcv_summary"].split(".")[0]
+        _table_name = _query_params["starrocks_raw_clinvar_rcv_summary"].split(".")[1]
         _prepared_load_sql = raw_clinvar_rcv_summary_load_sql.format(
             label=_label,
             broker_configuration=broker_configuration,
-            database_name=conn.schema,
+            database_name=_database_name,
+            table_name=_table_name,
         )
 
         with conn.get_hook().get_conn().cursor() as cursor:
             LOGGER.warning(f"Truncating raw ClinVar RCV Summary table. \nSQL:\n {_prepared_truncate_sql}")
-            cursor.execute(_prepared_truncate_sql)
+            # cursor.execute(_prepared_truncate_sql)
 
             LOGGER.warning(f"Loading raw ClinVar RCV Summary data. SQL:\n {_prepared_load_sql}")
             cursor.execute(_prepared_load_sql, {"rcv_summary_filepaths": rcv_summary_filepaths})

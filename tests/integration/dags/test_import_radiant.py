@@ -1,5 +1,10 @@
 import pytest
 
+from radiant.tasks.data.radiant_tables import (
+    CLINICAL_DATABASE_ENV_KEY,
+    RADIANT_DATABASE_ENV_KEY,
+    RADIANT_ICEBERG_DATABASE_ENV_KEY,
+)
 from tests.utils.dags import poll_dag_until_success, trigger_dag, unpause_dag
 
 
@@ -7,7 +12,9 @@ from tests.utils.dags import poll_dag_until_success, trigger_dag, unpause_dag
 def test_import_radiant(
     init_all_tables,
     starrocks_iceberg_catalog,
+    starrocks_jdbc_catalog,
     radiant_airflow_container,
+    starrocks_database,
     starrocks_session,
     random_test_id,
     indexed_vcfs,
@@ -15,7 +22,7 @@ def test_import_radiant(
     sample_exomiser_tsv,
 ):
     with starrocks_session.cursor() as cursor:
-        cursor.execute(f"TRUNCATE TABLE test_{random_test_id}.staging_sequencing_experiment;")
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
 
     dag_id = "radiant-import"
     part_dag_id = "radiant-import-part"
@@ -24,11 +31,18 @@ def test_import_radiant(
     unpause_dag(radiant_airflow_container, vcf_dag_id)
     unpause_dag(radiant_airflow_container, part_dag_id)
     unpause_dag(radiant_airflow_container, dag_id)
-    trigger_dag(radiant_airflow_container, dag_id)
+    dag_conf = {
+        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
+        RADIANT_ICEBERG_DATABASE_ENV_KEY: starrocks_iceberg_catalog.database,
+        CLINICAL_DATABASE_ENV_KEY: starrocks_jdbc_catalog.database,
+    }
+    trigger_dag(radiant_airflow_container, dag_id, random_test_id, conf=dag_conf)
 
     # Full import for test partitions takes around 5 minutes locally, so we set a longer timeout
     _timeout = 600
-    assert poll_dag_until_success(airflow_container=radiant_airflow_container, dag_id=dag_id, timeout=_timeout)
+    assert poll_dag_until_success(
+        airflow_container=radiant_airflow_container, dag_id=dag_id, run_id=random_test_id, timeout=_timeout
+    )
 
     _table_count_mapping = {
         "staging_sequencing_experiment": [57],
@@ -45,6 +59,6 @@ def test_import_radiant(
 
     with starrocks_session.cursor() as cursor:
         for _table, counts in _table_count_mapping.items():
-            cursor.execute(f"SELECT COUNT(1) FROM test_{random_test_id}.{_table}")
+            cursor.execute(f"SELECT COUNT(1) FROM {_table}")
             response = cursor.fetchall()
             assert response[0][0] in counts, f"Table {_table} has count {response[0][0]}, expected {counts}"

@@ -5,7 +5,7 @@ from airflow.decorators import task
 from airflow.models import Param
 from airflow.utils.dates import days_ago
 
-from radiant.dags import NAMESPACE
+from radiant.dags import ICEBERG_NAMESPACE, NAMESPACE
 
 default_args = {
     "owner": "radiant",
@@ -50,13 +50,22 @@ with DAG(
 
         return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
 
+    @task
+    def get_namespace():
+        """Get the Iceberg namespace from conf or use the one defined in environment variable or use default."""
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        dag_conf = context["dag_run"].conf or {}
+        return dag_conf.get("RADIANT_ICEBERG_NAMESPACE", ICEBERG_NAMESPACE)
+
     @task.external_python(
         pool="import_vcf",
         task_id="create_parquet_files",
         python=PATH_TO_PYTHON_BINARY,
         map_index_template=("Case: {{ task.op_kwargs['case']['case_id'] }}"),
     )
-    def create_parquet_files(case: dict):
+    def create_parquet_files(case: dict, namespace: str):
         import json
         import logging
         import os
@@ -101,7 +110,6 @@ with DAG(
             logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
             logger.info("=" * 80)
 
-            namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant")
             res = process_case(case, namespace=namespace, vcf_threads=4)
             logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
 
@@ -141,6 +149,6 @@ with DAG(
 
     all_cases = get_cases()
 
-    partitions_commit = create_parquet_files.expand(case=all_cases)
+    partitions_commit = create_parquet_files.partial(namespace=get_namespace()).expand(case=all_cases)
     merged_commit = merge_commits(partitions_commit)
     commit_partitions(merged_commit)

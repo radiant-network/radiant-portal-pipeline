@@ -9,7 +9,7 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-iceberg-tables")
-    assert len(dag.tasks) == 4  # 1 init + 3 germline tables
+    assert len(dag.tasks) == 5  # 1 init + 1 get namespace + 3 germline tables
 
 
 def test_dag_has_correct_tasks(dag_bag):
