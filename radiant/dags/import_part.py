@@ -49,9 +49,8 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
                     experimental_strategy=row["experimental_strategy"],
                     request_id=row["request_id"],
                     request_priority=row["request_priority"],
-                    exomiser_filepaths=json.loads(row["exomiser_filepaths"])
-                    if isinstance(row.get("exomiser_filepaths"), str)
-                    else row.get("exomiser_filepaths", None),
+                    cnv_vcf_filepath=row["cnv_vcf_filepath"],
+                    exomiser_filepath=row["exomiser_filepath"],
                 )
                 for row in list_rows
             ],
@@ -113,9 +112,9 @@ def import_part():
 
     _prepare_config = prepare_config(cases)
     import_vcf = TriggerDagRunOperator(
-        task_id="import_vcf",
-        task_display_name="[DAG] Import VCF into Iceberg",
-        trigger_dag_id=f"{NAMESPACE}-import-vcf",
+        task_id="import_germline_snv_vcf",
+        task_display_name="[DAG] Import Germline SNV VCF into Iceberg",
+        trigger_dag_id=f"{NAMESPACE}-import-germline-snv-vcf",
         conf=_prepare_config,
         reset_dag_run=True,
         wait_for_completion=True,
@@ -177,13 +176,13 @@ def import_part():
         for case in cases:
             _case = Case.model_validate(case)
             for exp in _case.experiments:
-                if not exp.exomiser_filepaths:
+                if not exp.exomiser_filepath:
                     continue
                 _parameters.append(
                     {
                         "part": _case.part,
                         "seq_id": exp.seq_id,
-                        "tsv_filepaths": exp.exomiser_filepaths,
+                        "tsv_filepaths": exp.exomiser_filepath,
                         "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(uuid.uuid4().hex)}",
                     }
                 )

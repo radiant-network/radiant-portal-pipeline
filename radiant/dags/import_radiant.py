@@ -16,25 +16,12 @@ logger = logging.getLogger(__name__)
 std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=10)
 
 
-def pre_process_exomiser_filepaths(dict_rows):
-    import json
-
-    for row in dict_rows:
-        ef = row.get("exomiser_filepaths")
-        if isinstance(ef, str):
-            try:
-                row["exomiser_filepaths"] = json.loads(ef)
-            except json.JSONDecodeError:
-                row["exomiser_filepaths"] = []
-    return dict_rows
-
 
 def experiment_delta_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     from radiant.tasks.starrocks.partition import SequencingDeltaInput
 
     column_names = [desc[0] for desc in descriptions[0]]
     dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
-    dict_rows = pre_process_exomiser_filepaths(dict_rows)
     delta = [vars(SequencingDeltaInput(**row)) for row in dict_rows]
     return [delta]
 
@@ -44,7 +31,6 @@ def experiment_output_processor(results: list[Any], descriptions: list[Sequence[
 
     column_names = [desc[0] for desc in descriptions[0]]
     dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
-    dict_rows = pre_process_exomiser_filepaths(dict_rows)
     delta = [vars(SequencingDeltaOutput(**row)) for row in dict_rows]
     return [delta]
 
@@ -111,9 +97,9 @@ def import_radiant():
             sequencing_experiment = [
                 {
                     **row,
-                    "exomiser_filepaths": None
-                    if not row.get("exomiser_filepaths")
-                    else json.dumps(row.get("exomiser_filepaths")),
+                    "exomiser_filepath": None
+                    if not row.get("exomiser_filepath")
+                    else json.dumps(row.get("exomiser_filepath")),
                 }
                 for row in sequencing_experiment
             ]

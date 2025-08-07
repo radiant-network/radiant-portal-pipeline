@@ -33,12 +33,12 @@ dag_params = {
 }
 
 with DAG(
-    dag_id=f"{NAMESPACE}-import-vcf",
+    dag_id=f"{NAMESPACE}-import-germline-snv-vcf",
     default_args=default_args,
     start_date=days_ago(1),
     schedule_interval=None,
     tags=["radiant", "iceberg"],
-    dag_display_name="Radiant - Import VCF",
+    dag_display_name="Radiant - Import Germline SNV VCF",
     catchup=False,
     params=dag_params,
     max_active_tasks=128,

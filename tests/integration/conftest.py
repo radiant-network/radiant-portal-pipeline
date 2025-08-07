@@ -7,8 +7,9 @@ import fsspec
 import pymysql
 import pysam
 from pyiceberg.catalog.rest import RestCatalog
-
+import jinja2
 from radiant.dags import ICEBERG_NAMESPACE
+from radiant.tasks.data.radiant_tables import get_clinical_mapping, CLINICAL_DATABASE_ENV_KEY
 from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
@@ -91,9 +92,13 @@ def postgres_clinical_seeds(postgres_instance):
     with open(sql_path) as f:
         tables_sql = f.read()
 
-    sql_path = Path(__file__).parent.parent / "resources" / "clinical" / "seeds.sql"
+    sql_path = Path(__file__).parent.parent.parent / "radiant" / "dags" / "sql" / "clinical" / "seeds.sql"
     with open(sql_path) as f:
-        seeds_sql = f.read()
+        template_seeds_sql = f.read()
+        _query_params = get_clinical_mapping({CLINICAL_DATABASE_ENV_KEY: postgres_instance.radiant_db_schema})
+        _query_params = {key: value.replace("radiant_jdbc.", "").replace("`", "") for key, value in _query_params.items()}
+        _query_params["vcf_bucket_prefix"] = "s3://test-vcf"
+        seeds_sql = jinja2.Template(template_seeds_sql).render({"params": _query_params})
 
     # Step 1: Create the new database (autocommit required)
     conn = psycopg2.connect(
@@ -111,11 +116,11 @@ def postgres_clinical_seeds(postgres_instance):
 
     # Connect to the new database to run schema + seed
     with psycopg2.connect(
-        host="localhost",
-        port=postgres_instance.port,
-        user=postgres_instance.user,
-        password=postgres_instance.password,
-        database=postgres_instance.radiant_db,
+            host="localhost",
+            port=postgres_instance.port,
+            user=postgres_instance.user,
+            password=postgres_instance.password,
+            database=postgres_instance.radiant_db,
     ) as conn:
         with conn.cursor() as cur:
             cur.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
@@ -141,12 +146,12 @@ def postgres_clinical_seeds(postgres_instance):
 
 @pytest.fixture(scope="session")
 def radiant_airflow_container(
-    host_internal_address,
-    postgres_instance,
-    starrocks_database,
-    rest_iceberg_catalog_instance,
-    minio_instance,
-    random_test_id,
+        host_internal_address,
+        postgres_instance,
+        starrocks_database,
+        rest_iceberg_catalog_instance,
+        minio_instance,
+        random_test_id,
 ):
     return RadiantAirflowInstance(host="localhost", port="8080", username="airflow", password="airflow")
 
@@ -154,11 +159,11 @@ def radiant_airflow_container(
 @pytest.fixture(scope="session")
 def starrocks_session(starrocks_database):
     with pymysql.connect(
-        host=starrocks_database.host,
-        port=int(starrocks_database.query_port),
-        password=starrocks_database.password,
-        user=starrocks_database.user,
-        database=starrocks_database.database,
+            host=starrocks_database.host,
+            port=int(starrocks_database.query_port),
+            password=starrocks_database.password,
+            user=starrocks_database.user,
+            database=starrocks_database.database,
     ) as connection:
         yield connection
 
@@ -172,7 +177,7 @@ def s3_fs(minio_instance):
         client_kwargs={"endpoint_url": minio_instance.endpoint},
     )
     fs.mkdirs("warehouse", exist_ok=True)
-    fs.mkdirs("vcf", exist_ok=True)
+    fs.mkdirs("test-vcf", exist_ok=True)
     fs.mkdirs("opendata", exist_ok=True)
     fs.mkdirs("exomiser", exist_ok=True)
     return fs
@@ -291,8 +296,8 @@ def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
                 f.write(_new_content)
 
             compress_and_index_vcf(src_path, dest_path)
-            s3_fs.put(dest_path, "vcf/" + document_name)
-            s3_fs.put(dest_path + ".tbi", "vcf/" + document_name + ".tbi")
+            s3_fs.put(dest_path, "test-vcf/" + document_name)
+            s3_fs.put(dest_path + ".tbi", "test-vcf/" + document_name + ".tbi")
 
 
 @pytest.fixture(scope="session")
