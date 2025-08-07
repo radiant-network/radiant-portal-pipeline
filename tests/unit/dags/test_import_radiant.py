@@ -1,6 +1,3 @@
-from radiant.dags.import_radiant import pre_process_exomiser_filepaths
-
-
 def test_dag_loads_without_errors(dag_bag):
     dag = dag_bag.get_dag("radiant-import")
     assert dag is not None
@@ -42,41 +39,3 @@ def test_dag_task_dependencies_are_correct(dag_bag):
     assert import_part in assign_priority.get_direct_relatives(upstream=False)
 
 
-def test_processes_valid_json_string():
-    input_data = [{"exomiser_filepaths": '["file1", "file2"]'}]
-    expected_output = [{"exomiser_filepaths": ["file1", "file2"]}]
-    assert pre_process_exomiser_filepaths(input_data) == expected_output
-
-
-def test_handles_empty_json_string():
-    input_data = [{"exomiser_filepaths": "[]"}]
-    expected_output = [{"exomiser_filepaths": []}]
-    assert pre_process_exomiser_filepaths(input_data) == expected_output
-
-
-def test_handles_invalid_json_string():
-    input_data = [{"exomiser_filepaths": "[invalid_json"}]
-    expected_output = [{"exomiser_filepaths": []}]
-    assert pre_process_exomiser_filepaths(input_data) == expected_output
-
-
-def test_handles_non_string_values():
-    input_data = [{"exomiser_filepaths": None}]
-    expected_output = [{"exomiser_filepaths": None}]
-    assert pre_process_exomiser_filepaths(input_data) == expected_output
-
-
-def test_processes_mixed_input():
-    input_data = [
-        {"exomiser_filepaths": '["file1"]'},
-        {"exomiser_filepaths": "[]"},
-        {"exomiser_filepaths": "[invalid_json"},
-        {"exomiser_filepaths": None},
-    ]
-    expected_output = [
-        {"exomiser_filepaths": ["file1"]},
-        {"exomiser_filepaths": []},
-        {"exomiser_filepaths": []},
-        {"exomiser_filepaths": None},
-    ]
-    assert pre_process_exomiser_filepaths(input_data) == expected_output

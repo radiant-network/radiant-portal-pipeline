@@ -26,6 +26,7 @@ CLINICAL_MAPPING = {
     "clinical_patient": "patient",
     "clinical_family": "family",
     "clinical_document": "document",
+    "clinical_document_has_patient": "document_has_patient",
     "clinical_task_has_sequencing_experiment": "task_has_sequencing_experiment",
     "clinical_task_has_document": "task_has_document",
     "clinical_request": "request",

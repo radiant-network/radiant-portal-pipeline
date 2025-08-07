@@ -359,6 +359,12 @@ CREATE TABLE IF NOT EXISTS "task_has_document"
     PRIMARY KEY ("task_id", "document_id")
 );
 
+CREATE TABLE IF NOT EXISTS document_has_patient
+(
+    document_id INTEGER NOT NULL CONSTRAINT document_has_patients_document_id_fkey REFERENCES document,
+    patient_id  INTEGER NOT NULL CONSTRAINT document_has_patients_patient_id_fkey REFERENCES patient,
+    CONSTRAINT document_has_patients_pkey PRIMARY KEY (document_id, patient_id)
+);
 -- Value Sets initial values -------------------------------------
 
 INSERT INTO "observation_category" ("code", "name_en")
@@ -415,6 +421,7 @@ INSERT INTO file_format (code, name_en)
 VALUES ('cram', 'CRAM File'),
        ('crai', 'CRAI Index File'),
        ('vcf', 'VCF File'),
+       ('gvcf', 'GVCF File'),
        ('tbi', 'TBI Index File'),
        ('tgz', 'TGZ Archive File'),
        ('json', 'JSON File'),
