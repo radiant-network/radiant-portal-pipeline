@@ -5,7 +5,7 @@ import pytest
 
 from radiant.tasks.iceberg.utils import commit_files
 from radiant.tasks.vcf.experiment import Case, Experiment
-from radiant.tasks.vcf.process import process_case
+from radiant.tasks.vcf.snv.germline.process import process_case
 
 
 def test_process_case(

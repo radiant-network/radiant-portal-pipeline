@@ -1,4 +1,4 @@
-from radiant.tasks.vcf.common import Common, process_common
+from radiant.tasks.vcf.snv.germline.common import Common, process_common
 from tests.unit.vcf.vcf_test_utils import variant
 
 

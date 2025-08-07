@@ -18,8 +18,8 @@ from pyiceberg.schema import NestedField, Schema
 from pyiceberg.types import BooleanType, IntegerType, ListType, StringType, StructType
 
 from radiant.tasks.iceberg.utils import merge_schemas
-from radiant.tasks.vcf.common import SCHEMA as COMMON_SCHEMA
-from radiant.tasks.vcf.common import Common
+from radiant.tasks.vcf.snv.germline.common import SCHEMA as COMMON_SCHEMA
+from radiant.tasks.vcf.snv.germline.common import Common
 
 CSQ_FORMAT_FIELD = "CSQ"
 
