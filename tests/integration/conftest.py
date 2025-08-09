@@ -4,12 +4,13 @@ import uuid
 from pathlib import Path
 
 import fsspec
+import jinja2
 import pymysql
 import pysam
 from pyiceberg.catalog.rest import RestCatalog
-import jinja2
+
 from radiant.dags import ICEBERG_NAMESPACE
-from radiant.tasks.data.radiant_tables import get_clinical_mapping, CLINICAL_DATABASE_ENV_KEY
+from radiant.tasks.data.radiant_tables import CLINICAL_DATABASE_ENV_KEY, get_clinical_mapping
 from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
@@ -96,7 +97,9 @@ def postgres_clinical_seeds(postgres_instance):
     with open(sql_path) as f:
         template_seeds_sql = f.read()
         _query_params = get_clinical_mapping({CLINICAL_DATABASE_ENV_KEY: postgres_instance.radiant_db_schema})
-        _query_params = {key: value.replace("radiant_jdbc.", "").replace("`", "") for key, value in _query_params.items()}
+        _query_params = {
+            key: value.replace("radiant_jdbc.", "").replace("`", "") for key, value in _query_params.items()
+        }
         _query_params["vcf_bucket_prefix"] = "s3://test-vcf"
         seeds_sql = jinja2.Template(template_seeds_sql).render({"params": _query_params})
 
@@ -116,11 +119,11 @@ def postgres_clinical_seeds(postgres_instance):
 
     # Connect to the new database to run schema + seed
     with psycopg2.connect(
-            host="localhost",
-            port=postgres_instance.port,
-            user=postgres_instance.user,
-            password=postgres_instance.password,
-            database=postgres_instance.radiant_db,
+        host="localhost",
+        port=postgres_instance.port,
+        user=postgres_instance.user,
+        password=postgres_instance.password,
+        database=postgres_instance.radiant_db,
     ) as conn:
         with conn.cursor() as cur:
             cur.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
@@ -146,12 +149,12 @@ def postgres_clinical_seeds(postgres_instance):
 
 @pytest.fixture(scope="session")
 def radiant_airflow_container(
-        host_internal_address,
-        postgres_instance,
-        starrocks_database,
-        rest_iceberg_catalog_instance,
-        minio_instance,
-        random_test_id,
+    host_internal_address,
+    postgres_instance,
+    starrocks_database,
+    rest_iceberg_catalog_instance,
+    minio_instance,
+    random_test_id,
 ):
     return RadiantAirflowInstance(host="localhost", port="8080", username="airflow", password="airflow")
 
@@ -159,11 +162,11 @@ def radiant_airflow_container(
 @pytest.fixture(scope="session")
 def starrocks_session(starrocks_database):
     with pymysql.connect(
-            host=starrocks_database.host,
-            port=int(starrocks_database.query_port),
-            password=starrocks_database.password,
-            user=starrocks_database.user,
-            database=starrocks_database.database,
+        host=starrocks_database.host,
+        port=int(starrocks_database.query_port),
+        password=starrocks_database.password,
+        user=starrocks_database.user,
+        database=starrocks_database.database,
     ) as connection:
         yield connection
 
@@ -242,7 +245,7 @@ def compress_and_index_vcf(source_path, dest_path):
 
 
 @pytest.fixture(scope="session")
-def indexed_vcfs(s3_fs):
+def indexed_vcfs():
     """
     Compress and index all VCFs in test/resources/vcf into a temp directory.
     Yields a dict of {filename: path_to_compressed_vcf}
@@ -255,9 +258,7 @@ def indexed_vcfs(s3_fs):
                 src_path = RESOURCES_DIR / filename
                 dest_path = os.path.join(tmpdir, filename + ".gz")
                 compress_and_index_vcf(src_path, dest_path)
-                s3_fs.put(dest_path, "vcf/" + filename + ".gz")
-                s3_fs.put(dest_path + ".tbi", "vcf/" + filename + ".gz.tbi")
-                output[filename] = "s3+http://vcf/" + filename + ".gz"
+                output[filename] = dest_path
 
         yield output
 
