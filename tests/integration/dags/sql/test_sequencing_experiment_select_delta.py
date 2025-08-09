@@ -6,11 +6,6 @@ import psycopg2
 import pytest
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.data.radiant_tables import (
-    CLINICAL_CATALOG_ENV_KEY,
-    CLINICAL_DATABASE_ENV_KEY,
-    RADIANT_DATABASE_ENV_KEY,
-)
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 _RADIANT_SQL_PATH = os.path.join(_SQL_DIR, "radiant")
@@ -43,46 +38,37 @@ def sequencing_delta_columns():
     ]
 
 
-def _run_radiant_sql(starrocks_session, starrocks_jdbc_catalog, starrocks_container, sql_file):
+def _run_radiant_sql(starrocks_session, radiant_mapping, sql_file):
     """
     Helper function to run a SQL file against the StarRocks session.
     """
-    from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
     with open(sql_file) as f:
         template = jinja2.Template(f.read())
-        conf = {
-            RADIANT_DATABASE_ENV_KEY: starrocks_container.database,
-            CLINICAL_CATALOG_ENV_KEY: starrocks_jdbc_catalog.catalog,
-            CLINICAL_DATABASE_ENV_KEY: starrocks_jdbc_catalog.database,
-        }
-        sql = template.render(params=get_radiant_mapping(conf=conf))
+        sql = template.render(params=radiant_mapping)
     with starrocks_session.cursor() as cursor:
         cursor.execute(sql)
         return cursor.fetchall()
 
 
 @pytest.fixture(scope="session")
-def sequencing_experiment_tables(starrocks_session, starrocks_jdbc_catalog, starrocks_database):
+def sequencing_experiment_tables(starrocks_session, radiant_mapping):
     """
     Fixture to create a temporary sequencing_experiment table for testing.
     """
     _run_radiant_sql(
         starrocks_session,
-        starrocks_jdbc_catalog,
-        starrocks_database,
+        radiant_mapping,
         sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_sequencing_experiment_create_table.sql"),
     )
     _run_radiant_sql(
         starrocks_session,
-        starrocks_jdbc_catalog,
-        starrocks_database,
+        radiant_mapping,
         sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_external_sequencing_experiment_create_table.sql"),
     )
     _run_radiant_sql(
         starrocks_session,
-        starrocks_jdbc_catalog,
-        starrocks_database,
+        radiant_mapping,
         sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_sequencing_experiment_delta_create_table.sql"),
     )
     yield
