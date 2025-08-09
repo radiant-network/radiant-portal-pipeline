@@ -17,7 +17,6 @@ def test_import_radiant(
     starrocks_database,
     starrocks_session,
     random_test_id,
-    indexed_vcfs,
     clinical_vcf,
     sample_exomiser_tsv,
 ):

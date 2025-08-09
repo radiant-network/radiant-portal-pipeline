@@ -37,5 +37,3 @@ def test_dag_task_dependencies_are_correct(dag_bag):
     )
     assert assign_priority in fetch_exp.get_direct_relatives(upstream=False)
     assert import_part in assign_priority.get_direct_relatives(upstream=False)
-
-

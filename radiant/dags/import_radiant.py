@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=10)
 
 
-
 def experiment_delta_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     from radiant.tasks.starrocks.partition import SequencingDeltaInput
 

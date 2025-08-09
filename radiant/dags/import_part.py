@@ -19,7 +19,6 @@ LOGGER = logging.getLogger(__name__)
 
 
 def cases_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
-    import json
 
     column_names = [desc[0] for desc in descriptions[0]]
     dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
