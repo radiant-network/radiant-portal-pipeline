@@ -10,7 +10,15 @@ import pysam
 from pyiceberg.catalog.rest import RestCatalog
 
 from radiant.dags import ICEBERG_NAMESPACE
-from radiant.tasks.data.radiant_tables import CLINICAL_DATABASE_ENV_KEY, get_clinical_mapping
+from radiant.tasks.data.radiant_tables import (
+    CLINICAL_CATALOG_ENV_KEY,
+    CLINICAL_DATABASE_ENV_KEY,
+    RADIANT_DATABASE_ENV_KEY,
+    RADIANT_ICEBERG_CATALOG_ENV_KEY,
+    RADIANT_ICEBERG_DATABASE_ENV_KEY,
+    get_clinical_mapping,
+    get_radiant_mapping,
+)
 from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
@@ -150,10 +158,7 @@ def postgres_clinical_seeds(postgres_instance):
 @pytest.fixture(scope="session")
 def radiant_airflow_container(
     host_internal_address,
-    postgres_instance,
     starrocks_database,
-    rest_iceberg_catalog_instance,
-    minio_instance,
     random_test_id,
 ):
     return RadiantAirflowInstance(host="localhost", port="8080", username="airflow", password="airflow")
@@ -208,6 +213,7 @@ def iceberg_namespace(random_test_id, iceberg_client):
     Generates a namespace for the Iceberg catalog.
     """
     ns = f"test_{random_test_id}_{ICEBERG_NAMESPACE}"
+    iceberg_client.create_namespace(namespace=ns)
     yield ns
     if iceberg_client.namespace_exists(ns):
         for table in iceberg_client.list_tables(ns):
@@ -217,7 +223,6 @@ def iceberg_namespace(random_test_id, iceberg_client):
 
 @pytest.fixture(scope="session")
 def setup_iceberg_namespace(s3_fs, iceberg_client, iceberg_namespace, random_test_id):
-    iceberg_client.create_namespace(namespace=iceberg_namespace)
     iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.germline_snv_occurrence", schema=OCCURRENCE_SCHEMA)
     iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.germline_snv_variant", schema=VARIANT_SCHEMA)
     iceberg_client.create_table_if_not_exists(
@@ -321,3 +326,23 @@ def clinvar_rcv_summary_ndjson(s3_fs):
     dest_path = "opendata/"
     s3_fs.put(src_path, dest_path)
     yield dest_path
+
+
+@pytest.fixture(scope="session")
+def mapping_conf(
+    starrocks_jdbc_catalog,
+    starrocks_database,
+    starrocks_iceberg_catalog,
+):
+    return {
+        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
+        RADIANT_ICEBERG_CATALOG_ENV_KEY: starrocks_iceberg_catalog.catalog,
+        RADIANT_ICEBERG_DATABASE_ENV_KEY: starrocks_iceberg_catalog.database,
+        CLINICAL_CATALOG_ENV_KEY: starrocks_jdbc_catalog.catalog,
+        CLINICAL_DATABASE_ENV_KEY: starrocks_jdbc_catalog.database,
+    }
+
+
+@pytest.fixture(scope="session")
+def radiant_mapping(mapping_conf):
+    return get_radiant_mapping(mapping_conf)

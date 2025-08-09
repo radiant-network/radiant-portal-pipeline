@@ -1,10 +1,5 @@
 import pytest
 
-from radiant.tasks.data.radiant_tables import (
-    CLINICAL_DATABASE_ENV_KEY,
-    RADIANT_DATABASE_ENV_KEY,
-    RADIANT_ICEBERG_DATABASE_ENV_KEY,
-)
 from tests.utils.dags import poll_dag_until_success, trigger_dag, unpause_dag
 
 
@@ -19,6 +14,7 @@ def test_import_radiant(
     random_test_id,
     clinical_vcf,
     sample_exomiser_tsv,
+    mapping_conf,
 ):
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
@@ -30,12 +26,8 @@ def test_import_radiant(
     unpause_dag(radiant_airflow_container, vcf_dag_id)
     unpause_dag(radiant_airflow_container, part_dag_id)
     unpause_dag(radiant_airflow_container, dag_id)
-    dag_conf = {
-        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
-        RADIANT_ICEBERG_DATABASE_ENV_KEY: starrocks_iceberg_catalog.database,
-        CLINICAL_DATABASE_ENV_KEY: starrocks_jdbc_catalog.database,
-    }
-    trigger_dag(radiant_airflow_container, dag_id, random_test_id, conf=dag_conf)
+
+    trigger_dag(radiant_airflow_container, dag_id, random_test_id, conf=mapping_conf)
 
     # Full import for test partitions takes around 5 minutes locally, so we set a longer timeout
     _timeout = 600
