@@ -19,8 +19,9 @@ from radiant.tasks.data.radiant_tables import (
     get_clinical_mapping,
     get_radiant_mapping,
 )
+from radiant.tasks.vcf.cnv.germline.occurrence import SCHEMA as CNV_OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
-from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as OCCURRENCE_SCHEMA
+from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as SNV_OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
 
 USE_DOCKER_FIXTURES = os.getenv("USE_DOCKER_FIXTURES", "false").lower() == "true"
@@ -223,8 +224,13 @@ def iceberg_namespace(random_test_id, iceberg_client):
 
 @pytest.fixture(scope="session")
 def setup_iceberg_namespace(s3_fs, iceberg_client, iceberg_namespace, random_test_id):
-    iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.germline_snv_occurrence", schema=OCCURRENCE_SCHEMA)
+    iceberg_client.create_table_if_not_exists(
+        f"{iceberg_namespace}.germline_snv_occurrence", schema=SNV_OCCURRENCE_SCHEMA
+    )
     iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.germline_snv_variant", schema=VARIANT_SCHEMA)
+    iceberg_client.create_table_if_not_exists(
+        f"{iceberg_namespace}.germline_cnv_occurrence", schema=CNV_OCCURRENCE_SCHEMA
+    )
     iceberg_client.create_table_if_not_exists(
         f"{iceberg_namespace}.germline_snv_consequence", schema=CONSEQUENCE_SCHEMA
     )
@@ -269,9 +275,9 @@ def indexed_vcfs():
 
 
 @pytest.fixture(scope="session")
-def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
+def clinical_snv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
     """
-    Creates "mock" VCFs for clinical documents.
+    Creates "mock" SNV VCFs for clinical documents.
     """
     reference_vcf = "test.vcf"
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -288,7 +294,45 @@ def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
                 ON se.id = thse.sequencing_experiment_id
                 LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd ON thse.task_id = thd.task_id
                 LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d ON thd.document_id = d.id
-                WHERE REGEXP(d.name, '\\.vcf\\.gz$')
+                WHERE d.data_type_code='snv' and d.format_code='vcf'
+                """)
+            results = cursor.fetchall()
+
+        for aliquot, document_name in results:
+            _path = document_name.replace(".gz", "")
+            src_path = os.path.join(tmpdir, f"source_{_path}")
+            dest_path = os.path.join(tmpdir, f"{_path}.gz")
+
+            with open(src_path, "w") as f:
+                _new_content = vcf_content.replace("SA0001", str(aliquot))
+                f.write(_new_content)
+
+            compress_and_index_vcf(src_path, dest_path)
+            s3_fs.put(dest_path, "test-vcf/" + document_name)
+            s3_fs.put(dest_path + ".tbi", "test-vcf/" + document_name + ".tbi")
+
+
+@pytest.fixture(scope="session")
+def clinical_cnv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
+    """
+    Creates "mock" SNV VCFs for clinical documents.
+    """
+    reference_vcf = "test_cnv.vcf"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with open(RESOURCES_DIR / reference_vcf) as f:
+            vcf_content = f.read()
+
+        with starrocks_session.cursor() as cursor:
+            cursor.execute(f"""
+                SELECT 
+                     aliquot,
+                     d.name
+                FROM {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.sequencing_experiment se
+                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
+                ON se.id = thse.sequencing_experiment_id
+                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd ON thse.task_id = thd.task_id
+                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d ON thd.document_id = d.id
+                WHERE d.data_type_code='cnv' and d.format_code='vcf'
                 """)
             results = cursor.fetchall()
 
