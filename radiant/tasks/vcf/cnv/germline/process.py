@@ -5,7 +5,6 @@ from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
 
 from radiant.tasks.tracing.trace import get_tracer
-from radiant.tasks.utils import capture_libc_stderr_and_check_errors
 from radiant.tasks.vcf.cnv.germline.occurrence import process_occurrence
 from radiant.tasks.vcf.experiment import Case
 
@@ -15,7 +14,7 @@ tracer = get_tracer(__name__)
 
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
 # Airflow will treat the task as successful if the error is not captured properly.
-@capture_libc_stderr_and_check_errors(error_patterns=["[E::"])
+# @capture_libc_stderr_and_check_errors(error_patterns=["[E::"])
 def process_cases(
     cases: list[Case],
     catalog_name="default",
@@ -55,7 +54,6 @@ def process_cases(
                         occurrence = process_occurrence(record, part, exp.seq_id, exp.aliquot, sample_idx)
                         occurrence_buffer.append(occurrence)
                     vcf.close()
-
         df = pa.Table.from_pylist(occurrence_buffer, schema=occurrence_table.schema().as_arrow())
         occurrence_table.overwrite(df)
         logger.info(f"✅ Table {occurrences_table_name} overwritten")

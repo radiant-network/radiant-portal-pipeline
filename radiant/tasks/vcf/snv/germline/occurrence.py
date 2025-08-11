@@ -6,6 +6,7 @@ from radiant.tasks.iceberg.utils import merge_schemas
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.snv.germline.common import SCHEMA as COMMON_SCHEMA
 from radiant.tasks.vcf.snv.germline.common import Common
+from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT, calls_without_phased
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -148,8 +149,8 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
         gq = record.format("GQ")[idx][0] if "GQ" in record.FORMAT else 0
         ad_ref = record.gt_ref_depths[idx] if record.gt_ref_depths[idx] > 0 else None
         ad_alt = record.gt_alt_depths[idx] if record.gt_alt_depths[idx] > 0 else None
-        calls_without_phased = record.genotypes[idx][:-1]  # remove phased information
-        calls, zygosity = adjust_calls_and_zygosity(calls_without_phased, record.gt_types[idx], ad_ref, ad_alt)
+        calls = calls_without_phased(record, idx)
+        calls, zygosity = adjust_calls_and_zygosity(calls, record.gt_types[idx], ad_ref, ad_alt)
 
         has_alt = 1 in calls
         occurrences[exp.seq_id] = {
@@ -241,18 +242,6 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
             progeny_occurrence["mother_zygosity"] = mother_occurrence.get("zygosity")
 
     return occurrences
-
-
-ZYGOSITY_WT = 0
-ZYGOSITY_HET = 1
-ZYGOSITY_HOM = 3
-ZYGOSITY_UNK = 2
-ZYGOSITY = {
-    ZYGOSITY_WT: "WT",
-    ZYGOSITY_HET: "HET",
-    ZYGOSITY_HOM: "HOM",
-    ZYGOSITY_UNK: "UNK",
-}
 
 
 def adjust_calls_and_zygosity(
