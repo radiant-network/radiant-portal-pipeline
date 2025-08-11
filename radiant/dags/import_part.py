@@ -14,9 +14,11 @@ from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
 from radiant.tasks.vcf.experiment import Case, Experiment
+from radiant.dags import NAMESPACE,get_namespace
 
 LOGGER = logging.getLogger(__name__)
-
+import os
+PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
 
 def cases_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     column_names = [desc[0] for desc in descriptions[0]]
@@ -119,6 +121,36 @@ def import_part():
         poke_interval=2,
     )
 
+    @task.external_python(
+        task_id="import_germline_cnv_vcf",
+        task_display_name="[PyOp] Import Germline CNV VCF into Iceberg",
+        python=PATH_TO_PYTHON_BINARY
+    )
+    def import_cnv_vcf(cases: list[dict], namespace: str) -> None:
+        import logging
+        import sys
+        import tempfile
+        from radiant.tasks.utils import download_s3_file
+
+        from radiant.tasks.vcf.experiment import Case
+        from radiant.tasks.vcf.cnv.germline.process import process_cases
+
+        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
+        logger = logging.getLogger(__name__)
+
+        updated_cases = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for case in cases:
+                for s in case["experiments"]:
+                    logger.info("Downloading VCF and index files to a temporary directory")
+                    cnv_vcf_local = download_s3_file(s["cnv_vcf_filepath"], tmpdir,randomize_filename=True)
+                    s["cnv_vcf_filepath"] = cnv_vcf_local
+                case = Case.model_validate(case)
+                updated_cases.append(case)
+
+            process_cases(updated_cases, namespace=namespace, vcf_threads=4)
+
+
     @task(task_id="load_exomiser_files", task_display_name="[PyOp] Load Exomiser Files")
     def load_exomiser_files(cases: object, part: object) -> None:
         import os
@@ -180,7 +212,7 @@ def import_part():
                     {
                         "part": _case.part,
                         "seq_id": exp.seq_id,
-                        "tsv_filepaths": exp.exomiser_filepath,
+                        "tsv_filepath": exp.exomiser_filepath,
                         "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(uuid.uuid4().hex)}",
                     }
                 )
@@ -218,22 +250,19 @@ def import_part():
                 """
 
             for _params in _parameters:
-                LOGGER.info(f"Loading Exomiser file {_params['tsv_filepaths']}...")
-                _paths = _params.pop("tsv_filepaths")
-                for tsv_filepath in _paths:
-                    _params["tsv_filepath"] = tsv_filepath
-                    LOGGER.info(f"Executing exomiser load with params: {_params}")
-                    _database_name = _query_params["starrocks_staging_exomiser"].split(".")[0]
-                    _table_name = _query_params["starrocks_staging_exomiser"].split(".")[1]
-                    _sql = load_staging_exomiser_sql.format(
-                        label=f"{_params['label']}",
-                        temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
-                        broker_configuration=broker_configuration,
-                        database_name=_database_name,
-                        table_name=_table_name,
-                    )
+                LOGGER.info(f"Loading Exomiser file {_params['tsv_filepath']}...")
+                LOGGER.info(f"Executing exomiser load with params: {_params}")
+                _database_name = _query_params["starrocks_staging_exomiser"].split(".")[0]
+                _table_name = _query_params["starrocks_staging_exomiser"].split(".")[1]
+                _sql = load_staging_exomiser_sql.format(
+                    label=f"{_params['label']}",
+                    temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
+                    broker_configuration=broker_configuration,
+                    database_name=_database_name,
+                    table_name=_table_name,
+                )
 
-                    cursor.execute(_sql, _params)
+                cursor.execute(_sql, _params)
 
                 _i = 0
                 while True:
@@ -393,7 +422,7 @@ def import_part():
     (
         start
         >> fetch_sequencing_experiment_delta
-        >> import_vcf
+        >> (import_vcf, import_cnv_vcf(cases=cases, namespace=get_namespace()))
         >> load_exomiser_files(cases=cases, part="{{ params.part }}")
         >> refresh_iceberg_tables
         >> insert_hashes

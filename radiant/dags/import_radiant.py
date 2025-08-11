@@ -93,16 +93,6 @@ def import_radiant():
 
             conn = BaseHook.get_connection("starrocks_conn")
 
-            sequencing_experiment = [
-                {
-                    **row,
-                    "exomiser_filepath": None
-                    if not row.get("exomiser_filepath")
-                    else json.dumps(row.get("exomiser_filepath")),
-                }
-                for row in sequencing_experiment
-            ]
-
             with conn.get_hook().get_conn().cursor() as cursor:
                 cursor.executemany(
                     _sql,
