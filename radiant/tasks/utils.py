@@ -2,7 +2,10 @@ import sys
 from functools import wraps
 
 from wurlitzer import pipes
+from urllib import parse
 
+import boto3
+import os
 
 def _flush_pipes(stdout, stderr):
     """
@@ -46,3 +49,26 @@ def capture_libc_stderr_and_check_errors(error_patterns: list[str]):
         return wrapper
 
     return decorator
+
+def download_s3_file(s3_path, dest_dir, randomize_filename=False):
+    s3_client = boto3.client("s3")
+
+    def extract_bucket_key(s3_path):
+        parsed = parse.urlparse(s3_path)
+        bucket = parsed.netloc
+        key = parsed.path.lstrip("/")
+        return bucket, key
+
+    bucket_name, object_key = extract_bucket_key(s3_path)
+    if randomize_filename:
+        import uuid
+        filename = f"{uuid.uuid4()}_{os.path.basename(object_key)}"
+    else:
+        filename  = os.path.basename(object_key)
+    local_path = os.path.join(dest_dir, filename)
+    try:
+        s3_client.download_file(bucket_name, object_key, local_path)
+    except Exception as e:
+        print(f"Error downloading S3 file: {e}")
+        return None
+    return local_path

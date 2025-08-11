@@ -44,16 +44,3 @@ def test_process_case(
     assert not occ.empty, "No occurrences were written to the iceberg table"
     assert ((occ["aliquot"] == "SA0001") & (occ["seq_id"] == 1)).any(), "Expected sample/case not found in occurrences"
     assert occ["chromosome"].isin(["1", "X"]).all(), "Some chromosome values are invalid"
-    # assert occ["zygosity"][0] == "HET", "Unexpected zygosity value in output"
-    # assert occ["zygosity"][1] == "HOM", "Unexpected zygosity value in output"
-    # expected_df = pd.DataFrame({
-    #     "chromosome": ["chr1"],
-    #     "start": [12345],
-    #     "reference": ["A"],
-    #     "alternate": ["T"],
-    #     "case_id": [1],
-    #     "aliquot": ["SA0001"],
-    #     # Add other columns as needed
-    # })
-    #
-    # assert_frame_equal(occ.reset_index(drop=True), expected_df, check_like=True)
