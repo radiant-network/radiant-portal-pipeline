@@ -1,0 +1,26 @@
+CREATE TABLE IF NOT EXISTS {{ params.starrocks_germline_cnv_occurrence }} (
+     part int(11) NOT NULL COMMENT "",
+     seq_id int(11) NULL COMMENT "",
+     aliquot varchar(1048576) NULL COMMENT "",
+     chromosome varchar(1048576) NULL COMMENT "",
+     start int(11) NULL COMMENT "",
+     end int(11) NULL COMMENT "",
+     type varchar(1048576) NULL COMMENT "",
+     length int(11) NULL COMMENT "",
+     name varchar(1048576) NULL COMMENT "",
+     quality decimal(38, 9) NULL COMMENT "",
+     calls array<int(11)> NULL COMMENT "",
+     filter varchar(1048576) NULL COMMENT "",
+     bc int(11) NULL COMMENT "",
+     cn int(11) NULL COMMENT "",
+     pe array<int(11)> NULL COMMENT "",
+     sm decimal(38, 9) NULL COMMENT "",
+     svtype varchar(1048576) NULL COMMENT "",
+     svlen int(11) NULL COMMENT "",
+     reflen int(11) NULL COMMENT "",
+     ciend array<int(11)> NULL COMMENT "",
+     cipos array<int(11)> NULL COMMENT "",
+     phased boolean NULL COMMENT ""
+) ENGINE=OLAP
+DUPLICATE KEY(part, seq_id, aliquot)
+PARTITION BY (part);
