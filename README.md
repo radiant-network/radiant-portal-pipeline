@@ -21,10 +21,11 @@ This repository contains the different files and scripts used to run the Radiant
 
 ### Airflow dev stack
 
-Build the airflow docker image :
+(Linux Only) Create Airflow directories and set Airflow UUID:
 
-```
-docker build . -f docker/airflow.Dockerfile -t radiant-network/airflow-cyvcf2:2.10.5
+```shell
+mkdir -p ./dags ./logs ./plugins ./config
+echo -e "AIRFLOW_UID=$(id -u)" > .env
 ```
 
 Deploy stack :
@@ -41,11 +42,11 @@ Login to Airflow UI :
 
 Create Airflow connection to StarRocks (Airflow UI => Admin => Connections)
 
-The following are examples and should be adjusted to your environment:
+Here is an example for connecting to the default StarRocks DB provided in the docker-compose file:
 
 - `Connection Id`: `starrocks_conn`
 - `Connection Type`: `MySQL`
-- `Host`: `host.docker.internal`
+- `Host`: `radiant-starrocks-fe`
 - `Schema`: `poc_starrocks`
 - `Login`: `root`
 - `Password`: (leave empty)
