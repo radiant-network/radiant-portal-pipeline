@@ -1,4 +1,3 @@
-INSERT INTO {{ params.starrocks_staging_exomiser }} TEMPORARY PARTITION (tp%(part)s)
 SELECT part,
        seq_id,
        id,
@@ -16,5 +15,5 @@ SELECT part,
        alternate,
        acmg_classification,
        acmg_evidence
-FROM {{ params.starrocks_staging_exomiser }} PARTITION p%(part)s
+FROM {{ table }} PARTITION ( p{{ partition }})
 WHERE seq_id NOT IN %(seq_ids)s;

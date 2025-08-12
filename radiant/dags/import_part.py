@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 from collections.abc import Sequence
 from itertools import groupby
 from typing import Any
@@ -10,15 +11,20 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
+from radiant.dags import DEFAULT_ARGS, NAMESPACE, get_namespace, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
-from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
+from radiant.tasks.starrocks.operator import (
+    LoadExomiserOperator,
+    RadiantStarRocksOperator,
+    StarRocksPartitionSwapOperator,
+    SubmitTaskOptions,
+)
 from radiant.tasks.vcf.experiment import Case, Experiment
-from radiant.dags import NAMESPACE,get_namespace
 
 LOGGER = logging.getLogger(__name__)
-import os
+
 PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
+
 
 def cases_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     column_names = [desc[0] for desc in descriptions[0]]
@@ -124,16 +130,16 @@ def import_part():
     @task.external_python(
         task_id="import_germline_cnv_vcf",
         task_display_name="[PyOp] Import Germline CNV VCF into Iceberg",
-        python=PATH_TO_PYTHON_BINARY
+        python=PATH_TO_PYTHON_BINARY,
     )
     def import_cnv_vcf(cases: list[dict], namespace: str) -> None:
         import logging
         import sys
         import tempfile
-        from radiant.tasks.utils import download_s3_file
 
-        from radiant.tasks.vcf.experiment import Case
+        from radiant.tasks.utils import download_s3_file
         from radiant.tasks.vcf.cnv.germline.process import process_cases
+        from radiant.tasks.vcf.experiment import Case
 
         logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
         logger = logging.getLogger(__name__)
@@ -143,152 +149,53 @@ def import_part():
             for case in cases:
                 for s in case["experiments"]:
                     logger.info("Downloading VCF and index files to a temporary directory")
-                    cnv_vcf_local = download_s3_file(s["cnv_vcf_filepath"], tmpdir,randomize_filename=True)
+                    cnv_vcf_local = download_s3_file(s["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
                     s["cnv_vcf_filepath"] = cnv_vcf_local
                 case = Case.model_validate(case)
                 updated_cases.append(case)
 
             process_cases(updated_cases, namespace=namespace, vcf_threads=4)
 
-
-    @task(task_id="load_exomiser_files", task_display_name="[PyOp] Load Exomiser Files")
-    def load_exomiser_files(cases: object, part: object) -> None:
-        import os
-        import time
-        import uuid
-
-        import jinja2
-        from airflow.hooks.base import BaseHook
-        from airflow.operators.python import get_current_context
-
-        from radiant.dags import DAGS_DIR
-        from radiant.tasks.data.radiant_tables import get_radiant_mapping
-
-        context = get_current_context()
-        conf = context["dag_run"].conf or {}
-        _query_params = get_radiant_mapping(conf) | {"broker_load_timeout": 7200}
-
-        _check_part_exists_sql = """
-        SHOW PARTITIONS FROM {{ params.starrocks_staging_exomiser }} WHERE PartitionName='p%(part)s'
-        """
-        _check_part_exists_sql = jinja2.Template(_check_part_exists_sql).render({"params": _query_params})
-
-        clean_temp_part_part_sql = """
-        ALTER TABLE {{ params.starrocks_staging_exomiser }} 
-        DROP TEMPORARY PARTITION IF EXISTS tp%(part)s;
-        """
-        clean_temp_part_part_sql = jinja2.Template(clean_temp_part_part_sql).render({"params": _query_params})
-
-        create_tmp_part_sql = """
-        ALTER TABLE {{ params.starrocks_staging_exomiser }}
-        ADD TEMPORARY PARTITION IF NOT EXISTS tp%(part)s VALUES IN ('%(part)s');
-        """
-        create_tmp_part_sql = jinja2.Template(create_tmp_part_sql).render({"params": _query_params})
-
-        _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/staging_exomiser_insert_partition_delta.sql")
-        with open(_path) as f_in:
-            insert_part_delta_sql = jinja2.Template(f_in.read()).render({"params": _query_params})
-
-        swap_partition_sql = """
-        ALTER TABLE {{ params.starrocks_staging_exomiser }}
-        REPLACE PARTITION (p%(part)s) WITH TEMPORARY PARTITION (tp%(part)s);            
-        """
-        swap_partition_sql = jinja2.Template(swap_partition_sql).render({"params": _query_params})
-
-        _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/staging_exomiser_load.sql")
-        with open(_path) as f_in:
-            load_staging_exomiser_sql = jinja2.Template(f_in.read()).render({"params": _query_params})
-
-        conn = BaseHook.get_connection("starrocks_conn")
-
-        _parameters = []
-        _seq_ids = []
+    @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
+    def extract_sequencing_ids(cases) -> dict[str, list[Any]]:
+        seq_ids = []
         for case in cases:
-            _case = Case.model_validate(case)
-            for exp in _case.experiments:
-                if not exp.exomiser_filepath:
-                    continue
-                _parameters.append(
-                    {
-                        "part": _case.part,
-                        "seq_id": exp.seq_id,
-                        "tsv_filepath": exp.exomiser_filepath,
-                        "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(uuid.uuid4().hex)}",
-                    }
-                )
-                _seq_ids.append(exp.seq_id)
+            for experiment in case.get("experiments"):
+                if experiment:
+                    seq_ids.append(experiment["seq_id"])
+        return {"seq_ids": seq_ids}
 
-        if not _parameters:
-            LOGGER.info("No Exomiser files to load, skipping...")
-            return
+    sequencing_ids = extract_sequencing_ids(cases)
 
-        with conn.get_hook().get_conn().cursor() as cursor:
-            # Execute the SQL to check if the partition exists
-            LOGGER.info("Checking if partition exists...")
-            cursor.execute(_check_part_exists_sql, {"part": part})
-            _part_exists = bool(cursor.fetchone())
-            LOGGER.info(f"Partition p{part} exists: {_part_exists}")
+    insert_germline_cnv_occurrences = StarRocksPartitionSwapOperator(
+        task_id="insert_germline_cnv_occurrences",
+        table="{{ params.starrocks_germline_cnv_occurrence }}",
+        task_display_name="[StarRocks] Insert CNV Occurrences Part",
+        # submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=10),
+        partition="{{ params.part }}",
+        parameters=sequencing_ids,
+        copy_partition_sql="./sql/radiant/cnv_occurrence_insert_partition_delta.sql",
+        sql="""
+            SELECT * FROM {{ params.iceberg_germline_cnv_occurrence }} WHERE seq_id IN %(seq_ids)s;
+            """,
+    )
 
-            if _part_exists:
-                LOGGER.info(f"Cleaning temporary partition tp{part}...")
-                cursor.execute(clean_temp_part_part_sql, {"part": part})
-                LOGGER.info(f"Creating temporary partition tp{part}...")
-                cursor.execute(create_tmp_part_sql, {"part": part})
-
-            if os.getenv("STARROCKS_BROKER_USE_INSTANCE_PROFILE", "false").lower() == "true":
-                broker_configuration = f"""
-                    'aws.s3.use_instance_profile' = 'true',
-                    'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}'
-                """
-            else:
-                broker_configuration = f"""
-                    'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}',
-                    'aws.s3.endpoint' = '{os.getenv("AWS_ENDPOINT_URL", "s3.amazonaws.com")}',
-                    'aws.s3.enable_path_style_access' = 'true',
-                    'aws.s3.access_key' = '{os.getenv("AWS_ACCESS_KEY_ID", "access_key")}',
-                    'aws.s3.secret_key' = '{os.getenv("AWS_SECRET_ACCESS_KEY", "secret_key")}'
-                """
-
-            for _params in _parameters:
-                LOGGER.info(f"Loading Exomiser file {_params['tsv_filepath']}...")
-                LOGGER.info(f"Executing exomiser load with params: {_params}")
-                _database_name = _query_params["starrocks_staging_exomiser"].split(".")[0]
-                _table_name = _query_params["starrocks_staging_exomiser"].split(".")[1]
-                _sql = load_staging_exomiser_sql.format(
-                    label=f"{_params['label']}",
-                    temporary_partition_clause="TEMPORARY PARTITION (tp%(part)s)" if _part_exists else "",
-                    broker_configuration=broker_configuration,
-                    database_name=_database_name,
-                    table_name=_table_name,
-                )
-
-                cursor.execute(_sql, _params)
-
-                _i = 0
-                while True:
-                    cursor.execute("SELECT STATE FROM information_schema.loads WHERE LABEL = %(label)s", _params)
-                    load_state = cursor.fetchone()
-                    LOGGER.info(f"Load state for label {_params['label']}: {load_state}")
-                    if not load_state or load_state[0] == "FINISHED":
-                        break
-                    if load_state[0] == "CANCELLED":
-                        raise RuntimeError(f"Load for label {_params['label']} was cancelled.")
-                    time.sleep(2)
-                    _i += 1
-                    if _i > 30:
-                        raise TimeoutError(f"Load for label {_params['label']} did not finish in time.")
-
-            if _part_exists:
-                LOGGER.info(f"Inserting partition delta for part {part}...")
-                cursor.execute(insert_part_delta_sql, {"seq_ids": _seq_ids, "part": part})
-                LOGGER.info(f"Swapping temporary partition tp{part} with partition p{part}...")
-                cursor.execute(swap_partition_sql, {"part": part})
+    load_exomiser = LoadExomiserOperator(
+        task_id="load_exomiser_files",
+        task_display_name="[StarRocks] Load Exomiser Files",
+        partition="{{ params.part }}",
+        copy_partition_sql="./sql/radiant/staging_exomiser_insert_partition_delta.sql",
+        table="{{ params.starrocks_staging_exomiser }}",
+        parameters=sequencing_ids,
+        cases=cases,
+        sql=None,
+    )
 
     @task(task_id="extract_case_ids", task_display_name="[PyOp] Extract Case IDs")
     def extract_case_ids(cases) -> dict[str, list[Any]]:
         return {"case_ids": [c["case_id"] for c in cases]}
 
-    @task
+    @task(task_id="get_tables_to_refresh", task_display_name="[PyOp] Get list of iceberg tables to refresh")
     def get_tables_to_refresh():
         from airflow.operators.python import get_current_context
 
@@ -423,8 +330,9 @@ def import_part():
         start
         >> fetch_sequencing_experiment_delta
         >> (import_vcf, import_cnv_vcf(cases=cases, namespace=get_namespace()))
-        >> load_exomiser_files(cases=cases, part="{{ params.part }}")
+        >> load_exomiser
         >> refresh_iceberg_tables
+        >> insert_germline_cnv_occurrences
         >> insert_hashes
         >> overwrite_tmp_variants
         >> insert_exomiser

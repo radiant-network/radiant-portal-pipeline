@@ -20,6 +20,7 @@ _MOCK_PARAMS = {
     "part_upper": 10,
     "case_id": 1,
     "seq_id": 1,
+    "seq_ids": [1, 2, 3],
     "task_id": 1,
     "analysis_type": "wgs",
     "aliquot": "SA0001",
@@ -75,7 +76,11 @@ def _explain_insert(starrocks_session, sql_dir):
             with open(sql_file) as f:
                 rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
 
-            if "staging_exomiser" in sql_file or "load" in sql_file.lower():
+            if (
+                "staging_exomiser" in sql_file
+                or "load" in sql_file.lower()
+                or "cnv_occurrence_insert_partition_delta" in sql_file.lower()
+            ):
                 # "EXPLAIN" not supported with "LOAD"
                 continue
 

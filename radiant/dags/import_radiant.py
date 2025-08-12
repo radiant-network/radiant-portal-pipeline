@@ -75,7 +75,6 @@ def import_radiant():
             task_display_name="[PyOp] Insert New Sequencing Experiments",
         )
         def insert_new_sequencing_experiment(sequencing_experiment: Any):
-            import json
             import os
 
             import jinja2

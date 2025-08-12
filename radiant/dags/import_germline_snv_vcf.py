@@ -50,8 +50,8 @@ with DAG(
         import logging
         import sys
         import tempfile
-        from radiant.tasks.utils import download_s3_file
 
+        from radiant.tasks.utils import download_s3_file
         from radiant.tasks.vcf.experiment import Case
         from radiant.tasks.vcf.snv.germline.process import process_case
 

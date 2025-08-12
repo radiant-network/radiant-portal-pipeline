@@ -1,6 +1,8 @@
 import os
 import pathlib
 
+from airflow.decorators import task
+
 NAMESPACE = "radiant"
 ICEBERG_NAMESPACE = os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant")
 
@@ -11,7 +13,7 @@ SQL_DIR = pathlib.Path("sql")
 
 # This is required because docs are read at DAG parse time, not a execution time.
 DOCS_DIR = pathlib.Path(DAGS_DIR / "docs")
-from airflow.decorators import task
+
 
 def load_docs_md(file_name: str) -> str:
     """
