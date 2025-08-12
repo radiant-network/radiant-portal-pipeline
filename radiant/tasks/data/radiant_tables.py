@@ -26,6 +26,7 @@ CLINICAL_MAPPING = {
     "clinical_patient": "patient",
     "clinical_family": "family",
     "clinical_document": "document",
+    "clinical_document_has_patient": "document_has_patient",
     "clinical_task_has_sequencing_experiment": "task_has_sequencing_experiment",
     "clinical_task_has_document": "task_has_document",
     "clinical_request": "request",
@@ -41,6 +42,7 @@ ICEBERG_GERMLINE_SNV_MAPPING = {
     "iceberg_consequence": "germline_snv_consequence",
     "iceberg_occurrence": "germline_snv_occurrence",
     "iceberg_variant": "germline_snv_variant",
+    "iceberg_germline_cnv_occurrence": "germline_cnv_occurrence",
 }
 
 ICEBERG_OPEN_DATA_MAPPING = {
@@ -75,6 +77,7 @@ STARROCKS_COMMON_MAPPING = {
     "starrocks_variant_lookup": "variant_lookup",
     "starrocks_staging_exomiser": "raw_exomiser",
     "starrocks_exomiser": "exomiser",
+    "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
@@ -89,6 +92,7 @@ STARROCKS_GERMLINE_SNV_MAPPING = {
     "starrocks_staging_variant": "staging_variant",
     "starrocks_staging_variant_frequency": "staging_variant_frequency_part",
 }
+
 
 STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_1000_genomes": "1000_genomes",
