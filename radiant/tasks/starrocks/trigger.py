@@ -1,51 +1,24 @@
 import asyncio
 import logging
-from collections.abc import AsyncIterator
 from typing import Any
 
 from airflow.hooks.base import BaseHook
-from airflow.triggers.base import BaseTrigger, TaskFailedEvent, TaskSuccessEvent
+from airflow.triggers.base import BaseTrigger, TriggerEvent
 
 LOGGER = logging.getLogger(__name__)
 
 
 class StarRocksTaskCompleteTrigger(BaseTrigger):
-    """
-    Trigger to check the completion status of a StarRocks task.
-
-    Args:
-        conn_id (str): Connection ID for the StarRocks database.
-        task_name (str): Name of the task to check.
-        sleep_time (int): Time in seconds to wait between checks.
-    """
-
     _MISSED_MAX_COUNT = 5
 
     def __init__(self, conn_id, task_name, sleep_time):
-        """
-        Initialize the trigger with connection ID, task name, and sleep time.
-
-        Args:
-            conn_id (str): Connection ID for the StarRocks database.
-            task_name (str): Name of the task to check.
-            sleep_time (int): Time in seconds to wait between checks.
-        """
         super().__init__()
         self.conn_id = conn_id
         self.task_name = task_name
         self._sleep_time = sleep_time
-
-        connection = BaseHook.get_connection(conn_id)
-        self.cursor = connection.get_hook(hook_params={}).get_conn().cursor()
         self._missed_count = 0
 
     def serialize(self) -> tuple[str, dict[str, Any]]:
-        """
-        Serialize the trigger for Airflow to use.
-
-        Returns:
-            tuple[str, dict[str, Any]]: Serialized trigger information.
-        """
         return (
             "radiant.tasks.starrocks.trigger.StarRocksTaskCompleteTrigger",
             {
@@ -55,15 +28,9 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             },
         )
 
-    def _get_task_completed(self):
-        """
-        Check the completion status of the task.
-
-        Returns:
-            TaskFailedEvent or TaskSuccessEvent: Event indicating task success or failure.
-        """
+    def _get_task_completed(self, cursor):
         try:
-            self.cursor.execute(
+            cursor.execute(
                 f"""
                 SELECT state, error_message
                 FROM information_schema.task_runs
@@ -72,42 +39,37 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
                 LIMIT 1
                 """
             )
-            result = self.cursor.fetchone()
+            result = cursor.fetchone()
         except Exception as e:
             LOGGER.info(f"Retrying after receiving: [{type(e)}] {e}")
             self._missed_count += 1
-            if self._missed_count == self._MISSED_MAX_COUNT:
-                return TaskFailedEvent(xcoms={"error_message": f"Caught {type(e)} caused {self.task_name} to fail"})
+            if self._missed_count >= self._MISSED_MAX_COUNT:
+                return TriggerEvent({"error_message": f"Caught {type(e)} caused {self.task_name} to fail"})
             return None
 
         if not result:
             LOGGER.info("Expected variable `result` is None, retrying...")
             self._missed_count += 1
-            if self._missed_count == self._MISSED_MAX_COUNT:
-                return TaskFailedEvent(xcoms={"error_message": f"task {self.task_name} not found"})
+            if self._missed_count >= self._MISSED_MAX_COUNT:
+                TriggerEvent({"status": "error", "error_message": f"task {self.task_name} not found"})
             return None
 
         self._missed_count = 0
 
         if result[0] == "SUCCESS":
-            return TaskSuccessEvent()
-
+            return TriggerEvent({"status": "success"})
         if result[0] not in ["RUNNING", "PENDING"]:
-            LOGGER.info(f"Received task state {result[0]}, failing task...")
-            return TaskFailedEvent(xcoms={"error_message": f"state: {result[0]}, error_message: {result[1]}"})
-
+            return TriggerEvent({"status": "error", "state": result[0], "error_message": result[1]})
         return None
 
-    async def run(self) -> AsyncIterator[TaskSuccessEvent]:
-        """
-        Run the trigger to check task completion status periodically.
+    async def run(self):
+        connection = BaseHook.get_connection(self.conn_id)
+        hook = connection.get_hook(hook_params={})
+        conn = hook.get_conn()
+        cursor = conn.cursor()
 
-        Yields:
-            TaskSuccessEvent: Event indicating task success.
-        """
-        result = self._get_task_completed()
+        result = self._get_task_completed(cursor)
         while result is None:
             await asyncio.sleep(self._sleep_time)
-            result = self._get_task_completed()
-
+            result = self._get_task_completed(cursor)
         yield result

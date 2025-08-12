@@ -1,11 +1,11 @@
+import os
 import sys
 from functools import wraps
-
-from wurlitzer import pipes
 from urllib import parse
 
 import boto3
-import os
+from wurlitzer import pipes
+
 
 def _flush_pipes(stdout, stderr):
     """
@@ -50,6 +50,7 @@ def capture_libc_stderr_and_check_errors(error_patterns: list[str]):
 
     return decorator
 
+
 def download_s3_file(s3_path, dest_dir, randomize_filename=False):
     s3_client = boto3.client("s3")
 
@@ -62,9 +63,10 @@ def download_s3_file(s3_path, dest_dir, randomize_filename=False):
     bucket_name, object_key = extract_bucket_key(s3_path)
     if randomize_filename:
         import uuid
+
         filename = f"{uuid.uuid4()}_{os.path.basename(object_key)}"
     else:
-        filename  = os.path.basename(object_key)
+        filename = os.path.basename(object_key)
     local_path = os.path.join(dest_dir, filename)
     try:
         s3_client.download_file(bucket_name, object_key, local_path)

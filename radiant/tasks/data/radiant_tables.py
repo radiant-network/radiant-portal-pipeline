@@ -42,6 +42,7 @@ ICEBERG_GERMLINE_SNV_MAPPING = {
     "iceberg_consequence": "germline_snv_consequence",
     "iceberg_occurrence": "germline_snv_occurrence",
     "iceberg_variant": "germline_snv_variant",
+    "iceberg_germline_cnv_occurrence": "germline_cnv_occurrence",
 }
 
 ICEBERG_OPEN_DATA_MAPPING = {
@@ -76,6 +77,7 @@ STARROCKS_COMMON_MAPPING = {
     "starrocks_variant_lookup": "variant_lookup",
     "starrocks_staging_exomiser": "raw_exomiser",
     "starrocks_exomiser": "exomiser",
+    "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
@@ -90,6 +92,7 @@ STARROCKS_GERMLINE_SNV_MAPPING = {
     "starrocks_staging_variant": "staging_variant",
     "starrocks_staging_variant_frequency": "staging_variant_frequency_part",
 }
+
 
 STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_1000_genomes": "1000_genomes",

@@ -16,7 +16,7 @@ def test_dag_has_correct_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-germline-snv-vcf")
     task_ids = [task.task_id for task in dag.tasks]
     assert task_ids[0] == "get_cases"
-    assert task_ids[1] == "get_namespace"
+    assert task_ids[1] == "get_iceberg_namespace"
     assert task_ids[2] == "create_parquet_files"
     assert task_ids[3] == "merge_commits"
     assert task_ids[4] == "commit_partitions"

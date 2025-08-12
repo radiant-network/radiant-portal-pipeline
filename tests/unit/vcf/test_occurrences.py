@@ -9,16 +9,18 @@ from radiant.tasks.vcf.snv.germline.occurrence import (
     AUTOSOMAL_ORIGINS_LOOKUP,
     X_ORIGINS_LOOKUP,
     Y_ORIGINS_LOOKUP,
-    ZYGOSITY_HET,
-    ZYGOSITY_HOM,
-    ZYGOSITY_UNK,
-    ZYGOSITY_WT,
     adjust_calls_and_zygosity,
     compute_transmission_mode,
     normalize_calls,
     normalize_monosomy,
     parental_origin,
     process_occurrence,
+)
+from radiant.tasks.vcf.vcf_utils import (
+    ZYGOSITY_HET,
+    ZYGOSITY_HOM,
+    ZYGOSITY_UNK,
+    ZYGOSITY_WT,
 )
 
 from .vcf_test_utils import variant
