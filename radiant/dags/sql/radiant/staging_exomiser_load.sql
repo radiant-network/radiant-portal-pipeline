@@ -1,7 +1,7 @@
 LOAD LABEL {database_name}.{label}
 (
     DATA INFILE(%(tsv_filepath)s)
-    INTO TABLE {{ params.starrocks_staging_exomiser }} {temporary_partition_clause}
+    INTO TABLE {table_name} {temporary_partition_clause}
     COLUMNS TERMINATED BY "\t"
     FORMAT AS "CSV"
     (

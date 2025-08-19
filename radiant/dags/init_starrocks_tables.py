@@ -60,6 +60,8 @@ with DAG(
         "cosmic_gene_panel",
         "clinvar_rcv_summary",
         "raw_clinvar_rcv_summary",
+        "mondo_term",
+        "hpo_term",
     ]
     for group in group_ids:
         tasks.append(

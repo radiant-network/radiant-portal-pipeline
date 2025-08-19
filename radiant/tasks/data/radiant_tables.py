@@ -2,7 +2,11 @@ import os
 
 from radiant.dags import NAMESPACE
 
-RADIANT_TABLES_PREFIX_ENV_KEY = "RADIANT_TABLES_NAMESPACE"
+RADIANT_ICEBERG_DATABASE_ENV_KEY = "RADIANT_ICEBERG_NAMESPACE"
+
+RADIANT_ICEBERG_CATALOG_ENV_KEY = "RADIANT_ICEBERG_CATALOG"
+
+RADIANT_DATABASE_ENV_KEY = "RADIANT_TABLES_DATABASE"
 
 CLINICAL_CATALOG_ENV_KEY = "RADIANT_CLINICAL_CATALOG"
 CLINICAL_DATABASE_ENV_KEY = "RADIANT_CLINICAL_DATABASE"
@@ -10,7 +14,6 @@ CLINICAL_DATABASE_ENV_KEY = "RADIANT_CLINICAL_DATABASE"
 STARROCKS_COLOCATE_GROUP_MAPPING = {"colocate_query_group": f"{NAMESPACE}.query_group"}
 
 GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX = "germline__snv__"
-
 
 # --- Clinical tables
 CLINICAL_MAPPING = {
@@ -30,11 +33,6 @@ CLINICAL_MAPPING = {
     "clinical_project": "project",
     "clinical_observation_coding": "observation_coding",
     "clinical_pipeline": "pipeline",
-}
-
-CLINICAL_CATALOG_DATABASE = {
-    "clinical_catalog": os.getenv(CLINICAL_CATALOG_ENV_KEY, "radiant_jdbc"),
-    "clinical_database": os.getenv(CLINICAL_DATABASE_ENV_KEY, "public"),
 }
 
 # --- Iceberg tables
@@ -59,13 +57,14 @@ ICEBERG_OPEN_DATA_MAPPING = {
     "iceberg_orphanet_gene_set": "orphanet_gene_set",
     "iceberg_cosmic_gene_set": "cosmic_gene_set",
     "iceberg_ddd_gene_set": "ddd_gene_set",
+    "iceberg_mondo_term": "mondo_term",
+    "iceberg_hpo_term": "hpo_term",
 }
 
 ICEBERG_CATALOG_DATABASE = {
     "iceberg_catalog": os.getenv("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog"),
     "iceberg_database": os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant"),
 }
-
 
 # --- StarRocks tables
 
@@ -102,6 +101,8 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_gnomad_constraint": "gnomad_constraint",
     "starrocks_omim_gene_panel": "omim_gene_panel",
     "starrocks_hpo_gene_panel": "hpo_gene_panel",
+    "starrocks_hpo_term": "hpo_term",
+    "starrocks_mondo_term": "mondo_term",
     "starrocks_orphanet_gene_panel": "orphanet_gene_panel",
     "starrocks_cosmic_gene_panel": "cosmic_gene_panel",
     "starrocks_ddd_gene_panel": "ddd_gene_panel",
@@ -110,51 +111,82 @@ STARROCKS_OPEN_DATA_MAPPING = {
 }
 
 
-def get_iceberg_germline_snv_mapping() -> dict:
-    _catalog = ICEBERG_CATALOG_DATABASE["iceberg_catalog"]
-    _database = ICEBERG_CATALOG_DATABASE["iceberg_database"]
+def get_iceberg_germline_snv_mapping(conf=None) -> dict:
+    _catalog = (
+        conf.get(
+            RADIANT_ICEBERG_CATALOG_ENV_KEY, os.getenv(RADIANT_ICEBERG_CATALOG_ENV_KEY, "radiant_iceberg_catalog")
+        )
+        if conf
+        else os.getenv(RADIANT_ICEBERG_CATALOG_ENV_KEY, "radiant_iceberg_catalog")
+    )
+    _database = (
+        conf.get(RADIANT_ICEBERG_DATABASE_ENV_KEY, os.getenv(RADIANT_ICEBERG_DATABASE_ENV_KEY, "radiant"))
+        if conf
+        else os.getenv(RADIANT_ICEBERG_DATABASE_ENV_KEY, "radiant")
+    )
     return {key: f"{_catalog}.{_database}.{value}" for key, value in ICEBERG_GERMLINE_SNV_MAPPING.items()}
 
 
-def get_iceberg_open_data_mapping() -> dict:
-    _catalog = ICEBERG_CATALOG_DATABASE["iceberg_catalog"]
-    _database = ICEBERG_CATALOG_DATABASE["iceberg_database"]
+def get_iceberg_open_data_mapping(conf=None) -> dict:
+    _catalog = (
+        conf.get(
+            RADIANT_ICEBERG_CATALOG_ENV_KEY, os.getenv(RADIANT_ICEBERG_CATALOG_ENV_KEY, "radiant_iceberg_catalog")
+        )
+        if conf
+        else os.getenv(RADIANT_ICEBERG_CATALOG_ENV_KEY, "radiant_iceberg_catalog")
+    )
+    _database = (
+        conf.get(RADIANT_ICEBERG_DATABASE_ENV_KEY, os.getenv(RADIANT_ICEBERG_DATABASE_ENV_KEY, "radiant"))
+        if conf
+        else os.getenv(RADIANT_ICEBERG_DATABASE_ENV_KEY, "radiant")
+    )
     return {key: f"{_catalog}.{_database}.{value}" for key, value in ICEBERG_OPEN_DATA_MAPPING.items()}
 
 
-def get_iceberg_tables() -> dict:
+def get_iceberg_tables(conf=None) -> dict:
     return {
-        **get_iceberg_germline_snv_mapping(),
-        **get_iceberg_open_data_mapping(),
+        **get_iceberg_germline_snv_mapping(conf),
+        **get_iceberg_open_data_mapping(conf),
     }
 
 
-def get_starrocks_germline_snv_mapping() -> dict:
-    namespace = os.environ.get(RADIANT_TABLES_PREFIX_ENV_KEY)
-    namespace = f"{namespace}_" if namespace else GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX
-    return {key: f"{namespace}{value}" for key, value in STARROCKS_GERMLINE_SNV_MAPPING.items()}
+def get_starrocks_mapping(tables, prefix="", conf=None) -> dict:
+    _database = (
+        conf.get(RADIANT_DATABASE_ENV_KEY, os.getenv(RADIANT_DATABASE_ENV_KEY, "radiant"))
+        if conf
+        else os.getenv(RADIANT_DATABASE_ENV_KEY, "radiant")
+    )
+    return {key: f"{_database}.{prefix}{value}" for key, value in tables.items()}
 
 
-def get_starrocks_open_data_mapping() -> dict:
-    namespace = os.environ.get(RADIANT_TABLES_PREFIX_ENV_KEY)
-    namespace = f"{namespace}_" if namespace else ""
-    return {key: f"{namespace}{value}" for key, value in STARROCKS_OPEN_DATA_MAPPING.items()}
+def get_starrocks_germline_snv_mapping(conf=None) -> dict:
+    return get_starrocks_mapping(STARROCKS_GERMLINE_SNV_MAPPING, GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX, conf)
 
 
-def get_starrocks_common_mapping() -> dict:
-    namespace = os.environ.get(RADIANT_TABLES_PREFIX_ENV_KEY)
-    namespace = f"{namespace}_" if namespace else ""
-    return {key: f"{namespace}{value}" for key, value in STARROCKS_COMMON_MAPPING.items()}
+def get_starrocks_open_data_mapping(conf=None) -> dict:
+    return get_starrocks_mapping(STARROCKS_OPEN_DATA_MAPPING, conf=conf)
 
 
-def get_clinical_mapping() -> dict:
-    _catalog = CLINICAL_CATALOG_DATABASE["clinical_catalog"]
-    _database = CLINICAL_CATALOG_DATABASE["clinical_database"]
+def get_starrocks_common_mapping(conf=None) -> dict:
+    return get_starrocks_mapping(STARROCKS_COMMON_MAPPING, conf=conf)
+
+
+def get_clinical_mapping(conf=None) -> dict:
+    _catalog = (
+        conf.get(CLINICAL_CATALOG_ENV_KEY, os.getenv(CLINICAL_CATALOG_ENV_KEY, "radiant_jdbc"))
+        if conf
+        else os.getenv(CLINICAL_CATALOG_ENV_KEY, "radiant_jdbc")
+    )
+    _database = (
+        conf.get(CLINICAL_DATABASE_ENV_KEY, os.getenv(CLINICAL_DATABASE_ENV_KEY, "public"))
+        if conf
+        else os.getenv(CLINICAL_DATABASE_ENV_KEY, "public")
+    )
     return {key: f"{_catalog}.{_database}.{value}" for key, value in CLINICAL_MAPPING.items()}
 
 
-def get_radiant_mapping() -> dict:
-    namespace = os.environ.get(RADIANT_TABLES_PREFIX_ENV_KEY)
+def get_radiant_mapping(conf=None) -> dict:
+    namespace = os.environ.get(RADIANT_DATABASE_ENV_KEY)
     namespace = f"{namespace}_" if namespace else GERMLINE_SNV_NAMESPACE_STARROCKS_PREFIX
     mapping = {
         key: f"{namespace}{value}"
@@ -162,9 +194,9 @@ def get_radiant_mapping() -> dict:
             **STARROCKS_COLOCATE_GROUP_MAPPING,
         }.items()
     }
-    mapping.update(get_starrocks_common_mapping())
-    mapping.update(get_starrocks_germline_snv_mapping())
-    mapping.update(get_starrocks_open_data_mapping())
-    mapping.update(get_iceberg_tables())
-    mapping.update(get_clinical_mapping())
+    mapping.update(get_starrocks_common_mapping(conf))
+    mapping.update(get_starrocks_germline_snv_mapping(conf))
+    mapping.update(get_starrocks_open_data_mapping(conf))
+    mapping.update(get_iceberg_tables(conf))
+    mapping.update(get_clinical_mapping(conf))
     return mapping

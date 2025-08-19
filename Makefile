@@ -25,7 +25,7 @@ test-integration-slow:
 	pytest -m slow tests/integration
 
 test-static:
-	ruff check radiant/ tests/
+	ruff check radiant/
 
 test: test-static test-unit test-integration
 

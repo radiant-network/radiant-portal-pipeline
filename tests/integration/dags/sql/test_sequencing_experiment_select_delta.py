@@ -6,6 +6,11 @@ import psycopg2
 import pytest
 
 from radiant.dags import DAGS_DIR
+from radiant.tasks.data.radiant_tables import (
+    CLINICAL_CATALOG_ENV_KEY,
+    CLINICAL_DATABASE_ENV_KEY,
+    RADIANT_DATABASE_ENV_KEY,
+)
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 _RADIANT_SQL_PATH = os.path.join(_SQL_DIR, "radiant")
@@ -37,7 +42,7 @@ def sequencing_delta_columns():
     ]
 
 
-def _run_radiant_sql(starrocks_session, sql_file):
+def _run_radiant_sql(starrocks_session, starrocks_jdbc_catalog, starrocks_container, sql_file):
     """
     Helper function to run a SQL file against the StarRocks session.
     """
@@ -45,29 +50,38 @@ def _run_radiant_sql(starrocks_session, sql_file):
 
     with open(sql_file) as f:
         template = jinja2.Template(f.read())
-        sql = template.render(params=get_radiant_mapping())
-
+        conf = {
+            RADIANT_DATABASE_ENV_KEY: starrocks_container.database,
+            CLINICAL_CATALOG_ENV_KEY: starrocks_jdbc_catalog.catalog,
+            CLINICAL_DATABASE_ENV_KEY: starrocks_jdbc_catalog.database,
+        }
+        sql = template.render(params=get_radiant_mapping(conf=conf))
     with starrocks_session.cursor() as cursor:
         cursor.execute(sql)
         return cursor.fetchall()
 
 
 @pytest.fixture(scope="session")
-def sequencing_experiment_tables(starrocks_session, starrocks_jdbc_catalog):
+def sequencing_experiment_tables(starrocks_session, starrocks_jdbc_catalog, starrocks_database):
     """
     Fixture to create a temporary sequencing_experiment table for testing.
     """
-    os.environ["RADIANT_CLINICAL_CATALOG"] = starrocks_jdbc_catalog
     _run_radiant_sql(
         starrocks_session,
+        starrocks_jdbc_catalog,
+        starrocks_database,
         sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_sequencing_experiment_create_table.sql"),
     )
     _run_radiant_sql(
         starrocks_session,
+        starrocks_jdbc_catalog,
+        starrocks_database,
         sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_external_sequencing_experiment_create_table.sql"),
     )
     _run_radiant_sql(
         starrocks_session,
+        starrocks_jdbc_catalog,
+        starrocks_database,
         sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_sequencing_experiment_delta_create_table.sql"),
     )
     yield
@@ -93,12 +107,27 @@ def test_sequencing_experiment_no_delta(starrocks_session, sequencing_experiment
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
-        INSERT INTO staging_sequencing_experiment 
-        SELECT case_id, seq_id, task_id, 0 AS part, analysis_type, aliquot, patient_id, experimental_strategy,
-            request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, family_role, affected_status, 
-            created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
-        FROM staging_external_sequencing_experiment
-        """)
+                       INSERT INTO staging_sequencing_experiment
+                       SELECT case_id,
+                              seq_id,
+                              task_id,
+                              0                     AS part,
+                              analysis_type,
+                              aliquot,
+                              patient_id,
+                              experimental_strategy,
+                              request_id,
+                              request_priority,
+                              vcf_filepath,
+                              exomiser_filepaths,
+                              sex,
+                              family_role,
+                              affected_status,
+                              created_at,
+                              updated_at,
+                              '1970-01-01 00:00:00' AS ingested_at
+                       FROM staging_external_sequencing_experiment
+                       """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
@@ -115,21 +144,55 @@ def test_sequencing_experiment_existing_wgs_case_partition(
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
-            INSERT INTO staging_sequencing_experiment 
-            SELECT case_id, seq_id, task_id, 0 AS part, analysis_type, aliquot, patient_id, experimental_strategy,
-                request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, family_role, affected_status, 
-                created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
-            FROM staging_external_sequencing_experiment
-            WHERE case_id = 1 AND seq_id = 1 AND task_id = 1
-        """)
+                       INSERT INTO staging_sequencing_experiment
+                       SELECT case_id,
+                              seq_id,
+                              task_id,
+                              0                     AS part,
+                              analysis_type,
+                              aliquot,
+                              patient_id,
+                              experimental_strategy,
+                              request_id,
+                              request_priority,
+                              vcf_filepath,
+                              exomiser_filepaths,
+                              sex,
+                              family_role,
+                              affected_status,
+                              created_at,
+                              updated_at,
+                              '1970-01-01 00:00:00' AS ingested_at
+                       FROM staging_external_sequencing_experiment
+                       WHERE case_id = 1
+                         AND seq_id = 1
+                         AND task_id = 1
+                       """)
         cursor.execute("""
-            INSERT INTO staging_sequencing_experiment 
-            SELECT case_id, seq_id, task_id, 1 AS part, analysis_type, aliquot, patient_id, experimental_strategy,
-                request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, family_role, affected_status, 
-                created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
-            FROM staging_external_sequencing_experiment
-            WHERE case_id = 2 AND seq_id = 4 AND task_id = 4
-        """)
+                       INSERT INTO staging_sequencing_experiment
+                       SELECT case_id,
+                              seq_id,
+                              task_id,
+                              1                     AS part,
+                              analysis_type,
+                              aliquot,
+                              patient_id,
+                              experimental_strategy,
+                              request_id,
+                              request_priority,
+                              vcf_filepath,
+                              exomiser_filepaths,
+                              sex,
+                              family_role,
+                              affected_status,
+                              created_at,
+                              updated_at,
+                              '1970-01-01 00:00:00' AS ingested_at
+                       FROM staging_external_sequencing_experiment
+                       WHERE case_id = 2
+                         AND seq_id = 4
+                         AND task_id = 4
+                       """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
@@ -146,13 +209,30 @@ def test_sequencing_experiment_existing_wxs_case_partition(
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
-            INSERT INTO staging_sequencing_experiment 
-            SELECT case_id, seq_id, task_id, 65537 AS part, analysis_type, aliquot, patient_id, 
-                experimental_strategy, request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, 
-                family_role, affected_status, created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
-            FROM staging_external_sequencing_experiment
-            WHERE case_id = 1 AND seq_id = 62 AND task_id = 62
-        """)
+                       INSERT INTO staging_sequencing_experiment
+                       SELECT case_id,
+                              seq_id,
+                              task_id,
+                              65537                 AS part,
+                              analysis_type,
+                              aliquot,
+                              patient_id,
+                              experimental_strategy,
+                              request_id,
+                              request_priority,
+                              vcf_filepath,
+                              exomiser_filepaths,
+                              sex,
+                              family_role,
+                              affected_status,
+                              created_at,
+                              updated_at,
+                              '1970-01-01 00:00:00' AS ingested_at
+                       FROM staging_external_sequencing_experiment
+                       WHERE case_id = 1
+                         AND seq_id = 62
+                         AND task_id = 62
+                       """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
@@ -161,7 +241,7 @@ def test_sequencing_experiment_existing_wxs_case_partition(
 
 
 def test_sequencing_experiment_with_recently_updated_case(
-    postgres_container, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+    postgres_instance, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
 ):
     """
     Test computing the delta when an existing sequencing experiment gets an update
@@ -169,13 +249,30 @@ def test_sequencing_experiment_with_recently_updated_case(
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
-            INSERT INTO staging_sequencing_experiment 
-            SELECT case_id, seq_id, task_id, 0 AS part, analysis_type, aliquot, patient_id, 
-               experimental_strategy, request_id, request_priority, vcf_filepath, exomiser_filepaths, sex, 
-               family_role, affected_status, created_at, updated_at, '1970-01-01 00:00:00' AS ingested_at 
-            FROM staging_external_sequencing_experiment
-            WHERE case_id = 1 AND seq_id = 1 AND task_id = 1
-        """)
+                       INSERT INTO staging_sequencing_experiment
+                       SELECT case_id,
+                              seq_id,
+                              task_id,
+                              0                     AS part,
+                              analysis_type,
+                              aliquot,
+                              patient_id,
+                              experimental_strategy,
+                              request_id,
+                              request_priority,
+                              vcf_filepath,
+                              exomiser_filepaths,
+                              sex,
+                              family_role,
+                              affected_status,
+                              created_at,
+                              updated_at,
+                              '1970-01-01 00:00:00' AS ingested_at
+                       FROM staging_external_sequencing_experiment
+                       WHERE case_id = 1
+                         AND seq_id = 1
+                         AND task_id = 1
+                       """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
@@ -185,18 +282,20 @@ def test_sequencing_experiment_with_recently_updated_case(
     with (
         psycopg2.connect(
             host="localhost",
-            port=postgres_container.port,
-            database=postgres_container.radiant_db,
-            user=postgres_container.user,
-            password=postgres_container.password,
+            port=postgres_instance.port,
+            database=postgres_instance.radiant_db,
+            user=postgres_instance.user,
+            password=postgres_instance.password,
         ) as pg_conn,
         pg_conn.cursor() as pg_cursor,
     ):
+        pg_cursor.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
         pg_cursor.execute("""
-            UPDATE sequencing_experiment 
-            SET updated_on = date_trunc('day', NOW()) 
-            WHERE case_id = 1 AND id = 1 
-            """)
+                          UPDATE sequencing_experiment
+                          SET updated_on = date_trunc('day', NOW())
+                          WHERE case_id = 1
+                            AND id = 1
+                          """)
         pg_conn.commit()
 
     with starrocks_session.cursor() as cursor:

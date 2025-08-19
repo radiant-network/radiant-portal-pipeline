@@ -13,6 +13,7 @@ class Experiment(BaseModel):
     request_id: int | None = None
     request_priority: str | None = None
     exomiser_filepaths: list[str] | None = None
+    cnv_vcf_filepath: str | None = None
 
 
 class Case(BaseModel):

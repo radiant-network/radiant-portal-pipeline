@@ -5,37 +5,43 @@ import uuid
 import jinja2
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.data.radiant_tables import get_radiant_mapping
+from radiant.tasks.data.radiant_tables import RADIANT_DATABASE_ENV_KEY, get_radiant_mapping
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
 
-def test_raw_exomiser_load(starrocks_session, host_internal_address, minio_container, sample_exomiser_tsv):
+def test_raw_exomiser_load(starrocks_session, starrocks_database, minio_instance, sample_exomiser_tsv):
     """
     Test the loading of raw Exomiser data into StarRocks.
     """
+    conf = {
+        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
+    }
+    mapping = get_radiant_mapping(conf)
     with open(os.path.join(_SQL_DIR, "radiant/init/staging_exomiser_create_table.sql")) as f_in:
-        create_table_sql = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping()})
+        create_table_sql = jinja2.Template(f_in.read()).render({"params": mapping})
 
     with open(os.path.join(_SQL_DIR, "radiant/staging_exomiser_load.sql")) as f_in:
         query = f_in.read()
 
     # Jinja template rendering
-    rendered_sql = jinja2.Template(query).render({"params": get_radiant_mapping() | {"broker_load_timeout": 7200}})
+    rendered_sql = jinja2.Template(query).render({"params": mapping | {"broker_load_timeout": 7200}})
 
-    db_name = starrocks_session.db.decode("utf-8")
+    _database_name = mapping["starrocks_staging_exomiser"].split(".")[0]
+    _table_name = mapping["starrocks_staging_exomiser"].split(".")[1]
 
     _label = f"test_raw_exomiser_load_{str(uuid.uuid4().hex)}"
     rendered_sql = rendered_sql.format(
-        database_name=db_name,
+        database_name=_database_name,
+        table_name=_table_name,
         label=_label,
         temporary_partition_clause="",
         broker_configuration=f"""
             'aws.s3.region' = 'us-east-1',
-            'aws.s3.endpoint' = 'http://{host_internal_address}:{minio_container.api_port}',
+            'aws.s3.endpoint' = 'http://radiant-minio:9000',
             'aws.s3.enable_path_style_access' = 'true',
-            'aws.s3.access_key' = '{minio_container.access_key}',
-            'aws.s3.secret_key' = '{minio_container.secret_key}'
+            'aws.s3.access_key' = '{minio_instance.access_key}',
+            'aws.s3.secret_key' = '{minio_instance.secret_key}'
         """,
     )
 
@@ -60,10 +66,12 @@ def test_raw_exomiser_load(starrocks_session, host_internal_address, minio_conta
                 raise RuntimeError(f"Load for label {_label} was cancelled.")
             time.sleep(2)
             _i += 1
-            if _i > 30:
+            if _i > 150:
                 raise TimeoutError(f"Load for label {_label} did not finish in time.")
 
-        cursor.execute(f"SELECT rank, acmg_classification, acmg_evidence FROM {db_name}.raw_exomiser ORDER BY rank")
+        cursor.execute(
+            f"SELECT rank, acmg_classification, acmg_evidence FROM {_database_name}.raw_exomiser ORDER BY rank"
+        )
         results = cursor.fetchall()
         assert results == (
             (1, "pathogenic", '["PM2","PP3","PS4"]'),

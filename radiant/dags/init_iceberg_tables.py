@@ -25,6 +25,15 @@ with DAG(
     catchup=False,
 ) as dag:
 
+    @task
+    def get_namespace():
+        """Get the Iceberg namespace from conf or use the one defined in environment variable or use default."""
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        dag_conf = context["dag_run"].conf or {}
+        return dag_conf.get("RADIANT_ICEBERG_NAMESPACE", ICEBERG_NAMESPACE)
+
     @task.external_python(task_id="init_database", python=PATH_TO_PYTHON_BINARY)
     def init_database(namespace):
         from pyiceberg.catalog import load_catalog
@@ -32,13 +41,13 @@ with DAG(
         catalog = load_catalog("default")
         catalog.create_namespace_if_not_exists(namespace)
 
-    @task.external_python(task_id="create_germline_occurrence_table", python=PATH_TO_PYTHON_BINARY)
-    def create_germline_occurrence_table(namespace):
+    @task.external_python(task_id="create_germline_snv_occurrence_table", python=PATH_TO_PYTHON_BINARY)
+    def create_germline_snv_occurrence_table(namespace):
         from pyiceberg.catalog import load_catalog
         from pyiceberg.partitioning import PartitionField, PartitionSpec
         from pyiceberg.transforms import IdentityTransform
 
-        from radiant.tasks.vcf.occurrence import SCHEMA as OCCURRENCE_SCHEMA
+        from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as OCCURRENCE_SCHEMA
 
         catalog = load_catalog("default")
         table_name = f"{namespace}.germline_snv_occurrence"
@@ -73,7 +82,7 @@ with DAG(
         from pyiceberg.partitioning import PartitionField, PartitionSpec
         from pyiceberg.transforms import IdentityTransform
 
-        from radiant.tasks.vcf.variant import SCHEMA as VARIANT_SCHEMA
+        from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
 
         catalog = load_catalog("default")
         table_name = f"{namespace}.germline_snv_variant"
@@ -100,7 +109,7 @@ with DAG(
         from pyiceberg.partitioning import PartitionField, PartitionSpec
         from pyiceberg.transforms import IdentityTransform
 
-        from radiant.tasks.vcf.consequence import SCHEMA as CONSEQUENCE_SCHEMA
+        from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
 
         catalog = load_catalog("default")
         table_name = f"{namespace}.germline_snv_consequence"
@@ -121,9 +130,24 @@ with DAG(
         )
         catalog.create_table_if_not_exists(table_name, schema=CONSEQUENCE_SCHEMA, partition_spec=partition_spec)
 
+    @task.external_python(task_id="create_germline_cnv_occurrence_table", python=PATH_TO_PYTHON_BINARY)
+    def create_germline_cnv_occurrence_table(namespace):
+        from pyiceberg.catalog import load_catalog
+
+        from radiant.tasks.vcf.cnv.germline.occurrence import SCHEMA as OCCURRENCE_SCHEMA
+
+        catalog = load_catalog("default")
+        table_name = f"{namespace}.germline_cnv_occurrence"
+        if catalog.table_exists(table_name):
+            catalog.drop_table(table_name)
+
+        catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA)
+
+    namespace_task = get_namespace()
     (
-        init_database(ICEBERG_NAMESPACE)
-        >> create_germline_occurrence_table(ICEBERG_NAMESPACE)
-        >> create_germline_variant_table(ICEBERG_NAMESPACE)
-        >> create_germline_consequences_table(ICEBERG_NAMESPACE)
+        init_database(namespace_task)
+        >> create_germline_snv_occurrence_table(namespace_task)
+        >> create_germline_variant_table(namespace_task)
+        >> create_germline_consequences_table(namespace_task)
+        >> create_germline_cnv_occurrence_table(namespace_task)
     )

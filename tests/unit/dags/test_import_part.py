@@ -65,6 +65,7 @@ def test_dag_contains_all_tasks(dag_bag):
     expected_tasks = [
         "start",
         "fetch_sequencing_experiment_delta",
+        "get_tables_to_refresh",
         "sanity_check_cases",
         "import_vcf",
         "load_exomiser_files",
@@ -72,6 +73,7 @@ def test_dag_contains_all_tasks(dag_bag):
         "extract_case_ids",
         "insert_variant_hashes",
         "overwrite_tmp_variant",
+        "prepare_config",
         "insert_exomiser",
         "insert_occurrence",
         "insert_stg_variant_freq",

@@ -7,12 +7,12 @@ from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
 from radiant.tasks.tracing.trace import get_tracer
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors
-from radiant.tasks.vcf.common import process_common
-from radiant.tasks.vcf.consequence import parse_csq_header, process_consequence
 from radiant.tasks.vcf.experiment import Case
-from radiant.tasks.vcf.occurrence import process_occurrence
 from radiant.tasks.vcf.pedigree import Pedigree
-from radiant.tasks.vcf.variant import process_variant
+from radiant.tasks.vcf.snv.germline.common import process_common
+from radiant.tasks.vcf.snv.germline.consequence import parse_csq_header, process_consequence
+from radiant.tasks.vcf.snv.germline.occurrence import process_occurrence
+from radiant.tasks.vcf.snv.germline.variant import process_variant
 
 logger = logging.getLogger("airflow.task")
 tracer = get_tracer(__name__)

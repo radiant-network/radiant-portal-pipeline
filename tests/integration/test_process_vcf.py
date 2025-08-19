@@ -5,14 +5,14 @@ import pytest
 
 from radiant.tasks.iceberg.utils import commit_files
 from radiant.tasks.vcf.experiment import Case, Experiment
-from radiant.tasks.vcf.process import process_case
+from radiant.tasks.vcf.snv.germline.process import process_case
 
 
 def test_process_case(
-    setup_namespace,
+    setup_iceberg_namespace,
     iceberg_catalog_properties,
     iceberg_client,
-    iceberg_container,
+    rest_iceberg_catalog_instance,
     indexed_vcfs,
 ):
     case = Case(
@@ -37,8 +37,8 @@ def test_process_case(
     )
     partitions_to_commit = process_case(
         case,
-        catalog_name=iceberg_container.catalog_name,
-        namespace=setup_namespace,
+        catalog_name=rest_iceberg_catalog_instance.catalog_name,
+        namespace=setup_iceberg_namespace,
         catalog_properties=iceberg_catalog_properties,
     )
 
@@ -47,10 +47,9 @@ def test_process_case(
         table = iceberg_client.load_table(table_name)
         commit_files(table, partitions)
 
-    table_names = iceberg_client.list_tables(setup_namespace)
-    assert (setup_namespace, "germline_snv_occurrence") in table_names
-    occ = iceberg_client.load_table(f"{setup_namespace}.germline_snv_occurrence").scan().to_arrow().to_pandas()
-    print(occ)
+    table_names = iceberg_client.list_tables(setup_iceberg_namespace)
+    assert (setup_iceberg_namespace, "germline_snv_occurrence") in table_names
+    occ = iceberg_client.load_table(f"{setup_iceberg_namespace}.germline_snv_occurrence").scan().to_arrow().to_pandas()
 
     assert not occ.empty, "No occurrences were written to the iceberg table"
     assert ((occ["aliquot"] == "SA0001") & (occ["case_id"] == 1)).any(), (
@@ -86,11 +85,11 @@ def fake_error_logging(*args, **kwargs):
 
 
 def test_process_case_error(
-    setup_namespace,
+    setup_iceberg_namespace,
     iceberg_catalog_properties,
-    iceberg_container,
+    rest_iceberg_catalog_instance,
     indexed_vcfs,
-    minio_container,
+    minio_instance,
 ):
     case = Case(
         case_id=1,
@@ -118,8 +117,8 @@ def test_process_case_error(
     ):
         process_case(
             case,
-            catalog_name=iceberg_container.catalog_name,
-            namespace=setup_namespace,
+            catalog_name=rest_iceberg_catalog_instance.catalog_name,
+            namespace=setup_iceberg_namespace,
             catalog_properties=iceberg_catalog_properties,
         )
 
