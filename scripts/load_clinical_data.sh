@@ -18,26 +18,6 @@ fi
 
 export PGPASSWORD
 
-echo "Truncating tables..."
-psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -p "$PGPORT" <<SQL
-TRUNCATE organization CASCADE;
-TRUNCATE patient CASCADE;
-TRUNCATE project CASCADE;
-TRUNCATE request CASCADE;
-TRUNCATE case_analysis CASCADE;
-TRUNCATE cases CASCADE;
-TRUNCATE family CASCADE;
-TRUNCATE observation_coding CASCADE;
-TRUNCATE sample CASCADE;
-TRUNCATE experiment CASCADE;
-TRUNCATE sequencing_experiment CASCADE;
-TRUNCATE pipeline CASCADE;
-TRUNCATE task CASCADE;
-TRUNCATE task_has_sequencing_experiment CASCADE;
-TRUNCATE document CASCADE;
-TRUNCATE task_has_document CASCADE;
-SQL
-
 echo "Loading data..."
 
 copy_cmd() {
@@ -45,20 +25,32 @@ copy_cmd() {
   psql -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE" -p "$PGPORT" -c "\\copy $1 FROM '$CSV_DIR/$2' DELIMITER ',' CSV HEADER;"
 }
 
-copy_cmd organization organization.csv
-copy_cmd patient patient.csv
-copy_cmd project project.csv
-copy_cmd case_analysis case_analysis.csv
-copy_cmd "cases(id,proband_id,project_id,case_analysis_id,status_code,request_id,performer_lab_id,primary_condition,note,created_on,updated_on)" cases.csv
-copy_cmd family family.csv
-copy_cmd observation_coding observation_coding.csv
-copy_cmd sample sample.csv
-copy_cmd experiment experiment.csv
-copy_cmd "sequencing_experiment(id,case_id,patient_id,sample_id,experiment_id,status_code,aliquot,request_id,performer_lab_id,run_name,run_alias,run_date,capture_kit,is_paired_end,read_length,created_on,updated_on)" sequencing_experiment.csv
-copy_cmd pipeline pipeline.csv
-copy_cmd task task.csv
-copy_cmd task_has_sequencing_experiment task_has_sequencing_experiments.csv
-copy_cmd document document.csv
-copy_cmd task_has_document task_has_documents.csv
+for entry in \
+  "organization organization.csv" \
+  "patient patient.csv" \
+  "project project.csv" \
+  "case_analysis case_analysis.csv" \
+  "cases(id,proband_id,project_id,case_analysis_id,status_code,request_id,performer_lab_id,primary_condition,note,created_on,updated_on) cases.csv" \
+  "family_relationship family_relationship.csv" \
+  "family family.csv" \
+  "observation_coding observation_coding.csv" \
+  "sample sample.csv" \
+  "experimental_strategy experimental_strategy.csv" \
+  "experiment experiment.csv" \
+  "sequencing_experiment(id,case_id,patient_id,sample_id,experiment_id,status_code,aliquot,request_id,performer_lab_id,run_name,run_alias,run_date,capture_kit,is_paired_end,read_length,created_on,updated_on) sequencing_experiment.csv" \
+  "pipeline pipeline.csv" \
+  "task task.csv" \
+  "task_has_sequencing_experiment task_has_sequencing_experiments.csv" \
+  "document document.csv" \
+  "task_has_document task_has_documents.csv"
+do
+  TABLE=$(echo $entry | awk '{print $1}')
+  FILE=$(echo $entry | awk '{print $2}')
+  if [ -f "$CSV_DIR/$FILE" ]; then
+    copy_cmd "$TABLE" "$FILE"
+  else
+    echo "Skipping $FILE (not found)..."
+  fi
+done
 
 echo "✅ All data imported successfully."
