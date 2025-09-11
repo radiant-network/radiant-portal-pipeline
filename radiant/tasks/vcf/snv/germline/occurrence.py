@@ -148,7 +148,8 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
         gq = record.format("GQ")[idx][0] if "GQ" in record.FORMAT else 0
         ad_ref = record.gt_ref_depths[idx] if record.gt_ref_depths[idx] > 0 else None
         ad_alt = record.gt_alt_depths[idx] if record.gt_alt_depths[idx] > 0 else None
-        calls, zygosity = adjust_calls_and_zygosity(record.genotypes[idx][:2], record.gt_types[idx], ad_ref, ad_alt)
+        calls_without_phased = record.genotypes[idx][:-1]  # remove phased information
+        calls, zygosity = adjust_calls_and_zygosity(calls_without_phased, record.gt_types[idx], ad_ref, ad_alt)
 
         has_alt = 1 in calls
         occurrences[exp.seq_id] = {
