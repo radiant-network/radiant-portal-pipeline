@@ -56,6 +56,8 @@ with DAG(
         "gnomad_constraint",
         "omim_gene_panel",
         "hpo_gene_panel",
+        "ensembl_gene",
+        "cytoband",
         "orphanet_gene_panel",
         "ddd_gene_panel",
         "cosmic_gene_panel",

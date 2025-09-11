@@ -1,13 +1,13 @@
 import os
 import time
 import uuid
+from abc import abstractmethod
 from collections.abc import MutableMapping
 from dataclasses import dataclass
 from typing import Any
 
-import jinja2
 from airflow.exceptions import AirflowException
-from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
+from airflow.providers.common.sql.operators.sql import BaseSQLOperator, SQLExecuteQueryOperator
 
 from radiant.dags import DAGS_DIR
 from radiant.tasks.data.radiant_tables import get_radiant_mapping
@@ -17,7 +17,7 @@ from radiant.tasks.starrocks.trigger import (
 from radiant.tasks.vcf.experiment import Case
 
 STARROCKS_INSERT_POOL = "starrocks_insert_pool"
-STARROCKS_TASK_TEMPLATE = "StarRocksSQLExecuteQueryOperator_Task_{uid}"
+STARROCKS_TASK_TEMPLATE = "Radiant_Operator_Task_{uid}"
 
 
 @dataclass
@@ -39,46 +39,43 @@ class SubmitTaskOptions:
     extra_args: dict[str, Any] = None
 
 
-class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
-    """
-    Custom Airflow operator to execute SQL queries on StarRocks with task submission and polling capabilities.
-
-    Args:
-        submit_task (bool): Flag to indicate if the task should be submitted.
-        submit_task_options (SubmitTaskOptions): Options for submitting the task.
-        query_params (dict): Parameters to format the SQL query.
-    """
-
+class RadiantStarRocksBaseOperator(BaseSQLOperator):
     def __init__(
         self,
+        *,
         submit_task_options: SubmitTaskOptions = None,
         **kwargs,
     ):
         conn_id = "starrocks_conn"
+        self.submit_task_options = submit_task_options
+
         super().__init__(
             conn_id=conn_id,
             **kwargs,
         )
-        self.submit_task = submit_task_options is not None
-        self.submit_task_options = submit_task_options or SubmitTaskOptions()
+
+    def prepare_template_context(self, context):
+        dag_conf_params = context.get("dag_run").conf or {}
+        dynamic_mapping = get_radiant_mapping(dag_conf_params)
+
+        return {**context, "mapping": dynamic_mapping}
+
+    def render_template_fields(self, context, jinja_env=None):
+        _context = self.prepare_template_context(context)
+        super().render_template_fields(_context, jinja_env)
 
     @staticmethod
     def _prepare_sql(
         sql: str,
-        is_submit_task: bool,
-        query_timeout: int,
-        enable_spill: bool = False,
-        spill_mode: str = "auto",
-        extra_args: dict = None,
+        submit_task_options: SubmitTaskOptions = None,
     ) -> tuple[str, str]:
         """
         Prepare the SQL query with the given parameters.
 
         Args:
             sql (str): The SQL query to be executed.
-            query_timeout (int): Maximum query timeout in milliseconds.
-            enable_spill (bool): Flag to enable or disable spilling.
-            spill_mode (str): Mode of spilling, e.g., 'auto'.
+            submit_task_options (SubmitTaskOptions): The submit task options.
+
 
         Returns:
             tuple[str, str]: The formatted SQL query and the task name.
@@ -86,16 +83,16 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         _task_name = None
         _sql = None
 
-        if is_submit_task:
+        if submit_task_options:
             _task_name = STARROCKS_TASK_TEMPLATE.format(uid=str(uuid.uuid4())[-8:])
             _submit_config = f"""
-            query_timeout={query_timeout}, 
-            enable_spill={enable_spill}, 
-            spill_mode={spill_mode}
+            query_timeout={submit_task_options.max_query_timeout}, 
+            enable_spill={submit_task_options.enable_spill}, 
+            spill_mode={submit_task_options.spill_mode}
             """
 
-            if extra_args:
-                _extra_args = ", ".join([f"{key}={value}" for key, value in extra_args.items()])
+            if submit_task_options.extra_args:
+                _extra_args = ", ".join([f"{key}={value}" for key, value in submit_task_options.extra_args.items()])
                 _submit_config += f", {_extra_args}"
 
             _sql = f"""
@@ -109,6 +106,44 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
 
         return _sql, _task_name
 
+    def submit_query(self, sql, method_name, parameters: MutableMapping | None = None):
+        submit_sql, task_name = self._prepare_sql(
+            sql=sql,
+            submit_task_options=self.submit_task_options,
+        )
+        self.get_db_hook().run(sql=submit_sql, autocommit=True, parameters=parameters)
+        if self.submit_task_options:
+            # Defer until StarRocks task completes
+            self.defer(
+                trigger=StarRocksTaskCompleteTrigger(
+                    conn_id=self.conn_id,
+                    task_name=task_name,
+                    sleep_time=30,
+                ),
+                method_name=method_name,
+            )
+
+
+class RadiantStarRocksOperator(RadiantStarRocksBaseOperator, SQLExecuteQueryOperator):
+    """
+    Custom Airflow operator to execute SQL queries on StarRocks with task submission and polling capabilities.
+
+    Args:
+        submit_task (bool): Flag to indicate if the task should be submitted.
+        submit_task_options (SubmitTaskOptions): Options for submitting the task.
+    """
+
+    def __init__(
+        self,
+        submit_task_options: SubmitTaskOptions = None,
+        **kwargs,
+    ):
+        super().__init__(
+            **kwargs,
+        )
+
+        self.submit_task_options = submit_task_options
+
     def execute(self, context):
         """
         Execute the SQL query. If submit_task is True, submit the task and defer until completion.
@@ -116,24 +151,9 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         Args:
             context (dict): The execution context.
         """
-        self.sql, _task_name = self._prepare_sql(
-            sql=self.sql,
-            is_submit_task=self.submit_task,
-            query_timeout=self.submit_task_options.max_query_timeout,
-            enable_spill=self.submit_task_options.enable_spill,
-            spill_mode=self.submit_task_options.spill_mode,
-        )
-
-        if self.submit_task:
-            super().execute(context)
-            self.defer(
-                trigger=StarRocksTaskCompleteTrigger(
-                    conn_id=self.conn_id,
-                    task_name=_task_name,
-                    sleep_time=self.submit_task_options.poll_interval,
-                ),
-                method_name="_is_complete",
-            )
+        if self.submit_task_options:
+            self.submit_query(sql=self.sql, method_name="_is_complete", parameters=self.parameters)
+            return None
         else:
             return super().execute(context)
 
@@ -150,74 +170,80 @@ class StarRocksSQLExecuteQueryOperator(SQLExecuteQueryOperator):
         return
 
 
-class RadiantStarRocksOperator(StarRocksSQLExecuteQueryOperator):
-    def __init__(self, params: MutableMapping | None = None, radiant_params: dict | None = None, *args, **kwargs):
-        self.radiant_params = radiant_params or {}
-        super().__init__(*args, params={**(params or {}), **self.radiant_params}, **kwargs)
-
-    def prepare_template_context(self, context):
-        dag_conf_params = context.get("dag_run").conf or {}
-        dynamic_mapping = get_radiant_mapping(dag_conf_params)
-
-        params = {**self.params, **self.radiant_params, **dynamic_mapping}
-
-        return {**context, "params": params}
-
-    def render_template_fields(self, context, jinja_env=None):
-        _context = self.prepare_template_context(context)
-        return super().render_template_fields(_context, jinja_env=jinja_env)
+class SwapPartition:
+    def __init__(
+        self,
+        partition: str,
+        copy_partition_sql: str,
+        temp_partition: str = None,
+        *args,
+        **kwargs,
+    ):
+        self.partition = partition
+        self.temp_partition = temp_partition or f"tp{partition}"
+        self.copy_partition_sql = copy_partition_sql
 
 
-class StarRocksPartitionSwapOperator(RadiantStarRocksOperator):
-    template_fields = RadiantStarRocksOperator.template_fields + (
+class RadiantStarRocksBasePartitionSwapOperator(RadiantStarRocksBaseOperator):
+    template_fields = RadiantStarRocksBaseOperator.template_fields + (
         "table",
         "partition",
         "temp_partition",
         "copy_partition_sql",
         "parameters",
     )
+    template_ext = (".sql", ".json")
+    template_fields_renderers = {
+        **RadiantStarRocksBaseOperator.template_fields_renderers,
+        "copy_partition_sql": "sql",
+        "insert_partition_sql": "sql",
+        "parameters": "json",
+    }
 
     def __init__(
         self,
+        *,
         table: str,
-        partition: str,
-        temp_partition: str = None,
-        copy_partition_sql: str = "",
-        *args,
+        swap_partition: SwapPartition = None,
+        submit_task_options: SubmitTaskOptions = None,
+        parameters: MutableMapping | None = None,
         **kwargs,
     ):
+        super().__init__(**kwargs)
         self.table = table
-        self.partition = partition
-        self.temp_partition = temp_partition or f"tp{partition}"
-        self.copy_partition_sql = copy_partition_sql
-        super().__init__(*args, **kwargs)
+        self.is_swap = swap_partition is not None
+        if swap_partition:
+            self.partition = swap_partition.partition
+            self.temp_partition = swap_partition.temp_partition
+            self.copy_partition_sql = swap_partition.copy_partition_sql
+        else:
+            self.partition = None
+            self.temp_partition = None
+            self.copy_partition_sql = None
+        self.submit_task_options = submit_task_options
+        self.parameters = parameters
 
-    def prepare_template_context(self, context):
-        _context = super().prepare_template_context(context)
+    def prepare_query_context(self, context):
         local_vars = {
             "table": self.table,
             "partition": self.partition,
             "temp_partition": self.temp_partition,
         }
-        return {**_context, **local_vars}
+        return {**context, **local_vars}
 
     def render_template_fields(self, context, jinja_env=None):
-        _context = self.prepare_template_context(context)
+        _context = super().prepare_template_context(context)
+        self.parameters = self.render_template(self.parameters, _context, jinja_env)
+        self.table = self.render_template(self.table, _context, jinja_env)
+        self.partition = self.render_template(self.partition, _context, jinja_env)
+        self.temp_partition = self.render_template(self.temp_partition, _context, jinja_env)
+        _sql_context = self.prepare_query_context(_context)
+        self.copy_partition_sql = self.render_template(self.copy_partition_sql, _sql_context, jinja_env)
 
-        # First normal render
-        super().render_template_fields(_context, jinja_env)
-
-        # Second render pass for nested templates
-        for field_name in ("sql", "copy_partition_sql"):
-            value = getattr(self, field_name)
-            if isinstance(value, str):
-                rendered = self.render_template(value, _context, jinja_env)
-                setattr(self, field_name, rendered)
-
-    def execute(self, context):
+    def prepare_partition(self, context):
         hook = self.get_db_hook()
         self.log.info(
-            "Executing StarRocksPartitionSwapOperator for table: %s, partition: %s, temp_partition: %s",
+            "Prepare partition for table: %s, partition: %s, temp_partition: %s",
             self.table,
             self.partition,
             self.temp_partition,
@@ -245,23 +271,76 @@ class StarRocksPartitionSwapOperator(RadiantStarRocksOperator):
                 {self.copy_partition_sql}
             """
             # Step 2: Copy data to temp partition (submit async task)
-            if self.submit_task:
-                self.submit_query(hook, _copy_partition_sql, "after_copy_partition_complete")
+            if self.submit_task_options:
+                self.submit_query(
+                    sql=_copy_partition_sql, method_name="after_copy_partition_complete", parameters=self.parameters
+                )
             else:
                 hook.run(sql=_copy_partition_sql, autocommit=True, parameters=self.parameters)
-                self.run_user_sql(context, partition_exists=True)
+                self.run_insert(context, partition_exists=True)
         else:
             # If no existing partition, just run the rest
-            self.run_user_sql(context, partition_exists=False)
+            self.run_insert(context, partition_exists=False)
 
     def after_copy_partition_complete(self, context, event: dict[str, Any] | None = None):
         if not event.get("status") == "success":
             raise AirflowException(
                 "Copy to temp partition failed with error: %s", event.get("error_message", "Unknown error")
             )
-        self.run_user_sql(context, partition_exists=True)
+        self.run_insert(context, partition_exists=True)
 
-    def run_user_sql(self, context, partition_exists):
+    def execute(self, context):
+        if self.is_swap:
+            return self.prepare_partition(context)
+        else:
+            return self.run_insert(context, partition_exists=False)
+
+    @abstractmethod
+    def run_insert(self, context, partition_exists):
+        pass
+
+    def swap_partitions(self):
+        hook = self.get_db_hook()
+        _full_partition_name = f"p{self.partition}"
+        self.log.info(
+            "Swapping partitions for table: %s, partition: %s, temp_partition: %s",
+            self.table,
+            _full_partition_name,
+            self.temp_partition,
+        )
+        swap_partition_sql = f"""
+                ALTER TABLE {self.table}
+                REPLACE PARTITION ({_full_partition_name}) WITH TEMPORARY PARTITION ({self.temp_partition});
+            """
+        hook.run(sql=swap_partition_sql, autocommit=True)
+        self.log.info("Partition swap complete")
+
+
+class RadiantStarRocksPartitionSwapOperator(RadiantStarRocksBasePartitionSwapOperator):
+    template_fields = RadiantStarRocksBasePartitionSwapOperator.template_fields + ("insert_partition_sql",)
+
+    template_fields_renderers = {
+        **RadiantStarRocksBasePartitionSwapOperator.template_fields_renderers,
+        "insert_partition_sql": "sql",
+    }
+
+    def __init__(
+        self,
+        insert_partition_sql: str = "",
+        *args,
+        **kwargs,
+    ):
+        self.insert_partition_sql = insert_partition_sql
+        super().__init__(*args, **kwargs)
+
+    def render_template_fields(self, context, jinja_env=None):
+        # First normal render
+        super().render_template_fields(context, jinja_env)
+        _context = super().prepare_template_context(context)
+        _sql_context = self.prepare_query_context(_context)
+        self.insert_partition_sql = self.render_template(self.insert_partition_sql, _sql_context, jinja_env)
+
+    def run_insert(self, context, partition_exists):
         hook = self.get_db_hook()
         insert_statement = (
             f"""INSERT INTO {self.table} TEMPORARY PARTITION ({self.temp_partition})"""
@@ -270,71 +349,173 @@ class StarRocksPartitionSwapOperator(RadiantStarRocksOperator):
         )
         _sql = f"""
             {insert_statement}
-            {self.sql}
+            {self.insert_partition_sql}
         """
-        if self.submit_task:
-            method_name = "after_user_sql_partition_exists_complete" if partition_exists else "after_user_sql_complete"
-            self.submit_query(hook, _sql, method_name)
+        if self.submit_task_options:
+            method_name = (
+                "after_insert_sql_partition_exists_complete" if partition_exists else "after_insert_sql_complete"
+            )
+            self.submit_query(sql=_sql, method_name=method_name, parameters=self.parameters)
         else:
-            self.log.info("Executing user SQL on temp partition")
+            self.log.info("Executing insert SQL on temp partition")
             hook.run(sql=_sql, autocommit=True, parameters=self.parameters)
             if partition_exists:
                 self.swap_partitions()
 
-    def after_user_sql_complete(self, context, event: dict[str, Any] | None = None):
+    def after_insert_sql_complete(self, context, event: dict[str, Any] | None = None):
         if not event.get("status") == "success":
             raise AirflowException(
                 "Copy to temp partition failed with error: %s", event.get("error_message", "Unknown error")
             )
         self.log.info("User SQL execution complete")
 
-    def after_user_sql_partition_exists_complete(self, context, event: dict[str, Any] | None = None):
-        self.after_user_sql_complete(context, event)
+    def after_insert_sql_partition_exists_complete(self, context, event: dict[str, Any] | None = None):
+        self.after_insert_sql_complete(context, event)
         self.swap_partitions()
 
-    def swap_partitions(self):
-        hook = self.get_db_hook()
-        swap_partition_sql = f"""
-                ALTER TABLE {self.table}
-                REPLACE PARTITION (p{self.partition}) WITH TEMPORARY PARTITION ({self.temp_partition});
+
+class RadiantStarrocksLoadBaseOperator(RadiantStarRocksBasePartitionSwapOperator):
+    template_fields = RadiantStarRocksBasePartitionSwapOperator.template_fields
+
+    template_fields_renderers = {**RadiantStarRocksBasePartitionSwapOperator.template_fields_renderers}
+
+    def __init__(
+        self,
+        *,
+        broker_load_timeout: int = 7200,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)  # <-- forward cleanly
+
+        self.broker_load_timeout = broker_load_timeout
+
+        if os.getenv("STARROCKS_BROKER_USE_INSTANCE_PROFILE", "false").lower() == "true":
+            self.broker_configuration = f"""
+                'aws.s3.use_instance_profile' = 'true',
+                'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}'
             """
-        hook.run(sql=swap_partition_sql, autocommit=True)
-        self.log.info("Partition swap complete")
+        else:
+            self.broker_configuration = f"""
+                'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}',
+                'aws.s3.endpoint' = '{os.getenv("AWS_ENDPOINT_URL", "s3.amazonaws.com")}',
+                'aws.s3.enable_path_style_access' = 'true',
+                'aws.s3.access_key' = '{os.getenv("AWS_ACCESS_KEY_ID", "access_key")}',
+                'aws.s3.secret_key' = '{os.getenv("AWS_SECRET_ACCESS_KEY", "secret_key")}'
+            """
 
-    def submit_query(self, hook, sql, method_name):
-        submit_sql, task_name = self._prepare_sql(
-            sql=sql,
-            is_submit_task=self.submit_task,
-            query_timeout=self.submit_task_options.max_query_timeout,
-            enable_spill=self.submit_task_options.enable_spill,
-            spill_mode=self.submit_task_options.spill_mode,
+    def prepare_load_context(self, context):
+        _context = super().prepare_query_context(context)
+        _database_name = self.table.split(".")[0]
+        _table_name = self.table.split(".")[1]
+
+        local_vars = {
+            "broker_configuration": self.broker_configuration,
+            "broker_load_timeout": self.broker_load_timeout,
+            "database_name": _database_name,
+            "table_name": _table_name,
+            "temporary_partition_clause": "{{temporary_partition_clause}}",
+            # to be filled during execution if partition exists
+        }
+        return {**_context, **local_vars}
+
+    def render_template_fields(self, context, jinja_env=None):
+        super().render_template_fields(context, jinja_env)
+        _context = self.prepare_template_context(context)
+        self.table = self.render_template(self.table, _context, jinja_env)
+
+    def verify_load_status(self, label):
+        hook = self.get_db_hook()
+        with hook.get_conn().cursor() as cursor:
+            _i = 0
+            while True:
+                cursor.execute(f"SELECT STATE FROM information_schema.loads WHERE LABEL = '{label}'")
+                load_state = cursor.fetchone()
+                self.log.info(f"Load state for label {label}: {load_state}")
+                if not load_state or load_state[0] == "FINISHED":
+                    break
+                if load_state[0] == "CANCELLED":
+                    raise RuntimeError(f"Load for label {label} was cancelled.")
+                time.sleep(2)
+                _i += 1
+                if _i > self.broker_load_timeout:
+                    # Should not happen due to broker_load_timeout setting, but just in case
+                    raise TimeoutError(f"Load for label {label} did not finish in time.")
+
+    @abstractmethod
+    def run_insert(self, context, partition_exists):
+        pass
+
+
+class RadiantStarrocksLoadOperator(RadiantStarrocksLoadBaseOperator):
+    template_fields = RadiantStarrocksLoadBaseOperator.template_fields + ("sql", "load_label")
+
+    template_fields_renderers = {**RadiantStarrocksLoadBaseOperator.template_fields_renderers, "sql": "sql"}
+
+    def __init__(
+        self,
+        *,
+        sql: str,
+        load_label: str = "{{ task_instance_key_str }}_{{ task_instance.try_number }}",
+        truncate: bool = False,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+
+        self.sql = sql
+        self.truncate = truncate
+        self.load_label = load_label
+
+    def execute(self, context):
+        hook = self.get_db_hook()
+        if self.truncate:
+            self.log.info(f"Truncating table {self.table} before load")
+            hook.run(sql=f"TRUNCATE TABLE {self.table}", autocommit=True)
+        return super().execute(context)
+
+    def render_template_fields(self, context, jinja_env=None):
+        super().render_template_fields(context, jinja_env)
+        _context = super().prepare_load_context(context)
+        self.load_label = self.render_template(self.load_label, _context, jinja_env)
+        _sql_context = {**_context, "load_label": self.load_label}
+        self.sql = self.render_template(self.sql, _sql_context, jinja_env)
+
+    def run_insert(self, context, partition_exists):
+        label = self.run_load(context, partition_exists)
+        self.verify_load_status(label)
+        if partition_exists and self.is_swap:
+            self.swap_partitions()
+
+    def run_load(self, context, partition_exists) -> str:
+        hook = self.get_db_hook()
+        _temporary_partition_clause = (
+            f"TEMPORARY PARTITION ({self.temp_partition})" if partition_exists and self.is_swap else ""
         )
-        hook.run(sql=submit_sql, autocommit=True, parameters=self.parameters)
-        # Defer until StarRocks task completes
-        self.defer(
-            trigger=StarRocksTaskCompleteTrigger(
-                conn_id=self.conn_id,
-                task_name=task_name,
-                sleep_time=self.submit_task_options.poll_interval,
-            ),
-            method_name=method_name,
-        )
+        self.sql = self.render_template(self.sql, {"temporary_partition_clause": _temporary_partition_clause}, None)
+        hook.run(sql=self.sql, autocommit=True, parameters=self.parameters)
+        return self.load_label
 
 
-class LoadExomiserOperator(StarRocksPartitionSwapOperator):
-    template_fields = StarRocksPartitionSwapOperator.template_fields + ("cases",)
+class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
+    template_fields = RadiantStarrocksLoadBaseOperator.template_fields + ("sql", "cases")
+    template_ext = (".sql", ".json")
+    template_fields_renderers = {**RadiantStarrocksLoadBaseOperator.template_fields_renderers, "sql": "sql"}
 
     def __init__(self, cases: list[dict], *args, **kwargs):
         self.cases = cases
+        self.sql = "sql/radiant/staging_exomiser_load.sql"
         super().__init__(*args, **kwargs)
 
-    def run_user_sql(self, context, partition_exists):
-        _query_params = self.params | {"broker_load_timeout": 7200}
+    def run_load(self, context, partition_exists) -> str:
+        pass
 
-        _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/staging_exomiser_load.sql")
-        with open(_path) as f_in:
-            load_staging_exomiser_sql = jinja2.Template(f_in.read()).render({"params": _query_params})
+    def render_template_fields(self, context, jinja_env=None):
+        super().render_template_fields(context, jinja_env)
+        self.cases = self.render_template(self.cases, context, jinja_env)
+        _context = super().prepare_load_context(context)
+        _sql_context = {**_context, "load_label": "{{load_label}}"}
+        self.sql = self.render_template(self.sql, _sql_context, jinja_env)
 
+    def run_insert(self, context, partition_exists):
         _parameters = []
         for case in self.cases:
             _case = Case.model_validate(case)
@@ -346,7 +527,7 @@ class LoadExomiserOperator(StarRocksPartitionSwapOperator):
                         "part": self.partition,
                         "seq_id": exp.seq_id,
                         "tsv_filepath": exp.exomiser_filepath,
-                        "label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(uuid.uuid4().hex)}",
+                        "load_label": f"load_exomiser_{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(uuid.uuid4().hex)}",
                     }
                 )
 
@@ -354,51 +535,20 @@ class LoadExomiserOperator(StarRocksPartitionSwapOperator):
             self.log.info("No Exomiser files to load, skipping...")
             return
 
-        if os.getenv("STARROCKS_BROKER_USE_INSTANCE_PROFILE", "false").lower() == "true":
-            broker_configuration = f"""
-                'aws.s3.use_instance_profile' = 'true',
-                'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}'
-            """
-        else:
-            broker_configuration = f"""
-                'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}',
-                'aws.s3.endpoint' = '{os.getenv("AWS_ENDPOINT_URL", "s3.amazonaws.com")}',
-                'aws.s3.enable_path_style_access' = 'true',
-                'aws.s3.access_key' = '{os.getenv("AWS_ACCESS_KEY_ID", "access_key")}',
-                'aws.s3.secret_key' = '{os.getenv("AWS_SECRET_ACCESS_KEY", "secret_key")}'
-            """
         hook = self.get_db_hook()
-
+        _temporary_partition_clause = f"TEMPORARY PARTITION ({self.temp_partition})" if partition_exists else ""
         with hook.get_conn().cursor() as cursor:
             for _params in _parameters:
                 self.log.info(f"Loading Exomiser file {_params['tsv_filepath']}...")
+                _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/staging_exomiser_load.sql")
+                _sql_context = {
+                    "load_label": _params["load_label"],
+                    "temporary_partition_clause": _temporary_partition_clause,
+                }
+                _sql = self.render_template(self.sql, _sql_context, None)
+                _sql_parameters = {**self.parameters, **_params}
                 self.log.info(f"Executing exomiser load with params: {_params}")
-                _database_name = self.table.split(".")[0]
-                _table_name = self.table.split(".")[1]
-                _sql = load_staging_exomiser_sql.format(
-                    label=f"{_params['label']}",
-                    temporary_partition_clause=f"TEMPORARY PARTITION ({self.temp_partition})"
-                    if partition_exists
-                    else "",
-                    broker_configuration=broker_configuration,
-                    database_name=_database_name,
-                    table_name=_table_name,
-                )
-                cursor.execute(_sql, _params)
-
-                _i = 0
-                while True:
-                    cursor.execute("SELECT STATE FROM information_schema.loads WHERE LABEL = %(label)s", _params)
-                    load_state = cursor.fetchone()
-                    self.log.info(f"Load state for label {_params['label']}: {load_state}")
-                    if not load_state or load_state[0] == "FINISHED":
-                        break
-                    if load_state[0] == "CANCELLED":
-                        raise RuntimeError(f"Load for label {_params['label']} was cancelled.")
-                    time.sleep(2)
-                    _i += 1
-                    if _i > 30:
-                        raise TimeoutError(f"Load for label {_params['label']} did not finish in time.")
-
-        if partition_exists:
+                cursor.execute(_sql, _sql_parameters)
+                self.verify_load_status(_params["load_label"])
+        if partition_exists and self.is_swap:
             self.swap_partitions()

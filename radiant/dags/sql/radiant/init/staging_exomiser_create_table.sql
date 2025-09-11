@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_exomiser }}
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_exomiser }}
 (
     part                 INT,
     seq_id               INT,

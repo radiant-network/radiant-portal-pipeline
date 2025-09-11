@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_exomiser }}
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_exomiser }}
 (
     part                 INT,
     seq_id               INT,
@@ -20,5 +20,5 @@ PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "{{ params.colocate_query_group }}"
+    "colocate_with" = "{{ mapping.colocate_query_group }}"
 );

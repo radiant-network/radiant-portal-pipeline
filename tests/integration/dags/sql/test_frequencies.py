@@ -11,7 +11,7 @@ _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
 def _reset_table(starrocks_session, table_name, mapping):
     with open(os.path.join(_SQL_DIR, f"radiant/init/{table_name}_create_table.sql")) as f_in:
-        create_table_sql = jinja2.Template(f_in.read()).render({"params": mapping})
+        create_table_sql = jinja2.Template(f_in.read()).render({"mapping": mapping})
 
     table_name = mapping.get(f"starrocks_{table_name}")
 
@@ -53,10 +53,10 @@ def test_staging_variant_frequencies_calculation(starrocks_session, resources_di
     load_tsv(starrocks_session, seq_exp_table, resources_dir / "radiant/staging_sequencing_experiment.tsv")
 
     with open(os.path.join(_SQL_DIR, "radiant/staging_variant_freq_insert.sql")) as f_in:
-        variant_freq_insert = jinja2.Template(f_in.read()).render({"params": radiant_mapping})
+        variant_freq_insert = jinja2.Template(f_in.read()).render({"mapping": radiant_mapping})
 
-    _select_sql = "SELECT * FROM {{ params.starrocks_staging_variant_frequency }}"
-    _select_sql = jinja2.Template(_select_sql).render({"params": radiant_mapping})
+    _select_sql = "SELECT * FROM {{ mapping.starrocks_staging_variant_frequency }}"
+    _select_sql = jinja2.Template(_select_sql).render({"mapping": radiant_mapping})
 
     _params = {"part": 0}
 

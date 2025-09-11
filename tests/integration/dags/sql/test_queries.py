@@ -53,7 +53,7 @@ def _execute_file(cursor, sql_file, args=None):
     from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
     with open(sql_file) as f:
-        rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
+        rendered_sql = jinja2.Template(f.read()).render({"mapping": get_radiant_mapping()})
     return _execute_query(cursor, rendered_sql, args=args)
 
 
@@ -73,17 +73,15 @@ def _explain_insert(starrocks_session, sql_dir):
     sql_files = [os.path.join(sql_dir, file) for file in os.listdir(sql_dir) if file.endswith(".sql")]
     with starrocks_session.cursor() as cursor:
         for sql_file in sql_files:
-            with open(sql_file) as f:
-                rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
-
             if (
-                "staging_exomiser" in sql_file
-                or "load" in sql_file.lower()
-                or "cnv_occurrence_insert_partition_delta" in sql_file.lower()
+                    "staging_exomiser" in sql_file
+                    or "load" in sql_file.lower()
+                    or "cnv_occurrence_insert_partition_delta" in sql_file.lower()
             ):
                 # "EXPLAIN" not supported with "LOAD"
                 continue
-
+            with open(sql_file) as f:
+                rendered_sql = jinja2.Template(f.read()).render({"mapping": get_radiant_mapping()})
             _execute_query(cursor, f"EXPLAIN {rendered_sql}", args=_MOCK_PARAMS)
 
 
@@ -109,6 +107,7 @@ def test_queries_are_valid(
             "hpo_gene_panel",
             "mondo_term",
             "hpo_term",
+            "ensembl_gene",
             "orphanet_gene_panel",
             "ddd_gene_panel",
             "cosmic_gene_panel",

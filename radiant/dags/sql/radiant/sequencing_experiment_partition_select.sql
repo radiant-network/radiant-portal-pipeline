@@ -18,7 +18,7 @@ SELECT
     created_at,
     updated_at,
     ingested_at
-FROM {{ params.starrocks_staging_sequencing_experiment }}
+FROM {{ mapping.starrocks_staging_sequencing_experiment }}
 WHERE
     part=%(part)s and
     updated_at >= COALESCE(ingested_at, '1970-01-01 00:00:00')

@@ -1,4 +1,4 @@
-INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ params.starrocks_exomiser }}
+INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_exomiser }}
 select e.part,
        seq_id,
        locus_id,
@@ -12,6 +12,6 @@ select e.part,
        e.symbol,
        acmg_classification,
        acmg_evidence
-FROM {{ params.starrocks_staging_exomiser }} e
-JOIN {{ params.starrocks_tmp_variant }} v ON e.locus_hash = v.locus_hash
+FROM {{ mapping.starrocks_staging_exomiser }} e
+JOIN {{ mapping.starrocks_tmp_variant }} v ON e.locus_hash = v.locus_hash
 WHERE part = %(part)s;

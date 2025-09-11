@@ -1,5 +1,5 @@
-INSERT OVERWRITE {{ params.starrocks_mondo_term }}
+INSERT OVERWRITE {{ mapping.starrocks_mondo_term }}
 SELECT id, name term
-FROM {{ params.iceberg_mondo_term }}
+FROM {{ mapping.iceberg_mondo_term }}
 ;
 

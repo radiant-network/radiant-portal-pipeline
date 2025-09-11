@@ -1,9 +1,9 @@
-CREATE VIEW IF NOT EXISTS {{ params.starrocks_staging_sequencing_experiment_delta }} AS
+CREATE VIEW IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment_delta }} AS
 WITH sequencing_delta AS (
     SELECT
         sse.*
-    FROM {{ params.starrocks_staging_external_sequencing_experiment }} sse
-    LEFT ANTI JOIN {{ params.starrocks_staging_sequencing_experiment }} existing
+    FROM {{ mapping.starrocks_staging_external_sequencing_experiment }} sse
+    LEFT ANTI JOIN {{ mapping.starrocks_staging_sequencing_experiment }} existing
     ON
         sse.case_id = existing.case_id AND
         sse.seq_id = existing.seq_id AND
@@ -16,7 +16,7 @@ patient_part AS (
 		sd.patient_id,
 		sd.experimental_strategy
 	FROM sequencing_delta sd
-	LEFT JOIN {{ params.starrocks_staging_sequencing_experiment }} se
+	LEFT JOIN {{ mapping.starrocks_staging_sequencing_experiment }} se
 	ON  se.patient_id = sd.patient_id
 	AND se.experimental_strategy = sd.experimental_strategy
 	GROUP BY
@@ -38,7 +38,7 @@ case_part AS (
 		sd.case_id,
 		sd.experimental_strategy
 	FROM sequencing_delta sd
-	LEFT JOIN {{ params.starrocks_staging_sequencing_experiment }} se
+	LEFT JOIN {{ mapping.starrocks_staging_sequencing_experiment }} se
 	ON  se.case_id = sd.case_id
 	AND se.experimental_strategy = sd.experimental_strategy
 	GROUP BY
@@ -59,7 +59,7 @@ max_part AS (
 		MAX(se.part) as part,
 		sd.experimental_strategy
 	FROM sequencing_delta sd
-	LEFT JOIN {{ params.starrocks_staging_sequencing_experiment }} se
+	LEFT JOIN {{ mapping.starrocks_staging_sequencing_experiment }} se
 	ON se.experimental_strategy = sd.experimental_strategy
 	GROUP BY
 		sd.experimental_strategy
@@ -82,7 +82,7 @@ final_data AS (
 			part,
 			experimental_strategy,
 			COUNT(1) as max_count
-		FROM {{ params.starrocks_staging_sequencing_experiment }}
+		FROM {{ mapping.starrocks_staging_sequencing_experiment }}
 		GROUP BY part, experimental_strategy
     ) se
     ON se.part = emp.max_part

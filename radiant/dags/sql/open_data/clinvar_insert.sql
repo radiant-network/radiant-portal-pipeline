@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ params.starrocks_clinvar }}
+INSERT OVERWRITE {{ mapping.starrocks_clinvar }}
 SELECT
     COALESCE(GET_VARIANT_ID(c.chromosome, c.start, c.reference, c.alternate), v.locus_id) as locus_id,
     c.chromosome,
@@ -32,5 +32,5 @@ SELECT
     c.inheritance,
     c.locus,
     c.locus_hash
-FROM {{ params.iceberg_clinvar }} c
-LEFT JOIN {{ params.starrocks_variant_lookup }} v ON c.locus_hash = v.locus_hash
+FROM {{ mapping.iceberg_clinvar }} c
+LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON c.locus_hash = v.locus_hash

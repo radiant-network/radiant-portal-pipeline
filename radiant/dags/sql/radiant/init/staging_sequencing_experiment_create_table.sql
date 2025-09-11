@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_sequencing_experiment }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }} (
     case_id INT NOT NULL,
     seq_id INT NOT NULL,
     task_id INT NOT NULL,

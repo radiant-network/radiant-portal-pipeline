@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_germline_cnv_occurrence }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_cnv_occurrence }} (
      part int(11) NOT NULL COMMENT "",
      seq_id int(11) NULL COMMENT "",
      aliquot varchar(1048576) NULL COMMENT "",

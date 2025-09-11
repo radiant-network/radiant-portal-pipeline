@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_variant_frequency }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_variant_frequency }} (
    `locus_id` BIGINT NOT NULL,
    `pc_wgs` BIGINT,
    `pn_wgs` BIGINT,
@@ -22,5 +22,5 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_variant_frequency }} (
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10
 PROPERTIES (
-   "colocate_with" = "{{ params.colocate_query_group }}"
+   "colocate_with" = "{{ mapping.colocate_query_group }}"
 )

@@ -14,10 +14,11 @@ from airflow.utils.task_group import TaskGroup
 from radiant.dags import DEFAULT_ARGS, NAMESPACE, get_namespace, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
 from radiant.tasks.starrocks.operator import (
-    LoadExomiserOperator,
+    RadiantLoadExomiserOperator,
     RadiantStarRocksOperator,
-    StarRocksPartitionSwapOperator,
+    RadiantStarRocksPartitionSwapOperator,
     SubmitTaskOptions,
+    SwapPartition,
 )
 from radiant.tasks.vcf.experiment import Case, Experiment
 
@@ -167,28 +168,31 @@ def import_part():
 
     sequencing_ids = extract_sequencing_ids(cases)
 
-    insert_germline_cnv_occurrences = StarRocksPartitionSwapOperator(
+    insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator(
         task_id="insert_germline_cnv_occurrences",
-        table="{{ params.starrocks_germline_cnv_occurrence }}",
+        table="{{ mapping.starrocks_germline_cnv_occurrence }}",
         task_display_name="[StarRocks] Insert CNV Occurrences Part",
         # submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=10),
-        partition="{{ params.part }}",
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
+        ),
         parameters=sequencing_ids,
-        copy_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
-        sql="""
-            SELECT * FROM {{ params.iceberg_germline_cnv_occurrence }} WHERE seq_id IN %(seq_ids)s;
+        insert_partition_sql="""
+            SELECT * FROM {{ mapping.iceberg_germline_cnv_occurrence }} WHERE seq_id IN %(seq_ids)s;
             """,
     )
 
-    load_exomiser = LoadExomiserOperator(
+    load_exomiser = RadiantLoadExomiserOperator(
         task_id="load_exomiser_files",
         task_display_name="[StarRocks] Load Exomiser Files",
-        partition="{{ params.part }}",
-        copy_partition_sql="./sql/radiant/staging_exomiser_insert_partition_delta.sql",
-        table="{{ params.starrocks_staging_exomiser }}",
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/staging_exomiser_insert_partition_delta.sql",
+        ),
+        table="{{ mapping.starrocks_staging_exomiser }}",
         parameters=sequencing_ids,
         cases=cases,
-        sql=None,
     )
 
     @task(task_id="extract_case_ids", task_display_name="[PyOp] Extract Case IDs")

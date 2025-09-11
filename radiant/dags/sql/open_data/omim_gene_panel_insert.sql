@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ params.starrocks_omim_gene_panel }}
+INSERT OVERWRITE {{ mapping.starrocks_omim_gene_panel }}
 SELECT
     unnest as symbol,
     phenotype.name as panel,
@@ -6,6 +6,6 @@ SELECT
     phenotype.inheritance as inheritance,
     omim_gene_id as omim_gene_id,
     phenotype.omim_id as omim_phenotype_id
-FROM {{ params.iceberg_omim_gene_set }}, unnest(symbols)
+FROM {{ mapping.iceberg_omim_gene_set }}, unnest(symbols)
 WHERE phenotype is not null;
 

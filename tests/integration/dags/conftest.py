@@ -43,6 +43,7 @@ def open_data_iceberg_tables(iceberg_client, iceberg_namespace, resources_dir, r
         "dbsnp": None,
         "gnomad_genomes_v3": None,
         "gnomad_constraint_v_2_1_1": None,
+        "ensembl_gene": None,
         "spliceai_enriched": ["max_score"],
         "topmed_bravo": None,
         "omim_gene_set": ["symbols", "phenotype"],

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_occurrence }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_occurrence }} (
     part INT NOT NULL,
     seq_id INT NOT NULL,
     task_id INT NOT NULL,
@@ -63,5 +63,5 @@ DUPLICATE KEY(`part`, `seq_id`, `task_id`, `locus_id`)
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "{{ params.colocate_query_group }}"
+    "colocate_with" = "{{ mapping.colocate_query_group }}"
 );

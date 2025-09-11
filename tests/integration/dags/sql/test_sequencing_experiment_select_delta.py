@@ -45,7 +45,7 @@ def _run_radiant_sql(starrocks_session, radiant_mapping, sql_file):
 
     with open(sql_file) as f:
         template = jinja2.Template(f.read())
-        sql = template.render(params=radiant_mapping)
+        sql = template.render(mapping=radiant_mapping)
     with starrocks_session.cursor() as cursor:
         cursor.execute(sql)
         return cursor.fetchall()

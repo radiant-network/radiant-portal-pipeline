@@ -1,13 +1,12 @@
 import logging
 
 from airflow import DAG
-from airflow.decorators import task
 from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.utils.helpers import chain
 
 from radiant.dags import NAMESPACE
-from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
+from radiant.tasks.starrocks.operator import RadiantStarrocksLoadOperator, RadiantStarRocksOperator, SubmitTaskOptions
 
 LOGGER = logging.getLogger(__name__)
 
@@ -18,6 +17,7 @@ gene_group_ids = [
     "gnomad_constraint",
     "omim_gene_panel",
     "hpo_gene_panel",
+    "ensembl_gene",
     "orphanet_gene_panel",
     "ddd_gene_panel",
     "cosmic_gene_panel",
@@ -29,6 +29,11 @@ dag_params = {
     "raw_rcv_filepaths": Param(
         default=None,
         description="RCV filepaths to load into the raw ClinVar RCV Summary table.",
+        type=["array", "null"],
+    ),
+    "cytoband_filepath": Param(
+        default=None,
+        description="Cytoband filepath to load into the raw Cytoband table.",
         type=["array", "null"],
     ),
 }
@@ -75,83 +80,15 @@ with DAG(
             )
         )
 
-    @task(task_id="load_raw_clinvar_rcv_summary", task_display_name="[PyOp] Load Raw ClinVar RCV Summary")
-    def load_raw_clinvar_rcv_summary(rcv_summary_filepaths) -> None:
-        LOGGER.warning(f"Processing RCV filepaths: {rcv_summary_filepaths}")
-        if not rcv_summary_filepaths:
-            LOGGER.warning("No RCV filepaths provided, skipping load.")
-            return
-
-        import os
-        import time
-        import uuid
-
-        import jinja2
-        from airflow.hooks.base import BaseHook
-        from airflow.operators.python import get_current_context
-
-        from radiant.dags import DAGS_DIR
-        from radiant.tasks.data.radiant_tables import get_radiant_mapping
-
-        context = get_current_context()
-        dag_conf = context["dag_run"].conf or {}
-
-        conn = BaseHook.get_connection("starrocks_conn")
-        _query_params = get_radiant_mapping(dag_conf) | {"broker_load_timeout": 7200}
-
-        _truncate_sql = """
-        TRUNCATE TABLE {{ params.starrocks_raw_clinvar_rcv_summary }};
-        """
-        _prepared_truncate_sql = jinja2.Template(_truncate_sql).render({"params": _query_params})
-
-        _path = os.path.join(DAGS_DIR.resolve(), "sql/open_data/raw_clinvar_rcv_summary_load.sql")
-        with open(_path) as f_in:
-            raw_clinvar_rcv_summary_load_sql = jinja2.Template(f_in.read()).render({"params": _query_params})
-
-        if os.getenv("STARROCKS_BROKER_USE_INSTANCE_PROFILE", "false").lower() == "true":
-            broker_configuration = f"""
-                'aws.s3.use_instance_profile' = 'true',
-                'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}'
-            """
-        else:
-            broker_configuration = f"""
-                'aws.s3.region' = '{os.getenv("AWS_REGION", "us-east-1")}',
-                'aws.s3.endpoint' = '{os.getenv("AWS_ENDPOINT_URL", "s3.amazonaws.com")}',
-                'aws.s3.enable_path_style_access' = 'true',
-                'aws.s3.access_key' = '{os.getenv("AWS_ACCESS_KEY_ID", "access_key")}',
-                'aws.s3.secret_key' = '{os.getenv("AWS_SECRET_ACCESS_KEY", "secret_key")}'
-            """
-
-        _label = f"raw_clinvar_rcv_summary_load_{str(uuid.uuid4().hex)}"
-        _database_name = _query_params["starrocks_raw_clinvar_rcv_summary"].split(".")[0]
-        _table_name = _query_params["starrocks_raw_clinvar_rcv_summary"].split(".")[1]
-        _prepared_load_sql = raw_clinvar_rcv_summary_load_sql.format(
-            label=_label,
-            broker_configuration=broker_configuration,
-            database_name=_database_name,
-            table_name=_table_name,
-        )
-
-        with conn.get_hook().get_conn().cursor() as cursor:
-            LOGGER.warning(f"Truncating raw ClinVar RCV Summary table. \nSQL:\n {_prepared_truncate_sql}")
-            # cursor.execute(_prepared_truncate_sql)
-
-            LOGGER.warning(f"Loading raw ClinVar RCV Summary data. SQL:\n {_prepared_load_sql}")
-            cursor.execute(_prepared_load_sql, {"rcv_summary_filepaths": rcv_summary_filepaths})
-
-            _i = 0
-            while True:
-                cursor.execute(f"SELECT STATE FROM information_schema.loads WHERE LABEL = '{_label}'")
-                load_state = cursor.fetchone()
-                LOGGER.info(f"Load state for label {_label}: {load_state}")
-                if not load_state or load_state[0] == "FINISHED":
-                    break
-                if load_state[0] == "CANCELLED":
-                    raise RuntimeError(f"Load for label {_label} was cancelled.")
-                time.sleep(2)
-                _i += 1
-                if _i > 30:
-                    raise TimeoutError(f"Load for label {_label} did not finish in time.")
+    load_raw_clinvar_rcv_summary = RadiantStarrocksLoadOperator(
+        task_id="load_raw_clinvar_rcv_summary",
+        task_display_name="[StarRocks] Load Raw ClinVar RCV Summary",
+        sql="./sql/open_data/raw_clinvar_rcv_summary_load.sql",
+        table="{{ mapping.starrocks_raw_clinvar_rcv_summary }}",
+        truncate=True,
+        load_label="load_raw_clinvar_rcv_summary_{{ ts_nodash }}_{{ ti.try_number }}",
+        parameters={"rcv_summary_filepaths": "{{ params.raw_rcv_filepaths }}"},
+    )
 
     insert_clinvar_rcv_summary = RadiantStarRocksOperator(
         task_id="insert_clinvar_rcv_summary",
@@ -160,9 +97,20 @@ with DAG(
         submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
     )
 
+    load_cytoband = RadiantStarrocksLoadOperator(
+        task_id="load_cytoband",
+        task_display_name="[StarRocks] Load Cytoband",
+        sql="./sql/open_data/cytoband_load.sql",
+        table="{{ mapping.starrocks_cytoband }}",
+        truncate=True,
+        load_label="load_cytoband_{{ ts_nodash }}_{{ ti.try_number }}",
+        parameters={"tsv_filepath": "{{ params.cytoband_filepath }}"},
+    )
+
     chain(
         start,
         *data_tasks,
-        load_raw_clinvar_rcv_summary(rcv_summary_filepaths="{{ params.raw_rcv_filepaths }}"),
+        load_raw_clinvar_rcv_summary,
         insert_clinvar_rcv_summary,
+        load_cytoband
     )

@@ -1,4 +1,4 @@
-INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ params.starrocks_staging_variant_frequency }}
+INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_staging_variant_frequency }}
 WITH patients_total_count
          AS (SELECT COUNT(DISTINCT CASE WHEN s.experimental_strategy = 'wgs' then s.patient_id end)                   AS cnt_wgs,
                     COUNT(DISTINCT CASE
@@ -14,8 +14,8 @@ WITH patients_total_count
                     COUNT(DISTINCT CASE
                                        WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'non_affected'
                                            then s.patient_id end)                                                  AS cnt_wxs_not_affected
-             FROM {{ params.starrocks_staging_sequencing_experiment }} s
-             where s.seq_id in (select seq_id from  {{ params.starrocks_occurrence }} where part = %(part)s)),
+             FROM {{ mapping.starrocks_staging_sequencing_experiment }} s
+             where s.seq_id in (select seq_id from  {{ mapping.starrocks_occurrence }} where part = %(part)s)),
      freqs as (SELECT o.part,
                       o.locus_id,
                       COUNT(distinct CASE WHEN s.experimental_strategy = 'wgs' then patient_id end)                   AS pc_wgs,
@@ -32,8 +32,8 @@ WITH patients_total_count
                       COUNT(distinct CASE
                                          WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'non_affected'
                                              then patient_id end)                                                  AS pc_wxs_not_affected
-               FROM  {{ params.starrocks_occurrence }} o
-                        JOIN {{ params.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.seq_id
+               FROM  {{ mapping.starrocks_occurrence }} o
+                        JOIN {{ mapping.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.seq_id
                WHERE o.part = %(part)s
                  AND o.gq >= 20 AND o.filter='PASS' AND o.ad_alt > 3
                GROUP BY locus_id, o.part)

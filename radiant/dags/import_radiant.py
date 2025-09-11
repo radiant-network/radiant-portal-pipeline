@@ -51,7 +51,7 @@ def import_radiant():
     with TaskGroup(group_id="partitioner_group") as tg_partition_group:
         fetch_sequencing_experiment_delta = RadiantStarRocksOperator(
             task_id="fetch_sequencing_experiment_delta",
-            sql="SELECT * FROM {{ params.starrocks_staging_sequencing_experiment_delta }}",
+            sql="SELECT * FROM {{ mapping.starrocks_staging_sequencing_experiment_delta }}",
             task_display_name="[StarRocks] Get Sequencing Experiment Delta",
             output_processor=experiment_delta_output_processor,
             do_xcom_push=True,
@@ -88,7 +88,7 @@ def import_radiant():
             dag_conf = context["dag_run"].conf or {}
             _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/sequencing_experiment_insert.sql")
             with open(_path) as f_in:
-                _sql = jinja2.Template(f_in.read()).render({"params": get_radiant_mapping(dag_conf)})
+                _sql = jinja2.Template(f_in.read()).render({"mapping": get_radiant_mapping(dag_conf)})
 
             conn = BaseHook.get_connection("starrocks_conn")
 
