@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_variant_lookup }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_variant_lookup }} (
     locus_hash VARCHAR(64) NOT NULL,
     locus_id BIGINT NOT NULL AUTO_INCREMENT
 )

@@ -1,5 +1,5 @@
-INSERT OVERWRITE {{ params.starrocks_hpo_term }}
+INSERT OVERWRITE {{ mapping.starrocks_hpo_term }}
 SELECT id, name term
-FROM {{ params.iceberg_hpo_term }}
+FROM {{ mapping.iceberg_hpo_term }}
 ;
 

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_tmp_variant }}
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_tmp_variant }}
 (
     `locus_id` BIGINT NOT NULL,
     `chromosome` char(2),
@@ -29,5 +29,5 @@ ENGINE=OLAP
 PRIMARY KEY(`locus_id`)
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "{{ params.colocate_query_group }}"
+    "colocate_with" = "{{ mapping.colocate_query_group }}"
 );

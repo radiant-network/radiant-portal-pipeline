@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variant }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_variant }} (
     locus_id BIGINT NOT NULL,
     gnomad_v3_af DOUBLE,
     topmed_af DOUBLE,
@@ -32,5 +32,5 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_staging_variant }} (
 PRIMARY KEY(locus_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "{{ params.colocate_query_group }}"
+    "colocate_with" = "{{ mapping.colocate_query_group }}"
 );

@@ -1,6 +1,8 @@
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
-from pyiceberg.types import FloatType, IntegerType, ListType, StringType
+from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, StringType
+
+from radiant.tasks.vcf.vcf_utils import calls_without_phased
 
 SCHEMA: Schema = Schema(
     NestedField(100, "part", IntegerType(), required=True),
@@ -24,6 +26,7 @@ SCHEMA: Schema = Schema(
     NestedField(118, "reflen", IntegerType(), required=False),
     NestedField(119, "ciend", ListType(202, IntegerType()), required=False),
     NestedField(120, "cipos", ListType(203, IntegerType()), required=False),
+    NestedField(121, "phased", BooleanType(), required=False),
 )
 
 
@@ -48,6 +51,7 @@ def process_occurrence(record: Variant, part: int, seq_id: int, aliquot: str, sa
     rlen = record.INFO.get("REFLEN")
     start = record.POS
     end = record.end
+    calls = calls_without_phased(record, sample_idx)
     occurrence = {
         "part": part,
         "seq_id": seq_id,
@@ -69,7 +73,8 @@ def process_occurrence(record: Variant, part: int, seq_id: int, aliquot: str, sa
         "cn": record.format("CN")[sample_idx][0] if record.format("CN") else None,
         "pe": record.format("PE")[sample_idx].tolist(),
         "sm": record.format("SM")[sample_idx][0] if record.format("SM") else None,
-        "calls": record.genotypes[sample_idx][:2],
+        "calls": calls,
+        "phased": record.gt_phases[sample_idx],
     }
 
     return occurrence

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_clinvar_rcv_summary }}
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_clinvar_rcv_summary }}
 (
     `locus_id`              BIGINT(20)   NOT NULL,
     `clinvar_id`            VARCHAR(32)  NOT NULL,
@@ -28,5 +28,5 @@ ENGINE = OLAP
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "{{ params.colocate_query_group }}"
+    "colocate_with" = "{{ mapping.colocate_query_group }}"
 );

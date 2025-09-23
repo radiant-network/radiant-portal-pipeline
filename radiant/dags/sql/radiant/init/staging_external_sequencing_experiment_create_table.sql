@@ -1,4 +1,4 @@
-CREATE VIEW IF NOT EXISTS {{ params.starrocks_staging_external_sequencing_experiment }} AS
+CREATE VIEW IF NOT EXISTS {{ mapping.starrocks_staging_external_sequencing_experiment }} AS
 SELECT
 	case_id,
 	seq_id,
@@ -10,7 +10,8 @@ SELECT
 	request_id,
 	request_priority,
 	MIN(vcf_filepath) AS vcf_filepath,
-	array_filter(ARRAY_AGG(exomiser_filepath), x -> x IS NOT NULL) AS exomiser_filepaths,
+    MIN(cnv_vcf_filepath) AS cnv_vcf_filepath,
+	MIN(exomiser_filepath) AS exomiser_filepath,
 	sex,
 	family_role,
 	affected_status,
@@ -27,7 +28,8 @@ FROM (
         exp.experimental_strategy_code AS experimental_strategy,
         se.request_id AS request_id,
         r.priority_code AS request_priority,
-        CASE WHEN d.format_code = 'vcf' THEN d.url ELSE NULL END AS vcf_filepath,
+        CASE WHEN d.format_code = 'vcf' AND d.data_type_code='snv' THEN d.url ELSE NULL END AS vcf_filepath,
+        CASE WHEN d.format_code = 'vcf' AND d.data_type_code='gcnv' THEN d.url ELSE NULL END AS cnv_vcf_filepath,
         CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END AS exomiser_filepath,
         p.sex_code AS sex,
         IF(p.id = c.proband_id, "proband", f.relationship_to_proband_code) AS family_role,
@@ -35,18 +37,20 @@ FROM (
         se.created_on AS created_at,
         se.updated_on AS updated_at
     FROM
-        {{ params.clinical_sequencing_experiment }} se
-    JOIN {{ params.clinical_case }} c ON se.case_id = c.id
-    LEFT JOIN {{ params.clinical_experiment }} exp ON exp.id = se.experiment_id
-    LEFT JOIN {{ params.clinical_case_analysis }} ca ON ca.id = c.case_analysis_id
-    LEFT JOIN {{ params.clinical_task_has_sequencing_experiment }} thse ON se.id = thse.sequencing_experiment_id
-    LEFT JOIN {{ params.clinical_task_has_document }} thd ON thse.task_id = thd.task_id
-    LEFT JOIN {{ params.clinical_document }} d ON thd.document_id = d.id
-    LEFT JOIN {{ params.clinical_patient }} p ON se.patient_id = p.id
-    LEFT JOIN {{ params.clinical_family }} f ON f.family_member_id = p.id
-    LEFT JOIN {{ params.clinical_request }} r ON se.request_id = r.id
+        {{ mapping.clinical_sequencing_experiment }} se
+    JOIN {{ mapping.clinical_case }} c ON se.case_id = c.id
+    LEFT JOIN {{ mapping.clinical_experiment }} exp ON exp.id = se.experiment_id
+    LEFT JOIN {{ mapping.clinical_case_analysis }} ca ON ca.id = c.case_analysis_id
+    LEFT JOIN {{ mapping.clinical_task_has_sequencing_experiment }} thse ON se.id = thse.sequencing_experiment_id
+    LEFT JOIN {{ mapping.clinical_task_has_document }} thd ON thse.task_id = thd.task_id
+    LEFT JOIN {{ mapping.clinical_document_has_patient }} dhp ON dhp.patient_id = se.patient_id
+    LEFT JOIN {{ mapping.clinical_document }} d ON thd.document_id = d.id and dhp.document_id = d.id
+    LEFT JOIN {{ mapping.clinical_patient }} p ON se.patient_id = p.id
+    LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = p.id
+    LEFT JOIN {{ mapping.clinical_request }} r ON se.request_id = r.id
     WHERE (
         (d.format_code = 'vcf' AND d.data_type_code = 'snv')
+        OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv')
         OR (d.format_code = 'tsv' AND d.data_type_code = 'exomiser' AND d.url LIKE '%variants.tsv')
     )
     AND c.status_code in ('active', 'completed')

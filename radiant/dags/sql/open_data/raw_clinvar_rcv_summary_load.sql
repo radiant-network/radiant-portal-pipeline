@@ -1,14 +1,14 @@
-LOAD LABEL {database_name}.{label} (
+LOAD LABEL {{ database_name }}.{{ load_label }} (
     DATA INFILE %(rcv_summary_filepaths)s
-    INTO TABLE {table_name}
+    INTO TABLE {{ table_name }}
     COLUMNS TERMINATED BY "\t"
     FORMAT AS "json"
 )
  WITH BROKER
  (
-        {broker_configuration}
+        {{ broker_configuration }}
  )
 PROPERTIES
 (
-    'timeout' = '{{ params.broker_load_timeout }}'
+    'timeout' = '{{ broker_load_timeout }}'
 );

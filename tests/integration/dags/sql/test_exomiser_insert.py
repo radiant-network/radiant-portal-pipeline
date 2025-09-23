@@ -5,45 +5,40 @@ import uuid
 import jinja2
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.data.radiant_tables import RADIANT_DATABASE_ENV_KEY, get_radiant_mapping
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
 
-def test_raw_exomiser_load(starrocks_session, starrocks_database, minio_instance, sample_exomiser_tsv):
+def test_raw_exomiser_load(starrocks_session, radiant_mapping, minio_instance, sample_exomiser_tsv):
     """
     Test the loading of raw Exomiser data into StarRocks.
     """
-    conf = {
-        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
-    }
-    mapping = get_radiant_mapping(conf)
+
+    _database_name = radiant_mapping["starrocks_staging_exomiser"].split(".")[0]
+    _table_name = radiant_mapping["starrocks_staging_exomiser"].split(".")[1]
+    _label = f"test_raw_exomiser_load_{str(uuid.uuid4().hex)}"
     with open(os.path.join(_SQL_DIR, "radiant/init/staging_exomiser_create_table.sql")) as f_in:
-        create_table_sql = jinja2.Template(f_in.read()).render({"params": mapping})
+        create_table_sql = jinja2.Template(f_in.read()).render({"mapping": radiant_mapping})
 
     with open(os.path.join(_SQL_DIR, "radiant/staging_exomiser_load.sql")) as f_in:
         query = f_in.read()
 
     # Jinja template rendering
-    rendered_sql = jinja2.Template(query).render({"params": mapping | {"broker_load_timeout": 7200}})
-
-    _database_name = mapping["starrocks_staging_exomiser"].split(".")[0]
-    _table_name = mapping["starrocks_staging_exomiser"].split(".")[1]
-
-    _label = f"test_raw_exomiser_load_{str(uuid.uuid4().hex)}"
-    rendered_sql = rendered_sql.format(
-        database_name=_database_name,
-        table_name=_table_name,
-        label=_label,
-        temporary_partition_clause="",
-        broker_configuration=f"""
+    _context = {
+        "broker_load_timeout": 7200,
+        "database_name": _database_name,
+        "table_name": _table_name,
+        "load_label": _label,
+        "broker_configuration": f"""
             'aws.s3.region' = 'us-east-1',
             'aws.s3.endpoint' = 'http://radiant-minio:9000',
             'aws.s3.enable_path_style_access' = 'true',
             'aws.s3.access_key' = '{minio_instance.access_key}',
             'aws.s3.secret_key' = '{minio_instance.secret_key}'
         """,
-    )
+        "temporary_partition_clause": "",
+    }
+    rendered_sql = jinja2.Template(query).render({"mapping": radiant_mapping, **_context})
 
     params = {
         "part": 1,

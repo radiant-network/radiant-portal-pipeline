@@ -4,13 +4,24 @@ import uuid
 from pathlib import Path
 
 import fsspec
+import jinja2
 import pymysql
 import pysam
 from pyiceberg.catalog.rest import RestCatalog
 
 from radiant.dags import ICEBERG_NAMESPACE
+from radiant.tasks.data.radiant_tables import (
+    CLINICAL_CATALOG_ENV_KEY,
+    CLINICAL_DATABASE_ENV_KEY,
+    RADIANT_DATABASE_ENV_KEY,
+    RADIANT_ICEBERG_CATALOG_ENV_KEY,
+    RADIANT_ICEBERG_DATABASE_ENV_KEY,
+    get_clinical_mapping,
+    get_radiant_mapping,
+)
+from radiant.tasks.vcf.cnv.germline.occurrence import SCHEMA as CNV_OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
-from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as OCCURRENCE_SCHEMA
+from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as SNV_OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
 
 USE_DOCKER_FIXTURES = os.getenv("USE_DOCKER_FIXTURES", "false").lower() == "true"
@@ -91,9 +102,15 @@ def postgres_clinical_seeds(postgres_instance):
     with open(sql_path) as f:
         tables_sql = f.read()
 
-    sql_path = Path(__file__).parent.parent / "resources" / "clinical" / "seeds.sql"
+    sql_path = Path(__file__).parent.parent.parent / "radiant" / "dags" / "sql" / "clinical" / "seeds.sql"
     with open(sql_path) as f:
-        seeds_sql = f.read()
+        template_seeds_sql = f.read()
+        _query_params = get_clinical_mapping({CLINICAL_DATABASE_ENV_KEY: postgres_instance.radiant_db_schema})
+        _query_params = {
+            key: value.replace("radiant_jdbc.", "").replace("`", "") for key, value in _query_params.items()
+        }
+        _query_params["vcf_bucket_prefix"] = "s3://test-vcf"
+        seeds_sql = jinja2.Template(template_seeds_sql).render({"params": _query_params})
 
     # Step 1: Create the new database (autocommit required)
     conn = psycopg2.connect(
@@ -110,19 +127,21 @@ def postgres_clinical_seeds(postgres_instance):
     conn.close()
 
     # Connect to the new database to run schema + seed
-    with psycopg2.connect(
-        host="localhost",
-        port=postgres_instance.port,
-        user=postgres_instance.user,
-        password=postgres_instance.password,
-        database=postgres_instance.radiant_db,
-    ) as conn:
-        with conn.cursor() as cur:
-            cur.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
-            cur.execute(tables_sql)
-            cur.execute(seeds_sql)
-            conn.commit()
-            yield
+    with (
+        psycopg2.connect(
+            host="localhost",
+            port=postgres_instance.port,
+            user=postgres_instance.user,
+            password=postgres_instance.password,
+            database=postgres_instance.radiant_db,
+        ) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
+        cur.execute(tables_sql)
+        cur.execute(seeds_sql)
+        conn.commit()
+        yield
 
         # Step 3: Teardown (drop the database)
     conn = psycopg2.connect(
@@ -142,10 +161,7 @@ def postgres_clinical_seeds(postgres_instance):
 @pytest.fixture(scope="session")
 def radiant_airflow_container(
     host_internal_address,
-    postgres_instance,
     starrocks_database,
-    rest_iceberg_catalog_instance,
-    minio_instance,
     random_test_id,
 ):
     return RadiantAirflowInstance(host="localhost", port="8080", username="airflow", password="airflow")
@@ -172,7 +188,7 @@ def s3_fs(minio_instance):
         client_kwargs={"endpoint_url": minio_instance.endpoint},
     )
     fs.mkdirs("warehouse", exist_ok=True)
-    fs.mkdirs("vcf", exist_ok=True)
+    fs.mkdirs("test-vcf", exist_ok=True)
     fs.mkdirs("opendata", exist_ok=True)
     fs.mkdirs("exomiser", exist_ok=True)
     return fs
@@ -200,6 +216,7 @@ def iceberg_namespace(random_test_id, iceberg_client):
     Generates a namespace for the Iceberg catalog.
     """
     ns = f"test_{random_test_id}_{ICEBERG_NAMESPACE}"
+    iceberg_client.create_namespace(namespace=ns)
     yield ns
     if iceberg_client.namespace_exists(ns):
         for table in iceberg_client.list_tables(ns):
@@ -209,9 +226,13 @@ def iceberg_namespace(random_test_id, iceberg_client):
 
 @pytest.fixture(scope="session")
 def setup_iceberg_namespace(s3_fs, iceberg_client, iceberg_namespace, random_test_id):
-    iceberg_client.create_namespace(namespace=iceberg_namespace)
-    iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.germline_snv_occurrence", schema=OCCURRENCE_SCHEMA)
+    iceberg_client.create_table_if_not_exists(
+        f"{iceberg_namespace}.germline_snv_occurrence", schema=SNV_OCCURRENCE_SCHEMA
+    )
     iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.germline_snv_variant", schema=VARIANT_SCHEMA)
+    iceberg_client.create_table_if_not_exists(
+        f"{iceberg_namespace}.germline_cnv_occurrence", schema=CNV_OCCURRENCE_SCHEMA
+    )
     iceberg_client.create_table_if_not_exists(
         f"{iceberg_namespace}.germline_snv_consequence", schema=CONSEQUENCE_SCHEMA
     )
@@ -237,7 +258,7 @@ def compress_and_index_vcf(source_path, dest_path):
 
 
 @pytest.fixture(scope="session")
-def indexed_vcfs(s3_fs):
+def indexed_vcfs():
     """
     Compress and index all VCFs in test/resources/vcf into a temp directory.
     Yields a dict of {filename: path_to_compressed_vcf}
@@ -250,17 +271,15 @@ def indexed_vcfs(s3_fs):
                 src_path = RESOURCES_DIR / filename
                 dest_path = os.path.join(tmpdir, filename + ".gz")
                 compress_and_index_vcf(src_path, dest_path)
-                s3_fs.put(dest_path, "vcf/" + filename + ".gz")
-                s3_fs.put(dest_path + ".tbi", "vcf/" + filename + ".gz.tbi")
-                output[filename] = "s3+http://vcf/" + filename + ".gz"
+                output[filename] = dest_path
 
         yield output
 
 
 @pytest.fixture(scope="session")
-def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
+def clinical_snv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
     """
-    Creates "mock" VCFs for clinical documents.
+    Creates "mock" SNV VCFs for clinical documents.
     """
     reference_vcf = "test.vcf"
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -273,11 +292,15 @@ def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
                      aliquot,
                      d.name
                 FROM {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.sequencing_experiment se
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
                 ON se.id = thse.sequencing_experiment_id
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd ON thse.task_id = thd.task_id
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d ON thd.document_id = d.id
-                WHERE REGEXP(d.name, '\\.vcf\\.gz$')
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd 
+                ON thse.task_id = thd.task_id
+                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d 
+                ON thd.document_id = d.id
+                WHERE d.data_type_code='snv' and d.format_code='vcf'
                 """)
             results = cursor.fetchall()
 
@@ -291,8 +314,51 @@ def clinical_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
                 f.write(_new_content)
 
             compress_and_index_vcf(src_path, dest_path)
-            s3_fs.put(dest_path, "vcf/" + document_name)
-            s3_fs.put(dest_path + ".tbi", "vcf/" + document_name + ".tbi")
+            s3_fs.put(dest_path, "test-vcf/" + document_name)
+            s3_fs.put(dest_path + ".tbi", "test-vcf/" + document_name + ".tbi")
+
+
+@pytest.fixture(scope="session")
+def clinical_cnv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
+    """
+    Creates "mock" SNV VCFs for clinical documents.
+    """
+    reference_vcf = "test_cnv.vcf"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with open(RESOURCES_DIR / reference_vcf) as f:
+            vcf_content = f.read()
+
+        with starrocks_session.cursor() as cursor:
+            cursor.execute(f"""
+                SELECT 
+                     aliquot,
+                     d.name
+                FROM {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.sequencing_experiment se
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
+                ON se.id = thse.sequencing_experiment_id
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd 
+                ON thse.task_id = thd.task_id
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d 
+                ON thd.document_id = d.id
+                WHERE d.data_type_code='cnv' and d.format_code='vcf'
+                """)
+            results = cursor.fetchall()
+
+        for aliquot, document_name in results:
+            _path = document_name.replace(".gz", "")
+            src_path = os.path.join(tmpdir, f"source_{_path}")
+            dest_path = os.path.join(tmpdir, f"{_path}.gz")
+
+            with open(src_path, "w") as f:
+                _new_content = vcf_content.replace("SA0001", str(aliquot))
+                f.write(_new_content)
+
+            compress_and_index_vcf(src_path, dest_path)
+            s3_fs.put(dest_path, "test-vcf/" + document_name)
+            s3_fs.put(dest_path + ".tbi", "test-vcf/" + document_name + ".tbi")
 
 
 @pytest.fixture(scope="session")
@@ -315,3 +381,23 @@ def clinvar_rcv_summary_ndjson(s3_fs):
     dest_path = "opendata/"
     s3_fs.put(src_path, dest_path)
     yield dest_path
+
+
+@pytest.fixture(scope="session")
+def mapping_conf(
+    starrocks_jdbc_catalog,
+    starrocks_database,
+    starrocks_iceberg_catalog,
+):
+    return {
+        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
+        RADIANT_ICEBERG_CATALOG_ENV_KEY: starrocks_iceberg_catalog.catalog,
+        RADIANT_ICEBERG_DATABASE_ENV_KEY: starrocks_iceberg_catalog.database,
+        CLINICAL_CATALOG_ENV_KEY: starrocks_jdbc_catalog.catalog,
+        CLINICAL_DATABASE_ENV_KEY: starrocks_jdbc_catalog.database,
+    }
+
+
+@pytest.fixture(scope="session")
+def radiant_mapping(mapping_conf):
+    return get_radiant_mapping(mapping_conf)

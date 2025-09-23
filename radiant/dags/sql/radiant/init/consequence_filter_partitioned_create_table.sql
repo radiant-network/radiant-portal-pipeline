@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequence_filter_partitioned }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_consequence_filter_partitioned }} (
   `part` tinyint(4) NOT NULL COMMENT "",
   `locus_id` bigint(20) NULL COMMENT "",
   `is_deleterious` boolean NOT NULL COMMENT "",
@@ -29,4 +29,4 @@ ENGINE=OLAP
 COMMENT "OLAP"
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
-PROPERTIES ("colocate_with" = "{{ params.colocate_query_group }}");
+PROPERTIES ("colocate_with" = "{{ mapping.colocate_query_group }}");

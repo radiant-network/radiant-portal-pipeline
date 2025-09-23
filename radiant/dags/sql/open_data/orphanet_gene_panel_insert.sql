@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ params.starrocks_orphanet_gene_panel }}
+INSERT OVERWRITE {{ mapping.starrocks_orphanet_gene_panel }}
 SELECT gene_symbol as symbol,
        name as panel,
        disorder_id,
@@ -19,6 +19,6 @@ SELECT gene_symbol as symbol,
                                                   end
                ),
       x -> x is not null) as inheritance_code
-FROM {{ params.iceberg_orphanet_gene_set }}
+FROM {{ mapping.iceberg_orphanet_gene_set }}
 ;
 

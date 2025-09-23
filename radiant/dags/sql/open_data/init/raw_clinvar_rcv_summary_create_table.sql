@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_raw_clinvar_rcv_summary }}
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_raw_clinvar_rcv_summary }}
 (
     `clinvar_id`            VARCHAR(32)  NULL,
     `accession`             VARCHAR(32)  NULL,

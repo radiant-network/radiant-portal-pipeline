@@ -2,56 +2,35 @@ import re
 
 import pytest
 
-from radiant.tasks.starrocks.operator import StarRocksSQLExecuteQueryOperator
+from radiant.tasks.starrocks.operator import RadiantStarRocksBaseOperator, SubmitTaskOptions
 
 
 @pytest.mark.parametrize(
-    "sql, is_submit_task, query_timeout, enable_spill, spill_mode, expected_sql, expected_task_name",
+    "sql, submit_task_option, expected_sql, expected_task_name",
     [
         (
             "SELECT * FROM table",
-            True,
-            3600,
-            False,
-            "auto",
+            SubmitTaskOptions(3600, 10, False, "auto"),
             "submit /*+set_var(query_timeout=3600, enable_spill=False, spill_mode=auto)*/",
-            "StarRocksSQLExecuteQueryOperator_Task_",
+            "Radiant_Operator_Task_",
         ),
         (
-            "SELECT * FROM table",
-            False,
-            3600,
-            False,
-            "auto",
             "SELECT * FROM table",
             None,
-        ),
-        (
             "SELECT * FROM table",
-            True,
-            3600,
-            False,
-            "auto",
-            "submit /*+set_var(query_timeout=3600, enable_spill=False, spill_mode=auto)*/",
-            "StarRocksSQLExecuteQueryOperator_Task_",
+            None,
         ),
     ],
 )
 def test_basic_prepare_sql(
     sql,
-    is_submit_task,
-    query_timeout,
-    enable_spill,
-    spill_mode,
+    submit_task_option,
     expected_sql,
     expected_task_name,
 ):
-    result_sql, result_task_name = StarRocksSQLExecuteQueryOperator._prepare_sql(
+    result_sql, result_task_name = RadiantStarRocksBaseOperator._prepare_sql(
         sql=sql,
-        is_submit_task=is_submit_task,
-        query_timeout=query_timeout,
-        enable_spill=enable_spill,
-        spill_mode=spill_mode,
+        submit_task_options=submit_task_option,
     )
     result_sql = re.sub(r"\s+", "", result_sql.strip())
     expected_sql = re.sub(r"\s+", "", expected_sql.strip())
@@ -63,12 +42,9 @@ def test_basic_prepare_sql(
 
 
 def test_prepare_sql_with_extra_args():
-    _result = StarRocksSQLExecuteQueryOperator._prepare_sql(
+    _result = RadiantStarRocksBaseOperator._prepare_sql(
         sql="SELECT * FROM table",
-        is_submit_task=True,
-        query_timeout=42,
-        enable_spill=False,
-        extra_args={"foo": "bar"},
+        submit_task_options=SubmitTaskOptions(max_query_timeout=42, enable_spill=False, extra_args={"foo": "bar"}),
     )
     assert re.sub(r"\s+", "", _result[0].strip()) == re.sub(
         r"\s+",

@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ params.starrocks_variant_frequency }}
+INSERT OVERWRITE {{ mapping.starrocks_variant_frequency }}
 WITH freq AS (SELECT locus_id,
                      SUM(pc_wgs)                 AS pc_wgs,
                      SUM(pc_wgs_affected)     AS pc_wgs_affected,
@@ -12,7 +12,7 @@ WITH freq AS (SELECT locus_id,
                      SUM(pn_wxs)                 AS pn_wxs,
                      SUM(pn_wxs_affected)     AS pn_wxs_affected,
                      SUM(pn_wxs_not_affected) AS pn_wxs_not_affected
-              FROM {{ params.starrocks_staging_variant_frequency }}
+              FROM {{ mapping.starrocks_staging_variant_frequency }}
               GROUP BY locus_id)
 SELECT locus_id,
        pc_wgs,
