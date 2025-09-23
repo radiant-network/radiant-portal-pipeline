@@ -127,19 +127,21 @@ def postgres_clinical_seeds(postgres_instance):
     conn.close()
 
     # Connect to the new database to run schema + seed
-    with psycopg2.connect(
-        host="localhost",
-        port=postgres_instance.port,
-        user=postgres_instance.user,
-        password=postgres_instance.password,
-        database=postgres_instance.radiant_db,
-    ) as conn:
-        with conn.cursor() as cur:
-            cur.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
-            cur.execute(tables_sql)
-            cur.execute(seeds_sql)
-            conn.commit()
-            yield
+    with (
+        psycopg2.connect(
+            host="localhost",
+            port=postgres_instance.port,
+            user=postgres_instance.user,
+            password=postgres_instance.password,
+            database=postgres_instance.radiant_db,
+        ) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
+        cur.execute(tables_sql)
+        cur.execute(seeds_sql)
+        conn.commit()
+        yield
 
         # Step 3: Teardown (drop the database)
     conn = psycopg2.connect(
@@ -290,10 +292,14 @@ def clinical_snv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
                      aliquot,
                      d.name
                 FROM {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.sequencing_experiment se
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
                 ON se.id = thse.sequencing_experiment_id
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd ON thse.task_id = thd.task_id
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d ON thd.document_id = d.id
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd 
+                ON thse.task_id = thd.task_id
+                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d 
+                ON thd.document_id = d.id
                 WHERE d.data_type_code='snv' and d.format_code='vcf'
                 """)
             results = cursor.fetchall()
@@ -328,10 +334,15 @@ def clinical_cnv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
                      aliquot,
                      d.name
                 FROM {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.sequencing_experiment se
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
                 ON se.id = thse.sequencing_experiment_id
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd ON thse.task_id = thd.task_id
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d ON thd.document_id = d.id
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd 
+                ON thse.task_id = thd.task_id
+                LEFT JOIN 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d 
+                ON thd.document_id = d.id
                 WHERE d.data_type_code='cnv' and d.format_code='vcf'
                 """)
             results = cursor.fetchall()

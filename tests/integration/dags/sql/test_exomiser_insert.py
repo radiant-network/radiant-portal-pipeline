@@ -25,18 +25,20 @@ def test_raw_exomiser_load(starrocks_session, radiant_mapping, minio_instance, s
 
     # Jinja template rendering
     _context = {
-        "broker_load_timeout": 7200, "database_name": _database_name, "table_name": _table_name, "load_label": _label,
-        "broker_configuration":f"""
+        "broker_load_timeout": 7200,
+        "database_name": _database_name,
+        "table_name": _table_name,
+        "load_label": _label,
+        "broker_configuration": f"""
             'aws.s3.region' = 'us-east-1',
             'aws.s3.endpoint' = 'http://radiant-minio:9000',
             'aws.s3.enable_path_style_access' = 'true',
             'aws.s3.access_key' = '{minio_instance.access_key}',
             'aws.s3.secret_key' = '{minio_instance.secret_key}'
         """,
-        "temporary_partition_clause": ""
+        "temporary_partition_clause": "",
     }
     rendered_sql = jinja2.Template(query).render({"mapping": radiant_mapping, **_context})
-
 
     params = {
         "part": 1,

@@ -19,6 +19,7 @@ tracer = get_tracer(__name__)
 
 SUPPORTED_CHROMOSOMES = tuple(f"chr{i}" for i in range(1, 23)) + ("chrX", "chrY", "chrM")
 
+
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
 # Airflow will treat the task as successful if the error is not captured properly.
 @capture_libc_stderr_and_check_errors(error_patterns=["[E::"])

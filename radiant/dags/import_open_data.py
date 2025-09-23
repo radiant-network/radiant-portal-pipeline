@@ -107,10 +107,4 @@ with DAG(
         parameters={"tsv_filepath": "{{ params.cytoband_filepath }}"},
     )
 
-    chain(
-        start,
-        *data_tasks,
-        load_raw_clinvar_rcv_summary,
-        insert_clinvar_rcv_summary,
-        load_cytoband
-    )
+    chain(start, *data_tasks, load_raw_clinvar_rcv_summary, insert_clinvar_rcv_summary, load_cytoband)

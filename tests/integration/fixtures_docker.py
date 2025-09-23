@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from testcontainers.core.container import DockerContainer
+from testcontainers.core.network import Network
 from testcontainers.core.waiting_utils import wait_for_logs
 
 from tests.integration.fixtures_common import *
@@ -23,8 +24,6 @@ ICEBERG_REST_IMAGE = "ferlabcrsj/iceberg-rest-catalog:1.0.0"
 STARROCKS_FE_HOSTNAME = "radiant-starrocks-fe"
 STARROCKS_ALLIN1_HOSTNAME = "radiant-starrocks-allin1"
 STARROCKS_IMAGE = "starrocks/allin1-ubuntu:3.4.2"
-
-from testcontainers.core.network import Network
 
 
 @pytest.fixture(scope="session")

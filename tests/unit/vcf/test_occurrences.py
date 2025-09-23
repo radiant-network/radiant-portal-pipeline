@@ -127,12 +127,14 @@ def test_wild_type():
     assert occ is not None
     assert occ["zygosity"] == "WT"
 
+
 def test_hemizygous():
     v = variant("test_occurrence_zygosity.vcf", 5)
     occ = process_occurrence(v, Pedigree(case, ["SA0001"]), common).get(1, None)
     assert occ is not None
-    assert  occ["calls"] == [1]
+    assert occ["calls"] == [1]
     assert occ["zygosity"] == "HEM"
+
 
 def test_filter_pass():
     v = variant("test_occurrence_filter.vcf", 1)

@@ -9,28 +9,24 @@ from radiant.tasks.starrocks.operator import RadiantStarRocksBaseOperator, Submi
     "sql, submit_task_option, expected_sql, expected_task_name",
     [
         (
-                "SELECT * FROM table",
-                SubmitTaskOptions(
-                    3600,
-                    10,
-                    False,
-                    "auto"),
-                "submit /*+set_var(query_timeout=3600, enable_spill=False, spill_mode=auto)*/",
-                "Radiant_Operator_Task_",
+            "SELECT * FROM table",
+            SubmitTaskOptions(3600, 10, False, "auto"),
+            "submit /*+set_var(query_timeout=3600, enable_spill=False, spill_mode=auto)*/",
+            "Radiant_Operator_Task_",
         ),
         (
-                "SELECT * FROM table",
-                None,
-                "SELECT * FROM table",
-                None,
+            "SELECT * FROM table",
+            None,
+            "SELECT * FROM table",
+            None,
         ),
     ],
 )
 def test_basic_prepare_sql(
-        sql,
-        submit_task_option,
-        expected_sql,
-        expected_task_name,
+    sql,
+    submit_task_option,
+    expected_sql,
+    expected_task_name,
 ):
     result_sql, result_task_name = RadiantStarRocksBaseOperator._prepare_sql(
         sql=sql,
@@ -48,10 +44,7 @@ def test_basic_prepare_sql(
 def test_prepare_sql_with_extra_args():
     _result = RadiantStarRocksBaseOperator._prepare_sql(
         sql="SELECT * FROM table",
-        submit_task_options=SubmitTaskOptions(
-        max_query_timeout=42,
-        enable_spill=False,
-        extra_args={"foo": "bar"}),
+        submit_task_options=SubmitTaskOptions(max_query_timeout=42, enable_spill=False, extra_args={"foo": "bar"}),
     )
     assert re.sub(r"\s+", "", _result[0].strip()) == re.sub(
         r"\s+",
