@@ -77,6 +77,7 @@ def _explain_insert(starrocks_session, sql_dir):
                     "staging_exomiser" in sql_file
                     or "load" in sql_file.lower()
                     or "cnv_occurrence_insert_partition_delta" in sql_file.lower()
+                    or "cnv_occurrence_copy_partition" in sql_file.lower()
             ):
                 # "EXPLAIN" not supported with "LOAD"
                 continue

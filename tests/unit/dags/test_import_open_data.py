@@ -21,7 +21,7 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "mondo_term",
         "hpo_term",
     ]
-    assert len(dag.tasks) == 3 + len(gene_group_ids) + len(variant_group_ids) * 2
+    assert len(dag.tasks) == 4 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_dag_has_all_group_tasks(dag_bag):

@@ -20,7 +20,11 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_cnv_occurrence }} (
      reflen int(11) NULL COMMENT "",
      ciend array<int(11)> NULL COMMENT "",
      cipos array<int(11)> NULL COMMENT "",
-     phased boolean NULL COMMENT ""
+     phased boolean NULL COMMENT "",
+     cytoband array<varchar(10)> NULL COMMENT "",
+     symbol array<varchar(128)> NULL COMMENT "",
+     nb_genes int(11) NULL COMMENT "",
+     nb_snv int(11) NULL COMMENT ""
 ) ENGINE=OLAP
 DUPLICATE KEY(part, seq_id, aliquot)
 PARTITION BY (part);

@@ -175,12 +175,10 @@ def import_part():
         # submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=10),
         swap_partition=SwapPartition(
             partition="{{ params.part }}",
-            copy_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
+            copy_partition_sql="./sql/radiant/germline_cnv_occurrence_copy_partition.sql",
         ),
         parameters=sequencing_ids,
-        insert_partition_sql="""
-            SELECT * FROM {{ mapping.iceberg_germline_cnv_occurrence }} WHERE seq_id IN %(seq_ids)s;
-            """,
+        insert_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
     )
 
     load_exomiser = RadiantLoadExomiserOperator(
