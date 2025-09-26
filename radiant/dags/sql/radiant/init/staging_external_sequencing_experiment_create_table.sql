@@ -53,7 +53,7 @@ FROM (
         OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv')
         OR (d.format_code = 'tsv' AND d.data_type_code = 'exomiser' AND d.url LIKE '%variants.tsv')
     )
-    AND c.status_code in ('active', 'completed')
+    AND c.status_code in ('in_progress', 'completed')
 ) se
 GROUP BY
     case_id,
