@@ -160,7 +160,7 @@ VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of t
 
 TRUNCATE {{ params.clinical_case }} CASCADE;
 INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, case_analysis_id, status_code, primary_condition, request_id, performer_lab_id, note, created_on, updated_on) VALUES
-    (1, 3, 1, 1, 'active', 'MONDO:0700092', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
+    (1, 3, 1, 1, 'in_progress', 'MONDO:0700092', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (2, 4, 1, 1, 'incomplete', 'MONDO:0700092', 2, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (3, 8, 1, 1, 'incomplete', 'MONDO:0700092', 3, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
     (4, 10, 1, 2, 'incomplete', 'MONDO:0700092', 4, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
@@ -224,7 +224,28 @@ INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relatio
     (37, 20, 56, 'father', 'affected'),
     (38, 20, 57, 'mother', 'non_affected'),
     (39, 21, 59, 'father', 'non_affected'),
-    (40, 21, 61, 'mother', 'non_affected')
+    (40, 21, 61, 'mother', 'non_affected'),
+    (41, 2, 4, 'proband', 'affected'),
+    (42, 3, 8, 'proband', 'affected'),
+    (43, 4, 10, 'proband', 'affected'),
+    (44, 5, 15, 'proband', 'affected'),
+    (45, 6, 16, 'proband', 'affected'),
+    (46, 7, 20, 'proband', 'affected'),
+    (47, 8, 22, 'proband', 'affected'),
+    (48, 9, 23, 'proband', 'affected'),
+    (49, 10, 27, 'proband', 'affected'),
+    (50, 11, 30, 'proband', 'affected'),
+    (51, 12, 34, 'proband', 'affected'),
+    (52, 13, 37, 'proband', 'affected'),
+    (53, 14, 39, 'proband', 'affected'),
+    (54, 15, 42, 'proband', 'affected'),
+    (55, 16, 44, 'proband', 'affected'),
+    (56, 17, 47, 'proband', 'affected'),
+    (57, 18, 50, 'proband', 'affected'),
+    (58, 19, 55, 'proband', 'affected'),
+    (59, 20, 58, 'proband', 'affected'),
+    (60, 21, 60, 'proband', 'affected'),
+    (61, 1, 3, 'proband', 'affected')
 ;
 
 

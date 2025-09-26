@@ -457,7 +457,7 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO "status" ("code", "name_en")
 VALUES ('unknown', 'Unknown'),
        ('draft', 'Draft'),
-       ('active', 'Active'),
+       ('in_progress', 'In Progress'),
        ('revoke', 'Revoke'),
        ('completed', 'Completed'),
        ('on-hold', 'On-hold'),
@@ -487,6 +487,7 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO "family_relationship" ("code", "name_en")
 VALUES ('mother', 'Mother'),
        ('father', 'Father'),
+       ('proband', 'Proband'),
        ('brother', 'Brother'),
        ('sister', 'Sister')
 ON CONFLICT (code) DO NOTHING;
