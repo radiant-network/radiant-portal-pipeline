@@ -1793,4 +1793,5 @@ INSERT INTO {{ params.clinical_document_has_patient }} (document_id, patient_id)
     (136, 1),
     (136, 3),
     (235, 22),
-    (236, 22);
+    (236, 22),
+    (245, 3);
