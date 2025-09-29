@@ -1,4 +1,4 @@
-case_id	seq_id	task_id	part	analysis_type	aliquot	patient_id	experimental_strategy	request_id	request_priority	vcf_filepath	exomiser_filepaths	sex	family_role	affected_status	created_at	updated_at	ingested_at
+case_id	seq_id	task_id	part	analysis_type	aliquot	patient_id	experimental_strategy	request_id	request_priority	vcf_filepath	exomiser_filepath	sex	family_role	affected_status	created_at	updated_at	ingested_at
 1	1	1	0	germline	S14050	21	wgs	21	routine	s3+http://vcf/FI0037873.S14731.vcf.gz		male	father	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
 2	2	2	0	germline	S14730	39	wgs	39	routine	s3+http://vcf/FI0037914.S14752.vcf.gz		male	proband	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
 3	3	3	0	germline	S14743	41	wgs	41	routine	s3+http://vcf/FI0037884.S14031.vcf.gz		male	father	non_affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00

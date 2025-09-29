@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_consequence_filter }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_consequence_filter }} (
     `locus_id` bigint(20) NULL COMMENT "",
     `is_deleterious` boolean NOT NULL COMMENT "",
     `impact_score` tinyint(4) NULL COMMENT "",
@@ -29,4 +29,4 @@ DUPLICATE KEY(`locus_id`, `is_deleterious`, `impact_score`)
 COMMENT "OLAP"
 PARTITION BY (`is_deleterious`)
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
-PROPERTIES ("colocate_with" = "{{ params.colocate_query_group }}");
+PROPERTIES ("colocate_with" = "{{ mapping.colocate_query_group }}");

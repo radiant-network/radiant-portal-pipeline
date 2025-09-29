@@ -4,13 +4,6 @@ import os
 import jinja2
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.data.radiant_tables import (
-    CLINICAL_CATALOG_ENV_KEY,
-    CLINICAL_DATABASE_ENV_KEY,
-    RADIANT_DATABASE_ENV_KEY,
-    RADIANT_ICEBERG_CATALOG_ENV_KEY,
-    RADIANT_ICEBERG_DATABASE_ENV_KEY,
-)
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
@@ -27,6 +20,7 @@ _MOCK_PARAMS = {
     "part_upper": 10,
     "case_id": 1,
     "seq_id": 1,
+    "seq_ids": [1, 2, 3],
     "task_id": 1,
     "analysis_type": "wgs",
     "aliquot": "SA0001",
@@ -35,7 +29,8 @@ _MOCK_PARAMS = {
     "request_id": 1,
     "request_priority": "routine",
     "vcf_filepath": "s3+http://vcf/test.vcf.gz",
-    "exomiser_filepaths": ["s3+http://tsv/test.tsv.gz"],
+    "cnv_vcf_filepath": "s3+http://vcf/test.vcf.gz",
+    "exomiser_filepath": ["s3+http://tsv/test.tsv.gz"],
     "sex": "male",
     "family_role": "proband",
     "affected_status": "affected",
@@ -58,7 +53,7 @@ def _execute_file(cursor, sql_file, args=None):
     from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
     with open(sql_file) as f:
-        rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
+        rendered_sql = jinja2.Template(f.read()).render({"mapping": get_radiant_mapping()})
     return _execute_query(cursor, rendered_sql, args=args)
 
 
@@ -78,32 +73,24 @@ def _explain_insert(starrocks_session, sql_dir):
     sql_files = [os.path.join(sql_dir, file) for file in os.listdir(sql_dir) if file.endswith(".sql")]
     with starrocks_session.cursor() as cursor:
         for sql_file in sql_files:
-            with open(sql_file) as f:
-                rendered_sql = jinja2.Template(f.read()).render({"params": get_radiant_mapping()})
-
-            if "staging_exomiser" in sql_file or "load" in sql_file.lower():
+            if (
+                "staging_exomiser" in sql_file
+                or "load" in sql_file.lower()
+                or "cnv_occurrence_insert_partition_delta" in sql_file.lower()
+                or "cnv_occurrence_copy_partition" in sql_file.lower()
+            ):
                 # "EXPLAIN" not supported with "LOAD"
                 continue
-
+            with open(sql_file) as f:
+                rendered_sql = jinja2.Template(f.read()).render({"mapping": get_radiant_mapping()})
             _execute_query(cursor, f"EXPLAIN {rendered_sql}", args=_MOCK_PARAMS)
 
 
 def test_queries_are_valid(
-    monkeypatch,
-    iceberg_client,
-    starrocks_session,
-    starrocks_database,
-    setup_iceberg_namespace,
-    open_data_iceberg_tables,
-    starrocks_iceberg_catalog,
-    starrocks_jdbc_catalog,
+    monkeypatch, iceberg_client, starrocks_session, setup_iceberg_namespace, open_data_iceberg_tables, mapping_conf
 ):
-    monkeypatch.setenv(RADIANT_ICEBERG_CATALOG_ENV_KEY, starrocks_iceberg_catalog.catalog)
-    monkeypatch.setenv(RADIANT_ICEBERG_DATABASE_ENV_KEY, setup_iceberg_namespace)
-    monkeypatch.setenv(CLINICAL_CATALOG_ENV_KEY, starrocks_jdbc_catalog.catalog)
-    monkeypatch.setenv(CLINICAL_DATABASE_ENV_KEY, starrocks_jdbc_catalog.database)
-    monkeypatch.setenv(RADIANT_DATABASE_ENV_KEY, starrocks_database.database)
-
+    for k, v in mapping_conf.items():
+        monkeypatch.setenv(k.upper(), v)
     # Validate table creation for Open Data & Radiant
     _validate_init(
         starrocks_session,
@@ -121,6 +108,7 @@ def test_queries_are_valid(
             "hpo_gene_panel",
             "mondo_term",
             "hpo_term",
+            "ensembl_gene",
             "orphanet_gene_panel",
             "ddd_gene_panel",
             "cosmic_gene_panel",

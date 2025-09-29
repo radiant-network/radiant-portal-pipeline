@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ params.starrocks_consequence_filter }}
+INSERT OVERWRITE {{ mapping.starrocks_consequence_filter }}
 SELECT
     t.locus_id,
     NOT (sift_score IS NULL AND fathmm_score IS NULL AND polyphen2_hvar_score IS NULL AND cadd_score IS NULL AND dann_score IS NULL AND lrt_score IS NULL AND revel_score IS NULL AND phyloP17way_primate IS NULL AND phyloP100way_vertebrate IS NULL AND spliceai_ds IS NULL) AS is_deleterious,
@@ -75,7 +75,7 @@ FROM (
             phyloP100way_vertebrate,
             vep_impact
         FROM
-            {{ params.starrocks_consequence }} c,
+            {{ mapping.starrocks_consequence }} c,
             UNNEST(consequences) AS unnest
     ) gr
     GROUP BY

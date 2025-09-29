@@ -17,6 +17,8 @@ from radiant.tasks.vcf.snv.germline.variant import process_variant
 logger = logging.getLogger("airflow.task")
 tracer = get_tracer(__name__)
 
+SUPPORTED_CHROMOSOMES = tuple(f"chr{i}" for i in range(1, 23)) + ("chrX", "chrY", "chrM")
+
 
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
 # Airflow will treat the task as successful if the error is not captured properly.
@@ -68,13 +70,19 @@ def process_case(
             consequence_buffer = TableAccumulator(consequence_table, partition_filter=variant_csq_partition_filter)
             for record in vcf:
                 if len(record.ALT) <= 1:
-                    common = process_common(record, case_id=case.case_id, part=case.part)
-                    picked_consequence, consequences = process_consequence(record, csq_header, common)
-                    consequence_buffer.extend(consequences)
-                    occurrences = process_occurrence(record, pedigree, common=common)
-                    occurrence_buffer.extend(list(occurrences.values()))
-                    variant = process_variant(record, picked_consequence, common)
-                    variant_buffer.append(variant)
+                    if record.CHROM in SUPPORTED_CHROMOSOMES:
+                        common = process_common(record, case_id=case.case_id, part=case.part)
+                        picked_consequence, consequences = process_consequence(record, csq_header, common)
+                        consequence_buffer.extend(consequences)
+                        occurrences = process_occurrence(record, pedigree, common=common)
+                        occurrence_buffer.extend(list(occurrences.values()))
+                        variant = process_variant(record, picked_consequence, common)
+                        variant_buffer.append(variant)
+                    else:
+                        logger.debug(
+                            f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_filepath}:"
+                            f" this is non supported chromosome."
+                        )
 
                 else:
                     logger.debug(

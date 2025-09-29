@@ -1,7 +1,7 @@
-LOAD LABEL {database_name}.{label}
+LOAD LABEL {{ database_name }}.{{ load_label }}
 (
     DATA INFILE(%(tsv_filepath)s)
-    INTO TABLE {table_name} {temporary_partition_clause}
+    INTO TABLE {{ table_name }} {{ temporary_partition_clause }}
     COLUMNS TERMINATED BY "\t"
     FORMAT AS "CSV"
     (
@@ -37,9 +37,9 @@ LOAD LABEL {database_name}.{label}
  )
  WITH BROKER
  (
-        {broker_configuration}
+        {{ broker_configuration }}
  )
 PROPERTIES
 (
-    'timeout' = '{{ params.broker_load_timeout }}'
+    'timeout' = '{{ broker_load_timeout }}'
 );

@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ params.starrocks_variant_partitioned }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_variant_partitioned }} (
     part INT NOT NULL,
     locus_id BIGINT NOT NULL,
     pf_wgs DOUBLE,
@@ -51,5 +51,5 @@ CREATE TABLE IF NOT EXISTS {{ params.starrocks_variant_partitioned }} (
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10
 PROPERTIES (
-    "colocate_with" = "{{ params.colocate_query_group }}"
+    "colocate_with" = "{{ mapping.colocate_query_group }}"
 );

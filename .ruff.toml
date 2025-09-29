@@ -34,7 +34,10 @@ skip-magic-trailing-comma = false  # Respect trailing commas like Black
 
 # Per-file Ignores (Optional)
 [lint.per-file-ignores]
-"tests/*" = ["D"]  # Ignore docstring rules in test files
+"tests/*" = ["D", "F405"]  # Ignore docstring rules in test files
+"tests/integration/fixtures_sandbox.py" = ["F403"]
+"tests/integration/fixtures_docker.py" = ["F403"]
+"tests/integration/conftest.py" = ["F403"]
 
 # Fixable Rules
 fixable = [

@@ -89,7 +89,6 @@ def test_process_case_error(
     iceberg_catalog_properties,
     rest_iceberg_catalog_instance,
     indexed_vcfs,
-    minio_instance,
 ):
     case = Case(
         case_id=1,

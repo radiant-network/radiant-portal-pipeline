@@ -1,5 +1,5 @@
 apache-airflow==2.10.5
-testcontainers
+testcontainers==4.10.0
 requests
 pysam
 pandas
@@ -8,5 +8,7 @@ psycopg2-binary==2.9.10
 ruff==0.11.4
 pymysql
 cyvcf2
+# flask 3.7.0 removed support for some features used in Airflow
+flask-limiter<3.7.0
 # Needed for filesystem abstraction in tests
 fs>=2.4.16

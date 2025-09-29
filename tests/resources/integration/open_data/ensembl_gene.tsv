@@ -1,0 +1,11 @@
+chromosome	start	end	gene_id	version	type	strand	phase	name	alias	biotype	ccdsid	constitutive	description	ensembl_end_phase	ensembl_phase	external_name	logic_name	length
+1	11121	24894	ENSG00000290825	2	ncRNA_gene	+		DDX11L16		lncRNA			DEAD/H-box helicase 11 like 16 (pseudogene) [Source:NCBI gene (formerly Entrezgene)%3BAcc:727856]				havana_homo_sapiens	13773
+1	12010	13670	ENSG00000223972	6	pseudogene	+		DDX11L1		transcribed_unprocessed_pseudogene			DEAD/H-box helicase 11 like 1 (pseudogene) [Source:HGNC Symbol%3BAcc:HGNC:37102]				havana_homo_sapiens	1660
+1	14356	30744	ENSG00000310526	1	ncRNA_gene	-		WASH7P		lncRNA			WASP family homolog 7%2C pseudogene [Source:HGNC Symbol%3BAcc:HGNC:38034]				havana_homo_sapiens	16388
+1	14696	24886	ENSG00000227232	6	pseudogene	-		WASH7P		transcribed_unprocessed_pseudogene			WASP family homolog 7%2C pseudogene [Source:HGNC Symbol%3BAcc:HGNC:38034]				havana_homo_sapiens	10190
+1	17369	17436	ENSG00000278267	1	ncRNA_gene	-		MIR6859-1		miRNA			microRNA 6859-1 [Source:HGNC Symbol%3BAcc:HGNC:50039]				ncrna_homo_sapiens	67
+1	28589	31109	ENSG00000243485	6	ncRNA_gene	+		MIR1302-2HG		lncRNA			MIR1302-2 host gene [Source:HGNC Symbol%3BAcc:HGNC:52482]				havana_homo_sapiens	2520
+1	30366	30503	ENSG00000284332	1	ncRNA_gene	+		MIR1302-2		miRNA			microRNA 1302-2 [Source:HGNC Symbol%3BAcc:HGNC:35294]				ncrna_homo_sapiens	137
+1	34553	37595	ENSG00000237613	3	ncRNA_gene	-		FAM138A		lncRNA			family with sequence similarity 138 member A [Source:HGNC Symbol%3BAcc:HGNC:32334]				havana_homo_sapiens	3042
+1	36526	40778	ENSG00000308361	1	ncRNA_gene	+				lncRNA			novel transcript				havana_tagene_homo_sapiens	4252
+1	51891	64116	ENSG00000290826	2	ncRNA_gene	+				lncRNA			novel transcript				havana_homo_sapiens	12225

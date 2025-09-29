@@ -26,6 +26,7 @@ CLINICAL_MAPPING = {
     "clinical_patient": "patient",
     "clinical_family": "family",
     "clinical_document": "document",
+    "clinical_document_has_patient": "document_has_patient",
     "clinical_task_has_sequencing_experiment": "task_has_sequencing_experiment",
     "clinical_task_has_document": "task_has_document",
     "clinical_request": "request",
@@ -41,6 +42,7 @@ ICEBERG_GERMLINE_SNV_MAPPING = {
     "iceberg_consequence": "germline_snv_consequence",
     "iceberg_occurrence": "germline_snv_occurrence",
     "iceberg_variant": "germline_snv_variant",
+    "iceberg_germline_cnv_occurrence": "germline_cnv_occurrence",
 }
 
 ICEBERG_OPEN_DATA_MAPPING = {
@@ -54,11 +56,13 @@ ICEBERG_OPEN_DATA_MAPPING = {
     "iceberg_gnomad_constraint": "gnomad_constraint_v_2_1_1",
     "iceberg_omim_gene_set": "omim_gene_set",
     "iceberg_hpo_gene_set": "hpo_gene_set",
+    "iceberg_ensembl_gene": "ensembl_gene",
     "iceberg_orphanet_gene_set": "orphanet_gene_set",
     "iceberg_cosmic_gene_set": "cosmic_gene_set",
     "iceberg_ddd_gene_set": "ddd_gene_set",
     "iceberg_mondo_term": "mondo_term",
     "iceberg_hpo_term": "hpo_term",
+    "iceberg_gnomad_cnv": "gnomad_cnv",
 }
 
 ICEBERG_CATALOG_DATABASE = {
@@ -75,6 +79,7 @@ STARROCKS_COMMON_MAPPING = {
     "starrocks_variant_lookup": "variant_lookup",
     "starrocks_staging_exomiser": "raw_exomiser",
     "starrocks_exomiser": "exomiser",
+    "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
 }
 
 STARROCKS_GERMLINE_SNV_MAPPING = {
@@ -90,6 +95,7 @@ STARROCKS_GERMLINE_SNV_MAPPING = {
     "starrocks_staging_variant_frequency": "staging_variant_frequency_part",
 }
 
+
 STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_1000_genomes": "1000_genomes",
     "starrocks_clinvar": "clinvar",
@@ -101,6 +107,8 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_gnomad_constraint": "gnomad_constraint",
     "starrocks_omim_gene_panel": "omim_gene_panel",
     "starrocks_hpo_gene_panel": "hpo_gene_panel",
+    "starrocks_ensembl_gene": "ensembl_gene",
+    "starrocks_cytoband": "cytoband",
     "starrocks_hpo_term": "hpo_term",
     "starrocks_mondo_term": "mondo_term",
     "starrocks_orphanet_gene_panel": "orphanet_gene_panel",

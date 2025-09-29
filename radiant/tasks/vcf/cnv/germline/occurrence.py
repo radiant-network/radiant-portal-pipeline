@@ -1,29 +1,33 @@
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
-from pyiceberg.types import FloatType, IntegerType, ListType, StringType
+from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, StringType
+
+from radiant.tasks.vcf.vcf_utils import calls_without_phased
 
 SCHEMA: Schema = Schema(
     NestedField(100, "part", IntegerType(), required=True),
     NestedField(101, "seq_id", IntegerType(), required=True),
     NestedField(102, "aliquot", StringType(), required=True),
     NestedField(103, "chromosome", StringType(), required=True),
-    NestedField(104, "start", IntegerType(), required=True),
-    NestedField(105, "end", IntegerType(), required=True),
-    NestedField(106, "type", StringType(), required=True),
-    NestedField(107, "length", IntegerType(), required=True),
-    NestedField(108, "name", StringType(), required=True),
-    NestedField(109, "quality", FloatType(), required=False),
-    NestedField(110, "calls", ListType(200, IntegerType()), required=False),
-    NestedField(111, "filter", StringType(), required=False),
-    NestedField(112, "bc", IntegerType(), required=False),
-    NestedField(113, "cn", IntegerType(), required=False),
-    NestedField(114, "pe", ListType(201, IntegerType()), required=False),
-    NestedField(115, "sm", FloatType(), required=False),
-    NestedField(116, "svtype", StringType(), required=False),
-    NestedField(117, "svlen", IntegerType(), required=False),
-    NestedField(118, "reflen", IntegerType(), required=False),
-    NestedField(119, "ciend", ListType(202, IntegerType()), required=False),
-    NestedField(120, "cipos", ListType(203, IntegerType()), required=False),
+    NestedField(104, "alternate", StringType(), required=True),
+    NestedField(105, "start", IntegerType(), required=True),
+    NestedField(106, "end", IntegerType(), required=True),
+    NestedField(107, "type", StringType(), required=True),
+    NestedField(108, "length", IntegerType(), required=True),
+    NestedField(109, "name", StringType(), required=True),
+    NestedField(110, "quality", FloatType(), required=False),
+    NestedField(111, "calls", ListType(200, IntegerType()), required=False),
+    NestedField(112, "filter", StringType(), required=False),
+    NestedField(113, "bc", IntegerType(), required=False),
+    NestedField(114, "cn", IntegerType(), required=False),
+    NestedField(115, "pe", ListType(201, IntegerType()), required=False),
+    NestedField(116, "sm", FloatType(), required=False),
+    NestedField(117, "svtype", StringType(), required=False),
+    NestedField(118, "svlen", IntegerType(), required=False),
+    NestedField(119, "reflen", IntegerType(), required=False),
+    NestedField(120, "ciend", ListType(202, IntegerType()), required=False),
+    NestedField(121, "cipos", ListType(203, IntegerType()), required=False),
+    NestedField(122, "phased", BooleanType(), required=False),
 )
 
 
@@ -48,11 +52,13 @@ def process_occurrence(record: Variant, part: int, seq_id: int, aliquot: str, sa
     rlen = record.INFO.get("REFLEN")
     start = record.POS
     end = record.end
+    calls = calls_without_phased(record, sample_idx)
     occurrence = {
         "part": part,
         "seq_id": seq_id,
         "aliquot": aliquot,
         "chromosome": record.CHROM.replace("chr", ""),
+        "alternate": record.ALT[0],
         "start": start,
         "end": end,
         "type": cnv_type,
@@ -69,7 +75,8 @@ def process_occurrence(record: Variant, part: int, seq_id: int, aliquot: str, sa
         "cn": record.format("CN")[sample_idx][0] if record.format("CN") else None,
         "pe": record.format("PE")[sample_idx].tolist(),
         "sm": record.format("SM")[sample_idx][0] if record.format("SM") else None,
-        "calls": record.genotypes[sample_idx][:2],
+        "calls": calls,
+        "phased": record.gt_phases[sample_idx],
     }
 
     return occurrence

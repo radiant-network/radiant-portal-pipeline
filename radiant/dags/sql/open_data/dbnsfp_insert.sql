@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ params.starrocks_dbnsfp }}
+INSERT OVERWRITE {{ mapping.starrocks_dbnsfp }}
 SELECT
     COALESCE(GET_VARIANT_ID(d.chromosome, d.start, d.reference, d.alternate), v.locus_id) as locus_id,
 	d.ensembl_transcript_id,
@@ -16,5 +16,5 @@ SELECT
     d.LRT_pred AS lrt_pred,
     d.phyloP17way_primate AS phyloP17way_primate,
     d.phyloP100way_vertebrate AS phyloP100way_vertebrate
-FROM {{ params.iceberg_dbnsfp }} d
-LEFT JOIN {{ params.starrocks_variant_lookup }} v ON d.locus_hash = v.locus_hash
+FROM {{ mapping.iceberg_dbnsfp }} d
+LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON d.locus_hash = v.locus_hash

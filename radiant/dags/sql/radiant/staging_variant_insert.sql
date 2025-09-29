@@ -1,4 +1,4 @@
-INSERT INTO {{ params.starrocks_staging_variant }}
+INSERT INTO {{ mapping.starrocks_staging_variant }}
 SELECT
     v.locus_id,
     g.af AS gnomad_v3_af,
@@ -29,10 +29,10 @@ SELECT
     v.aa_change,
     v.transcript_id,
     om.inheritance_code AS omim_inheritance_code
-FROM {{ params.starrocks_tmp_variant }} v
-LEFT JOIN {{ params.starrocks_gnomad_genomes_v3 }} g ON g.locus_id = v.locus_id
-LEFT JOIN {{ params.starrocks_topmed_bravo }} t ON t.locus_id = v.locus_id
-LEFT JOIN {{ params.starrocks_1000_genomes }} tg ON tg.locus_id = v.locus_id
-LEFT JOIN {{ params.starrocks_clinvar }} cl  ON cl.locus_id = v.locus_id
-LEFT JOIN {{ params.starrocks_dbsnp }} d  ON d.locus_id = v.locus_id
-LEFT JOIN {{ params.starrocks_omim_gene_panel }} om  ON om.symbol = v.symbol
+FROM {{ mapping.starrocks_tmp_variant }} v
+LEFT JOIN {{ mapping.starrocks_gnomad_genomes_v3 }} g ON g.locus_id = v.locus_id
+LEFT JOIN {{ mapping.starrocks_topmed_bravo }} t ON t.locus_id = v.locus_id
+LEFT JOIN {{ mapping.starrocks_1000_genomes }} tg ON tg.locus_id = v.locus_id
+LEFT JOIN {{ mapping.starrocks_clinvar }} cl  ON cl.locus_id = v.locus_id
+LEFT JOIN {{ mapping.starrocks_dbsnp }} d  ON d.locus_id = v.locus_id
+LEFT JOIN {{ mapping.starrocks_omim_gene_panel }} om  ON om.symbol = v.symbol
