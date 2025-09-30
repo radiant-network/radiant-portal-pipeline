@@ -1,10 +1,13 @@
 import logging
+import sys
+import tempfile
 
 import pyarrow as pa
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
 
 from radiant.tasks.tracing.trace import get_tracer
+from radiant.tasks.utils import download_s3_file
 from radiant.tasks.vcf.cnv.germline.occurrence import process_occurrence
 from radiant.tasks.vcf.experiment import Case
 
@@ -59,3 +62,20 @@ def process_cases(
         logger.info(f"✅ Table {occurrences_table_name} overwritten")
 
         return {occurrences_table_name: occurrences_partition_commit}
+
+
+def import_cnv_vcf(cases: list[dict], namespace: str) -> None:
+    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
+    logger = logging.getLogger(__name__)
+
+    updated_cases = []
+    with tempfile.TemporaryDirectory() as tmpdir:
+        for case in cases:
+            for s in case["experiments"]:
+                logger.info("Downloading VCF and index files to a temporary directory")
+                cnv_vcf_local = download_s3_file(s["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
+                s["cnv_vcf_filepath"] = cnv_vcf_local
+            case = Case.model_validate(case)
+            updated_cases.append(case)
+
+        process_cases(updated_cases, namespace=namespace, vcf_threads=4)

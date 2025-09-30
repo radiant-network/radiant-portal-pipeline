@@ -17,7 +17,7 @@ jobs:
         uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
         with:
           context: .
-          file: Dockerfile-mwaa
+          file: Dockerfile-mwaa-deps-builder
           tags: radiant-binaries-builder:latest
           push: false
 

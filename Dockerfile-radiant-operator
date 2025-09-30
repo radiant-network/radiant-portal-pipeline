@@ -1,0 +1,26 @@
+FROM --platform=linux/amd64 python:3.12
+
+USER root
+
+# Install dependencies for htslib
+RUN apt-get update && apt-get install -y bzip2 git build-essential zlib1g-dev libbz2-dev liblzma-dev libssl-dev libpsl-dev && apt-get clean
+
+# Install htslib
+RUN curl -L -O https://github.com/samtools/htslib/releases/download/1.21/htslib-1.21.tar.bz2 && \
+    tar -xvf htslib-1.21.tar.bz2 && \
+    cd htslib-1.21 && \
+    ./configure && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf htslib-1.21 htslib-1.21.tar.bz2
+
+# Force Install Cyvcf2 using installed htslib
+RUN CYVCF2_HTSLIB_MODE=EXTERNAL pip install --force --no-binary cyvcf2 cyvcf2
+
+COPY requirements.txt /opt/radiant/requirements.txt
+RUN pip install -r /opt/radiant/requirements.txt
+
+# Setup Radiant code
+COPY radiant /opt/radiant/radiant
+COPY radiant/scripts/import_vcf_for_case.py /opt/radiant/import_vcf_for_case.py

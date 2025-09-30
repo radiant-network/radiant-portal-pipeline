@@ -1,5 +1,7 @@
 # Minimal Airflow runtime needed for external_python task
 apache-airflow==2.10.5
+apache-airflow-providers-cncf-kubernetes==10.6.1
+
 
 # Minimal Airflow runtime dependencies
 attrs>=22.2.0
