@@ -134,28 +134,9 @@ def import_part():
         python=PATH_TO_PYTHON_BINARY,
     )
     def import_cnv_vcf(cases: list[dict], namespace: str) -> None:
-        import logging
-        import sys
-        import tempfile
+        from radiant.tasks.vcf.cnv.germline.process import import_cnv_vcf as _import_cnv_vcf
 
-        from radiant.tasks.utils import download_s3_file
-        from radiant.tasks.vcf.cnv.germline.process import process_cases
-        from radiant.tasks.vcf.experiment import Case
-
-        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
-        logger = logging.getLogger(__name__)
-
-        updated_cases = []
-        with tempfile.TemporaryDirectory() as tmpdir:
-            for case in cases:
-                for s in case["experiments"]:
-                    logger.info("Downloading VCF and index files to a temporary directory")
-                    cnv_vcf_local = download_s3_file(s["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
-                    s["cnv_vcf_filepath"] = cnv_vcf_local
-                case = Case.model_validate(case)
-                updated_cases.append(case)
-
-            process_cases(updated_cases, namespace=namespace, vcf_threads=4)
+        _import_cnv_vcf(cases=cases, namespace=namespace)
 
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(cases) -> dict[str, list[Any]]:

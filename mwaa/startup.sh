@@ -5,6 +5,10 @@ cat /etc/system-release
 
 readonly PLUGINS_DIR="/usr/local/airflow/plugins"
 
+echo "Setting up IS_AWS..."
+export IS_AWS="true"
+echo "IS_AWS is now set to: $IS_AWS"
+
 echo "Installing Python dependencies..."
 pip install ${PLUGINS_DIR}/wheels/*.whl --find-links ${PLUGINS_DIR}/wheels
 echo "Done installing Python dependencies."
