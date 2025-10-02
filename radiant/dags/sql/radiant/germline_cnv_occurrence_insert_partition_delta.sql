@@ -26,8 +26,12 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
         FROM {{ mapping.iceberg_germline_cnv_occurrence }} cnv
         JOIN {{ mapping.iceberg_gnomad_cnv }} gnomad
         ON cnv.chromosome = gnomad.chromosome AND cnv.alternate = gnomad.alternate
-        WHERE GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start) + 1)
-        >= 0.8 * (cnv.end - cnv.start + 1) AND cnv.seq_id IN %(seq_ids)s
+        WHERE
+            /* Reciprocal overlap of at least 80% */
+            GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start) + 1) >= 0.8 * (cnv.end - cnv.start + 1)
+        AND
+            GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start) + 1) >= 0.8 * (gnomad.end - gnomad.start + 1)
+        AND cnv.seq_id IN %(seq_ids)s
     ),
     gnomad_ranked AS (
         SELECT
