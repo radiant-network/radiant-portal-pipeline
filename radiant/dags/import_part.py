@@ -6,12 +6,12 @@ from itertools import groupby
 from typing import Any
 
 from airflow.decorators import dag, task
-from airflow.models import Param, Variable
+from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE, ECSEnv, get_namespace, load_docs_md
+from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, ECSEnv, get_namespace, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
 from radiant.tasks.starrocks.operator import (
     RadiantLoadExomiserOperator,
@@ -25,29 +25,7 @@ from radiant.tasks.vcf.experiment import Case, Experiment
 LOGGER = logging.getLogger(__name__)
 
 
-def parse_list(env_val):
-    return [v.strip() for v in env_val.split(",") if v.strip()]
-
-
-IS_AWS = os.environ.get("IS_AWS", "false").lower() == "true"
-if IS_AWS:
-    ECS_CLUSTER = Variable.get("AWS_ECS_CLUSTER")
-    ECS_SUBNETS = parse_list(Variable.get("AWS_ECS_SUBNETS"))
-    ECS_SECURITY_GROUPS = parse_list(Variable.get("AWS_ECS_SECURITY_GROUPS"))
-
 PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
-
-
-def parse_list(env_val):
-    return [v.strip() for v in env_val.split(",") if v.strip()]
-
-
-IS_AWS = os.environ.get("IS_AWS", "false").lower() == "true"
-if IS_AWS:
-    LOGGER.info("Running in AWS environment")
-    ECS_CLUSTER = Variable.get("AWS_ECS_CLUSTER")
-    ECS_SUBNETS = parse_list(Variable.get("AWS_ECS_SUBNETS"))
-    ECS_SECURITY_GROUPS = parse_list(Variable.get("AWS_ECS_SECURITY_GROUPS"))
 
 
 def cases_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:

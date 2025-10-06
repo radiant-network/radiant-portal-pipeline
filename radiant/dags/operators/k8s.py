@@ -99,7 +99,9 @@ class InitIcebergTables(BaseK8SOperator):
     @staticmethod
     def get_init_database(radiant_namespace: str):
         @task.kubernetes(
-            **dict(task_id="init_database_k8s", task_display_name="[K8s] Init Data", name="init-data", do_xcom_push=True)
+            **dict(
+                task_id="init_database_k8s", task_display_name="[K8s] Init Data", name="init-data", do_xcom_push=True
+            )
             | InitIcebergTables._get_k8s_context(radiant_namespace)
         )
         def init_database():
