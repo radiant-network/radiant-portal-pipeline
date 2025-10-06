@@ -6,12 +6,12 @@ from itertools import groupby
 from typing import Any
 
 from airflow.decorators import dag, task
-from airflow.models import Param
+from airflow.models import Param, Variable
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE, get_namespace, load_docs_md
+from radiant.dags import DEFAULT_ARGS, NAMESPACE, ECSEnv, get_namespace, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
 from radiant.tasks.starrocks.operator import (
     RadiantLoadExomiserOperator,
@@ -24,7 +24,30 @@ from radiant.tasks.vcf.experiment import Case, Experiment
 
 LOGGER = logging.getLogger(__name__)
 
+
+def parse_list(env_val):
+    return [v.strip() for v in env_val.split(",") if v.strip()]
+
+
+IS_AWS = os.environ.get("IS_AWS", "false").lower() == "true"
+if IS_AWS:
+    ECS_CLUSTER = Variable.get("AWS_ECS_CLUSTER")
+    ECS_SUBNETS = parse_list(Variable.get("AWS_ECS_SUBNETS"))
+    ECS_SECURITY_GROUPS = parse_list(Variable.get("AWS_ECS_SECURITY_GROUPS"))
+
 PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
+
+
+def parse_list(env_val):
+    return [v.strip() for v in env_val.split(",") if v.strip()]
+
+
+IS_AWS = os.environ.get("IS_AWS", "false").lower() == "true"
+if IS_AWS:
+    LOGGER.info("Running in AWS environment")
+    ECS_CLUSTER = Variable.get("AWS_ECS_CLUSTER")
+    ECS_SUBNETS = parse_list(Variable.get("AWS_ECS_SUBNETS"))
+    ECS_SECURITY_GROUPS = parse_list(Variable.get("AWS_ECS_SECURITY_GROUPS"))
 
 
 def cases_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
@@ -128,15 +151,28 @@ def import_part():
         poke_interval=2,
     )
 
-    @task.external_python(
-        task_id="import_germline_cnv_vcf",
-        task_display_name="[PyOp] Import Germline CNV VCF into Iceberg",
-        python=PATH_TO_PYTHON_BINARY,
-    )
-    def import_cnv_vcf(cases: list[dict], namespace: str) -> None:
-        from radiant.tasks.vcf.cnv.germline.process import import_cnv_vcf as _import_cnv_vcf
+    if IS_AWS:
+        ecs_env = ECSEnv()
 
-        _import_cnv_vcf(cases=cases, namespace=namespace)
+        try:
+            from radiant.dags.operators import ecs
+        except ImportError as ie:
+            LOGGER.error("ECS provider not found. Please install the required provider.")
+            raise ie
+
+        import_cnv_vcf = ecs.ImportPart.get_import_cnv_vcf(
+            radiant_namespace=get_namespace(),
+            ecs_env=ecs_env,
+        )
+
+    else:
+        try:
+            from radiant.dags.operators import k8s
+        except ImportError as ie:
+            LOGGER.error("Kubernetes provider not found. Please install the required provider.")
+            raise ie
+
+        import_cnv_vcf = k8s.ImportPart.get_import_cnv_vcf(get_namespace())
 
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(cases) -> dict[str, list[Any]]:
@@ -312,7 +348,7 @@ def import_part():
     (
         start
         >> fetch_sequencing_experiment_delta
-        >> (import_vcf, import_cnv_vcf(cases=cases, namespace=get_namespace()))
+        >> (import_vcf, import_cnv_vcf(cases=cases))
         >> load_exomiser
         >> refresh_iceberg_tables
         >> insert_germline_cnv_occurrences

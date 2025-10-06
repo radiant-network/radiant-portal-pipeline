@@ -1,0 +1,49 @@
+name: Package DAG Dependencies for MWAA
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build and push Docker image
+        id: build_mwaa_base
+        uses: docker/build-push-action@f2a1d5e99d037542a71f64918e516c093c6f3fc4
+        with:
+          context: .
+          file: mwaa/Dockerfile-mwaa-deps-builder
+          tags: radiant-binaries-builder:latest
+          push: false
+
+      - name: Extract binaries from Docker image
+        run: |
+          docker create --name temp_container radiant-binaries-builder:latest
+          docker cp temp_container:/home/airflow/.venv/radiant/wheels ./wheels
+          docker rm temp_container
+
+      - name: Zip extracted binaries
+        run: |
+          zip -r mwaa/plugins.zip ./wheels
+
+      - name: Upload DAGs and library to S3 MWAA bucket
+        run: | 
+          aws s3 cp radiant/ s3://${{ secrets.S3_MWAA_BUCKET_NAME }}/dags/radiant/ --recursive
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+
+      - name: Upload dependencies to S3 MWAA bucket
+        run: | 
+          aws s3 cp mwaa/plugins.zip s3://${{ secrets.S3_MWAA_BUCKET_NAME }}/plugins/plugins-${{ github.ref_name }}.zip
+          aws s3 cp mwaa/startup.sh s3://${{ secrets.S3_MWAA_BUCKET_NAME }}/startup/startup-${{ github.ref_name }}.sh
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}

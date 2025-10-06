@@ -15,8 +15,8 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
 def test_dag_has_correct_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-iceberg-tables")
     task_ids = [task.task_id for task in dag.tasks]
-    assert "init_database" in task_ids
-    assert "create_germline_snv_occurrence_table" in task_ids
-    assert "create_germline_variant_table" in task_ids
-    assert "create_germline_consequence_table" in task_ids
-    assert "create_germline_cnv_occurrence_table" in task_ids
+    assert "init_database_k8s" in task_ids
+    assert "create_germline_snv_occurrence_table_k8s" in task_ids
+    assert "create_germline_variant_table_k8s" in task_ids
+    assert "create_germline_consequence_table_k8s" in task_ids
+    assert "create_germline_cnv_occurrence_table_k8s" in task_ids

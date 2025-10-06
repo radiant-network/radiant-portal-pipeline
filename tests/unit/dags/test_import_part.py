@@ -121,7 +121,7 @@ def test_dag_contains_all_tasks(dag_bag):
         "get_iceberg_namespace",
         "get_tables_to_refresh",
         "sanity_check_cases",
-        "import_germline_cnv_vcf",
+        "import_cnv_vcf_k8s",
         "import_germline_snv_vcf",
         "load_exomiser_files",
         "refresh_iceberg_tables",
