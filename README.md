@@ -54,17 +54,17 @@ The following are examples and should be adjusted to your environment:
 
 ### Requirements files
 
-| Requirements File Name     | Purpose                                                                            |
-|----------------------------|------------------------------------------------------------------------------------|
-| `requirements.txt`         | Main dependencies required to run the Radiant ETL pipeline.                        |
-| `requirements-dev.txt`     | Development dependencies such as testing and linting tools.                        |
-| `requirements-airflow.txt` | Dependencies needed for Kubernetes-based deployment. Airflow version `2.10.5`.     |
+| Requirements File Name     | Purpose                                                                                  |
+|----------------------------|------------------------------------------------------------------------------------------|
+| `requirements.txt`         | Main dependencies required to run the Radiant ETL pipeline.                              |
+| `requirements-dev.txt`     | Development dependencies such as testing and linting tools.                              |
+| `requirements-airflow.txt` | Airflow dependencies needed for running Kubernetes-based dags. Airflow version `2.10.5`. |
 
 ### Dockerfiles
 
 | Dockerfile                     | Purpose                                                                                            |
 |--------------------------------|----------------------------------------------------------------------------------------------------|
-| `Dockerfile`                   | Main image used by webserver, scheduler, etc... in Kubernetes-based deployments.                   |
+| `Dockerfile`                   | Main image used by Airflow's webserver, scheduler, etc... in Kubernetes-based deployments.         |
 | `Dockerfile-radiant-operator`  | Used as the pod images for running tasks with Radiant dependencies (for both K8S/ECS deployments). |
 
 ### MWAA Artifacts

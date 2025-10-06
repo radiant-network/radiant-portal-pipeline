@@ -1,3 +1,4 @@
+import os
 from datetime import timedelta
 
 from airflow.providers.amazon.aws.operators import ecs
@@ -11,13 +12,12 @@ class BaseECSOperator:
         return dict(
             cluster=ecs_cluster,
             launch_type="FARGATE",
-            task_definition="airflow_ecs_operator_task:13",  # TODO : Make this into an environment variable
-            awslogs_group="apps-qa/radiant-etl",
-            awslogs_region="us-east-1",
+            task_definition=os.getenv("RADIANT_TASK_OPERATOR_TASK_DEFINITION"),
+            awslogs_group=os.getenv("RADIANT_TASK_OPERATOR_LOG_GROUP"),
+            awslogs_region=os.getenv("RADIANT_TASK_OPERATOR_LOG_REGION"),
             # There's a bug in the 9.2.0 provider that forces to add the container name as well
-            awslogs_stream_prefix="ecs/radiant-operator-qa-etl-container",
+            awslogs_stream_prefix=os.getenv("RADIANT_TASK_OPERATOR_LOG_PREFIX"),
             awslogs_fetch_interval=timedelta(seconds=5),
-            # TODO : Are we forced to specify this here or can we use the ECS task definition instead ?
             network_configuration={
                 "awsvpcConfiguration": {
                     "subnets": ecs_subnets,

@@ -1,4 +1,4 @@
-# Minimal Airflow runtime needed for external_python task
+# Minimal Airflow runtime needed
 apache-airflow==2.10.5
 apache-airflow-providers-cncf-kubernetes==10.6.1
 
@@ -6,6 +6,7 @@ apache-airflow-providers-cncf-kubernetes==10.6.1
 # Minimal Airflow runtime dependencies
 attrs>=22.2.0
 packaging>=23.0
+pydantic==2.11.6
 typing_extensions>=4.5.0
 sqlalchemy>=1.4,<2.0
 tabulate>=0.8.10

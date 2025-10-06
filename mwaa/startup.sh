@@ -3,32 +3,9 @@ set -e
 
 cat /etc/system-release
 
-readonly PLUGINS_DIR="/usr/local/airflow/plugins"
-
 echo "Setting up IS_AWS..."
 export IS_AWS="true"
 echo "IS_AWS is now set to: $IS_AWS"
-
-echo "Installing Python dependencies..."
-pip install ${PLUGINS_DIR}/wheels/*.whl --find-links ${PLUGINS_DIR}/wheels
-echo "Done installing Python dependencies."
-
-echo "Exporting RADIANT_PYTHON_PATH..."
-export RADIANT_PYTHON_PATH="/usr/local/bin/python3"
-echo "RADIANT_PYTHON_PATH is now set to: $RADIANT_PYTHON_PATH"
-
-echo "Exporting libraries..."
-sudo cp ${PLUGINS_DIR}/lib/libhts.so.1.21 /usr/lib/libhts.so.1.21
-sudo chmod +x /usr/lib/libhts.so.1.21
-sudo rm -f /usr/lib/libhts.so.3
-sudo ln -s /usr/lib/libhts.so.1.21 /usr/lib/libhts.so.3
-sudo rm -f /usr/lib/libhts.so
-sudo ln -s /usr/lib/libhts.so.1.21 /usr/lib/libhts.so
-echo "Done exporting libraries."
-
-echo "Setting up LD_LIBRARY_PATH..."
-export LD_LIBRARY_PATH="/usr/lib:$LD_LIBRARY_PATH"
-echo "LD_LIBRARY_PATH is now set to: $LD_LIBRARY_PATH"
 
 echo "Configuring Radiant environment..."
 export RADIANT_ICEBERG_NAMESPACE="radiant_qa"
@@ -44,5 +21,11 @@ echo "Exporting STARROCKS_BROKER_USE_INSTANCE_PROFILE to 'true'..."
 export STARROCKS_BROKER_USE_INSTANCE_PROFILE=true
 env | grep STARROCKS_BROKER_USE_INSTANCE_PROFILE
 echo "Done setting STARROCKS_BROKER_USE_INSTANCE_PROFILE."
+
+echo "Exporting AWS ECS environment variables..."
+export RADIANT_TASK_OPERATOR_TASK_DEFINITION="airflow_ecs_operator_task:13"
+export RADIANT_TASK_OPERATOR_LOG_GROUP="apps-qa/radiant-etl"
+export RADIANT_TASK_OPERATOR_LOG_REGION="us-east-1"
+export RADIANT_TASK_OPERATOR_LOG_PREFIX="ecs/radiant-operator-qa-etl-container"
 
 echo "Startup script done, exiting..."
