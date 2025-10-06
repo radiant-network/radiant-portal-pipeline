@@ -1,7 +1,9 @@
 import os
 import pathlib
+from dataclasses import dataclass
 
 from airflow.decorators import task
+from airflow.models import Variable
 
 NAMESPACE = "radiant"
 ICEBERG_NAMESPACE = os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant")
@@ -13,6 +15,24 @@ SQL_DIR = pathlib.Path("sql")
 
 # This is required because docs are read at DAG parse time, not a execution time.
 DOCS_DIR = pathlib.Path(DAGS_DIR / "docs")
+
+IS_AWS = os.environ.get("IS_AWS", "false").lower() == "true"
+
+
+def parse_list(env_val):
+    return [v.strip() for v in env_val.split(",") if v.strip()]
+
+
+@dataclass(frozen=True)
+class ECSEnv:
+    ECS_CLUSTER: str | None = None
+    ECS_SUBNETS: list[str] | None = None
+    ECS_SECURITY_GROUPS: list[str] | None = None
+
+    def __post_init__(self):
+        object.__setattr__(self, "ECS_CLUSTER", Variable.get("AWS_ECS_CLUSTER"))
+        object.__setattr__(self, "ECS_SUBNETS", parse_list(Variable.get("AWS_ECS_SUBNETS")))
+        object.__setattr__(self, "ECS_SECURITY_GROUPS", parse_list(Variable.get("AWS_ECS_SECURITY_GROUP")))
 
 
 def load_docs_md(file_name: str) -> str:

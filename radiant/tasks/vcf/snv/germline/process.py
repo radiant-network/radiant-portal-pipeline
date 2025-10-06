@@ -2,7 +2,6 @@ import json
 import logging
 import sys
 import tempfile
-from collections import defaultdict
 
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
@@ -148,27 +147,6 @@ def create_parquet_files(case: dict, namespace: str) -> dict[str, list[dict]]:
         logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
 
     return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}
-
-
-def merge_commits(partition_lists: list[dict[str, list[dict]]] | list[str]) -> dict[str, list[dict]]:
-    if not partition_lists:
-        return {}
-
-    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
-    logger = logging.getLogger(__name__)
-
-    if isinstance(partition_lists[0], str):
-        logger.warning("Received partition lists as string")
-        _parsed_partitions = []
-        for part in partition_lists:
-            _parsed_partitions.append(json.loads(part))
-        partition_lists = _parsed_partitions
-
-    merged = defaultdict(list)
-    for d in partition_lists:
-        for table, partitions in d.items():
-            merged[table].extend(partitions)
-    return dict(merged)
 
 
 def commit_partitions(table_partitions: dict[str, list[dict]]):
