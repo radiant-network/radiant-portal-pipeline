@@ -505,9 +505,6 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
         self.sql = "sql/radiant/staging_exomiser_load.sql"
         super().__init__(*args, **kwargs)
 
-    def run_load(self, context, partition_exists) -> str:
-        pass
-
     def render_template_fields(self, context, jinja_env=None):
         super().render_template_fields(context, jinja_env)
         self.cases = self.render_template(self.cases, context, jinja_env)
