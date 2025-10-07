@@ -1,4 +1,5 @@
 # Minimal Airflow runtime needed to run DAGs on MWAA
+aiobotocore==2.24.2
 apache-airflow==2.10.3
 apache-airflow-providers-amazon==9.2.0
 apache-airflow-providers-common-sql==1.21.0
