@@ -16,6 +16,7 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "hpo_gene_panel",
         "orphanet_gene_panel",
         "ensembl_gene",
+        "ensembl_exon_by_gene",
         "ddd_gene_panel",
         "cosmic_gene_panel",
         "mondo_term",
