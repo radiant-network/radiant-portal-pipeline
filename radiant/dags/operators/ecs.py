@@ -130,4 +130,28 @@ class InitIcebergTables(BaseECSOperator):
 class ImportPart(BaseECSOperator):
     @staticmethod
     def get_import_cnv_vcf(radiant_namespace: str, ecs_env: ECSEnv):
-        pass
+        return ecs.EcsRunTaskOperator.partial(
+            **dict(
+                task_id=f"import_cnv_vcf_ecs",
+                task_display_name=f"[ECS] Import CNV VCF",
+                overrides={
+                    "containerOverrides": [
+                        {
+                            "name": "radiant-task-operator",
+                            "command": [f"python /opt/radiant/import_cnv_vcf.py --cases '{{ params.case | tojson }}'"],
+                            "environment": [
+                                {"name": "PYTHONPATH", "value": "/opt/radiant"},
+                                {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
+                                {"name": "RADIANT_ICEBERG_NAMESPACE", "value": radiant_namespace},
+                                {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
+                            ],
+                        }
+                    ]
+                },
+            )
+            | ImportGermlineSNVVCF._get_ecs_context(
+                ecs_cluster=ecs_env.ECS_CLUSTER,
+                ecs_subnets=ecs_env.ECS_SUBNETS,
+                ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
+            )
+        )

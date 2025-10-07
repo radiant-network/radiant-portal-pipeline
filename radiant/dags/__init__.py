@@ -32,7 +32,7 @@ class ECSEnv:
     def __post_init__(self):
         object.__setattr__(self, "ECS_CLUSTER", Variable.get("AWS_ECS_CLUSTER"))
         object.__setattr__(self, "ECS_SUBNETS", parse_list(Variable.get("AWS_ECS_SUBNETS")))
-        object.__setattr__(self, "ECS_SECURITY_GROUPS", parse_list(Variable.get("AWS_ECS_SECURITY_GROUP")))
+        object.__setattr__(self, "ECS_SECURITY_GROUPS", parse_list(Variable.get("AWS_ECS_SECURITY_GROUPS")))
 
 
 def load_docs_md(file_name: str) -> str:

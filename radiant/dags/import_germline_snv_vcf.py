@@ -109,9 +109,20 @@ with DAG(
         if IS_AWS
         else k8s_create_parquet_files.expand(case=all_cases)
     )
-    merged_commits = merge_commits(partition_commits)
+
+    if IS_AWS:
+        @task
+        def collect_results(**kwargs):
+            # This is required because the ECS mapped operator cannot correctly
+            # collect results before sending them to the following task. Therefore,
+            # we need to collect them manually.
+            ti = kwargs['ti']
+            results = ti.xcom_pull(task_ids='ecs_create_parquet_files', include_prior_dates=False)
+            return merge_commits(results)
+
+    merged_commits = collect_results() if IS_AWS else merge_commits(partition_commits)
     commit_partitions = (
-        ecs_commit_partitions(table_partitions=merged_commits)
+        ecs_commit_partitions.expand(params={"table_partitions": merged_commits})
         if IS_AWS
         else k8s_commit_partitions(table_partitions=merged_commits)
     )

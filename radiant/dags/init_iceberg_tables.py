@@ -65,10 +65,10 @@ with DAG(
             namespace_task
         )
 
-    (
-        init_database()
-        >> create_germline_snv_occurrence_table()
-        >> create_germline_variant_table()
-        >> create_germline_consequence_table()
-        >> create_germline_cnv_occurrence_table()
-    )
+        (
+            init_database()
+            >> create_germline_snv_occurrence_table()
+            >> create_germline_variant_table()
+            >> create_germline_consequence_table()
+            >> create_germline_cnv_occurrence_table()
+        )
