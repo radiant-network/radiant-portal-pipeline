@@ -18,6 +18,7 @@ gene_group_ids = [
     "omim_gene_panel",
     "hpo_gene_panel",
     "ensembl_gene",
+    "ensembl_exon_by_gene",
     "orphanet_gene_panel",
     "ddd_gene_panel",
     "cosmic_gene_panel",

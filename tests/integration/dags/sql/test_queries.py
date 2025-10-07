@@ -109,6 +109,7 @@ def test_queries_are_valid(
             "mondo_term",
             "hpo_term",
             "ensembl_gene",
+            "ensembl_exon_by_gene",
             "orphanet_gene_panel",
             "ddd_gene_panel",
             "cosmic_gene_panel",

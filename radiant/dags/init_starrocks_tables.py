@@ -57,6 +57,7 @@ with DAG(
         "omim_gene_panel",
         "hpo_gene_panel",
         "ensembl_gene",
+        "ensembl_exon_by_gene",
         "cytoband",
         "orphanet_gene_panel",
         "ddd_gene_panel",
