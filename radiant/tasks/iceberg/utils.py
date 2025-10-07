@@ -112,11 +112,12 @@ def dataframe_to_data_files(
         default=TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
     )
     name_mapping = table_metadata.schema().name_mapping
-    from pyiceberg.utils.config import Config
-
     downcast_ns_timestamp_to_us = Config().get_bool(DOWNCAST_NS_TIMESTAMP_TO_US_ON_WRITE) or False
     task_schema = pyarrow_to_schema(
-        df.schema, name_mapping=name_mapping, downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us
+        df.schema,
+        name_mapping=name_mapping,
+        downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
+        format_version=table_metadata.format_version,
     )
 
     if table_metadata.spec().is_unpartitioned():
@@ -202,7 +203,9 @@ def _write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[Write
         fo = io.new_output(file_path)
         with (
             fo.create(overwrite=True) as fos,
-            pq.ParquetWriter(fos, schema=arrow_table.schema, **parquet_writer_kwargs) as writer,
+            pq.ParquetWriter(
+                fos, schema=arrow_table.schema, store_decimal_as_integer=True, **parquet_writer_kwargs
+            ) as writer,
         ):
             writer.write(arrow_table, row_group_size=row_group_size)
         statistics = data_file_statistics_from_parquet_metadata(
@@ -210,7 +213,7 @@ def _write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[Write
             stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
             parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
         )
-        data_file = DataFile(
+        data_file = DataFile.from_args(
             content=DataFileContent.DATA,
             file_path=file_path,
             file_format=FileFormat.PARQUET,

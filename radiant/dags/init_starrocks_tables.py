@@ -79,5 +79,11 @@ with DAG(
             sql=str(_RADIANT_SQL_INIT_DIR / "variant_id_udf.sql"),
         )
     )
+    tasks.append(
+        RadiantStarRocksOperator(
+            task_id="create_cnv_id_udf",
+            sql=str(_RADIANT_SQL_INIT_DIR / "cnv_id_udf.sql"),
+        )
+    )
 
     chain(*tasks)

@@ -5,7 +5,7 @@ from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 
 from radiant.tasks.starrocks.operator import (
-    RadiantStarrocksLoadOperator,
+    RadiantStarRocksOperator,
 )
 
 dag_params = {
@@ -31,14 +31,15 @@ dag_params = {
 def import_test():
     start = EmptyOperator(task_id="start", task_display_name="[Start]")
 
-    refresh_iceberg_tables = RadiantStarrocksLoadOperator(
-        task_id="load_test",
-        task_display_name="Load Test Table",
-        table="{{ mapping.starrocks_raw_clinvar_rcv_summary }}",
-        sql="sql/open_data/raw_clinvar_rcv_summary_load.sql",
-        truncate=True,
-        load_label="load_raw_clinvar_rcv_summary_{{ ts_nodash }}_{{ ti.try_number }}",
-        parameters={"rcv_summary_filepaths": "{{ params.raw_rcv_filepaths }}"},
+    refresh_iceberg_tables = RadiantStarRocksOperator(
+        task_id="fetch_sequencing_experiment_delta",
+        sql="""
+            SELECT *
+            FROM radiant_iceberg_catalog.radiant.germline_cnv_occurrence o
+            where seq_id in %(seq_ids)s OR seq_id in %(seq_ids)s limit 10
+            """,
+        task_display_name="[StarRocks] Get Sequencing Experiment for a partition",
+        parameters={"seq_ids": [1, 2, 3, 22]},
     )
 
     (start >> refresh_iceberg_tables)
