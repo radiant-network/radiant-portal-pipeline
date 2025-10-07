@@ -21,7 +21,7 @@ def test_import_radiant(
 
     dag_id = "radiant-import"
     part_dag_id = "radiant-import-part"
-    vcf_dag_id = "radiant-import-vcf"
+    vcf_dag_id = "radiant-import-germline-snv-vcf"
 
     unpause_dag(radiant_airflow_container, vcf_dag_id)
     unpause_dag(radiant_airflow_container, part_dag_id)

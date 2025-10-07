@@ -11,7 +11,7 @@ from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE, get_namespace, load_docs_md
+from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, ECSEnv, get_namespace, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
 from radiant.tasks.starrocks.operator import (
     RadiantLoadExomiserOperator,
@@ -23,6 +23,7 @@ from radiant.tasks.starrocks.operator import (
 from radiant.tasks.vcf.experiment import Case, Experiment
 
 LOGGER = logging.getLogger(__name__)
+
 
 PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
 
@@ -128,34 +129,28 @@ def import_part():
         poke_interval=2,
     )
 
-    @task.external_python(
-        task_id="import_germline_cnv_vcf",
-        task_display_name="[PyOp] Import Germline CNV VCF into Iceberg",
-        python=PATH_TO_PYTHON_BINARY,
-    )
-    def import_cnv_vcf(cases: list[dict], namespace: str) -> None:
-        import logging
-        import sys
-        import tempfile
+    if IS_AWS:
+        ecs_env = ECSEnv()
 
-        from radiant.tasks.utils import download_s3_file
-        from radiant.tasks.vcf.cnv.germline.process import process_cases
-        from radiant.tasks.vcf.experiment import Case
+        try:
+            from radiant.dags.operators import ecs
+        except ImportError as ie:
+            LOGGER.error("ECS provider not found. Please install the required provider.")
+            raise ie
 
-        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
-        logger = logging.getLogger(__name__)
+        import_cnv_vcf = ecs.ImportPart.get_import_cnv_vcf(
+            radiant_namespace=get_namespace(),
+            ecs_env=ecs_env,
+        )
 
-        updated_cases = []
-        with tempfile.TemporaryDirectory() as tmpdir:
-            for case in cases:
-                for s in case["experiments"]:
-                    logger.info("Downloading VCF and index files to a temporary directory")
-                    cnv_vcf_local = download_s3_file(s["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
-                    s["cnv_vcf_filepath"] = cnv_vcf_local
-                case = Case.model_validate(case)
-                updated_cases.append(case)
+    else:
+        try:
+            from radiant.dags.operators import k8s
+        except ImportError as ie:
+            LOGGER.error("Kubernetes provider not found. Please install the required provider.")
+            raise ie
 
-            process_cases(updated_cases, namespace=namespace, vcf_threads=4)
+        import_cnv_vcf = k8s.ImportPart.get_import_cnv_vcf(get_namespace())
 
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(cases) -> dict[str, list[Any]]:
@@ -331,7 +326,7 @@ def import_part():
     (
         start
         >> fetch_sequencing_experiment_delta
-        >> (import_vcf, import_cnv_vcf(cases=cases, namespace=get_namespace()))
+        >> (import_vcf, import_cnv_vcf.expand(params={"cases": cases}) if IS_AWS else import_cnv_vcf(cases=cases))
         >> load_exomiser
         >> refresh_iceberg_tables
         >> insert_germline_cnv_occurrences

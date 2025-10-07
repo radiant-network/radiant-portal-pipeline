@@ -2,6 +2,7 @@
 
 build-docker:
 	docker build -t radiant-airflow:latest .
+	docker build -t ghcr.io/radiant-network/radiant-airflow-task-operator:latest -f Dockerfile.radiant.operator .
 
 install:
 	pip install -r requirements.txt
@@ -30,5 +31,5 @@ test-static:
 test: test-static test-unit test-integration
 
 format:
-	ruff format radiant/ tests/
-	ruff check --fix radiant/ tests/
+	ruff format radiant/ tests/ scripts/ecs/
+	ruff check --fix radiant/ tests/ scripts/ecs/

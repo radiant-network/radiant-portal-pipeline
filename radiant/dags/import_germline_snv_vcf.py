@@ -1,3 +1,4 @@
+import logging
 import os
 
 from airflow import DAG
@@ -5,7 +6,10 @@ from airflow.decorators import task
 from airflow.models import Param
 from airflow.utils.dates import days_ago
 
-from radiant.dags import NAMESPACE, get_namespace
+from radiant.dags import IS_AWS, NAMESPACE, ECSEnv, get_namespace
+
+LOGGER = logging.getLogger(__name__)
+
 
 default_args = {
     "owner": "radiant",
@@ -32,51 +36,37 @@ with DAG(
     params=dag_params,
     max_active_tasks=128,
 ) as dag:
+    namespace = get_namespace()
 
-    @task
+    @task(task_display_name="[PyOp] Get Cases")
     def get_cases(params):
         from radiant.tasks.vcf.experiment import Case
 
+        if IS_AWS:
+            return [
+                {"case": Case.model_validate(c).model_dump()} for c in params.get("cases", []) if c.get("vcf_filepath")
+            ]
+
         return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
 
-    @task.external_python(
-        pool="import_vcf",
-        task_id="create_parquet_files",
-        python=PATH_TO_PYTHON_BINARY,
-        map_index_template=("Case: {{ task.op_kwargs['case']['case_id'] }}"),
-    )
-    def create_parquet_files(case: dict, namespace: str):
+    @task(task_display_name="[PyOp] Merge Commits")
+    def merge_commits(partition_lists: list[dict[str, list[dict]]] | list[str]) -> dict[str, list[dict]]:
         import json
-        import logging
         import sys
-        import tempfile
+        from collections import defaultdict
 
-        from radiant.tasks.utils import download_s3_file
-        from radiant.tasks.vcf.experiment import Case
-        from radiant.tasks.vcf.snv.germline.process import process_case
+        if not partition_lists:
+            return {}
 
         logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
         logger = logging.getLogger(__name__)
 
-        logger.info("Downloading VCF and index files to a temporary directory")
-        with tempfile.TemporaryDirectory() as tmpdir:
-            vcf_local = download_s3_file(case["vcf_filepath"], tmpdir)
-            index_local = download_s3_file(case["vcf_filepath"] + ".tbi", tmpdir)
-            case["vcf_filepath"] = vcf_local
-            case["index_vcf_filepath"] = index_local
-
-            case = Case.model_validate(case)
-            logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
-            logger.info("=" * 80)
-
-            res = process_case(case, namespace=namespace, vcf_threads=4)
-            logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
-
-        return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}
-
-    @task
-    def merge_commits(partition_lists: list[dict[str, list[dict]]]) -> dict[str, list[dict]]:
-        from collections import defaultdict
+        if isinstance(partition_lists[0], str):
+            logger.warning("Received partition lists as string")
+            _parsed_partitions = []
+            for part in partition_lists:
+                _parsed_partitions.append(json.loads(part))
+            partition_lists = _parsed_partitions
 
         merged = defaultdict(list)
         for d in partition_lists:
@@ -84,30 +74,55 @@ with DAG(
                 merged[table].extend(partitions)
         return dict(merged)
 
-    @task.external_python(task_id="commit_partitions", python=PATH_TO_PYTHON_BINARY)
-    def commit_partitions(table_partitions: dict[str, list[dict]]):
-        import logging
-        import sys
+    if IS_AWS:
+        try:
+            from radiant.dags.operators import ecs
+        except ImportError as ie:
+            LOGGER.error("ECS provider not found. Please install the required provider.")
+            raise ie
 
-        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
-        logger = logging.getLogger(__name__)
-        from pyiceberg.catalog import load_catalog
+        ecs_env = ECSEnv()
 
-        from radiant.tasks.iceberg.partition_commit import PartitionCommit
-        from radiant.tasks.iceberg.utils import commit_files
+        ecs_create_parquet_files = ecs.ImportGermlineSNVVCF.get_create_parquet_files(
+            radiant_namespace=namespace,
+            ecs_env=ecs_env,
+        )
 
-        catalog = load_catalog()
-        for table_name, partitions in table_partitions.items():
-            if not partitions:
-                continue
-            table = catalog.load_table(table_name)
-            parts = [PartitionCommit.model_validate(pc) for pc in partitions]
-            logger.info(f"🔁 Starting commit for table {table_name}")
-            commit_files(table, parts)
-            logger.info(f"✅ Changes commited to table {table_name}")
+        ecs_commit_partitions = ecs.ImportGermlineSNVVCF.get_commit_partitions(
+            radiant_namespace=namespace,
+            ecs_env=ecs_env,
+        )
+
+    else:
+        try:
+            from radiant.dags.operators import k8s
+        except ImportError as ie:
+            LOGGER.error("Kubernetes provider not found. Please install the required provider.")
+            raise ie
+
+        k8s_create_parquet_files = k8s.ImportGermlineSNVVCF.get_create_parquet_files(radiant_namespace=namespace)
+        k8s_commit_partitions = k8s.ImportGermlineSNVVCF.get_commit_partitions(radiant_namespace=namespace)
 
     all_cases = get_cases()
+    partition_commits = (
+        ecs_create_parquet_files.expand(params=all_cases)
+        if IS_AWS
+        else k8s_create_parquet_files.expand(case=all_cases)
+    )
 
-    partitions_commit = create_parquet_files.partial(namespace=get_namespace()).expand(case=all_cases)
-    merged_commit = merge_commits(partitions_commit)
-    commit_partitions(merged_commit)
+    if IS_AWS:
+        @task
+        def collect_results(**kwargs):
+            # This is required because the ECS mapped operator cannot correctly
+            # collect results before sending them to the following task. Therefore,
+            # we need to collect them manually.
+            ti = kwargs['ti']
+            results = ti.xcom_pull(task_ids='ecs_create_parquet_files', include_prior_dates=False)
+            return merge_commits(results)
+
+    merged_commits = collect_results() if IS_AWS else merge_commits(partition_commits)
+    commit_partitions = (
+        ecs_commit_partitions.expand(params={"table_partitions": merged_commits})
+        if IS_AWS
+        else k8s_commit_partitions(table_partitions=merged_commits)
+    )
