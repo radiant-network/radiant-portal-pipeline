@@ -1,15 +1,15 @@
 CREATE OR REPLACE
-    GLOBAL FUNCTION GET_VARIANT_ID
+    GLOBAL FUNCTION GET_CNV_ID
 (
     string,
     bigint,
-    string,
+    bigint,
     string
 ) RETURNS bigint
     PROPERTIES
 (
     "symbol" =
-    "org.radiant.VariantIdUDF",
+    "org.radiant.CNVIdUDF",
     "type" =
     "StarrocksJar",
     "file" =

@@ -27,7 +27,7 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
         JOIN {{ mapping.iceberg_gnomad_cnv }} gnomad
         ON cnv.chromosome = gnomad.chromosome AND cnv.alternate = gnomad.alternate
         WHERE
-            /* Reciprocal overlap of at least 80% */
+            /* Reciprocal overlap of at least 80 percent */
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start) + 1) >= 0.8 * (cnv.end - cnv.start + 1)
         AND
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start) + 1) >= 0.8 * (gnomad.end - gnomad.start + 1)
@@ -42,7 +42,30 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
         ) AS rn
         FROM gnomad_overlaps o
     )
-SELECT o.*,
+SELECT o.part,
+       o.seq_id,
+       GET_CNV_ID(o.chromosome, o.start, o.length, o.alternate) as cnv_id,
+       o.aliquot,
+       o.chromosome,
+       o.alternate,
+       o.start,
+       o.end,
+       o.type,
+       o.length,
+       o.name,
+       o.quality,
+       o.calls,
+       o.filter,
+       o.bc,
+       o.cn,
+       o.pe,
+       o.sm,
+       o.svtype,
+       o.svlen,
+       o.reflen,
+       o.ciend,
+       o.cipos,
+       o.phased,
        cytoband.cytoband, genes.symbol, array_length(genes.symbol) AS nb_genes, nb_snv,
        gnomad_ranked.sc AS gnomad_sc, gnomad_ranked.sn AS gnomad_sn, gnomad_ranked.sf AS gnomad_sf
 FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
@@ -50,4 +73,5 @@ FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
          LEFT JOIN genes ON genes.seq_id = o.seq_id AND o.name = genes.name
          LEFT JOIN snv ON snv.seq_id = o.seq_id AND o.name = snv.name
          LEFT JOIN gnomad_ranked ON gnomad_ranked.seq_id = o.seq_id AND o.name = gnomad_ranked.name AND gnomad_ranked.rn = 1
-WHERE o.seq_id IN %(seq_ids)s;
+WHERE o.seq_id IN %(seq_ids)s
+;
