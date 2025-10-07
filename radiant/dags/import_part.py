@@ -326,7 +326,7 @@ def import_part():
     (
         start
         >> fetch_sequencing_experiment_delta
-        >> (import_vcf, import_cnv_vcf(cases=cases))
+        >> (import_vcf, import_cnv_vcf.expand(params={"cases": cases}) if IS_AWS else import_cnv_vcf(cases=cases))
         >> load_exomiser
         >> refresh_iceberg_tables
         >> insert_germline_cnv_occurrences
