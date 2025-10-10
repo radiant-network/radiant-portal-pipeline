@@ -21,10 +21,10 @@ SCHEMA = merge_schemas(
     COMMON_SCHEMA,
     Schema(
         NestedField(100, "part", IntegerType(), required=True),
-        NestedField(101, "tumor_seq_id", IntegerType(), required=True),
-        NestedField(102, "tumor_aliquot", StringType(), required=True),
-        NestedField(104, "normal_seq_id", IntegerType(), required=True),
-        NestedField(105, "normal_aliquot", StringType(), required=True),
+        # NestedField(101, "tumor_seq_id", IntegerType(), required=True),
+        # NestedField(102, "tumor_aliquot", StringType(), required=True),
+        # NestedField(104, "normal_seq_id", IntegerType(), required=True),
+        # NestedField(105, "normal_aliquot", StringType(), required=True),
         NestedField(106, "quality", FloatType(), required=False),
         NestedField(107, "filter", StringType(), required=False),
         NestedField(108, "info_hotspotallele", StringType(), required=False),
@@ -109,10 +109,24 @@ def process_occurrence(record: Variant, common: Common) -> dict:
     haplotype_score = info_fields.get("HaplotypeScore", None)
     excess_het = info_fields.get("ExcessHet", None)
 
-    # --- Replace the germline ped loop with this somatic block ---
+    """
+    --- Replace the germline ped loop with this somatic block ---
+
+    Assumption is tumor col comes first, normal second.
+    But there could be files that don't follow this order.
+    Need to implement logic to identify tumor/normal indices based on sample metadata as a check 
+    or a warning if the order is unexpected. 
+
+    1. First check sample ID in model. If not found, output error and have an option to indicate which order to use.
+        - Use cases where the sample IDs in the VCFs are different than the sample IDs in the model. 
+        - In CHOP VCFs, the sample IDs in the VCF should match the aliquot ID in the model.
+    2. If found, confirm tumor/normal order. 
+
+    This logic can also be applied to joint genotyped VCFs.
+    """
 
     tumor_idx = 0   # replace with somatic indexing logic
-    normal_idx = 0  # replace with somatic indexing logic
+    normal_idx = 1  # replace with somatic indexing logic
     exp = None  # replace with somatic sample extraction logic
 
     # Tumor FORMAT
@@ -154,11 +168,11 @@ def process_occurrence(record: Variant, common: Common) -> dict:
         "reference": common.reference,
         "alternate": common.alternate,
 
-        # sample IDs
-        "tumor_seq_id": exp.tumor_seq_id,
-        "tumor_aliquot": exp.tumor_aliquot,
-        "normal_seq_id": exp.normal_seq_id,
-        "normal_aliquot": exp.normal_aliquot,
+        # # sample IDs
+        # "tumor_seq_id": exp.tumor_seq_id,
+        # "tumor_aliquot": exp.tumor_aliquot,
+        # "normal_seq_id": exp.normal_seq_id,
+        # "normal_aliquot": exp.normal_aliquot,
 
         # info 
         "quality": quality,
