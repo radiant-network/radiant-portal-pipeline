@@ -11,8 +11,10 @@ https://docs.google.com/spreadsheets/d/18znLGx23qknUWXaqgMQ5cRNK3JZfUU9A7LwwdsGv
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
 from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, StringType
+from typing import List
 
 from radiant.tasks.iceberg.utils import merge_schemas
+from radiant.tasks.vcf.experiment import Experiment
 from radiant.tasks.vcf.snv.germline.common import SCHEMA as COMMON_SCHEMA
 from radiant.tasks.vcf.snv.germline.common import Common
 from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT, calls_without_phased
@@ -78,7 +80,7 @@ SCHEMA = merge_schemas(
     ),
 )
 
-def process_occurrence(record: Variant, common: Common) -> dict:
+def process_occurrence(record: Variant, experiments: List[Experiment], common: Common) -> dict:
     """
     Mirrors germline styled occurrence processing, adapted for somatic VCF structure.
     """
@@ -127,7 +129,8 @@ def process_occurrence(record: Variant, common: Common) -> dict:
 
     tumor_idx = 0   # replace with somatic indexing logic
     normal_idx = 1  # replace with somatic indexing logic
-    exp = None  # replace with somatic sample extraction logic
+    tumor_exp = experiments[0]  # replace with somatic sample extraction logic
+    normal_exp = experiments[1] # replace with somatic sample extraction logic
 
     # Tumor FORMAT
     t_dp = record.format("DP")[tumor_idx][0] if "DP" in record.FORMAT else 0
@@ -155,11 +158,11 @@ def process_occurrence(record: Variant, common: Common) -> dict:
     n_af = n_ad_ratio
     n_phased = record.gt_phases[normal_idx]
 
-    occurrences[exp.tumor_seq_id] = {
+    occurrences[tumor_exp.seq_id] = {
         # common
         "case_id": common.case_id,
         "part": common.part,
-        "task_id": exp.task_id,
+        "task_id": tumor_exp.task_id,
         "locus": common.locus,
         "locus_hash": common.locus_hash,
         "chromosome": common.chromosome,
@@ -169,10 +172,10 @@ def process_occurrence(record: Variant, common: Common) -> dict:
         "alternate": common.alternate,
 
         # # sample IDs
-        # "tumor_seq_id": exp.tumor_seq_id,
-        # "tumor_aliquot": exp.tumor_aliquot,
-        # "normal_seq_id": exp.normal_seq_id,
-        # "normal_aliquot": exp.normal_aliquot,
+        # "tumor_seq_id": tumor_exp.seq_id,
+        # "tumor_aliquot": tumor_exp.aliquot,
+        # "normal_seq_id": normal_exp.seq_id,
+        # "normal_aliquot": normal_exp.aliquot,
 
         # info 
         "quality": quality,
