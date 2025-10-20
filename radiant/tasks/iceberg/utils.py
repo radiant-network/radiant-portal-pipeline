@@ -117,7 +117,6 @@ def dataframe_to_data_files(
         df.schema,
         name_mapping=name_mapping,
         downcast_ns_timestamp_to_us=downcast_ns_timestamp_to_us,
-        format_version=table_metadata.format_version,
     )
 
     if table_metadata.spec().is_unpartitioned():
@@ -213,21 +212,35 @@ def _write_file(io: FileIO, table_metadata: TableMetadata, tasks: Iterator[Write
             stats_columns=compute_statistics_plan(file_schema, table_metadata.properties),
             parquet_column_mapping=parquet_path_to_id_mapping(file_schema),
         )
-        data_file = DataFile.from_args(
+        # data_file = DataFile.from_args(
+        #     content=DataFileContent.DATA,
+        #     file_path=file_path,
+        #     file_format=FileFormat.PARQUET,
+        #     partition=task.partition_key.partition if task.partition_key else Record(),
+        #     file_size_in_bytes=len(fo),
+        #     # After this has been fixed:
+        #     # https://github.com/apache/iceberg-python/issues/271
+        #     # sort_order_id=task.sort_order_id,
+        #     sort_order_id=None,
+        #     # Just copy these from the table for now
+        #     spec_id=table_metadata.default_spec_id,
+        #     equality_ids=None,
+        #     key_metadata=None,
+        #     **statistics.to_serialized_dict(),
+        # )
+        stats = statistics.to_serialized_dict()
+        data_file = DataFile(
             content=DataFileContent.DATA,
             file_path=file_path,
             file_format=FileFormat.PARQUET,
             partition=task.partition_key.partition if task.partition_key else Record(),
             file_size_in_bytes=len(fo),
-            # After this has been fixed:
-            # https://github.com/apache/iceberg-python/issues/271
-            # sort_order_id=task.sort_order_id,
-            sort_order_id=None,
-            # Just copy these from the table for now
+            sort_order_id=None,  # or task.sort_order_id once the upstream issue is fixed
             spec_id=table_metadata.default_spec_id,
             equality_ids=None,
             key_metadata=None,
-            **statistics.to_serialized_dict(),
+            # ↓ unpack the serialized stats dict (record_count, column_sizes, lower_bounds, etc.)
+            **stats,
         )
 
         return data_file

@@ -51,8 +51,34 @@ def import_radiant():
     with TaskGroup(group_id="partitioner_group") as tg_partition_group:
         fetch_sequencing_experiment_delta = RadiantStarRocksOperator(
             task_id="fetch_sequencing_experiment_delta",
-            sql="SELECT * FROM {{ mapping.starrocks_staging_sequencing_experiment_delta }}",
-            task_display_name="[StarRocks] Get Sequencing Experiment Delta",
+            sql="""
+            WITH src AS (
+            SELECT
+                se.case_id                                  AS case_id,
+                se.id                                       AS seq_id,
+                se.experiment_id                            AS task_id,
+                'SOMATIC'                                   AS analysis_type,
+                se.aliquot                                  AS aliquot,
+                se.patient_id                               AS patient_id,
+                'WGS'                                       AS experimental_strategy,
+                se.request_id                               AS request_id,
+                NULL                                        AS request_priority,
+                's3://vcf/DELME_SKIP_EXOMISER.vcf.gz'       AS vcf_filepath,
+                NULL                                        AS cnv_vcf_filepath,
+                NULL                                        AS exomiser_filepath,
+                /* Make these strings, not NULLs */
+                'unknown'                                   AS sex,
+                'unknown'                                   AS family_role,
+                'unknown'                                   AS affected_status,
+                COALESCE(se.created_on, NOW())              AS created_at,
+                COALESCE(se.updated_on, NOW())              AS updated_at
+            FROM radiant_jdbc.public.sequencing_experiment se
+            -- WHERE se.case_id = 1000001
+            LIMIT 3
+            )
+            SELECT * FROM src
+            """,
+            task_display_name="[StarRocks] TEMP Get Sequencing Experiment Delta (JDBC seed)",
             output_processor=experiment_delta_output_processor,
             do_xcom_push=True,
         )

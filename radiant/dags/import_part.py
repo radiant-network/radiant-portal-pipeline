@@ -119,9 +119,9 @@ def import_part():
 
     _prepare_config = prepare_config(cases)
     import_vcf = TriggerDagRunOperator(
-        task_id="import_germline_snv_vcf",
-        task_display_name="[DAG] Import Germline SNV VCF into Iceberg",
-        trigger_dag_id=f"{NAMESPACE}-import-germline-snv-vcf",
+        task_id="import_somatic_snv_vcf",   # renamed for somatic
+        task_display_name="[DAG] Import Somatic SNV VCF into Iceberg",   # renamed for somatic
+        trigger_dag_id=f"{NAMESPACE}-import-somatic-snv-vcf",   # renamed for somatic
         conf=_prepare_config,
         reset_dag_run=True,
         wait_for_completion=True,

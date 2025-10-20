@@ -76,6 +76,44 @@ with DAG(
         )
         catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec)
 
+    @task.external_python(task_id="create_somatic_snv_occurrence_table", python=PATH_TO_PYTHON_BINARY)
+    def create_somatic_snv_occurrence_table(namespace):
+        from pyiceberg.catalog import load_catalog
+        from pyiceberg.partitioning import PartitionField, PartitionSpec
+        from pyiceberg.transforms import IdentityTransform
+        from radiant.tasks.vcf.snv.somatic.occurrence import SCHEMA as SOMATIC_OCCURRENCE_SCHEMA
+
+        catalog = load_catalog("default")
+        table_name = f"{namespace}.somatic_snv_occurrence"
+        if catalog.table_exists(table_name):
+            print(f"Deleting existing table {table_name}")
+            catalog.drop_table(table_name)
+
+        part_field = SOMATIC_OCCURRENCE_SCHEMA.find_field("part")
+        case_id_field = SOMATIC_OCCURRENCE_SCHEMA.find_field("case_id")
+
+        partition_spec = PartitionSpec(
+            fields=[
+                PartitionField(
+                    field_id=2001,
+                    source_id=part_field.field_id,
+                    name=part_field.name,
+                    transform=IdentityTransform(),
+                ),
+                PartitionField(
+                    field_id=2002,
+                    source_id=case_id_field.field_id,
+                    name=case_id_field.name,
+                    transform=IdentityTransform(),
+                ),
+            ]
+        )
+        catalog.create_table_if_not_exists(
+            table_name,
+            schema=SOMATIC_OCCURRENCE_SCHEMA,
+            partition_spec=partition_spec,
+        )
+
     @task.external_python(task_id="create_germline_variant_table", python=PATH_TO_PYTHON_BINARY)
     def create_germline_variant_table(namespace):
         from pyiceberg.catalog import load_catalog
@@ -147,6 +185,7 @@ with DAG(
     (
         init_database(namespace_task)
         >> create_germline_snv_occurrence_table(namespace_task)
+        >> create_somatic_snv_occurrence_table(namespace_task)
         >> create_germline_variant_table(namespace_task)
         >> create_germline_consequences_table(namespace_task)
         >> create_germline_cnv_occurrence_table(namespace_task)
