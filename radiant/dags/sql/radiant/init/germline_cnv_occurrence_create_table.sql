@@ -27,9 +27,12 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_cnv_occurrence }} (
      symbol array<varchar(128)> NULL COMMENT "",
      nb_genes int(11) NULL COMMENT "",
      nb_snv int(11) NULL COMMENT "",
+     gnomad_af FLOAT NULL COMMENT "",
      gnomad_sc int(11) NULL COMMENT "",
      gnomad_sn int(11) NULL COMMENT "",
-     gnomad_sf FLOAT NULL COMMENT ""
+     gnomad_sf FLOAT NULL COMMENT "",
+     gnomad_sc_hom int(11) NULL COMMENT "",
+     gnomad_sc_het int(11) NULL COMMENT ""
 ) ENGINE=OLAP
 DUPLICATE KEY(part, seq_id, cnv_id)
 PARTITION BY (part);

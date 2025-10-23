@@ -63,7 +63,7 @@ ICEBERG_OPEN_DATA_MAPPING = {
     "iceberg_ddd_gene_set": "ddd_gene_set",
     "iceberg_mondo_term": "mondo_term",
     "iceberg_hpo_term": "hpo_term",
-    "iceberg_gnomad_cnv": "gnomad_cnv",
+    "iceberg_gnomad_sv": "gnomad_sv",
 }
 
 ICEBERG_CATALOG_DATABASE = {
