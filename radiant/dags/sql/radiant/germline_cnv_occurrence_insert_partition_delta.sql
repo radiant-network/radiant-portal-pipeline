@@ -19,18 +19,22 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
         SELECT
             cnv.seq_id,
             cnv.name,
-            gnomad.sf,
-            gnomad.sc,
-            gnomad.sn,
-            GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start) + 1) AS overlap
+            gnomad.af as af,
+            gnomad.n_het + gnomad.n_homalt as sc,
+            gnomad.n_het as sc_het,
+            gnomad.n_homalt as sc_hom,
+            gnomad.n_bi_genos as sn,
+            (gnomad.n_het + gnomad.n_homalt) / gnomad.n_bi_genos as sf,
+            GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) AS overlap
         FROM {{ mapping.iceberg_germline_cnv_occurrence }} cnv
-        JOIN {{ mapping.iceberg_gnomad_cnv }} gnomad
+        JOIN {{ mapping.iceberg_gnomad_sv }} gnomad
         ON cnv.chromosome = gnomad.chromosome AND cnv.alternate = gnomad.alternate
         WHERE
             /* Reciprocal overlap of at least 80 percent */
-            GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start) + 1) >= 0.8 * (cnv.end - cnv.start + 1)
+            GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (cnv.end - cnv.start)
         AND
-            GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start) + 1) >= 0.8 * (gnomad.end - gnomad.start + 1)
+            GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (gnomad.end - gnomad.start)
+        AND gnomad.filters = 'PASS' AND gnomad.svtype IN ('DUP', 'DEL')
         AND cnv.seq_id IN %(seq_ids)s
     ),
     gnomad_ranked AS (
@@ -67,7 +71,12 @@ SELECT o.part,
        o.cipos,
        o.phased,
        cytoband.cytoband, genes.symbol, array_length(genes.symbol) AS nb_genes, nb_snv,
-       gnomad_ranked.sc AS gnomad_sc, gnomad_ranked.sn AS gnomad_sn, gnomad_ranked.sf AS gnomad_sf
+       gnomad_ranked.af AS gnomad_af,
+       gnomad_ranked.sc AS gnomad_sc,
+       gnomad_ranked.sn AS gnomad_sn,
+       gnomad_ranked.sf AS gnomad_sf,
+       gnomad_ranked.sc_hom AS gnomad_sc_hom,
+       gnomad_ranked.sc_het AS gnomad_sc_het
 FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
          LEFT JOIN cytoband ON cytoband.seq_id = o.seq_id AND o.name = cytoband.name
          LEFT JOIN genes ON genes.seq_id = o.seq_id AND o.name = genes.name
