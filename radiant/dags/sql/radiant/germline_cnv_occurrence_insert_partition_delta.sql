@@ -24,8 +24,7 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
             gnomad.n_het as sc_het,
             gnomad.n_homalt as sc_hom,
             gnomad.n_bi_genos as sn,
-            (gnomad.n_het + gnomad.n_homalt) / gnomad.n_bi_genos as sf,
-            GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) AS overlap
+            (gnomad.n_het + gnomad.n_homalt) / gnomad.n_bi_genos as sf
         FROM {{ mapping.iceberg_germline_cnv_occurrence }} cnv
         JOIN {{ mapping.iceberg_gnomad_sv }} gnomad
         ON cnv.chromosome = gnomad.chromosome AND cnv.alternate = gnomad.alternate
@@ -42,7 +41,7 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
         o.*,
         ROW_NUMBER() OVER (
             PARTITION BY o.seq_id, o.name
-            ORDER BY o.overlap DESC, o.sf DESC
+            ORDER BY o.af DESC, o.sf DESC
         ) AS rn
         FROM gnomad_overlaps o
     )
