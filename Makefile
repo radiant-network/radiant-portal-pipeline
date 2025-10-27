@@ -5,7 +5,7 @@ build-docker:
 	docker build -t ghcr.io/radiant-network/radiant-airflow-task-operator:latest -f Dockerfile.radiant.operator .
 
 install:
-	pip install -r requirements.txt
+	pip install -r requirements-operator.txt
 
 install-dev: install
 	pip install -r requirements-dev.txt
