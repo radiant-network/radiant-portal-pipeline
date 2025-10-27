@@ -37,7 +37,7 @@ RUN pip install --upgrade pip && \
     CYVCF2_HTSLIB_MODE=EXTERNAL pip install --force --no-binary cyvcf2 cyvcf2
 
 # Copy dependency files and source code
-COPY requirements-operator.txt /opt/radiant/requirements.txt
+COPY requirements.txt /opt/radiant/requirements.txt
 RUN pip install --no-cache-dir -r /opt/radiant/requirements.txt
 
 COPY radiant /opt/radiant/radiant

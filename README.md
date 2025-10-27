@@ -56,7 +56,7 @@ The following are examples and should be adjusted to your environment:
 
 | Requirements File Name      | Purpose                                                                                  |
 |-----------------------------|------------------------------------------------------------------------------------------|
-| `requirements-operator.txt` | Main dependencies required to run the Radiant ETL pipeline.                              |
+| `requirements.txt` | Main dependencies required to run the Radiant ETL pipeline.                              |
 | `requirements-dev.txt`      | Development dependencies such as testing and linting tools.                              |
 | `requirements-airflow.txt`  | Airflow dependencies needed for running Kubernetes-based dags. Airflow version `2.10.5`. |
 
