@@ -2,8 +2,7 @@ import argparse
 import logging
 import sys
 
-
-from radiant.tasks.utils import download_json_from_s3, delete_s3_object
+from radiant.tasks.utils import delete_s3_object, download_json_from_s3
 from radiant.tasks.vcf.snv.germline.process import commit_partitions
 
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])

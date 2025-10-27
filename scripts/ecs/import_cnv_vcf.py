@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 
-from radiant.tasks.utils import download_json_from_s3, delete_s3_object
+from radiant.tasks.utils import delete_s3_object, download_json_from_s3
 from radiant.tasks.vcf.cnv.germline.process import import_cnv_vcf
 
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
