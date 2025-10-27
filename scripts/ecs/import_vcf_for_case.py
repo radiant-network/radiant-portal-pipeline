@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def main(case: dict):
     namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
-    create_parquet_files(case, namespace)
+    print(json.dumps(create_parquet_files(case, namespace)))
 
 
 if __name__ == "__main__":

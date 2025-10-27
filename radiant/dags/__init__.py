@@ -28,11 +28,13 @@ class ECSEnv:
     ECS_CLUSTER: str | None = None
     ECS_SUBNETS: list[str] | None = None
     ECS_SECURITY_GROUPS: list[str] | None = None
+    ECS_S3_WORKSPACE: str | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "ECS_CLUSTER", Variable.get("AWS_ECS_CLUSTER"))
         object.__setattr__(self, "ECS_SUBNETS", parse_list(Variable.get("AWS_ECS_SUBNETS")))
         object.__setattr__(self, "ECS_SECURITY_GROUPS", parse_list(Variable.get("AWS_ECS_SECURITY_GROUPS")))
+        object.__setattr__(self, "ECS_S3_WORKSPACE", Variable.get("AWS_ECS_S3_WORKSPACE"))
 
 
 def load_docs_md(file_name: str) -> str:

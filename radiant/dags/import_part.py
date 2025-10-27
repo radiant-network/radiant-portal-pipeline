@@ -107,7 +107,29 @@ def import_part():
     def check_cases(cases: Any) -> Any:
         return cases
 
+    @task(task_id="ecs_store_cases", task_display_name="[PyOp] ECS Store Cases")
+    def ecs_store_cases(cases: Any) -> Any:
+        import json
+        import tempfile
+
+        import boto3
+
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmpfile:
+            json.dump(cases, tmpfile)
+            tmpfile_path = tmpfile.name
+
+        s3_client = boto3.client("s3")
+        bucket_name = ecs_env.ECS_S3_WORKSPACE
+        s3_key = f"tmp/cases_{os.path.basename(tmpfile_path)}"
+
+        s3_client.upload_file(tmpfile_path, bucket_name, s3_key)
+        s3_path = f"s3://{bucket_name}/{s3_key}"
+
+        os.remove(tmpfile_path)
+        return [{"stored_cases": s3_path}]
+
     cases = check_cases(fetch_sequencing_experiment_delta.output)
+    stored_cases = ecs_store_cases(cases) if IS_AWS else None
 
     @task(task_id="prepare_config", task_display_name="[PyOp] Prepare Config")
     def prepare_config(cases: Any) -> Any:
@@ -326,7 +348,10 @@ def import_part():
     (
         start
         >> fetch_sequencing_experiment_delta
-        >> (import_vcf, import_cnv_vcf.expand(params={"cases": cases}) if IS_AWS else import_cnv_vcf(cases=cases))
+        >> (
+            import_vcf,
+            import_cnv_vcf.expand(params=stored_cases) if IS_AWS else import_cnv_vcf(cases=cases),
+        )
         >> load_exomiser
         >> refresh_iceberg_tables
         >> insert_germline_cnv_occurrences

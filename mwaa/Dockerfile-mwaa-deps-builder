@@ -34,8 +34,10 @@ RUN python${PYTHON_VERSION} -m venv /home/airflow/.venv/radiant && \
     /home/airflow/.venv/radiant/bin/pip install wheel --no-cache-dir
 
 # Copy requirements and install dependencies with uv
-COPY requirements-mwaa.txt /home/airflow/.venv/radiant/requirements.txt
+COPY requirements-deps.txt /home/airflow/.venv/radiant/requirements.txt
+COPY constraints-3.11.txt  /usr/local/airflow/plugins/constraints-3.11.txt
 RUN uv pip compile /home/airflow/.venv/radiant/requirements.txt --output-file /home/airflow/.venv/radiant/requirements.lock.txt
 
 RUN /home/airflow/.venv/radiant/bin/pip wheel -w /home/airflow/.venv/radiant/wheels -r /home/airflow/.venv/radiant/requirements.lock.txt
-RUN zip -j /home/airflow/.venv/radiant/plugins.zip /home/airflow/.venv/radiant/wheels/*.whl
+RUN cp /usr/local/airflow/plugins/constraints-3.11.txt /home/airflow/.venv/radiant/wheels/constraints-3.11.txt
+RUN zip -j /home/airflow/.venv/radiant/plugins.zip /home/airflow/.venv/radiant/wheels/*.whl /home/airflow/.venv/radiant/wheels/constraints-3.11.txt

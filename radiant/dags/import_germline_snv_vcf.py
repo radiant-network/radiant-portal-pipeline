@@ -25,6 +25,7 @@ dag_params = {
     )
 }
 
+
 with DAG(
     dag_id=f"{NAMESPACE}-import-germline-snv-vcf",
     default_args=default_args,
@@ -50,13 +51,16 @@ with DAG(
         return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
 
     @task(task_display_name="[PyOp] Merge Commits")
-    def merge_commits(partition_lists: list[dict[str, list[dict]]] | list[str]) -> dict[str, list[dict]]:
+    def merge_commits(partition_lists: list[dict[str, list[dict]]] | list[str], ecs_env: ECSEnv | None = None):
         import json
         import sys
+        import tempfile
         from collections import defaultdict
 
+        import boto3
+
         if not partition_lists:
-            return {}
+            return {} if not IS_AWS else json.dumps({})
 
         logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
         logger = logging.getLogger(__name__)
@@ -65,6 +69,7 @@ with DAG(
             logger.warning("Received partition lists as string")
             _parsed_partitions = []
             for part in partition_lists:
+                logger.info(part)
                 _parsed_partitions.append(json.loads(part))
             partition_lists = _parsed_partitions
 
@@ -72,6 +77,24 @@ with DAG(
         for d in partition_lists:
             for table, partitions in d.items():
                 merged[table].extend(partitions)
+
+        if IS_AWS:
+            # ECS limits the length of the command override, so we need to upload the merged partitions to S3
+            # and pass the S3 path of the file in which the data is store to the ECS operator instead of the data.
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmpfile:
+                json.dump(dict(merged), tmpfile)
+                tmpfile_path = tmpfile.name
+
+            s3_client = boto3.client("s3")
+            bucket_name = ecs_env.ECS_S3_WORKSPACE
+            s3_key = f"tmp/commit_partitions_{os.path.basename(tmpfile_path)}"
+
+            s3_client.upload_file(tmpfile_path, bucket_name, s3_key)
+            s3_path = f"s3://{bucket_name}/{s3_key}"
+
+            os.remove(tmpfile_path)
+            return [{"table_partitions": s3_path}]
+
         return dict(merged)
 
     if IS_AWS:
@@ -104,25 +127,12 @@ with DAG(
         k8s_commit_partitions = k8s.ImportGermlineSNVVCF.get_commit_partitions(radiant_namespace=namespace)
 
     all_cases = get_cases()
-    partition_commits = (
-        ecs_create_parquet_files.expand(params=all_cases)
-        if IS_AWS
-        else k8s_create_parquet_files.expand(case=all_cases)
-    )
 
     if IS_AWS:
-        @task
-        def collect_results(**kwargs):
-            # This is required because the ECS mapped operator cannot correctly
-            # collect results before sending them to the following task. Therefore,
-            # we need to collect them manually.
-            ti = kwargs['ti']
-            results = ti.xcom_pull(task_ids='ecs_create_parquet_files', include_prior_dates=False)
-            return merge_commits(results)
-
-    merged_commits = collect_results() if IS_AWS else merge_commits(partition_commits)
-    commit_partitions = (
-        ecs_commit_partitions.expand(params={"table_partitions": merged_commits})
-        if IS_AWS
-        else k8s_commit_partitions(table_partitions=merged_commits)
-    )
+        partition_commit = ecs_create_parquet_files.expand(params=all_cases)
+        merged_commits = merge_commits(partition_commit.output, ecs_env)
+        ecs_commit_partitions.expand(params=merged_commits)
+    else:
+        partition_commit = k8s_create_parquet_files.expand(case=all_cases)
+        merged_commits = merge_commits(partition_commit)
+        k8s_commit_partitions(table_partitions=merged_commits)

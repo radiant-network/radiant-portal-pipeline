@@ -1,5 +1,3 @@
---no-index
---find-links /usr/local/airflow/plugins
 --constraint /usr/local/airflow/plugins/constraints-3.11.txt
 
 # Radiant specific additional requirements for MWAA

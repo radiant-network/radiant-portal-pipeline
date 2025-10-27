@@ -7,10 +7,6 @@ echo "Setting up IS_AWS..."
 export IS_AWS="true"
 echo "IS_AWS is now set to: $IS_AWS"
 
-echo "Installing Python dependencies..."
-pip install ${PLUGINS_DIR}/*.whl --find-links ${PLUGINS_DIR}
-echo "Done installing Python dependencies."
-
 echo "Configuring Radiant environment..."
 export RADIANT_ICEBERG_NAMESPACE="radiant_qa"
 env | grep RADIANT_ICEBERG_NAMESPACE

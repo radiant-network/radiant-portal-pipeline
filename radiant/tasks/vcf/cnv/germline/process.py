@@ -37,6 +37,10 @@ def process_cases(
         occurrence_buffer = []
         for case in cases:
             for exp in case.experiments:
+                if not exp.cnv_vcf_filepath:
+                    logger.info(f"No CNV VCF filepath for case [{case.case_id}] exp [{exp.seq_id}], skipping")
+                    continue
+
                 vcf = VCF(
                     exp.cnv_vcf_filepath,
                     strict_gt=True,
@@ -72,10 +76,16 @@ def import_cnv_vcf(cases: list[dict], namespace: str) -> None:
     with tempfile.TemporaryDirectory() as tmpdir:
         for case in cases:
             for s in case["experiments"]:
-                logger.info("Downloading VCF and index files to a temporary directory")
+                if not s.get("cnv_vcf_filepath"):
+                    continue
+
+                logger.info(f"Downloading VCF and index files from {s["cnv_vcf_filepath"]} to a temporary directory")
                 cnv_vcf_local = download_s3_file(s["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
+                logger.info(f"Downloaded CNV VCF to {cnv_vcf_local}")
                 s["cnv_vcf_filepath"] = cnv_vcf_local
+
             case = Case.model_validate(case)
             updated_cases.append(case)
 
+        logger.info("Starting CNV VCF processing for all cases")
         process_cases(updated_cases, namespace=namespace, vcf_threads=4)

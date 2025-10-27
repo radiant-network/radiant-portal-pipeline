@@ -127,7 +127,13 @@ class TableAccumulator:
         Returns:
             pa.Table: A PyArrow Table constructed from buffered rows.
         """
-        return pa.Table.from_pylist(self.rows, schema=self.schema)
+        try:
+            return pa.Table.from_pylist(self.rows, schema=self.schema)
+        except Exception as e:
+            logger.error(f"Error converting rows to Arrow table: {e}")
+            logger.error(f"Schema: {self.schema}")
+            logger.error(f"Rows: {self.rows}")
+            raise e
 
     def clear_rows(self):
         """

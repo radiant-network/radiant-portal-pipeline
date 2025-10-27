@@ -37,7 +37,7 @@ class ImportGermlineSNVVCF(BaseECSOperator):
             **dict(
                 pool="import_vcf",
                 task_id="create_parquet_files_ecs",
-                task_display_name="[ECS] Commit Partitions",
+                task_display_name="[ECS] Create Parquet Files",
                 overrides={
                     "containerOverrides": [
                         {
@@ -67,7 +67,7 @@ class ImportGermlineSNVVCF(BaseECSOperator):
     def get_commit_partitions(radiant_namespace: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator.partial(
             **dict(
-                task_id="commit_partitions_ecs",
+                task_id="ecs_commit_partitions",
                 task_display_name="[ECS] Commit Partitions",
                 overrides={
                     "containerOverrides": [
@@ -75,8 +75,7 @@ class ImportGermlineSNVVCF(BaseECSOperator):
                             "name": "radiant-operator-qa-etl-container",
                             "command": [
                                 "python "
-                                "/opt/radiant/commit_partitions.py --table_partitions "
-                                "'{{ params.table_partitions | tojson }}'"
+                                "/opt/radiant/commit_partitions.py --table_partitions '{{ params.table_partitions }}'"
                             ],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
@@ -107,7 +106,7 @@ class InitIcebergTables(BaseECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-task-operator",
+                            "name": "radiant-operator-qa-etl-container",
                             "command": [f"python /opt/radiant/init_iceberg_table.py --table_name '{table_name}'"],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
@@ -132,13 +131,13 @@ class ImportPart(BaseECSOperator):
     def get_import_cnv_vcf(radiant_namespace: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator.partial(
             **dict(
-                task_id=f"import_cnv_vcf_ecs",
-                task_display_name=f"[ECS] Import CNV VCF",
+                task_id="import_cnv_vcf_ecs",
+                task_display_name="[ECS] Import CNV VCF",
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-task-operator",
-                            "command": [f"python /opt/radiant/import_cnv_vcf.py --cases '{{ params.case | tojson }}'"],
+                            "name": "radiant-operator-qa-etl-container",
+                            "command": ["python /opt/radiant/import_cnv_vcf.py --cases '{{ params.stored_cases }}'"],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
                                 {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
