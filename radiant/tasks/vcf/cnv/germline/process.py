@@ -79,7 +79,7 @@ def import_cnv_vcf(cases: list[dict], namespace: str) -> None:
                 if not s.get("cnv_vcf_filepath"):
                     continue
 
-                logger.info(f"Downloading VCF and index files from {s["cnv_vcf_filepath"]} to a temporary directory")
+                logger.info(f"Downloading VCF and index files from {s['cnv_vcf_filepath']} to a temporary directory")
                 cnv_vcf_local = download_s3_file(s["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
                 logger.info(f"Downloaded CNV VCF to {cnv_vcf_local}")
                 s["cnv_vcf_filepath"] = cnv_vcf_local
