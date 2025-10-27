@@ -14,7 +14,7 @@
 - [ ] Upload the `requirements-mwaa.txt` file to S3.
 - [ ] Upload the `startup.sh` script to S3.
 - [ ] Build and push the radiant operator image (see command below).
-
+- [ ] Configure ECS specific Airflow variables (see below).
 
 ## ECS specific Airflow variables
 
