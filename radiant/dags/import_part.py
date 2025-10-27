@@ -109,23 +109,11 @@ def import_part():
 
     @task(task_id="ecs_store_cases", task_display_name="[PyOp] ECS Store Cases")
     def ecs_store_cases(cases: Any) -> Any:
-        import json
-        import tempfile
+        from radiant.dags.operators.utils import s3_store_content
 
-        import boto3
-
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmpfile:
-            json.dump(cases, tmpfile)
-            tmpfile_path = tmpfile.name
-
-        s3_client = boto3.client("s3")
-        bucket_name = ecs_env.ECS_S3_WORKSPACE
-        s3_key = f"tmp/cases_{os.path.basename(tmpfile_path)}"
-
-        s3_client.upload_file(tmpfile_path, bucket_name, s3_key)
-        s3_path = f"s3://{bucket_name}/{s3_key}"
-
-        os.remove(tmpfile_path)
+        # ECS limits the length of the command override, so we need to upload the cases to S3
+        # and pass the S3 path of the file in which the data is stored to the ECS operator instead of the data.
+        s3_path = s3_store_content(content=cases, ecs_env=ecs_env, prefix="commit_partitions")
         return [{"stored_cases": s3_path}]
 
     cases = check_cases(fetch_sequencing_experiment_delta.output)

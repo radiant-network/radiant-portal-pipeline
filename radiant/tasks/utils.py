@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from functools import wraps
@@ -74,3 +75,21 @@ def download_s3_file(s3_path, dest_dir, randomize_filename=False):
         print(f"Error downloading S3 file: {e}")
         return None
     return local_path
+
+
+def download_json_from_s3(s3_path: str, local_path: str) -> list | dict:
+    download_s3_file(s3_path=s3_path, dest_dir=local_path, randomize_filename=False)
+
+    with open(local_path) as f:
+        return json.load(f)
+
+
+def delete_s3_object(s3_path: str, logger):
+    try:
+        s3_path_trimmed = s3_path[len("s3://") :]
+        bucket_name, key = s3_path_trimmed.split("/", 1)
+        s3_client = boto3.client("s3")
+        s3_client.delete_object(Bucket=bucket_name, Key=key)
+        logger.info(f"Deleted temporary S3 file: s3://{bucket_name}/{key}")
+    except Exception as e:
+        logger.warning(f"Failed to delete temporary S3 file: {e}")

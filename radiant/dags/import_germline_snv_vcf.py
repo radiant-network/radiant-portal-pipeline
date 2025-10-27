@@ -7,6 +7,7 @@ from airflow.models import Param
 from airflow.utils.dates import days_ago
 
 from radiant.dags import IS_AWS, NAMESPACE, ECSEnv, get_namespace
+from radiant.dags.operators.utils import s3_store_content
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,10 +55,7 @@ with DAG(
     def merge_commits(partition_lists: list[dict[str, list[dict]]] | list[str], ecs_env: ECSEnv | None = None):
         import json
         import sys
-        import tempfile
         from collections import defaultdict
-
-        import boto3
 
         if not partition_lists:
             return {} if not IS_AWS else json.dumps({})
@@ -81,18 +79,7 @@ with DAG(
         if IS_AWS:
             # ECS limits the length of the command override, so we need to upload the merged partitions to S3
             # and pass the S3 path of the file in which the data is store to the ECS operator instead of the data.
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmpfile:
-                json.dump(dict(merged), tmpfile)
-                tmpfile_path = tmpfile.name
-
-            s3_client = boto3.client("s3")
-            bucket_name = ecs_env.ECS_S3_WORKSPACE
-            s3_key = f"tmp/commit_partitions_{os.path.basename(tmpfile_path)}"
-
-            s3_client.upload_file(tmpfile_path, bucket_name, s3_key)
-            s3_path = f"s3://{bucket_name}/{s3_key}"
-
-            os.remove(tmpfile_path)
+            s3_path = s3_store_content(content=dict(merged), ecs_env=ecs_env, prefix="commit_partitions")
             return [{"table_partitions": s3_path}]
 
         return dict(merged)
