@@ -15,6 +15,17 @@
 - [ ] Upload the `startup.sh` script to S3.
 - [ ] Build and push the radiant operator image (see command below).
 
+
+## ECS specific Airflow variables
+
+These variables are necessary to configure the Radiant operator to run tasks on ECS. 
+The ECS task definition doesn't allow configuration of those parameters in its configuration. They need to be passed when launching a task.
+
+- `AWS_ECS_CLUSTER`: Name of the ECS cluster where Radiant tasks will run.
+- `AWS_ECS_SUBNETS`: Comma-separated list of subnet IDs for ECS tasks.
+- `AWS_ECS_SECURITY_GROUPS`: Comma-separated list of security group IDs used by ECS tasks.
+- `AWS_ECS_S3_WORKSPACE`: S3 bucket path for Radiant workspace. 
+
 ## Building and Pushing the Radiant Operator Image
 
 To build the radiant operator image, run:
