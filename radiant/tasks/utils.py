@@ -77,8 +77,17 @@ def download_s3_file(s3_path, dest_dir, randomize_filename=False):
     return local_path
 
 
-def download_json_from_s3(s3_path: str, local_path: str) -> list | dict:
-    download_s3_file(s3_path=s3_path, dest_dir=local_path, randomize_filename=False)
+def download_json_from_s3(s3_path: str, local_path: str, logger) -> list | dict:
+    if not s3_path.startswith("s3://"):
+        raise ValueError(f"Invalid S3 path: {s3_path}")
+
+    s3_path_trimmed = s3_path[len("s3://") :]
+    bucket_name, key = s3_path_trimmed.split("/", 1)
+
+    logger.info(f"Downloading JSON from S3: bucket={bucket_name}, key={key} to local_path={local_path}")
+
+    s3_client = boto3.client("s3")
+    s3_client.download_file(bucket_name, key, local_path)
 
     with open(local_path) as f:
         return json.load(f)

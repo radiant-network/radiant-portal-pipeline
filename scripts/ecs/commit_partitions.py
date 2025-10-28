@@ -22,7 +22,7 @@ def main():
     local_tmp_path = "/tmp/table_partitions.json"
 
     try:
-        partitions = download_json_from_s3(args.table_partitions, local_tmp_path)
+        partitions = download_json_from_s3(args.table_partitions, local_tmp_path, logger)
         commit_partitions(partitions)
     except Exception as e:
         logger.error(f"Error while processing partitions: {e}")

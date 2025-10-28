@@ -10,6 +10,7 @@ from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
+from airflow.utils.trigger_rule import TriggerRule
 
 from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, ECSEnv, get_namespace, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
@@ -173,18 +174,33 @@ def import_part():
 
     sequencing_ids = extract_sequencing_ids(cases)
 
-    insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator(
-        task_id="insert_germline_cnv_occurrences",
-        table="{{ mapping.starrocks_germline_cnv_occurrence }}",
-        task_display_name="[StarRocks] Insert CNV Occurrences Part",
-        # submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=10),
-        swap_partition=SwapPartition(
-            partition="{{ params.part }}",
-            copy_partition_sql="./sql/radiant/germline_cnv_occurrence_copy_partition.sql",
-        ),
-        parameters=sequencing_ids,
-        insert_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
-    )
+    with TaskGroup(group_id="germline_cnv_occurrence") as tg_germline_cnv_occurrence:
+
+        @task.short_circuit(
+            task_id="sanity_check_cnvs",
+            task_display_name="[PyOp] Sanity Check CNVs",
+            ignore_downstream_trigger_rules=False,
+        )
+        def sanity_check_cnvs(cases: Any) -> Any:
+            has_cnv = any(
+                experiment.get("cnv_vcf_filepath") for case in cases for experiment in case.get("experiments", [])
+            )
+            return has_cnv
+
+        insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator(
+            task_id="insert_germline_cnv_occurrences",
+            table="{{ mapping.starrocks_germline_cnv_occurrence }}",
+            task_display_name="[StarRocks] Insert CNV Occurrences Part",
+            # submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=10),
+            swap_partition=SwapPartition(
+                partition="{{ params.part }}",
+                copy_partition_sql="./sql/radiant/germline_cnv_occurrence_copy_partition.sql",
+            ),
+            parameters=sequencing_ids,
+            insert_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
+        )
+
+        sanity_check_cnvs(cases) >> insert_germline_cnv_occurrences
 
     load_exomiser = RadiantLoadExomiserOperator(
         task_id="load_exomiser_files",
@@ -220,6 +236,7 @@ def import_part():
     case_ids = extract_case_ids(cases)
 
     insert_hashes = RadiantStarRocksOperator(
+        trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         task_id="insert_variant_hashes",
         sql="./sql/radiant/variant_insert_hashes.sql",
         task_display_name="[StarRocks] Insert Variants Hashes into Lookup",
@@ -342,7 +359,7 @@ def import_part():
         )
         >> load_exomiser
         >> refresh_iceberg_tables
-        >> insert_germline_cnv_occurrences
+        >> tg_germline_cnv_occurrence
         >> insert_hashes
         >> overwrite_tmp_variants
         >> insert_exomiser

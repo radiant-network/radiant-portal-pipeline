@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 python:3.12-slim AS builder
+FROM python:3.12-slim AS builder
 
 USER root
 
@@ -43,7 +43,7 @@ RUN pip install --no-cache-dir -r /opt/radiant/requirements.txt
 COPY radiant /opt/radiant/radiant
 COPY scripts/ecs/ /opt/radiant/
 
-FROM --platform=linux/amd64 python:3.12-slim AS final
+FROM python:3.12-slim AS final
 COPY --from=builder /opt/radiant /opt/radiant
 COPY --from=builder /usr/local/lib /usr/local/lib
 COPY --from=builder /usr/local/include /usr/local/include

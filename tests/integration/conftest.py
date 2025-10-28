@@ -191,6 +191,7 @@ def s3_fs(minio_instance):
     fs.mkdirs("test-vcf", exist_ok=True)
     fs.mkdirs("opendata", exist_ok=True)
     fs.mkdirs("exomiser", exist_ok=True)
+    fs.mkdir("tmp", exist_ok=True)
     return fs
 
 

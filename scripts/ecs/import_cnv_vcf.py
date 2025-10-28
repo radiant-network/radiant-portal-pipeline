@@ -29,7 +29,7 @@ if __name__ == "__main__":
     local_tmp_path = "/tmp/cases.json"
 
     try:
-        cases = download_json_from_s3(args.cases, local_tmp_path)
+        cases = download_json_from_s3(args.cases, local_tmp_path, logger)
         logger.info(f"Downloaded cases: {cases}")
         main(cases)
     except Exception as e:
