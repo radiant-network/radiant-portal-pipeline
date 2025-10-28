@@ -55,7 +55,7 @@ def process_cases(
                 sample_idx = vcf.samples.index(exp.aliquot)
                 part = 0
                 with tracer.start_as_current_span(f"vcf_case_{case.case_id}_{exp.seq_id}"):
-                    logger.info(f"Starting processing vcf for case {case.case_id} with file {case.vcf_filepath}")
+                    logger.info(f"Starting processing vcf for case {case.case_id} with file {case.cnv_vcf_filepath}")
 
                     for record in vcf:
                         occurrence = process_occurrence(record, part, exp.seq_id, exp.aliquot, sample_idx)
