@@ -22,12 +22,6 @@ export STARROCKS_BROKER_USE_INSTANCE_PROFILE=true
 env | grep STARROCKS_BROKER_USE_INSTANCE_PROFILE
 echo "Done setting STARROCKS_BROKER_USE_INSTANCE_PROFILE."
 
-echo "Exporting AWS ECS environment variables..."
-export RADIANT_TASK_OPERATOR_TASK_DEFINITION="airflow_ecs_operator_task:13"
-export RADIANT_TASK_OPERATOR_LOG_GROUP="apps-qa/radiant-etl"
-export RADIANT_TASK_OPERATOR_LOG_REGION="us-east-1"
-export RADIANT_TASK_OPERATOR_LOG_PREFIX="ecs/radiant-operator-qa-etl-container"
-
 echo "Set AWS ECS environment variables:"
 env | grep RADIANT_TASK_OPERATOR_TASK_DEFINITION
 env | grep RADIANT_TASK_OPERATOR_LOG_GROUP
