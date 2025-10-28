@@ -23,6 +23,11 @@ from radiant.tasks.starrocks.operator import (
 )
 from radiant.tasks.vcf.experiment import Case, Experiment
 
+if IS_AWS:
+    from radiant.dags.operators import ecs as operators
+else:
+    from radiant.dags.operators import k8s as operators
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -142,26 +147,13 @@ def import_part():
 
     if IS_AWS:
         ecs_env = ECSEnv()
-
-        try:
-            from radiant.dags.operators import ecs
-        except ImportError as ie:
-            LOGGER.error("ECS provider not found. Please install the required provider.")
-            raise ie
-
-        import_cnv_vcf = ecs.ImportPart.get_import_cnv_vcf(
+        import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(
             radiant_namespace=get_namespace(),
             ecs_env=ecs_env,
         )
 
     else:
-        try:
-            from radiant.dags.operators import k8s
-        except ImportError as ie:
-            LOGGER.error("Kubernetes provider not found. Please install the required provider.")
-            raise ie
-
-        import_cnv_vcf = k8s.ImportPart.get_import_cnv_vcf(get_namespace())
+        import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(get_namespace())
 
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(cases) -> dict[str, list[Any]]:

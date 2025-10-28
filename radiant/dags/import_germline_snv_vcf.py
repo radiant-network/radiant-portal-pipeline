@@ -9,6 +9,11 @@ from airflow.utils.dates import days_ago
 from radiant.dags import IS_AWS, NAMESPACE, ECSEnv, get_namespace
 from radiant.dags.operators.utils import s3_store_content
 
+if IS_AWS:
+    from radiant.dags.operators import ecs as operators
+else:
+    from radiant.dags.operators import k8s as operators
+
 LOGGER = logging.getLogger(__name__)
 
 
@@ -85,33 +90,21 @@ with DAG(
         return dict(merged)
 
     if IS_AWS:
-        try:
-            from radiant.dags.operators import ecs
-        except ImportError as ie:
-            LOGGER.error("ECS provider not found. Please install the required provider.")
-            raise ie
-
         ecs_env = ECSEnv()
 
-        ecs_create_parquet_files = ecs.ImportGermlineSNVVCF.get_create_parquet_files(
+        ecs_create_parquet_files = operators.ImportGermlineSNVVCF.get_create_parquet_files(
             radiant_namespace=namespace,
             ecs_env=ecs_env,
         )
 
-        ecs_commit_partitions = ecs.ImportGermlineSNVVCF.get_commit_partitions(
+        ecs_commit_partitions = operators.ImportGermlineSNVVCF.get_commit_partitions(
             radiant_namespace=namespace,
             ecs_env=ecs_env,
         )
 
     else:
-        try:
-            from radiant.dags.operators import k8s
-        except ImportError as ie:
-            LOGGER.error("Kubernetes provider not found. Please install the required provider.")
-            raise ie
-
-        k8s_create_parquet_files = k8s.ImportGermlineSNVVCF.get_create_parquet_files(radiant_namespace=namespace)
-        k8s_commit_partitions = k8s.ImportGermlineSNVVCF.get_commit_partitions(radiant_namespace=namespace)
+        k8s_create_parquet_files = operators.ImportGermlineSNVVCF.get_create_parquet_files(radiant_namespace=namespace)
+        k8s_commit_partitions = operators.ImportGermlineSNVVCF.get_commit_partitions(radiant_namespace=namespace)
 
     all_cases = get_cases()
 
