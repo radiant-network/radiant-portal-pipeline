@@ -7,7 +7,6 @@ class BaseK8SOperator:
     @staticmethod
     def _get_k8s_context(radiant_namespace: str):
         return dict(
-            kubernetes_conn_id="kubernetes_conn",
             namespace=os.getenv("RADIANT_TASK_OPERATOR_KUBERNETES_NAMESPACE"),
             image=os.getenv("RADIANT_TASK_OPERATOR_IMAGE"),
             image_pull_policy="IfNotPresent",
