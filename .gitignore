@@ -178,3 +178,6 @@ logs
 
 # VCF
 *.gz.tbi
+
+# ECS related files
+*plugins.zip

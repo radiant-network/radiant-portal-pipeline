@@ -1,12 +1,16 @@
+import json
 import logging
+import sys
+import tempfile
 
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
 
 from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
+from radiant.tasks.iceberg.utils import commit_files
 from radiant.tasks.tracing.trace import get_tracer
-from radiant.tasks.utils import capture_libc_stderr_and_check_errors
+from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
 from radiant.tasks.vcf.experiment import Case
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.snv.germline.common import process_common
@@ -122,3 +126,39 @@ def process_case(
             variants_table_name: variants_partition_commit,
             consequences_table_name: consequences_partition_commit,
         }
+
+
+def create_parquet_files(case: dict, namespace: str) -> dict[str, list[dict]]:
+    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
+    logger = logging.getLogger(__name__)
+
+    logger.info("Downloading VCF and index files to a temporary directory")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        vcf_local = download_s3_file(case["vcf_filepath"], tmpdir)
+        index_local = download_s3_file(case["vcf_filepath"] + ".tbi", tmpdir)
+        case["vcf_filepath"] = vcf_local
+        case["index_vcf_filepath"] = index_local
+
+        case = Case.model_validate(case)
+        logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
+        logger.info("=" * 80)
+
+        res = process_case(case, namespace=namespace, vcf_threads=4)
+        logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
+
+    return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}
+
+
+def commit_partitions(table_partitions: dict[str, list[dict]]):
+    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
+    logger = logging.getLogger(__name__)
+
+    catalog = load_catalog()
+    for table_name, partitions in table_partitions.items():
+        if not partitions:
+            continue
+        table = catalog.load_table(table_name)
+        parts = [PartitionCommit.model_validate(pc) for pc in partitions]
+        logger.info(f"🔁 Starting commit for table {table_name}")
+        commit_files(table, parts)
+        logger.info(f"✅ Changes commited to table {table_name}")

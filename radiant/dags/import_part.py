@@ -10,8 +10,9 @@ from airflow.models import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
+from airflow.utils.trigger_rule import TriggerRule
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE, get_namespace, load_docs_md
+from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, ECSEnv, get_namespace, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_germline_snv_mapping
 from radiant.tasks.starrocks.operator import (
     RadiantLoadExomiserOperator,
@@ -22,7 +23,13 @@ from radiant.tasks.starrocks.operator import (
 )
 from radiant.tasks.vcf.experiment import Case, Experiment
 
+if IS_AWS:
+    from radiant.dags.operators import ecs as operators
+else:
+    from radiant.dags.operators import k8s as operators
+
 LOGGER = logging.getLogger(__name__)
+
 
 PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
 
@@ -106,7 +113,17 @@ def import_part():
     def check_cases(cases: Any) -> Any:
         return cases
 
+    @task(task_id="ecs_store_cases", task_display_name="[PyOp] ECS Store Cases")
+    def ecs_store_cases(cases: Any) -> Any:
+        from radiant.dags.operators.utils import s3_store_content
+
+        # ECS limits the length of the command override, so we need to upload the cases to S3
+        # and pass the S3 path of the file in which the data is stored to the ECS operator instead of the data.
+        s3_path = s3_store_content(content=cases, ecs_env=ecs_env, prefix="commit_partitions")
+        return [{"stored_cases": s3_path}]
+
     cases = check_cases(fetch_sequencing_experiment_delta.output)
+    stored_cases = ecs_store_cases(cases) if IS_AWS else None
 
     @task(task_id="prepare_config", task_display_name="[PyOp] Prepare Config")
     def prepare_config(cases: Any) -> Any:
@@ -128,34 +145,15 @@ def import_part():
         poke_interval=2,
     )
 
-    @task.external_python(
-        task_id="import_germline_cnv_vcf",
-        task_display_name="[PyOp] Import Germline CNV VCF into Iceberg",
-        python=PATH_TO_PYTHON_BINARY,
-    )
-    def import_cnv_vcf(cases: list[dict], namespace: str) -> None:
-        import logging
-        import sys
-        import tempfile
+    if IS_AWS:
+        ecs_env = ECSEnv()
+        import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(
+            radiant_namespace=get_namespace(),
+            ecs_env=ecs_env,
+        )
 
-        from radiant.tasks.utils import download_s3_file
-        from radiant.tasks.vcf.cnv.germline.process import process_cases
-        from radiant.tasks.vcf.experiment import Case
-
-        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
-        logger = logging.getLogger(__name__)
-
-        updated_cases = []
-        with tempfile.TemporaryDirectory() as tmpdir:
-            for case in cases:
-                for s in case["experiments"]:
-                    logger.info("Downloading VCF and index files to a temporary directory")
-                    cnv_vcf_local = download_s3_file(s["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
-                    s["cnv_vcf_filepath"] = cnv_vcf_local
-                case = Case.model_validate(case)
-                updated_cases.append(case)
-
-            process_cases(updated_cases, namespace=namespace, vcf_threads=4)
+    else:
+        import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(get_namespace())
 
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(cases) -> dict[str, list[Any]]:
@@ -168,18 +166,33 @@ def import_part():
 
     sequencing_ids = extract_sequencing_ids(cases)
 
-    insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator(
-        task_id="insert_germline_cnv_occurrences",
-        table="{{ mapping.starrocks_germline_cnv_occurrence }}",
-        task_display_name="[StarRocks] Insert CNV Occurrences Part",
-        # submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=10),
-        swap_partition=SwapPartition(
-            partition="{{ params.part }}",
-            copy_partition_sql="./sql/radiant/germline_cnv_occurrence_copy_partition.sql",
-        ),
-        parameters=sequencing_ids,
-        insert_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
-    )
+    with TaskGroup(group_id="germline_cnv_occurrence") as tg_germline_cnv_occurrence:
+
+        @task.short_circuit(
+            task_id="sanity_check_cnvs",
+            task_display_name="[PyOp] Sanity Check CNVs",
+            ignore_downstream_trigger_rules=False,
+        )
+        def sanity_check_cnvs(cases: Any) -> Any:
+            has_cnv = any(
+                experiment.get("cnv_vcf_filepath") for case in cases for experiment in case.get("experiments", [])
+            )
+            return has_cnv
+
+        insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator(
+            task_id="insert_germline_cnv_occurrences",
+            table="{{ mapping.starrocks_germline_cnv_occurrence }}",
+            task_display_name="[StarRocks] Insert CNV Occurrences Part",
+            # submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=10),
+            swap_partition=SwapPartition(
+                partition="{{ params.part }}",
+                copy_partition_sql="./sql/radiant/germline_cnv_occurrence_copy_partition.sql",
+            ),
+            parameters=sequencing_ids,
+            insert_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
+        )
+
+        sanity_check_cnvs(cases) >> insert_germline_cnv_occurrences
 
     load_exomiser = RadiantLoadExomiserOperator(
         task_id="load_exomiser_files",
@@ -215,6 +228,7 @@ def import_part():
     case_ids = extract_case_ids(cases)
 
     insert_hashes = RadiantStarRocksOperator(
+        trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         task_id="insert_variant_hashes",
         sql="./sql/radiant/variant_insert_hashes.sql",
         task_display_name="[StarRocks] Insert Variants Hashes into Lookup",
@@ -331,10 +345,13 @@ def import_part():
     (
         start
         >> fetch_sequencing_experiment_delta
-        >> (import_vcf, import_cnv_vcf(cases=cases, namespace=get_namespace()))
+        >> (
+            import_vcf,
+            import_cnv_vcf.expand(params=stored_cases) if IS_AWS else import_cnv_vcf(cases=cases),
+        )
         >> load_exomiser
         >> refresh_iceberg_tables
-        >> insert_germline_cnv_occurrences
+        >> tg_germline_cnv_occurrence
         >> insert_hashes
         >> overwrite_tmp_variants
         >> insert_exomiser

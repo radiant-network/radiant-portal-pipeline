@@ -1,0 +1,12 @@
+FROM --platform=linux/amd64 python:3.12
+
+USER root
+
+COPY requirements.txt /opt/radiant/requirements.txt
+RUN pip install -r /opt/radiant/requirements.txt
+
+# Setup Radiant code
+COPY radiant /opt/radiant/radiant
+
+# Necessary to have those scripts when running in AWS ECS
+COPY scripts/ecs/ /opt/radiant/

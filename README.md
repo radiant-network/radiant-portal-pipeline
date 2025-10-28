@@ -12,11 +12,10 @@ This repository contains the different files and scripts used to run the Radiant
 
 ### Structure
 
-- `dags` directory contains the DAGs used to run the pipeline.
-- `dags/lib` directory contains the libraries used in the DAGs.
-- `lib` contains Airflow-specific components to support ETL pipelines.
-- `tasks` directory contains the python tasks used in the DAGs.
-- `docker` contain specific airflow image with dependencies to run the pipeline.
+- `radiant/dags` directory contains the DAGs used to run the pipeline.
+- `radiant/dags/task` directory contains the libraries used in the DAGs.
+- `scripts` directory contains several utility scripts.
+- `tests` directory contains the tests.
 
 
 ### Airflow dev stack
@@ -24,7 +23,7 @@ This repository contains the different files and scripts used to run the Radiant
 Build the airflow docker image :
 
 ```
-docker build . -f docker/airflow.Dockerfile -t radiant-network/airflow-cyvcf2:2.10.5
+make build-docker
 ```
 
 Deploy stack :
@@ -49,3 +48,27 @@ The following are examples and should be adjusted to your environment:
 - `Schema`: `poc_starrocks`
 - `Login`: `root`
 - `Password`: (leave empty)
+
+
+## Artifacts
+
+### Requirements files
+
+| Requirements File Name      | Purpose                                                                                  |
+|-----------------------------|------------------------------------------------------------------------------------------|
+| `requirements.txt` | Main dependencies required to run the Radiant ETL pipeline.                              |
+| `requirements-dev.txt`      | Development dependencies such as testing and linting tools.                              |
+| `requirements-airflow.txt`  | Airflow dependencies needed for running Kubernetes-based dags. Airflow version `2.10.5`. |
+
+### Dockerfiles
+
+| Dockerfile                     | Purpose                                                                                            |
+|--------------------------------|----------------------------------------------------------------------------------------------------|
+| `Dockerfile`                   | Main image used by Airflow's webserver, scheduler, etc... in Kubernetes-based deployments.         |
+| `Dockerfile-radiant-operator`  | Used as the pod images for running tasks with Radiant dependencies (for both K8S/ECS deployments). |
+
+### MWAA Artifacts
+
+Running the Radiant ETL pipeline using AWS MWAA and ECS requires additional setup. 
+
+The `mwaa/` directory contains files and documentation specific to deploying the Radiant ETL pipeline on MWAA and ECS.

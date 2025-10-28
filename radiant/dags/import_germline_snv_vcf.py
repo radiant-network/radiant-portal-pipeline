@@ -1,3 +1,4 @@
+import logging
 import os
 
 from airflow import DAG
@@ -5,7 +6,16 @@ from airflow.decorators import task
 from airflow.models import Param
 from airflow.utils.dates import days_ago
 
-from radiant.dags import NAMESPACE, get_namespace
+from radiant.dags import IS_AWS, NAMESPACE, ECSEnv, get_namespace
+from radiant.dags.operators.utils import s3_store_content
+
+if IS_AWS:
+    from radiant.dags.operators import ecs as operators
+else:
+    from radiant.dags.operators import k8s as operators
+
+LOGGER = logging.getLogger(__name__)
+
 
 default_args = {
     "owner": "radiant",
@@ -21,6 +31,7 @@ dag_params = {
     )
 }
 
+
 with DAG(
     dag_id=f"{NAMESPACE}-import-germline-snv-vcf",
     default_args=default_args,
@@ -32,82 +43,78 @@ with DAG(
     params=dag_params,
     max_active_tasks=128,
 ) as dag:
+    namespace = get_namespace()
 
-    @task
+    @task(task_display_name="[PyOp] Get Cases")
     def get_cases(params):
         from radiant.tasks.vcf.experiment import Case
 
+        if IS_AWS:
+            # Because ECS task operator doesn't support the TaskAPI, we need to return the cases as a list of dicts
+            # representing task params to map instead of a list of Case dictionaries.
+            return [
+                {"case": Case.model_validate(c).model_dump()} for c in params.get("cases", []) if c.get("vcf_filepath")
+            ]
+
         return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
 
-    @task.external_python(
-        pool="import_vcf",
-        task_id="create_parquet_files",
-        python=PATH_TO_PYTHON_BINARY,
-        map_index_template=("Case: {{ task.op_kwargs['case']['case_id'] }}"),
-    )
-    def create_parquet_files(case: dict, namespace: str):
+    @task(task_display_name="[PyOp] Merge Commits")
+    def merge_commits(partition_lists: list[dict[str, list[dict]]] | list[str], ecs_env: ECSEnv | None = None):
         import json
-        import logging
         import sys
-        import tempfile
+        from collections import defaultdict
 
-        from radiant.tasks.utils import download_s3_file
-        from radiant.tasks.vcf.experiment import Case
-        from radiant.tasks.vcf.snv.germline.process import process_case
+        if not partition_lists:
+            return {} if not IS_AWS else json.dumps({})
 
         logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
         logger = logging.getLogger(__name__)
 
-        logger.info("Downloading VCF and index files to a temporary directory")
-        with tempfile.TemporaryDirectory() as tmpdir:
-            vcf_local = download_s3_file(case["vcf_filepath"], tmpdir)
-            index_local = download_s3_file(case["vcf_filepath"] + ".tbi", tmpdir)
-            case["vcf_filepath"] = vcf_local
-            case["index_vcf_filepath"] = index_local
-
-            case = Case.model_validate(case)
-            logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
-            logger.info("=" * 80)
-
-            res = process_case(case, namespace=namespace, vcf_threads=4)
-            logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
-
-        return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}
-
-    @task
-    def merge_commits(partition_lists: list[dict[str, list[dict]]]) -> dict[str, list[dict]]:
-        from collections import defaultdict
+        if isinstance(partition_lists[0], str):
+            logger.warning("Received partition lists as string")
+            _parsed_partitions = []
+            for part in partition_lists:
+                logger.info(part)
+                _parsed_partitions.append(json.loads(part))
+            partition_lists = _parsed_partitions
 
         merged = defaultdict(list)
         for d in partition_lists:
             for table, partitions in d.items():
                 merged[table].extend(partitions)
+
+        if IS_AWS:
+            # ECS limits the length of the command override, so we need to upload the merged partitions to S3
+            # and pass the S3 path of the file in which the data is store to the ECS operator instead of the data.
+            s3_path = s3_store_content(content=dict(merged), ecs_env=ecs_env, prefix="commit_partitions")
+            return [{"table_partitions": s3_path}]
+
         return dict(merged)
 
-    @task.external_python(task_id="commit_partitions", python=PATH_TO_PYTHON_BINARY)
-    def commit_partitions(table_partitions: dict[str, list[dict]]):
-        import logging
-        import sys
+    if IS_AWS:
+        ecs_env = ECSEnv()
 
-        logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
-        logger = logging.getLogger(__name__)
-        from pyiceberg.catalog import load_catalog
+        ecs_create_parquet_files = operators.ImportGermlineSNVVCF.get_create_parquet_files(
+            radiant_namespace=namespace,
+            ecs_env=ecs_env,
+        )
 
-        from radiant.tasks.iceberg.partition_commit import PartitionCommit
-        from radiant.tasks.iceberg.utils import commit_files
+        ecs_commit_partitions = operators.ImportGermlineSNVVCF.get_commit_partitions(
+            radiant_namespace=namespace,
+            ecs_env=ecs_env,
+        )
 
-        catalog = load_catalog()
-        for table_name, partitions in table_partitions.items():
-            if not partitions:
-                continue
-            table = catalog.load_table(table_name)
-            parts = [PartitionCommit.model_validate(pc) for pc in partitions]
-            logger.info(f"🔁 Starting commit for table {table_name}")
-            commit_files(table, parts)
-            logger.info(f"✅ Changes commited to table {table_name}")
+    else:
+        k8s_create_parquet_files = operators.ImportGermlineSNVVCF.get_create_parquet_files(radiant_namespace=namespace)
+        k8s_commit_partitions = operators.ImportGermlineSNVVCF.get_commit_partitions(radiant_namespace=namespace)
 
     all_cases = get_cases()
 
-    partitions_commit = create_parquet_files.partial(namespace=get_namespace()).expand(case=all_cases)
-    merged_commit = merge_commits(partitions_commit)
-    commit_partitions(merged_commit)
+    if IS_AWS:
+        partition_commit = ecs_create_parquet_files.expand(params=all_cases)
+        merged_commits = merge_commits(partition_commit.output, ecs_env)
+        ecs_commit_partitions.expand(params=merged_commits)
+    else:
+        partition_commit = k8s_create_parquet_files.expand(case=all_cases)
+        merged_commits = merge_commits(partition_commit)
+        k8s_commit_partitions(table_partitions=merged_commits)
