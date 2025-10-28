@@ -50,6 +50,8 @@ with DAG(
         from radiant.tasks.vcf.experiment import Case
 
         if IS_AWS:
+            # Because ECS task operator doesn't support the TaskAPI, we need to return the cases as a list of dicts
+            # representing task params to map instead of a list of Case dictionaries.
             return [
                 {"case": Case.model_validate(c).model_dump()} for c in params.get("cases", []) if c.get("vcf_filepath")
             ]
