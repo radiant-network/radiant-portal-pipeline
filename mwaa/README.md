@@ -12,9 +12,25 @@
 - [ ] Build the MWAA dependencies package using the provided Dockerfile.
 - [ ] Upload the generated `plugins.zip` file to S3.
 - [ ] Upload the `requirements-mwaa.txt` file to S3.
-- [ ] Upload the `startup.sh` script to S3.
+- [ ] Verify the `startup.sh` exists in S3.
 - [ ] Build and push the radiant operator image (see command below).
 - [ ] Configure ECS specific Airflow variables (see below).
+
+## Startup script template
+
+The startup script is executed by MWAA when the environment starts. It is used to install additional dependencies and setup the environment.
+Ensure the following environment variables are set in the script:
+
+| Variable Name                           | Recommended Value         | Description                                                                                              |
+|-----------------------------------------|---------------------------|----------------------------------------------------------------------------------------------------------|
+| `IS_AWS`                                | "true"                    | Set to `true` to indicate running in AWS environment.                                                    |
+| `PYICEBERG_CATALOG__DEFAULT__TYPE`      | "glue"                    | Set to `glue` for PyIceberg catalog type.                                                                |
+| `RADIANT_ICEBERG_NAMESPACE`             | "radiant_qa"              | Iceberg namespace for Radiant.                                                                           |
+| `RADIANT_TASK_OPERATOR_TASK_DEFINITION` | _Inferred from terraform_ | ECS task definition for Radiant operator.                                                                |
+| `RADIANT_TASK_OPERATOR_AWS_REGION`      | _Inferred from terraform_ | AWS region for Radiant operator.                                                                         |
+| `RADIANT_TASK_OPERATOR_LOG_GROUP`       | _Inferred from terraform_ | CloudWatch log group for Radiant operator.                                                               |
+| `RADIANT_TASK_OPERATOR_LOG_PREFIX`      | "ecs/radiant..."          | Log prefix for Radiant operator logs. Replace the "..." with any value you wish to append to the prefix. |
+| `STARROCKS_BROKER_USE_INSTANCE_PROFILE` | "true"                    | Set to `true` to use instance profile for StarRocks broker.                                              |
 
 ## ECS specific Airflow variables
 
