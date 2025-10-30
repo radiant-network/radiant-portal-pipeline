@@ -387,11 +387,11 @@ def mapping_conf(
     starrocks_iceberg_catalog,
 ):
     return {
-        RadiantConfigKeys.RADIANT_DATABASE: starrocks_database.database,
-        RadiantConfigKeys.ICEBERG_CATALOG: starrocks_iceberg_catalog.catalog,
-        RadiantConfigKeys.ICEBERG_NAMESPACE: starrocks_iceberg_catalog.database,
-        RadiantConfigKeys.CLINICAL_CATALOG: starrocks_jdbc_catalog.catalog,
-        RadiantConfigKeys.CLINICAL_DATABASE: starrocks_jdbc_catalog.database,
+        RadiantConfigKeys.RADIANT_DATABASE.value[0]: starrocks_database.database,
+        RadiantConfigKeys.ICEBERG_CATALOG.value[0]: starrocks_iceberg_catalog.catalog,
+        RadiantConfigKeys.ICEBERG_NAMESPACE.value[0]: starrocks_iceberg_catalog.database,
+        RadiantConfigKeys.CLINICAL_CATALOG.value[0]: starrocks_jdbc_catalog.catalog,
+        RadiantConfigKeys.CLINICAL_DATABASE.value[0]: starrocks_jdbc_catalog.database,
     }
 
 
