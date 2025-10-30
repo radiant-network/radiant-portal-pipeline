@@ -11,11 +11,7 @@ from pyiceberg.catalog.rest import RestCatalog
 
 from radiant.dags import ICEBERG_NAMESPACE
 from radiant.tasks.data.radiant_tables import (
-    CLINICAL_CATALOG_ENV_KEY,
-    CLINICAL_DATABASE_ENV_KEY,
-    RADIANT_DATABASE_ENV_KEY,
-    RADIANT_ICEBERG_CATALOG_ENV_KEY,
-    RADIANT_ICEBERG_DATABASE_ENV_KEY,
+    RadiantConfigKeys,
     get_clinical_mapping,
     get_radiant_mapping,
 )
@@ -105,7 +101,7 @@ def postgres_clinical_seeds(postgres_instance):
     sql_path = Path(__file__).parent.parent.parent / "radiant" / "dags" / "sql" / "clinical" / "seeds.sql"
     with open(sql_path) as f:
         template_seeds_sql = f.read()
-        _query_params = get_clinical_mapping({CLINICAL_DATABASE_ENV_KEY: postgres_instance.radiant_db_schema})
+        _query_params = get_clinical_mapping({RadiantConfigKeys.CLINICAL_DATABASE: postgres_instance.radiant_db_schema})
         _query_params = {
             key: value.replace("radiant_jdbc.", "").replace("`", "") for key, value in _query_params.items()
         }
@@ -391,11 +387,11 @@ def mapping_conf(
     starrocks_iceberg_catalog,
 ):
     return {
-        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
-        RADIANT_ICEBERG_CATALOG_ENV_KEY: starrocks_iceberg_catalog.catalog,
-        RADIANT_ICEBERG_DATABASE_ENV_KEY: starrocks_iceberg_catalog.database,
-        CLINICAL_CATALOG_ENV_KEY: starrocks_jdbc_catalog.catalog,
-        CLINICAL_DATABASE_ENV_KEY: starrocks_jdbc_catalog.database,
+        RadiantConfigKeys.RADIANT_DATABASE: starrocks_database.database,
+        RadiantConfigKeys.ICEBERG_CATALOG: starrocks_iceberg_catalog.catalog,
+        RadiantConfigKeys.ICEBERG_NAMESPACE: starrocks_iceberg_catalog.database,
+        RadiantConfigKeys.CLINICAL_CATALOG: starrocks_jdbc_catalog.catalog,
+        RadiantConfigKeys.CLINICAL_DATABASE: starrocks_jdbc_catalog.database,
     }
 
 
