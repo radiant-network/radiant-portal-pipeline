@@ -3,6 +3,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
+import boto3
 import fsspec
 import jinja2
 import pymysql
@@ -11,11 +12,7 @@ from pyiceberg.catalog.rest import RestCatalog
 
 from radiant.dags import ICEBERG_NAMESPACE
 from radiant.tasks.data.radiant_tables import (
-    CLINICAL_CATALOG_ENV_KEY,
-    CLINICAL_DATABASE_ENV_KEY,
-    RADIANT_DATABASE_ENV_KEY,
-    RADIANT_ICEBERG_CATALOG_ENV_KEY,
-    RADIANT_ICEBERG_DATABASE_ENV_KEY,
+    RadiantConfigKeys,
     get_clinical_mapping,
     get_radiant_mapping,
 )
@@ -105,7 +102,7 @@ def postgres_clinical_seeds(postgres_instance):
     sql_path = Path(__file__).parent.parent.parent / "radiant" / "dags" / "sql" / "clinical" / "seeds.sql"
     with open(sql_path) as f:
         template_seeds_sql = f.read()
-        _query_params = get_clinical_mapping({CLINICAL_DATABASE_ENV_KEY: postgres_instance.radiant_db_schema})
+        _query_params = get_clinical_mapping({RadiantConfigKeys.CLINICAL_DATABASE.value[0]: postgres_instance.radiant_db_schema})
         _query_params = {
             key: value.replace("radiant_jdbc.", "").replace("`", "") for key, value in _query_params.items()
         }
@@ -181,17 +178,28 @@ def starrocks_session(starrocks_database):
 
 @pytest.fixture(scope="session")
 def s3_fs(minio_instance):
+    s3_client = boto3.client(
+        "s3",
+        endpoint_url=minio_instance.endpoint,
+        aws_access_key_id=minio_instance.access_key,
+        aws_secret_access_key=minio_instance.secret_key,
+    )
+
+    bucket_names = ["warehouse", "test-vcf", "opendata", "exomiser", "tmp"]
+    existing_buckets = [b["Name"] for b in s3_client.list_buckets().get("Buckets", [])]
+    for bucket in bucket_names:
+        if bucket not in existing_buckets:
+            try:
+                s3_client.create_bucket(Bucket=bucket)
+            except Exception as e:
+                print(f"Error creating bucket {bucket}: {e}")
+
     fs = fsspec.filesystem(
         "s3",
         key=minio_instance.access_key,
         secret=minio_instance.secret_key,
         client_kwargs={"endpoint_url": minio_instance.endpoint},
     )
-    fs.mkdirs("warehouse", exist_ok=True)
-    fs.mkdirs("test-vcf", exist_ok=True)
-    fs.mkdirs("opendata", exist_ok=True)
-    fs.mkdirs("exomiser", exist_ok=True)
-    fs.mkdir("tmp", exist_ok=True)
     return fs
 
 
@@ -391,11 +399,11 @@ def mapping_conf(
     starrocks_iceberg_catalog,
 ):
     return {
-        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
-        RADIANT_ICEBERG_CATALOG_ENV_KEY: starrocks_iceberg_catalog.catalog,
-        RADIANT_ICEBERG_DATABASE_ENV_KEY: starrocks_iceberg_catalog.database,
-        CLINICAL_CATALOG_ENV_KEY: starrocks_jdbc_catalog.catalog,
-        CLINICAL_DATABASE_ENV_KEY: starrocks_jdbc_catalog.database,
+        RadiantConfigKeys.RADIANT_DATABASE.value[0]: starrocks_database.database,
+        RadiantConfigKeys.ICEBERG_CATALOG.value[0]: starrocks_iceberg_catalog.catalog,
+        RadiantConfigKeys.ICEBERG_NAMESPACE.value[0]: starrocks_iceberg_catalog.database,
+        RadiantConfigKeys.CLINICAL_CATALOG.value[0]: starrocks_jdbc_catalog.catalog,
+        RadiantConfigKeys.CLINICAL_DATABASE.value[0]: starrocks_jdbc_catalog.database,
     }
 
 

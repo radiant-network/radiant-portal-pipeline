@@ -2,9 +2,7 @@ import pytest
 
 from radiant.dags import NAMESPACE
 from radiant.tasks.data.radiant_tables import (
-    CLINICAL_DATABASE_ENV_KEY,
-    RADIANT_DATABASE_ENV_KEY,
-    RADIANT_ICEBERG_DATABASE_ENV_KEY,
+    RadiantConfigKeys
 )
 from tests.utils.dags import get_pyarrow_table_from_csv, poll_dag_until_success, trigger_dag, unpause_dag
 
@@ -71,7 +69,7 @@ def open_data_iceberg_tables(iceberg_client, iceberg_namespace, resources_dir, r
 def init_iceberg_tables(radiant_airflow_container, iceberg_namespace, random_test_id):
     dag_id = f"{NAMESPACE}-init-iceberg-tables"
     dag_conf = {
-        RADIANT_ICEBERG_DATABASE_ENV_KEY: iceberg_namespace,
+        RadiantConfigKeys.ICEBERG_NAMESPACE: iceberg_namespace,
     }
     unpause_dag(radiant_airflow_container, dag_id)
     trigger_dag(radiant_airflow_container, dag_id, random_test_id, conf=dag_conf)
@@ -86,8 +84,8 @@ def init_starrocks_tables(radiant_airflow_container, starrocks_database, starroc
     dag_id = f"{NAMESPACE}-init-starrocks-tables"
     unpause_dag(radiant_airflow_container, dag_id)
     dag_conf = {
-        RADIANT_DATABASE_ENV_KEY: starrocks_database.database,
-        CLINICAL_DATABASE_ENV_KEY: starrocks_jdbc_catalog.database,
+        RadiantConfigKeys.RADIANT_DATABASE: starrocks_database.database,
+        RadiantConfigKeys.CLINICAL_DATABASE: starrocks_jdbc_catalog.database,
     }
     trigger_dag(radiant_airflow_container, dag_id, random_test_id, conf=dag_conf)
     assert poll_dag_until_success(
