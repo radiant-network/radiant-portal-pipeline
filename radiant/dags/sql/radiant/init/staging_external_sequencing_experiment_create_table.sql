@@ -43,8 +43,7 @@ FROM (
     LEFT JOIN {{ mapping.clinical_case_analysis }} ca ON ca.id = c.case_analysis_id
     LEFT JOIN {{ mapping.clinical_task_has_sequencing_experiment }} thse ON se.id = thse.sequencing_experiment_id
     LEFT JOIN {{ mapping.clinical_task_has_document }} thd ON thse.task_id = thd.task_id
---    LEFT JOIN {{ mapping.clinical_document_has_patient }} dhp ON dhp.patient_id = se.patient_id
-    LEFT JOIN {{ mapping.clinical_document }} d ON thd.document_id = d.id -- and dhp.document_id = d.id
+    LEFT JOIN {{ mapping.clinical_document }} d ON thd.document_id = d.id
     LEFT JOIN {{ mapping.clinical_patient }} p ON se.patient_id = p.id
     LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = p.id
     LEFT JOIN {{ mapping.clinical_request }} r ON se.request_id = r.id
