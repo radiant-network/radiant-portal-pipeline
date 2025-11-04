@@ -102,7 +102,9 @@ def postgres_clinical_seeds(postgres_instance):
     sql_path = Path(__file__).parent.parent.parent / "radiant" / "dags" / "sql" / "clinical" / "seeds.sql"
     with open(sql_path) as f:
         template_seeds_sql = f.read()
-        _query_params = get_clinical_mapping({RadiantConfigKeys.CLINICAL_DATABASE.value[0]: postgres_instance.radiant_db_schema})
+        _query_params = get_clinical_mapping(
+            {RadiantConfigKeys.CLINICAL_DATABASE.value[0]: postgres_instance.radiant_db_schema}
+        )
         _query_params = {
             key: value.replace("radiant_jdbc.", "").replace("`", "") for key, value in _query_params.items()
         }

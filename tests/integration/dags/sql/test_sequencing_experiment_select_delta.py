@@ -74,7 +74,9 @@ def sequencing_experiment_tables(starrocks_session, radiant_mapping):
     yield
 
 
-def test_sequencing_experiment_empty(postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns):
+def test_sequencing_experiment_empty(
+    postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
     """
     Test the case where we "start from scratch" with nothing in the sequencing_experiment table.
     """
@@ -87,7 +89,9 @@ def test_sequencing_experiment_empty(postgres_clinical_seeds, starrocks_session,
     assert len(result_df) == 4
 
 
-def test_sequencing_experiment_no_delta(postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns):
+def test_sequencing_experiment_no_delta(
+    postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
     """
     Test the case where there's no delta, i.e., the sequencing_experiment table is already fully populated.
     """
