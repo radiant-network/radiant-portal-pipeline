@@ -14,6 +14,7 @@ class RadiantConfigKeys(Enum):
     @property
     def env_key(self):
         return self.value[0]
+
     @property
     def default(self):
         return self.value[1]

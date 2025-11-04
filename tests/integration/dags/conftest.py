@@ -1,9 +1,7 @@
 import pytest
 
 from radiant.dags import NAMESPACE
-from radiant.tasks.data.radiant_tables import (
-    RadiantConfigKeys
-)
+from radiant.tasks.data.radiant_tables import RadiantConfigKeys
 from tests.utils.dags import get_pyarrow_table_from_csv, poll_dag_until_success, trigger_dag, unpause_dag
 
 
