@@ -28,7 +28,7 @@ request
 case_analysis
 cases
 family
-observation_coding
+obs_categorical
 sample
 experiment
 sequencing_experiment

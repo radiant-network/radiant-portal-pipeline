@@ -43,7 +43,7 @@ CLINICAL_MAPPING = {
     "clinical_request": "request",
     "clinical_organization": "organization",
     "clinical_project": "project",
-    "clinical_observation_coding": "observation_coding",
+    "clinical_obs_categorical": "obs_categorical",
     "clinical_pipeline": "pipeline",
 }
 
