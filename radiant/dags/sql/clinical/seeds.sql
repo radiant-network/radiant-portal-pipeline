@@ -250,8 +250,8 @@ INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relatio
 
 
 -- Observations
-TRUNCATE {{ params.clinical_observation_coding }} CASCADE;
-INSERT INTO {{ params.clinical_observation_coding }} (
+TRUNCATE {{ params.clinical_obs_categorical }} CASCADE;
+INSERT INTO {{ params.clinical_obs_categorical }} (
     id,
     case_id,
     patient_id,

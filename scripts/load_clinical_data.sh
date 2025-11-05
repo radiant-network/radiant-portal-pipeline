@@ -43,7 +43,7 @@ for entry in \
   "cases(proband_id,project_id,case_analysis_id,status_code,request_id,performer_lab_id,primary_condition,note,created_on,updated_on) cases.csv" \
   "family_relationship(code,name_en) family_relationship.csv" \
   "family(case_id,family_member_id,relationship_to_proband_code,affected_status_code) family.csv" \
-  "observation_coding(case_id,patient_id,observation_code,coding_system,code_value,onset_code,interpretation_code,note) observation_coding.csv" \
+  "obs_categorical(case_id,patient_id,observation_code,coding_system,code_value,onset_code,interpretation_code,note) obs_categorical.csv" \
   "sample(category_code,type_code,parent_sample_id,tissue_site,histology_code,submitter_sample_id) sample.csv" \
   "experimental_strategy(code,name_en) experimental_strategy.csv" \
   "experiment(code,name,experimental_strategy_code,platform_code,description) experiment.csv" \
