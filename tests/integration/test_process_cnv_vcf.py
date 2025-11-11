@@ -24,7 +24,6 @@ def test_process_case(
                 cnv_vcf_filepath=indexed_vcfs["test_cnv.vcf"],
                 sex="F",
                 experimental_strategy="wgs",
-                request_id=1,
                 request_priority="routine",
             )
         ],

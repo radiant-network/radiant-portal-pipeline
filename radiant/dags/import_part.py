@@ -61,7 +61,6 @@ def cases_output_processor(results: list[Any], descriptions: list[Sequence[Seque
                     sex=row["sex"],
                     affected_status=row["affected_status"],
                     experimental_strategy=row["experimental_strategy"],
-                    request_id=row["request_id"],
                     request_priority=row["request_priority"],
                     cnv_vcf_filepath=row["cnv_vcf_filepath"],
                     exomiser_filepath=row["exomiser_filepath"],

@@ -7,7 +7,6 @@ SELECT
     aliquot,
     patient_id,
     experimental_strategy,
-    request_id,
     request_priority,
     vcf_filepath,
     exomiser_filepath,

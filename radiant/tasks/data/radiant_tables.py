@@ -29,7 +29,7 @@ STARROCKS_COLOCATE_GROUP_MAPPING = {"colocate_query_group": f"{NAMESPACE}.query_
 # --- Clinical tables
 CLINICAL_MAPPING = {
     "clinical_case": "`cases`",
-    "clinical_case_analysis": "case_analysis",
+    "clinical_analysis_catalog": "analysis_catalog",
     "clinical_sequencing_experiment": "sequencing_experiment",
     "clinical_experiment": "experiment",
     "clinical_task": "task",

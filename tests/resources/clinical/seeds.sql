@@ -149,8 +149,8 @@ INSERT INTO {{ params.clinical_request }} (id, priority_code, ordering_physician
     (64, 'routine', 'Rose Desrochers', 3, '2585040')
 ;
 
-TRUNCATE {{ params.clinical_case_analysis }} CASCADE;
-INSERT INTO {{ params.clinical_case_analysis }} (id, code, name, type_code, panel_id, description)
+TRUNCATE {{ params.clinical_analysis_catalog }} CASCADE;
+INSERT INTO {{ params.clinical_analysis_catalog }} (id, code, name, type_code, panel_id, description)
 VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of this analysis'),
        (2, 'IDGD', 'Intellectual Deficiency and Global Developmental Delay', 'germline', NULL,
         'A description of this analysis'),
@@ -159,28 +159,28 @@ VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of t
 ;
 
 TRUNCATE {{ params.clinical_case }} CASCADE;
-INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, case_analysis_id, status_code, primary_condition, request_id, performer_lab_id, note, created_on, updated_on) VALUES
-    (1, 3, 1, 1, 'in_progress', 'MONDO:0700092', 1, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (2, 4, 1, 1, 'incomplete', 'MONDO:0700092', 2, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (3, 8, 1, 1, 'incomplete', 'MONDO:0700092', 3, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (4, 10, 1, 2, 'incomplete', 'MONDO:0700092', 4, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (5, 15, 1, 1, 'incomplete', 'MONDO:0700092', 5, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (6, 16, 1, 1, 'draft', 'MONDO:0700092', 6, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (7, 20, 1, 1, 'revoke', 'MONDO:0700092', 7, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (8, 22, 1, 1, 'completed', 'MONDO:0700092', 8, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (9, 23, 1, 1, 'incomplete', 'MONDO:0700092', 9, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (10, 27, 2, 2, 'incomplete', 'MONDO:0700092', 10, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (11, 30, 2, 1, 'incomplete', 'MONDO:0700092', 11, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (12, 34, 2, 1, 'incomplete', 'MONDO:0700092', 12, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (13, 37, 2, 1, 'incomplete', 'MONDO:0700092', 13, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (14, 39, 2, 2, 'draft', 'MONDO:0700092', 14, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (15, 42, 2, 1, 'draft', 'MONDO:0700092', 15, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (16, 44, 2, 1, 'draft', 'MONDO:0700092', 16, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (17, 47, 2, 2, 'draft', 'MONDO:0700092', 17, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (18, 50, 2, 2, 'revoke', 'MONDO:0700092', 18, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (19, 55, 2, 2, 'revoke', 'MONDO:0700092', 19, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (20, 58, 2, 2, 'revoke', 'MONDO:0700092', 20, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00'),
-    (21, 60, 2, 2, 'incomplete', 'MONDO:0700092', 21, 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00')
+INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, analysis_catalog_id, status_code, primary_condition, diagnosis_lab_id, note, created_on, updated_on, priority_code, case_type_code, case_category_code, condition_code_system, resolution_status_code, ordering_physician, ordering_organization_id) VALUES
+    (1, 3, 1, 1, 'in_progress', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Felix Laflamme', 3),
+    (2, 4, 1, 1, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Melissa Lopez', 3),
+    (3, 8, 1, 1, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Christopher Watson', 3),
+    (4, 10, 1, 2, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Victoria Breton', 3),
+    (5, 15, 1, 1, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Antoine Paré', 3),
+    (6, 16, 1, 1, 'draft', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Jonathan Frye', 3),
+    (7, 20, 1, 1, 'revoke', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Dawn Taylor', 3),
+    (8, 22, 1, 1, 'completed', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Lauren Maxwell', 3),
+    (9, 23, 1, 1, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Elliot Duchesne', 3),
+    (10, 27, 2, 2, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Alex Williams', 3),
+    (11, 30, 2, 1, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Arthur Séguin', 3),
+    (12, 34, 2, 1, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Raphaelle Veilleux', 3),
+    (13, 37, 2, 1, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Louis Stevens', 3),
+    (14, 39, 2, 2, 'draft', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Sarah Gervais', 3),
+    (15, 42, 2, 1, 'draft', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Xavier Peterson', 3),
+    (16, 44, 2, 1, 'draft', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Jeanne Laroche', 3),
+    (17, 47, 2, 2, 'draft', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Arnaud Morissette', 3),
+    (18, 50, 2, 2, 'revoke', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Sophia Charron', 3),
+    (19, 55, 2, 2, 'revoke', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Ethan Reid', 3),
+    (20, 58, 2, 2, 'revoke', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Leonie Laplante', 3),
+    (21, 60, 2, 2, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO','unsolved', 'Henri Chabot', 3)
 ;
 
 TRUNCATE {{ params.clinical_family }} CASCADE;
