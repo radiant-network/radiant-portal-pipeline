@@ -150,12 +150,12 @@ INSERT INTO {{ params.clinical_request }} (id, priority_code, ordering_physician
 ;
 
 TRUNCATE {{ params.clinical_analysis_catalog }} CASCADE;
-INSERT INTO {{ params.clinical_analysis_catalog }} (id, code, name, type_code, panel_id, description)
-VALUES (1, 'WGA', 'Whole Genome Analysis', 'germline', NULL, 'A description of this analysis'),
-       (2, 'IDGD', 'Intellectual Deficiency and Global Developmental Delay', 'germline', NULL,
+INSERT INTO {{ params.clinical_analysis_catalog }} (id, code, name, panel_id, description)
+VALUES (1, 'WGA', 'Whole Genome Analysis', NULL, 'A description of this analysis'),
+       (2, 'IDGD', 'Intellectual Deficiency and Global Developmental Delay', NULL,
         'A description of this analysis'),
-       (3, 'MYOC', 'Congenital Myopathies', 'germline', NULL, 'A description of this analysis'),
-       (4, 'HYPM', 'Malignant Hyperthermia', 'germline', NULL, 'A description of this analysis')
+       (3, 'MYOC', 'Congenital Myopathies', NULL, 'A description of this analysis'),
+       (4, 'HYPM', 'Malignant Hyperthermia', NULL, 'A description of this analysis')
 ;
 
 TRUNCATE {{ params.clinical_case }} CASCADE;
