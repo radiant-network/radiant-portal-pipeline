@@ -227,7 +227,7 @@ CREATE TABLE IF NOT EXISTS "cases"
 
 CREATE INDEX IF NOT EXISTS idx_case_proband_id ON "cases" ("proband_id");
 CREATE INDEX IF NOT EXISTS idx_case_project_id ON "cases" ("project_id");
-CREATE INDEX IF NOT EXISTS idx_analysis_catalog_id ON "cases" ("analysis_catalog_id");
+CREATE INDEX IF NOT EXISTS idx_case_analysis_catalog_id ON "cases" ("analysis_catalog_id");
 CREATE INDEX IF NOT EXISTS idx_case_status ON "cases" ("status_code");
 CREATE INDEX IF NOT EXISTS idx_case_primary_condition ON "cases" ("primary_condition");
 CREATE INDEX IF NOT EXISTS idx_case_created_on ON "cases" ("created_on");
