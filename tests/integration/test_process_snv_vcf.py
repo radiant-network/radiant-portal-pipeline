@@ -29,7 +29,6 @@ def test_process_case(
                 affected_status="affected",
                 sex="F",
                 experimental_strategy="wgs",
-                request_id=1,
                 request_priority="routine",
             )
         ],
@@ -104,7 +103,6 @@ def test_process_case_error(
                 affected_status="affected",
                 sex="F",
                 experimental_strategy="wgs",
-                request_id=1,
                 request_priority="routine",
             )
         ],

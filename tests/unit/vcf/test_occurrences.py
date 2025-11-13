@@ -39,7 +39,6 @@ case = Case(
             affected_status="affected",
             sex="F",
             experimental_strategy="wgs",
-            request_id=1,
             request_priority="routine",
         )
     ],
@@ -172,7 +171,6 @@ def test_multi_sample():
                 affected_status="affected",
                 sex="F",
                 experimental_strategy="wgs",
-                request_id=1,
                 request_priority="routine",
             ),
             Experiment(
@@ -184,7 +182,6 @@ def test_multi_sample():
                 affected_status="affected",
                 sex="F",
                 experimental_strategy="wgs",
-                request_id=2,
                 request_priority="routine",
             ),
             Experiment(
@@ -196,7 +193,6 @@ def test_multi_sample():
                 affected_status="affected",
                 sex="M",
                 experimental_strategy="wgs",
-                request_id=3,
                 request_priority="routine",
             ),
         ],

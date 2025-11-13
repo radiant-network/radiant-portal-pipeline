@@ -17,7 +17,6 @@ case = Case(
             affected_status="affected",
             sex="F",
             experimental_strategy="wgs",
-            request_id=1,
             request_priority="routine",
         )
     ],

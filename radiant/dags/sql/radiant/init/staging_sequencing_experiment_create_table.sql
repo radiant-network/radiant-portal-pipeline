@@ -7,7 +7,6 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }}
     aliquot VARCHAR(255),
     patient_id VARCHAR(255),
     experimental_strategy VARCHAR(50),
-    request_id INT,
     request_priority VARCHAR(20),
     vcf_filepath VARCHAR(1024),
     cnv_vcf_filepath VARCHAR(1024),

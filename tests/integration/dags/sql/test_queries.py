@@ -26,7 +26,6 @@ _MOCK_PARAMS = {
     "aliquot": "SA0001",
     "patient_id": 3,
     "experimental_strategy": "wgs",
-    "request_id": 1,
     "request_priority": "routine",
     "vcf_filepath": "s3+http://vcf/test.vcf.gz",
     "cnv_vcf_filepath": "s3+http://vcf/test.vcf.gz",

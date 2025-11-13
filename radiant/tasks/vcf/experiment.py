@@ -10,7 +10,6 @@ class Experiment(BaseModel):
     affected_status: str
     sex: str
     experimental_strategy: str
-    request_id: int | None = None
     request_priority: str | None = None
     exomiser_filepath: str | None = None
     cnv_vcf_filepath: str | None = None

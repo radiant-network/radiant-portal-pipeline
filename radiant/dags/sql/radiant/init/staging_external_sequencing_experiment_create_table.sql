@@ -7,7 +7,6 @@ SELECT
 	aliquot,
 	patient_id,
 	experimental_strategy,
-	request_id,
 	request_priority,
 	MIN(vcf_filepath) AS vcf_filepath,
     MIN(cnv_vcf_filepath) AS cnv_vcf_filepath,
@@ -22,12 +21,11 @@ FROM (
         se.case_id AS case_id,
         se.id AS seq_id,
         thse.task_id AS task_id,
-        ca.type_code AS analysis_type,
+        c.case_type_code AS analysis_type,
         se.aliquot AS aliquot,
         se.patient_id AS patient_id,
         exp.experimental_strategy_code AS experimental_strategy,
-        se.request_id AS request_id,
-        r.priority_code AS request_priority,
+        c.priority_code AS request_priority,
         CASE WHEN d.format_code = 'vcf' AND d.data_type_code='snv' THEN d.url ELSE NULL END AS vcf_filepath,
         CASE WHEN d.format_code = 'vcf' AND d.data_type_code='gcnv' THEN d.url ELSE NULL END AS cnv_vcf_filepath,
         CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END AS exomiser_filepath,
@@ -40,13 +38,11 @@ FROM (
         {{ mapping.clinical_sequencing_experiment }} se
     JOIN {{ mapping.clinical_case }} c ON se.case_id = c.id
     LEFT JOIN {{ mapping.clinical_experiment }} exp ON exp.id = se.experiment_id
-    LEFT JOIN {{ mapping.clinical_case_analysis }} ca ON ca.id = c.case_analysis_id
     LEFT JOIN {{ mapping.clinical_task_has_sequencing_experiment }} thse ON se.id = thse.sequencing_experiment_id
     LEFT JOIN {{ mapping.clinical_task_has_document }} thd ON thse.task_id = thd.task_id
     LEFT JOIN {{ mapping.clinical_document }} d ON thd.document_id = d.id
     LEFT JOIN {{ mapping.clinical_patient }} p ON se.patient_id = p.id
     LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = p.id
-    LEFT JOIN {{ mapping.clinical_request }} r ON se.request_id = r.id
     WHERE (
         (d.format_code = 'vcf' AND d.data_type_code = 'snv')
         OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv')
@@ -62,7 +58,6 @@ GROUP BY
     aliquot,
     patient_id,
     experimental_strategy,
-    request_id,
     request_priority,
     sex,
     family_role,
