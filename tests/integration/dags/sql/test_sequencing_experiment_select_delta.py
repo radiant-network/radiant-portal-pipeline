@@ -156,7 +156,7 @@ def test_sequencing_experiment_existing_wgs_case_partition(
                        FROM staging_external_sequencing_experiment
                        WHERE case_id = 1
                          AND seq_id = 1
-                         AND task_id = 1
+                         AND task_id = 63
                        """)
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
@@ -263,7 +263,7 @@ def test_sequencing_experiment_with_recently_updated_case(
                        FROM staging_external_sequencing_experiment
                        WHERE case_id = 1
                          AND seq_id = 1
-                         AND task_id = 1
+                         AND task_id = 63
                        """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
@@ -285,8 +285,7 @@ def test_sequencing_experiment_with_recently_updated_case(
         pg_cursor.execute("""
                           UPDATE sequencing_experiment
                           SET updated_on = date_trunc('day', NOW())
-                          WHERE case_id = 1
-                            AND id = 1
+                          WHERE id = 1
                           """)
         pg_conn.commit()
 
