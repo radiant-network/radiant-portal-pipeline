@@ -983,19 +983,14 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (62, 'family_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00'),
     (63, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00'),
     (64, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00'),
-    (65, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00');
+    (65, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00'),
+    (66, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00');
 
 TRUNCATE {{ params.clinical_task_context }} CASCADE;
 INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_experiment_id) VALUES
     (1, 1, 1),
     (2, 1, 2),
     (3, 1, 3),
-    (62, 1, 1),
-    (62, 1, 2),
-    (62, 1, 3),
-    (63, 1, 1),
-    (63, 1, 2),
-    (63, 1, 3),
     (4, 2, 4),
     (5, 2, 5),
     (6, 2, 6),
@@ -1015,8 +1010,6 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     (20, 7, 20),
     (21, 7, 21),
     (22, 8, 22),
-    (64, 8, 22),
-    (65, 8, 22),
     (23, 9, 23),
     (24, 9, 24),
     (25, 9, 25),
@@ -1055,7 +1048,16 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     (58, 20, 58),
     (59, 21, 59),
     (60, 21, 60),
-    (61, 21, 61)
+    (61, 21, 61),
+    (62, 1, 1),
+    (62, 1, 2),
+    (62, 1, 3),
+    (63, 1, 1),
+    (63, 1, 2),
+    (63, 1, 3),
+    (64, 1, 1),
+    (65, 8, 22),
+    (66, 8, 22)
 ;
 
 
@@ -1558,4 +1560,9 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (61, 84, 'output'),
     (61, 231, 'output'),
     (61, 232, 'output'),
-    (64, 246, 'output');
+    (63, 135, 'output'),
+    (63, 136, 'output'),
+    (64, 245, 'output'),
+    (65, 235, 'output'),
+    (65, 236, 'output'),
+    (66, 246, 'output');
