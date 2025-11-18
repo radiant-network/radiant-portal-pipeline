@@ -181,7 +181,7 @@ services:
       POSTGRES_DB: radiant
     volumes:
       - ./tests/resources/clinical/create_clinical_tables.sql:/sql/create_clinical_tables.sql:ro
-      - ./tests/resources/clinical/seeds.sql:/sql/seeds.sql:ro
+      - ./radiant/dags/sql/clinical/seeds.sql:/sql/seeds.sql:ro
     networks:
       - airflow_network
 
