@@ -38,7 +38,6 @@ CLINICAL_MAPPING = {
     "clinical_patient": "patient",
     "clinical_family": "family",
     "clinical_document": "document",
-    "clinical_document_has_patient": "document_has_patient",
     "clinical_task_has_document": "task_has_document",
     "clinical_organization": "organization",
     "clinical_project": "project",
