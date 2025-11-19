@@ -1560,18 +1560,9 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (61, 84, 'output'),
     (61, 231, 'output'),
     (61, 232, 'output'),
-    (62, 27, 'input'),
-    (62, 28, 'input'),
-    (62, 61, 'input'),
-    (62, 62, 'input'),
-    (62, 85, 'input'),
-    (62, 86, 'input'),
     (63, 135, 'output'),
     (63, 136, 'output'),
     (64, 245, 'output'),
-    (65, 89, 'input'),
-    (65, 90, 'input'),
     (65, 235, 'output'),
     (65, 236, 'output'),
     (66, 246, 'output');
-
