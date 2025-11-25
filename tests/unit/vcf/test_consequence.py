@@ -1,16 +1,15 @@
-from radiant.tasks.vcf.experiment import Case, Experiment
+from radiant.tasks.vcf.experiment import Experiment, RadiantGermlineAnnotationTask
 from radiant.tasks.vcf.snv.germline.common import Common
 from radiant.tasks.vcf.snv.germline.consequence import parse_csq_header, process_consequence
 from tests.unit.vcf.vcf_test_utils import variant, vcf
 
-case = Case(
-    case_id=1,
+task = RadiantGermlineAnnotationTask(
+    task_id=1,
     part=1,
     analysis_type="germline",
     experiments=[
         Experiment(
             seq_id=1,
-            task_id=1,
             patient_id=1,
             aliquot="SA0001",
             family_role="proband",
@@ -22,7 +21,7 @@ case = Case(
     ],
     vcf_filepath="",
 )
-common = Common(case.case_id, case.part, "1-1000-AC-A", "hash", "1", 1000, 1000, "AC", "A")
+common = Common(task.task_id, task.part, "1-1000-AC-A", "hash", "1", 1000, 1000, "AC", "A")
 
 
 def test_one_sample():
@@ -34,7 +33,7 @@ def test_one_sample():
         "aa_change": "p.Lys76Asn",
         "alternate": "A",
         "biotype": "protein_coding",
-        "case_id": 1,
+        "task_id": 1,
         "chromosome": "1",
         "consequences": ["missense_variant"],
         "dna_change": "c.227A>T",

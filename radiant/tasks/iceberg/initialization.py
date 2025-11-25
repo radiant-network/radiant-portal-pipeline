@@ -40,14 +40,14 @@ def create_germline_consequences_table():
     if catalog.table_exists(table_name):
         catalog.drop_table(table_name)
 
-    case_id_field = CONSEQUENCE_SCHEMA.find_field("case_id")
+    task_id_field = CONSEQUENCE_SCHEMA.find_field("task_id")
 
     partition_spec = PartitionSpec(
         fields=[
             PartitionField(
                 field_id=1001,
-                source_id=case_id_field.field_id,
-                name="case_id",
+                source_id=task_id_field.field_id,
+                name="task_id",
                 transform=IdentityTransform(),
             )
         ]
@@ -70,14 +70,14 @@ def create_germline_variant_table():
     if catalog.table_exists(table_name):
         catalog.drop_table(table_name)
 
-    case_id_field = VARIANT_SCHEMA.find_field("case_id")
+    task_id_field = VARIANT_SCHEMA.find_field("task_id")
 
     partition_spec = PartitionSpec(
         fields=[
             PartitionField(
                 field_id=1001,
-                source_id=case_id_field.field_id,
-                name="case_id",
+                source_id=task_id_field.field_id,
+                name="task_id",
                 transform=IdentityTransform(),
             )
         ]
@@ -102,7 +102,7 @@ def create_germline_snv_occurrence_table():
         catalog.drop_table(table_name)
 
     part_field = OCCURRENCE_SCHEMA.find_field("part")
-    case_id_field = OCCURRENCE_SCHEMA.find_field("case_id")
+    task_id_field = OCCURRENCE_SCHEMA.find_field("task_id")
 
     partition_spec = PartitionSpec(
         fields=[
@@ -114,8 +114,8 @@ def create_germline_snv_occurrence_table():
             ),
             PartitionField(
                 field_id=1001,
-                source_id=case_id_field.field_id,
-                name=case_id_field.name,
+                source_id=task_id_field.field_id,
+                name=task_id_field.name,
                 transform=IdentityTransform(),
             ),
         ]

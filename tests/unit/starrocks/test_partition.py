@@ -21,9 +21,9 @@ from radiant.tasks.starrocks.partition import (
 def test__partition_assigner__from_empty_single(experimental_strategy, expected_part):
     _delta = [
         SequencingDeltaInput(
-            case_id=1,
             seq_id=1,
             task_id=1,
+            task_type="radiant_germline_annotation",
             analysis_type="germline",
             aliquot=str(1),
             patient_id=1,
@@ -36,7 +36,7 @@ def test__partition_assigner__from_empty_single(experimental_strategy, expected_
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
             patient_part=None,
-            case_part=None,
+            task_part=None,
             max_part=None,
             max_count=None,
         ).model_dump()
@@ -56,9 +56,9 @@ def test__partition_assigner__from_empty_single(experimental_strategy, expected_
 def test__partition_assigner__from_empty_multiples_single_partition(experimental_strategy, limit, expected_part):
     _delta = [
         SequencingDeltaInput(
-            case_id=i,
             seq_id=i,
             task_id=i,
+            task_type="radiant_germline_annotation",
             analysis_type="germline",
             aliquot=str(i),
             patient_id=i,
@@ -71,7 +71,7 @@ def test__partition_assigner__from_empty_multiples_single_partition(experimental
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
             patient_part=None,
-            case_part=None,
+            task_part=None,
             max_part=None,
             max_count=None,
         ).model_dump()
@@ -94,9 +94,9 @@ def test__partition_assigner__from_empty_multiples_single_partition(experimental
 def test__partition_assigner__from_empty_multiples_many_partitions(experimental_strategy, limit, expected_parts):
     _delta = [
         SequencingDeltaInput(
-            case_id=i,
             seq_id=i,
             task_id=i,
+            task_type="radiant_germline_annotation",
             analysis_type="germline",
             aliquot=str(i),
             patient_id=i,
@@ -109,7 +109,7 @@ def test__partition_assigner__from_empty_multiples_many_partitions(experimental_
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
             patient_part=None,
-            case_part=None,
+            task_part=None,
             max_part=None,
             max_count=None,
         ).model_dump()
@@ -128,12 +128,12 @@ def test__partition_assigner__from_empty_multiples_many_partitions(experimental_
         ("wxs", 1000, {0x00010000: 1001}),
     ],
 )
-def test__partition_assigner__from_empty_extra_matching_case(experimental_strategy, limit, expected_parts):
+def test__partition_assigner__from_empty_extra_matching_task(experimental_strategy, limit, expected_parts):
     _delta = [
         SequencingDeltaInput(
-            case_id=i,
             seq_id=i,
             task_id=i,
+            task_type="radiant_germline_annotation",
             analysis_type="germline",
             aliquot=str(i),
             patient_id=i,
@@ -146,7 +146,7 @@ def test__partition_assigner__from_empty_extra_matching_case(experimental_strate
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
             patient_part=None,
-            case_part=None,
+            task_part=None,
             max_part=None,
             max_count=None,
         ).model_dump()
@@ -155,9 +155,9 @@ def test__partition_assigner__from_empty_extra_matching_case(experimental_strate
 
     _delta.append(
         SequencingDeltaInput(
-            case_id=1,
             seq_id=limit + 1,
-            task_id=limit + 1,
+            task_id=1,
+            task_type="radiant_germline_annotation",
             analysis_type="germline",
             aliquot=str(limit + 1),
             patient_id=limit + 1,
@@ -170,7 +170,7 @@ def test__partition_assigner__from_empty_extra_matching_case(experimental_strate
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
             patient_part=None,
-            case_part=None,
+            task_part=None,
             max_part=None,
             max_count=None,
         ).model_dump()
@@ -181,12 +181,12 @@ def test__partition_assigner__from_empty_extra_matching_case(experimental_strate
     assert parts == expected_parts
 
 
-def test__partition_assigner__with_matching_case():
+def test__partition_assigner__with_matching_task():
     _delta = [
         SequencingDeltaInput(
-            case_id=0,
             seq_id=0,
             task_id=0,
+            task_type="radiant_germline_annotation",
             analysis_type="germline",
             aliquot=str(0),
             patient_id=0,
@@ -199,7 +199,7 @@ def test__partition_assigner__with_matching_case():
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
             patient_part=None,
-            case_part=42,
+            task_part=42,
             max_part=None,
             max_count=None,
         ).model_dump()
@@ -211,22 +211,22 @@ def test__partition_assigner__with_matching_case():
 
 
 @pytest.mark.parametrize(
-    "case_part, patient_part, max_part, max_count, expected_parts",
+    "task_part, patient_part, max_part, max_count, expected_parts",
     [
-        (None, None, None, None, {0: 1}),  # Empty case
+        (None, None, None, None, {0: 1}),  # Empty task
         (None, 42, None, None, {42: 1}),  # patient matching
         (None, None, 42, 50, {42: 1}),  # max_part not full
         (None, 24, 42, 50, {24: 1}),  # patient matching with max_part
-        (24, 42, 0, 50, {24: 1}),  # case matching with patient
-        (24, None, 24, 100, {24: 1}),  # case matching but part is full
+        (24, 42, 0, 50, {24: 1}),  # task matching with patient
+        (24, None, 24, 100, {24: 1}),  # task matching but part is full
     ],
 )
-def test__partition_assigner__with_matching_patient(case_part, patient_part, max_part, max_count, expected_parts):
+def test__partition_assigner__with_matching_patient(task_part, patient_part, max_part, max_count, expected_parts):
     _delta = [
         SequencingDeltaInput(
-            case_id=0,
             seq_id=0,
             task_id=0,
+            task_type="radiant_germline_annotation",
             analysis_type="germline",
             aliquot=str(0),
             patient_id=0,
@@ -239,7 +239,7 @@ def test__partition_assigner__with_matching_patient(case_part, patient_part, max
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
             patient_part=patient_part,
-            case_part=case_part,
+            task_part=task_part,
             max_part=max_part,
             max_count=max_count,
         ).model_dump()
@@ -263,9 +263,9 @@ def test__partition_assigner__with_matching_patient(case_part, patient_part, max
 def test__priority_assigner__assign_priorities(parts, priorities, expected_priority):
     sequencing_experiments = [
         SequencingDeltaOutput(
-            case_id=0,
             seq_id=0,
             task_id=0,
+            task_type="radiant_germline_annotation",
             part=part,
             analysis_type="germline",
             aliquot=str(0),

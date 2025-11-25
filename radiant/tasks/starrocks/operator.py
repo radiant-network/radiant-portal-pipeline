@@ -14,7 +14,7 @@ from radiant.tasks.data.radiant_tables import get_radiant_mapping
 from radiant.tasks.starrocks.trigger import (
     StarRocksTaskCompleteTrigger,
 )
-from radiant.tasks.vcf.experiment import Case
+from radiant.tasks.vcf.experiment import ExomiserTask, EXOMISER_TASK
 
 STARROCKS_INSERT_POOL = "starrocks_insert_pool"
 STARROCKS_TASK_TEMPLATE = "Radiant_Operator_Task_{uid}"
@@ -496,38 +496,38 @@ class RadiantStarrocksLoadOperator(RadiantStarrocksLoadBaseOperator):
 
 
 class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
-    template_fields = RadiantStarrocksLoadBaseOperator.template_fields + ("sql", "cases")
+    template_fields = RadiantStarrocksLoadBaseOperator.template_fields + ("sql", "tasks")
     template_ext = (".sql", ".json")
     template_fields_renderers = {**RadiantStarrocksLoadBaseOperator.template_fields_renderers, "sql": "sql"}
 
-    def __init__(self, cases: list[dict], *args, **kwargs):
-        self.cases = cases
+    def __init__(self, tasks: list[dict], *args, **kwargs):
+        self.tasks = tasks
         self.sql = "sql/radiant/staging_exomiser_load.sql"
         super().__init__(*args, **kwargs)
 
     def render_template_fields(self, context, jinja_env=None):
         super().render_template_fields(context, jinja_env)
-        self.cases = self.render_template(self.cases, context, jinja_env)
+        self.tasks = self.render_template(self.tasks, context, jinja_env)
         _context = super().prepare_load_context(context)
         _sql_context = {**_context, "load_label": "{{load_label}}"}
         self.sql = self.render_template(self.sql, _sql_context, jinja_env)
 
     def run_insert(self, context, partition_exists):
         _parameters = []
-        for case in self.cases:
-            _case = Case.model_validate(case)
-            for exp in _case.experiments:
-                if not exp.exomiser_filepath:
-                    continue
-                _parameters.append(
-                    {
-                        "part": self.partition,
-                        "seq_id": exp.seq_id,
-                        "tsv_filepath": exp.exomiser_filepath,
-                        "load_label": f"load_exomiser_"
-                        f"{_case.case_id}_{exp.seq_id}_{exp.task_id}_{str(uuid.uuid4().hex)}",
-                    }
-                )
+        for task in self.tasks:
+            if task.get("task_type") != EXOMISER_TASK:
+                continue
+
+            _task = ExomiserTask.model_validate(task)
+            _parameters.append(
+                {
+                    "part": self.partition,
+                    "seq_id": _task.experiments[0].seq_id,
+                    "tsv_filepath": _task.exomiser_filepath,
+                    "load_label": f"load_exomiser_"
+                    f"{_task.task_id}_{_task.experiments[0].seq_id}_{_task.task_id}_{str(uuid.uuid4().hex)}",
+                }
+            )
 
         if not _parameters:
             self.log.info("No Exomiser files to load, skipping...")

@@ -21,7 +21,7 @@ from radiant.tasks.starrocks.operator import (
     SubmitTaskOptions,
     SwapPartition,
 )
-from radiant.tasks.vcf.experiment import Case, Experiment
+from radiant.tasks.vcf.experiment import build_task_from_rows, ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK
 
 if IS_AWS:
     from radiant.dags.operators import ecs as operators
@@ -34,49 +34,22 @@ LOGGER = logging.getLogger(__name__)
 PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
 
 
-def cases_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
+def tasks_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     column_names = [desc[0] for desc in descriptions[0]]
-    dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
-
-    cases = []
-    for case_id, grouped_rows in groupby(dict_rows, key=lambda x: x["case_id"]):
-        list_rows = list(grouped_rows)
-
-        # Force the proband vcf_filepath or if not available take the first one from the case
-        _proband_files = [row["vcf_filepath"] for row in list_rows if row["family_role"] == "proband"]
-        _vcf_filepath = _proband_files[0] if _proband_files else list_rows[0]["vcf_filepath"]
-
-        case = Case(
-            case_id=case_id,
-            vcf_filepath=_vcf_filepath,
-            part=list_rows[0]["part"],
-            analysis_type=list_rows[0]["analysis_type"],
-            experiments=[
-                Experiment(
-                    seq_id=row["seq_id"],
-                    task_id=row["task_id"],
-                    patient_id=row["patient_id"],
-                    aliquot=row["aliquot"],
-                    family_role=row["family_role"],
-                    sex=row["sex"],
-                    affected_status=row["affected_status"],
-                    experimental_strategy=row["experimental_strategy"],
-                    request_priority=row["request_priority"],
-                    cnv_vcf_filepath=row["cnv_vcf_filepath"],
-                    exomiser_filepath=row["exomiser_filepath"],
-                )
-                for row in list_rows
-            ],
-        )
-        cases.append(case.model_dump())
-
-    return [cases]
+    dict_rows = sorted([dict(zip(column_names, row, strict=False)) for row in results[0]], key=lambda d: d["task_id"])
+    tasks = []
+    for task_id, grouped_rows in groupby(dict_rows, key=lambda x: x["task_id"]):
+        _grouped = list(grouped_rows)
+        print(f"Processing task_id: {task_id}")
+        print(f"Grouped rows: {_grouped}")
+        tasks.append(build_task_from_rows(_grouped).model_dump())
+    return [tasks]
 
 
 dag_params = {
     "part": Param(
         default=None,
-        description="Integer that represents the part that need to be processed. ",
+        description="Integer that represents the part that need to be processed.",
     ),
 }
 
@@ -104,36 +77,36 @@ def import_part():
         sql="./sql/radiant/sequencing_experiment_partition_select.sql",
         task_display_name="[StarRocks] Get Sequencing Experiment for a partition",
         do_xcom_push=True,
-        output_processor=cases_output_processor,
+        output_processor=tasks_output_processor,
         parameters={"part": "{{ params.part }}"},
     )
 
-    @task.short_circuit(task_id="sanity_check_cases", task_display_name="[PyOp] Sanity Check Cases")
-    def check_cases(cases: Any) -> Any:
-        return cases
+    @task.short_circuit(task_id="sanity_check_tasks", task_display_name="[PyOp] Sanity Check Tasks")
+    def check_tasks(tasks: Any) -> Any:
+        return tasks
 
-    @task(task_id="ecs_store_cases", task_display_name="[PyOp] ECS Store Cases")
-    def ecs_store_cases(cases: Any) -> Any:
+    @task(task_id="ecs_store_tasks", task_display_name="[PyOp] ECS Store Tasks")
+    def ecs_store_tasks(tasks: Any) -> Any:
         from radiant.dags.operators.utils import s3_store_content
 
-        # ECS limits the length of the command override, so we need to upload the cases to S3
+        # ECS limits the length of the command override, so we need to upload the tasks to S3
         # and pass the S3 path of the file in which the data is stored to the ECS operator instead of the data.
-        s3_path = s3_store_content(content=cases, ecs_env=ecs_env, prefix="commit_partitions")
-        return [{"stored_cases": s3_path}]
+        s3_path = s3_store_content(content=tasks, ecs_env=ecs_env, prefix="commit_partitions")
+        return [{"stored_tasks": s3_path}]
 
-    cases = check_cases(fetch_sequencing_experiment_delta.output)
-    stored_cases = ecs_store_cases(cases) if IS_AWS else None
+    tasks = check_tasks(fetch_sequencing_experiment_delta.output)
+    stored_tasks = ecs_store_tasks(tasks) if IS_AWS else None
 
     @task(task_id="prepare_config", task_display_name="[PyOp] Prepare Config")
-    def prepare_config(cases: Any) -> Any:
+    def prepare_config(tasks: Any) -> Any:
         from airflow.operators.python import get_current_context
 
         context = get_current_context()
         conf = context["dag_run"].conf or {}
-        conf["cases"] = cases
+        conf["tasks"] = tasks
         return conf
 
-    _prepare_config = prepare_config(cases)
+    _prepare_config = prepare_config(tasks)
     import_vcf = TriggerDagRunOperator(
         task_id="import_germline_snv_vcf",
         task_display_name="[DAG] Import Germline SNV VCF into Iceberg",
@@ -155,15 +128,15 @@ def import_part():
         import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(get_namespace())
 
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
-    def extract_sequencing_ids(cases) -> dict[str, list[Any]]:
+    def extract_sequencing_ids(tasks) -> dict[str, list[Any]]:
         seq_ids = []
-        for case in cases:
-            for experiment in case.get("experiments"):
+        for t in tasks:
+            for experiment in t.get("experiments"):
                 if experiment:
                     seq_ids.append(experiment["seq_id"])
         return {"seq_ids": seq_ids}
 
-    sequencing_ids = extract_sequencing_ids(cases)
+    sequencing_ids = extract_sequencing_ids(tasks)
 
     with TaskGroup(group_id="germline_cnv_occurrence") as tg_germline_cnv_occurrence:
 
@@ -172,17 +145,14 @@ def import_part():
             task_display_name="[PyOp] Sanity Check CNVs",
             ignore_downstream_trigger_rules=False,
         )
-        def sanity_check_cnvs(cases: Any) -> Any:
-            has_cnv = any(
-                experiment.get("cnv_vcf_filepath") for case in cases for experiment in case.get("experiments", [])
-            )
+        def sanity_check_cnvs(tasks: Any) -> Any:
+            has_cnv = any(t.get("task_type") == ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK for t in tasks)
             return has_cnv
 
         insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator(
             task_id="insert_germline_cnv_occurrences",
             table="{{ mapping.starrocks_germline_cnv_occurrence }}",
             task_display_name="[StarRocks] Insert CNV Occurrences Part",
-            # submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=10),
             swap_partition=SwapPartition(
                 partition="{{ params.part }}",
                 copy_partition_sql="./sql/radiant/germline_cnv_occurrence_copy_partition.sql",
@@ -191,7 +161,7 @@ def import_part():
             insert_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
         )
 
-        sanity_check_cnvs(cases) >> insert_germline_cnv_occurrences
+        sanity_check_cnvs(tasks) >> insert_germline_cnv_occurrences
 
     load_exomiser = RadiantLoadExomiserOperator(
         task_id="load_exomiser_files",
@@ -202,12 +172,12 @@ def import_part():
         ),
         table="{{ mapping.starrocks_staging_exomiser }}",
         parameters=sequencing_ids,
-        cases=cases,
+        tasks=tasks,
     )
 
-    @task(task_id="extract_case_ids", task_display_name="[PyOp] Extract Case IDs")
-    def extract_case_ids(cases) -> dict[str, list[Any]]:
-        return {"case_ids": [c["case_id"] for c in cases]}
+    @task(task_id="extract_task_ids", task_display_name="[PyOp] Extract Task IDs")
+    def extract_task_ids(tasks) -> dict[str, list[Any]]:
+        return {"task_ids": [t["task_id"] for t in tasks]}
 
     @task(task_id="get_tables_to_refresh", task_display_name="[PyOp] Get list of iceberg tables to refresh")
     def get_tables_to_refresh():
@@ -224,7 +194,7 @@ def import_part():
         task_display_name="[StarRocks] Refresh Iceberg Tables",
     ).expand(params=get_tables_to_refresh())
 
-    case_ids = extract_case_ids(cases)
+    task_ids = extract_task_ids(tasks)
 
     insert_hashes = RadiantStarRocksOperator(
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
@@ -232,7 +202,7 @@ def import_part():
         sql="./sql/radiant/variant_insert_hashes.sql",
         task_display_name="[StarRocks] Insert Variants Hashes into Lookup",
         submit_task_options=std_submit_task_opts,
-        parameters=case_ids,
+        parameters=task_ids,
     )
 
     overwrite_tmp_variants = RadiantStarRocksOperator(
@@ -240,7 +210,7 @@ def import_part():
         sql="./sql/radiant/tmp_variant_insert.sql",
         task_display_name="[StarRocks] Insert Variants Tmp tables",
         submit_task_options=std_submit_task_opts,
-        parameters=case_ids,
+        parameters=task_ids,
     )
 
     insert_exomiser = RadiantStarRocksOperator(
@@ -317,7 +287,7 @@ def import_part():
             sql="./sql/radiant/consequence_insert.sql",
             task_display_name="[StarRocks] Insert Consequences",
             submit_task_options=std_submit_task_opts,
-            parameters=case_ids,
+            parameters=task_ids,
         )
 
         import_consequences_filter = RadiantStarRocksOperator(
@@ -346,7 +316,7 @@ def import_part():
         >> fetch_sequencing_experiment_delta
         >> (
             import_vcf,
-            import_cnv_vcf.expand(params=stored_cases) if IS_AWS else import_cnv_vcf(cases=cases),
+            import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(tasks=tasks),
         )
         >> load_exomiser
         >> refresh_iceberg_tables

@@ -24,9 +24,9 @@ default_args = {
 PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/radiant/bin/python")
 
 dag_params = {
-    "cases": Param(
+    "tasks": Param(
         default=[],
-        description="An array of objects representing Cases to be processed",
+        description="An array of objects representing Tasks to be processed",
         type="array",
     )
 }
@@ -45,18 +45,22 @@ with DAG(
 ) as dag:
     namespace = get_namespace()
 
-    @task(task_display_name="[PyOp] Get Cases")
-    def get_cases(params):
-        from radiant.tasks.vcf.experiment import Case
+    @task(task_display_name="[PyOp] Get Tasks")
+    def get_tasks(params):
+        from radiant.tasks.vcf.experiment import RADIANT_GERMLINE_ANNOTATION_TASK, build_task_from_dict
+
+        _tasks = [
+            build_task_from_dict(t).model_dump()
+            for t in params.get("tasks", [])
+            if t.get("task_type") == RADIANT_GERMLINE_ANNOTATION_TASK
+        ]
 
         if IS_AWS:
-            # Because ECS task operator doesn't support the TaskAPI, we need to return the cases as a list of dicts
-            # representing task params to map instead of a list of Case dictionaries.
-            return [
-                {"case": Case.model_validate(c).model_dump()} for c in params.get("cases", []) if c.get("vcf_filepath")
-            ]
+            # Because ECS task operator doesn't support the TaskAPI, we need to return the tasks as a list of dicts
+            # representing task params to map instead of a list of Task dictionaries.
+            return [{"radiant_task": t} for t in _tasks]
 
-        return [Case.model_validate(c).model_dump() for c in params.get("cases", []) if c.get("vcf_filepath")]
+        return _tasks
 
     @task(task_display_name="[PyOp] Merge Commits")
     def merge_commits(partition_lists: list[dict[str, list[dict]]] | list[str], ecs_env: ECSEnv | None = None):
@@ -108,13 +112,13 @@ with DAG(
         k8s_create_parquet_files = operators.ImportGermlineSNVVCF.get_create_parquet_files(radiant_namespace=namespace)
         k8s_commit_partitions = operators.ImportGermlineSNVVCF.get_commit_partitions(radiant_namespace=namespace)
 
-    all_cases = get_cases()
+    all_tasks = get_tasks()
 
     if IS_AWS:
-        partition_commit = ecs_create_parquet_files.expand(params=all_cases)
+        partition_commit = ecs_create_parquet_files.expand(params=all_tasks)
         merged_commits = merge_commits(partition_commit.output, ecs_env)
         ecs_commit_partitions.expand(params=merged_commits)
     else:
-        partition_commit = k8s_create_parquet_files.expand(case=all_cases)
+        partition_commit = k8s_create_parquet_files.expand(radiant_task=all_tasks)
         merged_commits = merge_commits(partition_commit)
         k8s_commit_partitions(table_partitions=merged_commits)

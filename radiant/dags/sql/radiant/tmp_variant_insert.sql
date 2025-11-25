@@ -25,4 +25,4 @@ SELECT COALESCE(GET_VARIANT_ID(t.chromosome, t.start, t.reference, t.alternate),
     t.transcript_id
 FROM {{ mapping.iceberg_variant }} t
 LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON t.locus_hash = v.locus_hash
-where t.case_id in %(case_ids)s and t.alternate <> '*';
+where t.task_id in %(task_ids)s and t.alternate <> '*';

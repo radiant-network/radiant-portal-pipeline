@@ -1,7 +1,8 @@
 CREATE VIEW IF NOT EXISTS {{ mapping.starrocks_staging_external_sequencing_experiment }} AS
 with sequencing_experiments AS (
 	SELECT
-	    c.id AS case_id,
+	    t.id AS task_id,
+	    t.task_type_code AS task_type,
 	    c.proband_id,
 	    se.id AS seq_id,
 	    se.sample_id,
@@ -9,7 +10,6 @@ with sequencing_experiments AS (
 	    c.case_type_code AS analysis_type,
 	    se.experimental_strategy_code AS experimental_strategy,
         c.priority_code AS request_priority,
-	    MAX(CASE WHEN t.task_type_code = 'radiant_germline_annotation' THEN t.id ELSE NULL END) AS task_id,
 	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code='snv' THEN d.url ELSE NULL END) AS vcf_filepath,
 	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code='gcnv' THEN d.url ELSE NULL END) AS cnv_vcf_filepath,
 	    ANY_VALUE(CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END) AS exomiser_filepath,
@@ -29,7 +29,8 @@ with sequencing_experiments AS (
 	)
 	AND c.status_code in ('in_progress', 'completed')
 	GROUP BY
-		c.id,
+	    t.id,
+	    t.task_type_code,
 		c.proband_id,
 		se.id,
 		se.sample_id,
@@ -41,9 +42,9 @@ with sequencing_experiments AS (
 		se.updated_on
 )
 SELECT
-	s.case_id,
 	s.seq_id,
 	s.task_id,
+	s.task_type,
 	s.analysis_type,
 	s.aliquot,
 	p.id as patient_id,

@@ -11,7 +11,7 @@ from radiant.tasks.iceberg.table_accumulator import TableAccumulator
 from radiant.tasks.iceberg.utils import commit_files
 from radiant.tasks.tracing.trace import get_tracer
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
-from radiant.tasks.vcf.experiment import Case
+from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.snv.germline.common import process_common
 from radiant.tasks.vcf.snv.germline.consequence import parse_csq_header, process_consequence
@@ -27,14 +27,14 @@ SUPPORTED_CHROMOSOMES = tuple(f"chr{i}" for i in range(1, 23)) + ("chrX", "chrY"
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
 # Airflow will treat the task as successful if the error is not captured properly.
 @capture_libc_stderr_and_check_errors(error_patterns=["[E::"])
-def process_case(
-    case: Case,
+def process_task(
+    task: RadiantGermlineAnnotationTask,
     catalog_name="default",
     namespace="radiant",
     vcf_threads=None,
     catalog_properties=None,
 ):
-    with tracer.start_as_current_span(f"process_case_{str(case.case_id)}"):
+    with tracer.start_as_current_span(f"process_task_{str(task.task_id)}"):
         occurrences_partition_commit = []
         variants_partition_commit = []
         consequences_partition_commit = []
@@ -43,30 +43,30 @@ def process_case(
         )
 
         vcf = VCF(
-            case.vcf_filepath,
+            task.vcf_filepath,
             strict_gt=True,
             threads=vcf_threads,
-            samples=[exp.aliquot for exp in case.experiments],
+            samples=[exp.aliquot for exp in task.experiments],
         )
-        if case.index_vcf_filepath:
-            vcf.set_index(index_path=case.index_vcf_filepath)
+        if task.index_vcf_filepath:
+            vcf.set_index(index_path=task.index_vcf_filepath)
 
         occurrences_table_name = f"{namespace}.germline_snv_occurrence"
         variants_table_name = f"{namespace}.germline_snv_variant"
         consequences_table_name = f"{namespace}.germline_snv_consequence"
         if not vcf.samples:
-            raise ValueError(f"Case {case.case_id} has no matching samples in the VCF file {case.vcf_filepath}")
+            raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
 
         csq_header = parse_csq_header(vcf)
-        pedigree = Pedigree(case, vcf.samples)
-        with tracer.start_as_current_span(f"vcf_case_{case.case_id}"):
-            logger.info(f"Starting processing vcf for case {case.case_id} with file {case.vcf_filepath}")
+        pedigree = Pedigree(task, vcf.samples)
+        with tracer.start_as_current_span(f"vcf_task_{task.task_id}"):
+            logger.info(f"Starting processing vcf for task {task.task_id} with file {task.vcf_filepath}")
 
             occurrence_table = catalog.load_table(occurrences_table_name)
-            occurrence_partition_filter = {"part": case.part, "case_id": case.case_id}
+            occurrence_partition_filter = {"part": task.part, "task_id": task.task_id}
             occurrence_buffer = TableAccumulator(occurrence_table, partition_filter=occurrence_partition_filter)
 
-            variant_csq_partition_filter = {"case_id": case.case_id}
+            variant_csq_partition_filter = {"task_id": task.task_id}
             variant_table = catalog.load_table(variants_table_name)
             variant_buffer = TableAccumulator(variant_table, partition_filter=variant_csq_partition_filter)
 
@@ -75,7 +75,7 @@ def process_case(
             for record in vcf:
                 if len(record.ALT) <= 1:
                     if record.CHROM in SUPPORTED_CHROMOSOMES:
-                        common = process_common(record, case_id=case.case_id, part=case.part)
+                        common = process_common(record, task_id=task.task_id, part=task.part)
                         picked_consequence, consequences = process_consequence(record, csq_header, common)
                         consequence_buffer.extend(consequences)
                         occurrences = process_occurrence(record, pedigree, common=common)
@@ -84,13 +84,13 @@ def process_case(
                         variant_buffer.append(variant)
                     else:
                         logger.debug(
-                            f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_filepath}:"
+                            f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {task.vcf_filepath}:"
                             f" this is non supported chromosome."
                         )
 
                 else:
                     logger.debug(
-                        f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {case.vcf_filepath}:"
+                        f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {task.vcf_filepath}:"
                         f" this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
                     )
 
@@ -118,7 +118,7 @@ def process_case(
                 )
             )
 
-            logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
+            logger.info(f"✅ Parquet files created: {task.task_id}, file {task.vcf_filepath}")
 
         vcf.close()
         return {
@@ -128,23 +128,23 @@ def process_case(
         }
 
 
-def create_parquet_files(case: dict, namespace: str) -> dict[str, list[dict]]:
+def create_parquet_files(task: dict, namespace: str) -> dict[str, list[dict]]:
     logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
     logger = logging.getLogger(__name__)
 
     logger.info("Downloading VCF and index files to a temporary directory")
     with tempfile.TemporaryDirectory() as tmpdir:
-        vcf_local = download_s3_file(case["vcf_filepath"], tmpdir)
-        index_local = download_s3_file(case["vcf_filepath"] + ".tbi", tmpdir)
-        case["vcf_filepath"] = vcf_local
-        case["index_vcf_filepath"] = index_local
+        vcf_local = download_s3_file(task["vcf_filepath"], tmpdir)
+        index_local = download_s3_file(task["vcf_filepath"] + ".tbi", tmpdir)
+        task["vcf_filepath"] = vcf_local
+        task["index_vcf_filepath"] = index_local
 
-        case = Case.model_validate(case)
-        logger.info(f"🔁 STARTING IMPORT for Case: {case.case_id}")
+        task = RadiantGermlineAnnotationTask.model_validate(task)
+        logger.info(f"🔁 STARTING IMPORT for Task: {task.task_id}")
         logger.info("=" * 80)
 
-        res = process_case(case, namespace=namespace, vcf_threads=4)
-        logger.info(f"✅ Parquet files created: {case.case_id}, file {case.vcf_filepath}")
+        res = process_task(task, namespace=namespace, vcf_threads=4)
+        logger.info(f"✅ Parquet files created: {task.task_id}, file {task.vcf_filepath}")
 
     return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}
 

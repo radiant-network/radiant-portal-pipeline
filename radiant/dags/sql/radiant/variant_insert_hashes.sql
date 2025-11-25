@@ -3,4 +3,4 @@ SELECT
     distinct `locus_hash`
 FROM {{ mapping.iceberg_variant }} v
 LEFT ANTI JOIN {{ mapping.starrocks_variant_lookup }} vd ON vd.locus_hash=v.locus_hash
-where v.case_id in %(case_ids)s and GET_VARIANT_ID(v.chromosome, v.start, v.reference, v.alternate) IS NULL and v.alternate <> '*';
+where v.task_id in %(task_ids)s and GET_VARIANT_ID(v.chromosome, v.start, v.reference, v.alternate) IS NULL and v.alternate <> '*';

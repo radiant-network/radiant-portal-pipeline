@@ -4,25 +4,24 @@ from unittest.mock import patch
 import pytest
 
 from radiant.tasks.iceberg.utils import commit_files
-from radiant.tasks.vcf.experiment import Case, Experiment
-from radiant.tasks.vcf.snv.germline.process import process_case
+from radiant.tasks.vcf.experiment import Experiment, RadiantGermlineAnnotationTask
+from radiant.tasks.vcf.snv.germline.process import process_task
 
 
-def test_process_case(
+def test_process_task(
     setup_iceberg_namespace,
     iceberg_catalog_properties,
     iceberg_client,
     rest_iceberg_catalog_instance,
     indexed_vcfs,
 ):
-    case = Case(
-        case_id=1,
+    task = RadiantGermlineAnnotationTask(
+        task_id=1,
         part=1,
         analysis_type="germline",
         experiments=[
             Experiment(
                 seq_id=1,
-                task_id=1,
                 patient_id=1,
                 aliquot="SA0001",
                 family_role="proband",
@@ -34,8 +33,8 @@ def test_process_case(
         ],
         vcf_filepath=indexed_vcfs["test.vcf"],
     )
-    partitions_to_commit = process_case(
-        case,
+    partitions_to_commit = process_task(
+        task,
         catalog_name=rest_iceberg_catalog_instance.catalog_name,
         namespace=setup_iceberg_namespace,
         catalog_properties=iceberg_catalog_properties,
@@ -51,8 +50,8 @@ def test_process_case(
     occ = iceberg_client.load_table(f"{setup_iceberg_namespace}.germline_snv_occurrence").scan().to_arrow().to_pandas()
 
     assert not occ.empty, "No occurrences were written to the iceberg table"
-    assert ((occ["aliquot"] == "SA0001") & (occ["case_id"] == 1)).any(), (
-        "Expected sample/case not found in occurrences"
+    assert ((occ["aliquot"] == "SA0001") & (occ["task_id"] == 1)).any(), (
+        "Expected sample/task not found in occurrences"
     )
     assert all(occ["chromosome"] == "1"), "Unexpected chromosome values in output"
     assert occ["zygosity"][0] == "HET", "Unexpected zygosity value in output"
@@ -62,7 +61,7 @@ def test_process_case(
     #     "start": [12345],
     #     "reference": ["A"],
     #     "alternate": ["T"],
-    #     "case_id": [1],
+    #     "task_id": [1],
     #     "aliquot": ["SA0001"],
     #     # Add other columns as needed
     # })
@@ -83,20 +82,19 @@ def fake_error_logging(*args, **kwargs):
     libc.fprintf(c_stderr, b"[E:: Fake error message\n")
 
 
-def test_process_case_error(
+def test_process_task_error(
     setup_iceberg_namespace,
     iceberg_catalog_properties,
     rest_iceberg_catalog_instance,
     indexed_vcfs,
 ):
-    case = Case(
-        case_id=1,
+    task = RadiantGermlineAnnotationTask(
+        task_id=1,
         part=1,
         analysis_type="germline",
         experiments=[
             Experiment(
                 seq_id=1,
-                task_id=1,
                 patient_id=1,
                 aliquot="SA0001",
                 family_role="proband",
@@ -112,8 +110,8 @@ def test_process_case_error(
         pytest.raises(Exception) as exc,
         patch("radiant.tasks.iceberg.table_accumulator.TableAccumulator.write_files", fake_error_logging),
     ):
-        process_case(
-            case,
+        process_task(
+            task,
             catalog_name=rest_iceberg_catalog_instance.catalog_name,
             namespace=setup_iceberg_namespace,
             catalog_properties=iceberg_catalog_properties,
