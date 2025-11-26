@@ -79,7 +79,7 @@ ICEBERG_CATALOG_DATABASE = {
 }
 
 # --- StarRocks tables
-STARROCKS_COMMON_MAPPING = {
+STARROCKS_RADIANT_MAPPING = {
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
@@ -87,19 +87,16 @@ STARROCKS_COMMON_MAPPING = {
     "starrocks_staging_exomiser": "raw_exomiser",
     "starrocks_exomiser": "exomiser",
     "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
-}
-
-STARROCKS_GERMLINE_SNV_MAPPING = {
-    "starrocks_consequence": "germline__snv__consequence",
-    "starrocks_consequence_filter": "germline__snv__consequence_filter",
-    "starrocks_consequence_filter_partitioned": "germline__snv__consequence_filter_partitioned",
-    "starrocks_occurrence": "germline__snv__occurrence",
-    "starrocks_tmp_variant": "germline__snv__tmp_variant",
-    "starrocks_variant": "germline__snv__variant",
-    "starrocks_variant_frequency": "germline__snv__variant_frequency",
-    "starrocks_variant_partitioned": "germline__snv__variant_partitioned",
-    "starrocks_staging_variant": "germline__snv__staging_variant",
-    "starrocks_staging_variant_frequency": "germline__snv__staging_variant_frequency_part",
+    "starrocks_germline_snv_consequence": "germline__snv__consequence",
+    "starrocks_germline_snv_consequence_filter": "germline__snv__consequence_filter",
+    "starrocks_germline_snv_consequence_filter_partitioned": "germline__snv__consequence_filter_partitioned",
+    "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
+    "starrocks_germline_snv_tmp_variant": "germline__snv__tmp_variant",
+    "starrocks_germline_snv_variant": "germline__snv__variant",
+    "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
+    "starrocks_germline_snv_variant_partitioned": "germline__snv__variant_partitioned",
+    "starrocks_germline_snv_staging_variant": "germline__snv__staging_variant",
+    "starrocks_germline_snv_staging_variant_frequency": "germline__snv__staging_variant_frequency_part",
 }
 
 
@@ -147,7 +144,7 @@ def get_iceberg_tables(conf=None) -> dict:
 
 
 def get_starrocks_mapping(conf=None) -> dict:
-    tables = STARROCKS_COMMON_MAPPING | STARROCKS_GERMLINE_SNV_MAPPING | STARROCKS_OPEN_DATA_MAPPING
+    tables = STARROCKS_RADIANT_MAPPING | STARROCKS_OPEN_DATA_MAPPING
     _database = get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE)
     return {key: f"{_database}.{value}" for key, value in tables.items()}
 

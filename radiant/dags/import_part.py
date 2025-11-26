@@ -21,7 +21,7 @@ from radiant.tasks.starrocks.operator import (
     SubmitTaskOptions,
     SwapPartition,
 )
-from radiant.tasks.vcf.experiment import build_task_from_rows, ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK
+from radiant.tasks.vcf.experiment import ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK, build_task_from_rows
 
 if IS_AWS:
     from radiant.dags.operators import ecs as operators
@@ -199,16 +199,16 @@ def import_part():
     insert_hashes = RadiantStarRocksOperator(
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         task_id="insert_variant_hashes",
-        sql="./sql/radiant/variant_insert_hashes.sql",
+        sql="./sql/radiant/variant_lookup_insert_hashes.sql",
         task_display_name="[StarRocks] Insert Variants Hashes into Lookup",
         submit_task_options=std_submit_task_opts,
         parameters=task_ids,
     )
 
     overwrite_tmp_variants = RadiantStarRocksOperator(
-        task_id="overwrite_tmp_variant",
-        sql="./sql/radiant/tmp_variant_insert.sql",
-        task_display_name="[StarRocks] Insert Variants Tmp tables",
+        task_id="overwrite_germline_snv_tmp_variant",
+        sql="./sql/radiant/germline_snv_tmp_variant_insert.sql",
+        task_display_name="[StarRocks] Insert Germline SNV Variants Tmp tables",
         submit_task_options=std_submit_task_opts,
         parameters=task_ids,
     )
@@ -222,40 +222,40 @@ def import_part():
     )
 
     insert_occurrences = RadiantStarRocksOperator(
-        task_id="insert_occurrence",
-        sql="./sql/radiant/occurrence_insert.sql",
-        task_display_name="[StarRocks] Insert Occurrences Part",
+        task_id="insert_germline_snv_occurrence",
+        sql="./sql/radiant/germline_snv_occurrence_insert.sql",
+        task_display_name="[StarRocks] Insert Germline SNV Occurrences Part",
         submit_task_options=std_submit_task_opts,
         parameters={"part": "{{ params.part }}"},
     )
 
     insert_stg_variants_freq = RadiantStarRocksOperator(
-        task_id="insert_stg_variant_freq",
-        sql="./sql/radiant/staging_variant_freq_insert.sql",
-        task_display_name="[StarRocks] Insert Stg Variants Freq Part",
+        task_id="insert_germline_snv_stg_variant_freq",
+        sql="./sql/radiant/staging_germline_snv_variant_freq_insert.sql",
+        task_display_name="[StarRocks] Insert Stg Germline SNV Variants Freq Part",
         submit_task_options=std_submit_task_opts,
         parameters={"part": "{{ params.part }}"},
     )
 
     aggregate_variants_frequencies = RadiantStarRocksOperator(
         task_id="aggregate_variant_freq",
-        task_display_name="[StarRocks] Aggregate all variants frequencies",
-        sql="./sql/radiant/variant_frequency_insert.sql",
+        task_display_name="[StarRocks] Aggregate all Germline SNV variants frequencies",
+        sql="./sql/radiant/germline_snv_variant_frequency_insert.sql",
         submit_task_options=std_submit_task_opts,
     )
 
-    with TaskGroup(group_id="variant") as tg_variants:
+    with TaskGroup(group_id="germline_snv_variant") as tg_variants:
         insert_staging_variants = RadiantStarRocksOperator(
-            task_id="insert_staging_variant",
-            task_display_name="[StarRocks] Insert Staging Variants",
-            sql="./sql/radiant/staging_variant_insert.sql",
+            task_id="insert_germline_snv_staging_variant",
+            task_display_name="[StarRocks] Insert Staging Germline SNV Variants",
+            sql="./sql/radiant/staging_germline_snv_variant_insert.sql",
             submit_task_options=std_submit_task_opts,
         )
 
         insert_variants_with_freqs = RadiantStarRocksOperator(
-            task_id="insert_variant",
-            task_display_name="[StarRocks] Insert Variants",
-            sql="./sql/radiant/variant_insert.sql",
+            task_id="insert_germline_snv_variant",
+            task_display_name="[StarRocks] Insert Germline SNV Variants",
+            sql="./sql/radiant/germline_snv_variant_insert.sql",
             submit_task_options=std_submit_task_opts,
         )
 
@@ -272,9 +272,9 @@ def import_part():
         _compute_part = compute_part()
 
         insert_variants_part = RadiantStarRocksOperator(
-            task_id="insert_variant_part",
-            sql="./sql/radiant/variant_part_insert_part.sql",
-            task_display_name="[StarRocks] Insert Variants Part",
+            task_id="insert_germline_snv_variant_part",
+            sql="./sql/radiant/germline_snv_variant_part_insert_part.sql",
+            task_display_name="[StarRocks] Insert Germline SNV Variants Part",
             submit_task_options=std_submit_task_opts,
             parameters=_compute_part,
         )
@@ -283,24 +283,24 @@ def import_part():
 
     with TaskGroup(group_id="consequence") as tg_consequences:
         import_consequences = RadiantStarRocksOperator(
-            task_id="import_consequence",
-            sql="./sql/radiant/consequence_insert.sql",
-            task_display_name="[StarRocks] Insert Consequences",
+            task_id="import_germline_snv_consequence",
+            sql="./sql/radiant/germline_snv_consequence_insert.sql",
+            task_display_name="[StarRocks] Insert Germline SNV Consequences",
             submit_task_options=std_submit_task_opts,
             parameters=task_ids,
         )
 
         import_consequences_filter = RadiantStarRocksOperator(
-            task_id="import_consequence_filter",
-            sql="./sql/radiant/consequence_filter_insert.sql",
-            task_display_name="[StarRocks] Insert Consequences Filter",
+            task_id="import_germline_snv_consequence_filter",
+            sql="./sql/radiant/germline_snv_consequence_filter_insert.sql",
+            task_display_name="[StarRocks] Insert Germline SNV Consequences Filter",
             submit_task_options=std_submit_task_opts,
         )
 
         insert_consequences_filter_part = RadiantStarRocksOperator(
-            task_id="insert_consequence_filter_part",
-            sql="./sql/radiant/consequence_filter_insert_part.sql",
-            task_display_name="[StarRocks] Insert Consequences Filter Part",
+            task_id="insert_germline_snv_consequence_filter_part",
+            sql="./sql/radiant/germline_snv_consequence_filter_insert_part.sql",
+            task_display_name="[StarRocks] Insert Germline SNV Consequences Filter Part",
             submit_task_options=std_submit_task_opts,
             parameters={"part": "{{ params.part }}"},
         )

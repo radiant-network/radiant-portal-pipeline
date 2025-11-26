@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ mapping.starrocks_tmp_variant }}
+INSERT OVERWRITE {{ mapping.starrocks_germline_snv_tmp_variant }}
 SELECT COALESCE(GET_VARIANT_ID(t.chromosome, t.start, t.reference, t.alternate), v.locus_id) as locus_id,
     t.chromosome,
     t.start,

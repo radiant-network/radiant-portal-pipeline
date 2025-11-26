@@ -14,7 +14,7 @@ from radiant.tasks.data.radiant_tables import get_radiant_mapping
 from radiant.tasks.starrocks.trigger import (
     StarRocksTaskCompleteTrigger,
 )
-from radiant.tasks.vcf.experiment import ExomiserTask, EXOMISER_TASK
+from radiant.tasks.vcf.experiment import EXOMISER_TASK, ExomiserTask
 
 STARROCKS_INSERT_POOL = "starrocks_insert_pool"
 STARROCKS_TASK_TEMPLATE = "Radiant_Operator_Task_{uid}"

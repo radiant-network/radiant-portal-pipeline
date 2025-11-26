@@ -1,4 +1,4 @@
-INSERT INTO {{ mapping.starrocks_staging_variant }}
+INSERT INTO {{ mapping.starrocks_germline_snv_staging_variant }}
 SELECT
     v.locus_id,
     g.af AS gnomad_v3_af,
@@ -29,7 +29,7 @@ SELECT
     v.aa_change,
     v.transcript_id,
     om.inheritance_code AS omim_inheritance_code
-FROM {{ mapping.starrocks_tmp_variant }} v
+FROM {{ mapping.starrocks_germline_snv_tmp_variant }} v
 LEFT JOIN {{ mapping.starrocks_gnomad_genomes_v3 }} g ON g.locus_id = v.locus_id
 LEFT JOIN {{ mapping.starrocks_topmed_bravo }} t ON t.locus_id = v.locus_id
 LEFT JOIN {{ mapping.starrocks_1000_genomes }} tg ON tg.locus_id = v.locus_id

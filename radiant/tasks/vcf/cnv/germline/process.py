@@ -9,8 +9,11 @@ from pyiceberg.catalog import load_catalog
 from radiant.tasks.tracing.trace import get_tracer
 from radiant.tasks.utils import download_s3_file
 from radiant.tasks.vcf.cnv.germline.occurrence import process_occurrence
-from radiant.tasks.vcf.experiment import AlignmentGermlineVariantCallingTask, BaseTask, \
-    ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK
+from radiant.tasks.vcf.experiment import (
+    ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
+    AlignmentGermlineVariantCallingTask,
+    BaseTask,
+)
 
 logger = logging.getLogger("airflow.task")
 tracer = get_tracer(__name__)
@@ -50,9 +53,7 @@ def process_tasks(
             if not vcf.samples:
                 raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
 
-            logger.info(
-                f"Starting processing cnv vcf for task {task.task_id} with file {task.cnv_vcf_filepath}"
-            )
+            logger.info(f"Starting processing cnv vcf for task {task.task_id} with file {task.cnv_vcf_filepath}")
             for exp in task.experiments:
                 sample_idx = vcf.samples.index(exp.aliquot)
                 part = 0
@@ -75,7 +76,7 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
     updated_tasks = []
     with tempfile.TemporaryDirectory() as tmpdir:
         for task in tasks:
-            if not task.get("task_type") == ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK:
+            if task.get("task_type") != ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK:
                 continue
 
             print(f"Importing CNVs for task {task}")
