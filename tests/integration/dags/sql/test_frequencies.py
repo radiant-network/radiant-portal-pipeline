@@ -42,20 +42,20 @@ def test_staging_variant_frequencies_calculation(starrocks_session, resources_di
     Test the frequencies calculation for variants.
     """
 
-    for table_name in ["occurrence", "staging_sequencing_experiment", "staging_variant_frequency"]:
+    for table_name in ["germline_snv_occurrence", "staging_sequencing_experiment", "germline_snv_staging_variant_frequency"]:
         _reset_table(starrocks_session, table_name, radiant_mapping)
 
     # Insert some test data into the occurrence table
-    occurrence_table_name = radiant_mapping.get("starrocks_occurrence")
+    occurrence_table_name = radiant_mapping.get("starrocks_germline_snv_occurrence")
     seq_exp_table = radiant_mapping.get("starrocks_staging_sequencing_experiment")
 
     load_tsv(starrocks_session, occurrence_table_name, resources_dir / "radiant/occurrence.tsv")
     load_tsv(starrocks_session, seq_exp_table, resources_dir / "radiant/staging_sequencing_experiment.tsv")
 
-    with open(os.path.join(_SQL_DIR, "radiant/staging_variant_freq_insert.sql")) as f_in:
+    with open(os.path.join(_SQL_DIR, "radiant/germline_snv_staging_variant_freq_insert.sql")) as f_in:
         variant_freq_insert = jinja2.Template(f_in.read()).render({"mapping": radiant_mapping})
 
-    _select_sql = "SELECT * FROM {{ mapping.starrocks_staging_variant_frequency }}"
+    _select_sql = "SELECT * FROM {{ mapping.starrocks_germline_snv_staging_variant_frequency }}"
     _select_sql = jinja2.Template(_select_sql).render({"mapping": radiant_mapping})
 
     _params = {"part": 0}

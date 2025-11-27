@@ -63,7 +63,6 @@ SCHEMA = merge_schemas(
         NestedField(156, "mother_calls", ListType(256, IntegerType()), required=False),
         NestedField(157, "mother_zygosity", StringType(), required=False),
         NestedField(158, "transmission_mode", StringType(), required=False),
-        NestedField(159, "task_id", IntegerType(), required=True),
     ),
 )
 
@@ -74,7 +73,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
 
     Parameters:
         record (Variant): A `cyvcf2.Variant` object representing the genetic variant to process.
-        ped (Pedigree): A `Pedigree` object containing information about the case and its associated samples.
+        ped (Pedigree): A `Pedigree` object containing information about the task and its associated samples.
         common (Common): A `Common` object containing shared attributes for the variant, such as locus and chromosome.
 
     Returns:
@@ -84,7 +83,7 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
               ```
                   {
                         1001: {
-                            "case_id": "case_001",
+                            "task_id": "task_001",
                             "seq_id": 1001,
                             "calls": [0, 1],
                             "locus": "chr1:1000-2000",
@@ -100,13 +99,13 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
                             ...
                         },
                         1002: {
-                            "case_id": "case_001",
+                            "task_id": "task_001",
                             "seq_id": 1002,
                             "calls": [0, 1],
                             ...
                         },
                         1003: {
-                            "case_id": "case_001",
+                            "task_id": "task_001",
                             "seq_id": 1003,
                             "calls": [0, 0],
                             ...
@@ -154,10 +153,9 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
 
         has_alt = 1 in calls
         occurrences[exp.seq_id] = {
-            "case_id": common.case_id,
+            "task_id": common.task_id,
             "part": common.part,
             "seq_id": exp.seq_id,
-            "task_id": exp.task_id,
             "locus": common.locus,
             "locus_hash": common.locus_hash,
             "chromosome": common.chromosome,

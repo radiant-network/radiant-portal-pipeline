@@ -67,7 +67,7 @@ def process_variant(record: Variant, picked_consequence: dict, common: Common):
     """
 
     variant = {
-        "case_id": common.case_id,
+        "task_id": common.task_id,
         "locus": common.locus,
         "locus_hash": common.locus_hash,
         "chromosome": common.chromosome,

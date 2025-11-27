@@ -1,11 +1,11 @@
-case_id	seq_id	task_id	part	analysis_type	aliquot	patient_id	experimental_strategy	request_priority	vcf_filepath	exomiser_filepath	sex	family_role	affected_status	created_at	updated_at	ingested_at
-1	1	1	0	germline	S14050	21	wgs	routine	s3+http://vcf/FI0037873.S14731.vcf.gz		male	father	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
-2	2	2	0	germline	S14730	39	wgs	routine	s3+http://vcf/FI0037914.S14752.vcf.gz		male	proband	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
-3	3	3	0	germline	S14743	41	wgs	routine	s3+http://vcf/FI0037884.S14031.vcf.gz		male	father	non_affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
-4	4	4	0	germline	S14787	57	wgs	routine	s3+http://vcf/FI0037892.S13229.vcf.gz		female	mother	non_affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
-5	5	5	0	germline	S14138	31	wgs	routine	s3+http://vcf/FI0037910.S14132.vcf.gz		female	mother	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
-6	6	6	0	germline	S14711	37	wgs	stat	s3+http://vcf/FI0037880.S14744.vcf.gz		female	proband	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
-7	7	7	0	germline	S14712	36	wgs	stat	s3+http://vcf/FI0037913.S14742.vcf.gz		female	mother	non_affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
-8	8	8	0	germline	S13233	10	wgs	routine	s3+http://vcf/FI0037900.S13234.vcf.gz		female	proband	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
-9	9	9	0	germline	S14744	44	wgs	routine	s3+http://vcf/FI0037917.S14692.vcf.gz		female	proband	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
-10	10	10	0	germline	S14788	56	wgs	routine	s3+http://vcf/FI0037927.S14029.vcf.gz		male	father	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+seq_id	task_id	part	analysis_type	aliquot	patient_id	experimental_strategy	request_priority	vcf_filepath	exomiser_filepath	sex	family_role	affected_status	created_at	updated_at	ingested_at
+1	1	0	germline	S14050	21	wgs	routine	s3+http://vcf/FI0037873.S14731.vcf.gz		male	father	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+2	2	0	germline	S14730	39	wgs	routine	s3+http://vcf/FI0037914.S14752.vcf.gz		male	proband	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+3	3	0	germline	S14743	41	wgs	routine	s3+http://vcf/FI0037884.S14031.vcf.gz		male	father	non_affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+4	4	0	germline	S14787	57	wgs	routine	s3+http://vcf/FI0037892.S13229.vcf.gz		female	mother	non_affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+5	5	0	germline	S14138	31	wgs	routine	s3+http://vcf/FI0037910.S14132.vcf.gz		female	mother	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+6	6	0	germline	S14711	37	wgs	stat	s3+http://vcf/FI0037880.S14744.vcf.gz		female	proband	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+7	7	0	germline	S14712	36	wgs	stat	s3+http://vcf/FI0037913.S14742.vcf.gz		female	mother	non_affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+8	8	0	germline	S13233	10	wgs	routine	s3+http://vcf/FI0037900.S13234.vcf.gz		female	proband	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+9	9	0	germline	S14744	44	wgs	routine	s3+http://vcf/FI0037917.S14692.vcf.gz		female	proband	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00
+10	10	0	germline	S14788	56	wgs	routine	s3+http://vcf/FI0037927.S14029.vcf.gz		male	father	affected	2021-09-12 13:08:00	2021-09-12 13:08:00	1970-01-01 00:00:00

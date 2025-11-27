@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_variant_frequency }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_staging_variant_frequency }} (
     `part` INT NOT NULL,
     `locus_id` BIGINT NOT NULL,
     `pc_wgs` BIGINT,

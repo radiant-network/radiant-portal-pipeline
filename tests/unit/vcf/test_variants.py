@@ -10,7 +10,7 @@ def test_variants_with_id():
     v = variant("test_variants.vcf")
     result = process_variant(v, {}, common)
     expected = {
-        "case_id": common.case_id,
+        "task_id": common.task_id,
         "locus": common.locus,
         "locus_hash": common.locus_hash,
         "chromosome": "1",
@@ -27,7 +27,7 @@ def test_variants_without_id():
     v = variant("test_variants.vcf", 2)
     result = process_variant(v, {}, common)
     expected = {
-        "case_id": common.case_id,
+        "task_id": common.task_id,
         "locus": common.locus,
         "locus_hash": common.locus_hash,
         "chromosome": "1",
@@ -44,7 +44,7 @@ def test_variants_with_picked():
     v = variant("test_variants.vcf")
     result = process_variant(v, {"variant_class": "SNV"}, common)
     expected = {
-        "case_id": common.case_id,
+        "task_id": common.task_id,
         "locus": common.locus,
         "locus_hash": common.locus_hash,
         "chromosome": "1",

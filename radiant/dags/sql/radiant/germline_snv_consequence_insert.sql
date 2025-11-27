@@ -1,4 +1,4 @@
-INSERT INTO {{ mapping.starrocks_consequence }}
+INSERT INTO {{ mapping.starrocks_germline_snv_consequence }}
 SELECT
     v.locus_id AS locus_id,
     COALESCE(c.symbol, '') AS symbol,
@@ -35,8 +35,8 @@ SELECT
     c.aa_change,
     c.dna_change
 FROM {{ mapping.iceberg_consequence }} c
-LEFT JOIN {{ mapping.starrocks_tmp_variant }} v ON c.locus_hash = v.locus_hash
+LEFT JOIN {{ mapping.starrocks_germline_snv_tmp_variant }} v ON c.locus_hash = v.locus_hash
 LEFT JOIN {{ mapping.starrocks_dbnsfp }} d ON v.locus_id=d.locus_id AND d.ensembl_transcript_id = c.transcript_id
 LEFT JOIN {{ mapping.starrocks_spliceai }} sp ON v.locus_id=sp.locus_id AND sp.symbol = c.symbol
 LEFT JOIN {{ mapping.starrocks_gnomad_constraint }} gc ON gc.transcript_id=c.transcript_id
-WHERE c.case_id in %(case_ids)s
+WHERE c.task_id in %(task_ids)s

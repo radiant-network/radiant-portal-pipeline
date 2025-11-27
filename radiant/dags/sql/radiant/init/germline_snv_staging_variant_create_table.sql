@@ -1,27 +1,8 @@
-CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_variant_partitioned }} (
-    part INT NOT NULL,
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_staging_variant }} (
     locus_id BIGINT NOT NULL,
-    pf_wgs DOUBLE,
-    pf_wxs DOUBLE,
     gnomad_v3_af DOUBLE,
     topmed_af DOUBLE,
     tg_af DOUBLE,
-    pc_wgs INT(11),
-    pn_wgs INT(11),
-    pc_wgs_affected INT(11),
-    pn_wgs_affected INT(11),
-    pf_wgs_affected DOUBLE,
-    pc_wgs_not_affected INT(11),
-    pn_wgs_not_affected INT(11),
-    pf_wgs_not_affected DOUBLE,
-    pc_wxs INT(11),
-    pn_wxs INT(11),
-    pc_wxs_affected INT(11),
-    pn_wxs_affected INT(11),
-    pf_wxs_affected DOUBLE,
-    pc_wxs_not_affected INT(11),
-    pn_wxs_not_affected INT(11),
-    pf_wxs_not_affected DOUBLE,
     chromosome CHAR(2),
     start BIGINT NULL COMMENT '',
     end BIGINT NULL COMMENT '',
@@ -48,7 +29,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_variant_partitioned }} (
     transcript_id varchar(100) COMMENT "",
     omim_inheritance_code array<varchar(5)> COMMENT ""
 )
-PARTITION BY (`part`)
+PRIMARY KEY(locus_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10
 PROPERTIES (
     "colocate_with" = "{{ mapping.colocate_query_group }}"

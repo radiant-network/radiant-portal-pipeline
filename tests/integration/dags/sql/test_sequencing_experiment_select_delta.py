@@ -14,9 +14,9 @@ _RADIANT_SQL_PATH = os.path.join(_SQL_DIR, "radiant")
 @pytest.fixture(scope="session")
 def sequencing_delta_columns():
     yield [
-        "case_id",
         "seq_id",
         "task_id",
+        "task_type",
         "analysis_type",
         "aliquot",
         "patient_id",
@@ -31,7 +31,7 @@ def sequencing_delta_columns():
         "created_at",
         "updated_at",
         "patient_part",
-        "case_part",
+        "task_part",
         "max_part",
         "max_count",
     ]
@@ -85,7 +85,7 @@ def test_sequencing_experiment_empty(
 
     assert results is not None, "Results should not be None"
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 4
+    assert len(result_df) == 10
 
 
 def test_sequencing_experiment_no_delta(
@@ -98,9 +98,9 @@ def test_sequencing_experiment_no_delta(
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
-                       SELECT case_id,
-                              seq_id,
+                       SELECT seq_id,
                               task_id,
+                              task_type,
                               0                     AS part,
                               analysis_type,
                               aliquot,
@@ -135,9 +135,9 @@ def test_sequencing_experiment_existing_wgs_case_partition(
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
-                       SELECT case_id,
-                              seq_id,
+                       SELECT seq_id,
                               task_id,
+                              task_type,
                               0                     AS part,
                               analysis_type,
                               aliquot,
@@ -154,15 +154,14 @@ def test_sequencing_experiment_existing_wgs_case_partition(
                               updated_at,
                               '1970-01-01 00:00:00' AS ingested_at
                        FROM staging_external_sequencing_experiment
-                       WHERE case_id = 1
-                         AND seq_id = 1
-                         AND task_id = 63
+                       WHERE seq_id = 22
+                         AND task_id = 66
                        """)
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
-                       SELECT case_id,
-                              seq_id,
+                       SELECT seq_id,
                               task_id,
+                              task_type,
                               1                     AS part,
                               analysis_type,
                               aliquot,
@@ -179,57 +178,14 @@ def test_sequencing_experiment_existing_wgs_case_partition(
                               updated_at,
                               '1970-01-01 00:00:00' AS ingested_at
                        FROM staging_external_sequencing_experiment
-                       WHERE case_id = 2
-                         AND seq_id = 4
+                       WHERE seq_id = 4
                          AND task_id = 4
                        """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 3  # 4 total - 1 imported experiments
-
-
-# For now we dont have WXS in our seed. That should be added later.
-#
-# def test_sequencing_experiment_existing_wxs_case_partition(
-#     starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
-# ):
-#     """
-#     Test computing the delta when there's an existing WXS case partition existing.
-#     """
-#     with starrocks_session.cursor() as cursor:
-#         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
-#         cursor.execute("""
-#                        INSERT INTO staging_sequencing_experiment
-#                        SELECT case_id,
-#                               seq_id,
-#                               task_id,
-#                               65537                 AS part,
-#                               analysis_type,
-#                               aliquot,
-#                               patient_id,
-#                               experimental_strategy,
-#                               request_priority,
-#                               vcf_filepath,
-#                               cnv_vcf_filepath,
-#                               exomiser_filepath,
-#                               sex,
-#                               family_role,
-#                               affected_status,
-#                               created_at,
-#                               updated_at,
-#                               '1970-01-01 00:00:00' AS ingested_at
-#                        FROM staging_external_sequencing_experiment
-#                        WHERE case_id = 1
-#                          AND seq_id = 62
-#                          AND task_id = 62
-#                        """)
-#         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
-#         results = cursor.fetchall()
-#
-#     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-#     assert len(result_df) == 56  # 57 total - 1 imported wxs experiments
+    assert len(result_df) == 9  # 4 total - 1 imported experiments
 
 
 def test_sequencing_experiment_with_recently_updated_case(
@@ -242,9 +198,9 @@ def test_sequencing_experiment_with_recently_updated_case(
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
-                       SELECT case_id,
-                              seq_id,
+                       SELECT seq_id,
                               task_id,
+                              task_type,
                               0                     AS part,
                               analysis_type,
                               aliquot,
@@ -261,15 +217,14 @@ def test_sequencing_experiment_with_recently_updated_case(
                               updated_at,
                               '1970-01-01 00:00:00' AS ingested_at
                        FROM staging_external_sequencing_experiment
-                       WHERE case_id = 1
-                         AND seq_id = 1
-                         AND task_id = 63
+                       WHERE seq_id = 22
+                         AND task_id = 66
                        """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 3
+    assert len(result_df) == 9
 
     with (
         psycopg2.connect(
@@ -285,7 +240,7 @@ def test_sequencing_experiment_with_recently_updated_case(
         pg_cursor.execute("""
                           UPDATE sequencing_experiment
                           SET updated_on = date_trunc('day', NOW())
-                          WHERE id = 1
+                          WHERE id = 22
                           """)
         pg_conn.commit()
 
@@ -295,4 +250,4 @@ def test_sequencing_experiment_with_recently_updated_case(
 
     # Should capture the updated experiment
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 4
+    assert len(result_df) == 10

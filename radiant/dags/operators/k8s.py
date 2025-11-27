@@ -36,19 +36,21 @@ class ImportGermlineSNVVCF(BaseK8SOperator):
                 pool="import_vcf",
                 task_id="create_parquet_files_k8s",
                 task_display_name="[K8s] Create Parquet Files",
-                map_index_template="Case: {{ task.op_kwargs['case']['case_id'] }}",
-                name="import-vcf-for-case",
+                map_index_template="Task: {{ task.op_kwargs['radiant_task']['task_id'] }}",
+                name="import-vcf-for-task",
                 do_xcom_push=True,
             )
             | ImportGermlineSNVVCF._get_k8s_context(radiant_namespace)
         )
-        def k8s_create_parquet_files(case: dict):
+        def k8s_create_parquet_files(
+            radiant_task: dict,
+        ):  # `task` is a reserved Airflow keyword, so we use `radiant_task`
             import os
 
             from radiant.tasks.vcf.snv.germline.process import create_parquet_files
 
             namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
-            return create_parquet_files(case=case, namespace=namespace)
+            return create_parquet_files(task=radiant_task, namespace=namespace)
 
         return k8s_create_parquet_files
 
@@ -83,13 +85,13 @@ class ImportPart(BaseK8SOperator):
             )
             | ImportPart._get_k8s_context(radiant_namespace)
         )
-        def import_cnv_vcf(cases: list[dict]) -> None:
+        def import_cnv_vcf(tasks: list[dict]) -> None:
             import os
 
             from radiant.tasks.vcf.cnv.germline.process import import_cnv_vcf as _import_cnv_vcf
 
             namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
-            _import_cnv_vcf(cases=cases, namespace=namespace)
+            _import_cnv_vcf(tasks=tasks, namespace=namespace)
 
         return import_cnv_vcf
 

@@ -1,36 +1,34 @@
-from radiant.tasks.vcf.cnv.germline.process import process_cases
-from radiant.tasks.vcf.experiment import Case, Experiment
+from radiant.tasks.vcf.cnv.germline.process import process_tasks
+from radiant.tasks.vcf.experiment import AlignmentGermlineVariantCallingTask, Experiment
 
 
-def test_process_case(
+def test_process_task(
     setup_iceberg_namespace,
     iceberg_catalog_properties,
     iceberg_client,
     rest_iceberg_catalog_instance,
     indexed_vcfs,
 ):
-    case = Case(
-        case_id=1,
+    task = AlignmentGermlineVariantCallingTask(
+        task_id=1,
         part=1,
         analysis_type="germline",
         experiments=[
             Experiment(
                 seq_id=1,
-                task_id=1,
                 patient_id=1,
                 aliquot="SA0001",
                 family_role="proband",
                 affected_status="affected",
-                cnv_vcf_filepath=indexed_vcfs["test_cnv.vcf"],
                 sex="F",
                 experimental_strategy="wgs",
                 request_priority="routine",
             )
         ],
-        vcf_filepath="",
+        cnv_vcf_filepath=indexed_vcfs["test_cnv.vcf"],
     )
-    process_cases(
-        [case],
+    process_tasks(
+        [task],
         catalog_name=rest_iceberg_catalog_instance.catalog_name,
         namespace=setup_iceberg_namespace,
         catalog_properties=iceberg_catalog_properties,

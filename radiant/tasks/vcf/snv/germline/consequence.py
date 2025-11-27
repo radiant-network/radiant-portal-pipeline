@@ -108,7 +108,7 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
             hgvsc = get_csq_field(csq_fields, fields, "HGVSc")
             picked = get_csq_field(csq_fields, fields, "PICK") == "1"
             consequence = {
-                "case_id": common.case_id,
+                "task_id": common.task_id,
                 "locus": common.locus,
                 "locus_hash": common.locus_hash,
                 "chromosome": common.chromosome,

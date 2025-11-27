@@ -13,5 +13,5 @@ select e.part,
        acmg_classification,
        acmg_evidence
 FROM {{ mapping.starrocks_staging_exomiser }} e
-JOIN {{ mapping.starrocks_tmp_variant }} v ON e.locus_hash = v.locus_hash
+JOIN {{ mapping.starrocks_germline_snv_tmp_variant }} v ON e.locus_hash = v.locus_hash
 WHERE part = %(part)s;

@@ -12,7 +12,7 @@ class Common:
     Represents common genomic variant information shared across different variant processing steps.
 
     Attributes:
-        case_id (int): Identifier for the case or sample the variant belongs to.
+        task_id (int): Identifier for the task or sample the variant belongs to.
         locus (str): Unique string representation of the variant position and alleles,
             typically in the format 'chrom-start-ref-alt'.
         locus_hash (str): Placeholder for a hash value uniquely identifying the locus.
@@ -24,7 +24,7 @@ class Common:
         alternate (str): Alternate allele observed at the variant position.
     """
 
-    case_id: int
+    task_id: int
     part: int
     locus: str
     locus_hash: str
@@ -35,7 +35,7 @@ class Common:
     alternate: str
 
 
-def process_common(record: Variant, case_id: int, part: int) -> Common:
+def process_common(record: Variant, task_id: int, part: int) -> Common:
     chrom = record.CHROM.replace("chr", "")
     pos = record.POS
     ref = record.REF
@@ -44,7 +44,7 @@ def process_common(record: Variant, case_id: int, part: int) -> Common:
     locus = f"{chrom}-{pos}-{ref}-{alt}"
     locus_hash = hashlib.sha256(locus.encode()).hexdigest()
     return Common(
-        case_id=case_id,
+        task_id=task_id,
         part=part,
         locus=locus,
         locus_hash=locus_hash,
@@ -57,7 +57,7 @@ def process_common(record: Variant, case_id: int, part: int) -> Common:
 
 
 SCHEMA = Schema(
-    NestedField(1, "case_id", IntegerType(), required=True),
+    NestedField(1, "task_id", IntegerType(), required=True),
     NestedField(2, "locus", StringType(), required=True),
     NestedField(3, "locus_hash", StringType(), required=True),
     NestedField(4, "chromosome", StringType(), required=True),

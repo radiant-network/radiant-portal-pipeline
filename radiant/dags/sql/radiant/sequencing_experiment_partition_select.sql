@@ -1,7 +1,7 @@
 SELECT
-    case_id,
     seq_id,
     task_id,
+    task_type,
     part,
     analysis_type,
     aliquot,
@@ -22,4 +22,4 @@ WHERE
     part=%(part)s and
     updated_at >= COALESCE(ingested_at, '1970-01-01 00:00:00')
 ORDER BY
-    case_id, seq_id, task_id
+    seq_id, task_id

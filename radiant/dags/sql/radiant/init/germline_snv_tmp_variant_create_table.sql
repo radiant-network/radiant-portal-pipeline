@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_tmp_variant }}
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_tmp_variant }}
 (
     `locus_id` BIGINT NOT NULL,
     `chromosome` char(2),
