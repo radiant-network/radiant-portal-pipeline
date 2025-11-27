@@ -3,10 +3,18 @@
 https://d3b.atlassian.net/browse/SJRA-867
 
 ---
-## 1. Overview
+## 1. Overview and decision summary
+
+
+### 1.1 Overview
 
 This design document outlines the changes in implementation from case-based processing to task-based processing.
 It also explores potential changes to the Occurrence table schema by removing Exomiser-related columns.
+
+### 1.2 Decision Summary
+
+- The ETL will be adapted to use `task_id` instead of `case_id` for data imports.
+- Exomiser columns will be retained in the Occurrence table to maintain query performance.
 
 ---
 ## 2. Problem Statement
