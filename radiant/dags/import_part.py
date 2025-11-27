@@ -205,7 +205,7 @@ def import_part():
         parameters=task_ids,
     )
 
-    overwrite_tmp_variants = RadiantStarRocksOperator(
+    overwrite_germline_snv_tmp_variants = RadiantStarRocksOperator(
         task_id="overwrite_germline_snv_tmp_variant",
         sql="./sql/radiant/germline_snv_tmp_variant_insert.sql",
         task_display_name="[StarRocks] Insert Germline SNV Variants Tmp tables",
@@ -221,7 +221,7 @@ def import_part():
         parameters={"part": "{{ params.part }}"},
     )
 
-    insert_occurrences = RadiantStarRocksOperator(
+    insert_germline_snv_occurrences = RadiantStarRocksOperator(
         task_id="insert_germline_snv_occurrence",
         sql="./sql/radiant/germline_snv_occurrence_insert.sql",
         task_display_name="[StarRocks] Insert Germline SNV Occurrences Part",
@@ -229,30 +229,30 @@ def import_part():
         parameters={"part": "{{ params.part }}"},
     )
 
-    insert_stg_variants_freq = RadiantStarRocksOperator(
-        task_id="insert_germline_snv_stg_variant_freq",
-        sql="./sql/radiant/staging_germline_snv_variant_freq_insert.sql",
+    insert_stg_germline_snv_variants_freq = RadiantStarRocksOperator(
+        task_id="insert_stg_germline_snv_variant_freq",
+        sql="./sql/radiant/germline_snv_staging_variant_freq_insert.sql",
         task_display_name="[StarRocks] Insert Stg Germline SNV Variants Freq Part",
         submit_task_options=std_submit_task_opts,
         parameters={"part": "{{ params.part }}"},
     )
 
-    aggregate_variants_frequencies = RadiantStarRocksOperator(
-        task_id="aggregate_variant_freq",
+    aggregate_germline_snv_variants_frequencies = RadiantStarRocksOperator(
+        task_id="aggregate_germline_snv_variant_freq",
         task_display_name="[StarRocks] Aggregate all Germline SNV variants frequencies",
         sql="./sql/radiant/germline_snv_variant_frequency_insert.sql",
         submit_task_options=std_submit_task_opts,
     )
 
     with TaskGroup(group_id="germline_snv_variant") as tg_variants:
-        insert_staging_variants = RadiantStarRocksOperator(
+        insert_germline_snv_staging_variants = RadiantStarRocksOperator(
             task_id="insert_germline_snv_staging_variant",
             task_display_name="[StarRocks] Insert Staging Germline SNV Variants",
-            sql="./sql/radiant/staging_germline_snv_variant_insert.sql",
+            sql="./sql/radiant/germline_snv_staging_variant_insert.sql",
             submit_task_options=std_submit_task_opts,
         )
 
-        insert_variants_with_freqs = RadiantStarRocksOperator(
+        insert_germline_snv_variants_with_freqs = RadiantStarRocksOperator(
             task_id="insert_germline_snv_variant",
             task_display_name="[StarRocks] Insert Germline SNV Variants",
             sql="./sql/radiant/germline_snv_variant_insert.sql",
@@ -271,7 +271,7 @@ def import_part():
 
         _compute_part = compute_part()
 
-        insert_variants_part = RadiantStarRocksOperator(
+        insert_germline_snv_variants_part = RadiantStarRocksOperator(
             task_id="insert_germline_snv_variant_part",
             sql="./sql/radiant/germline_snv_variant_part_insert_part.sql",
             task_display_name="[StarRocks] Insert Germline SNV Variants Part",
@@ -279,10 +279,14 @@ def import_part():
             parameters=_compute_part,
         )
 
-        insert_staging_variants >> insert_variants_with_freqs >> insert_variants_part
+        (
+            insert_germline_snv_staging_variants
+            >> insert_germline_snv_variants_with_freqs
+            >> insert_germline_snv_variants_part
+        )
 
-    with TaskGroup(group_id="consequence") as tg_consequences:
-        import_consequences = RadiantStarRocksOperator(
+    with TaskGroup(group_id="germline_snv_consequence") as tg_consequences:
+        import_germline_snv_consequences = RadiantStarRocksOperator(
             task_id="import_germline_snv_consequence",
             sql="./sql/radiant/germline_snv_consequence_insert.sql",
             task_display_name="[StarRocks] Insert Germline SNV Consequences",
@@ -290,14 +294,14 @@ def import_part():
             parameters=task_ids,
         )
 
-        import_consequences_filter = RadiantStarRocksOperator(
+        import_germline_snv_consequences_filter = RadiantStarRocksOperator(
             task_id="import_germline_snv_consequence_filter",
             sql="./sql/radiant/germline_snv_consequence_filter_insert.sql",
             task_display_name="[StarRocks] Insert Germline SNV Consequences Filter",
             submit_task_options=std_submit_task_opts,
         )
 
-        insert_consequences_filter_part = RadiantStarRocksOperator(
+        insert_germline_snv_consequences_filter_part = RadiantStarRocksOperator(
             task_id="insert_germline_snv_consequence_filter_part",
             sql="./sql/radiant/germline_snv_consequence_filter_insert_part.sql",
             task_display_name="[StarRocks] Insert Germline SNV Consequences Filter Part",
@@ -305,7 +309,11 @@ def import_part():
             parameters={"part": "{{ params.part }}"},
         )
 
-        import_consequences >> import_consequences_filter >> insert_consequences_filter_part
+        (
+            import_germline_snv_consequences
+            >> import_germline_snv_consequences_filter
+            >> insert_germline_snv_consequences_filter_part
+        )
 
     update_sequencing_experiments = EmptyOperator(
         task_id="update_sequencing_experiment", task_display_name="[TODO] Update Sequencing Experiments"
@@ -322,11 +330,11 @@ def import_part():
         >> refresh_iceberg_tables
         >> tg_germline_cnv_occurrence
         >> insert_hashes
-        >> overwrite_tmp_variants
+        >> overwrite_germline_snv_tmp_variants
         >> insert_exomiser
-        >> insert_occurrences
-        >> insert_stg_variants_freq
-        >> aggregate_variants_frequencies
+        >> insert_germline_snv_occurrences
+        >> insert_stg_germline_snv_variants_freq
+        >> aggregate_germline_snv_variants_frequencies
         >> tg_variants
         >> tg_consequences
         >> update_sequencing_experiments
