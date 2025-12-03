@@ -79,8 +79,6 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
             if task.get("task_type") != ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK:
                 continue
 
-            print(f"Importing CNVs for task {task}")
-
             logger.info(f"Downloading VCF and index files from {task['cnv_vcf_filepath']} to a temporary directory")
             cnv_vcf_local = download_s3_file(task["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
             logger.info(f"Downloaded CNV VCF to {cnv_vcf_local}")

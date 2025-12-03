@@ -37,13 +37,11 @@ PATH_TO_PYTHON_BINARY = os.getenv("RADIANT_PYTHON_PATH", "/home/airflow/.venv/ra
 def tasks_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
     column_names = [desc[0] for desc in descriptions[0]]
     dict_rows = sorted([dict(zip(column_names, row, strict=False)) for row in results[0]], key=lambda d: d["task_id"])
-    tasks = []
-    for task_id, grouped_rows in groupby(dict_rows, key=lambda x: x["task_id"]):
-        _grouped = list(grouped_rows)
-        print(f"Processing task_id: {task_id}")
-        print(f"Grouped rows: {_grouped}")
-        tasks.append(build_task_from_rows(_grouped).model_dump())
-    return [tasks]
+    _tasks = [
+        build_task_from_rows(list(grouped_rows)).model_dump()
+        for task_id, grouped_rows in groupby(dict_rows, key=lambda x: x["task_id"])
+    ]
+    return [_tasks]
 
 
 dag_params = {

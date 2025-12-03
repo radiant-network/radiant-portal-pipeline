@@ -98,7 +98,6 @@ def create_germline_snv_occurrence_table():
     catalog = load_catalog("default")
     table_name = f"{namespace}.germline_snv_occurrence"
     if catalog.table_exists(table_name):
-        print(f"Deleting existing table {table_name}")
         catalog.drop_table(table_name)
 
     part_field = OCCURRENCE_SCHEMA.find_field("part")

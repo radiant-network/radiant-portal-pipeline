@@ -112,7 +112,6 @@ def _get_task_type(rows: list[dict]) -> type[BaseTask]:
 
 
 def build_task_from_rows(rows: list[dict]) -> BaseTask:
-    print(f"Building task from rows: {rows}")
     if not rows:
         raise ValueError("No rows provided")
 
@@ -130,7 +129,6 @@ def build_task_from_rows(rows: list[dict]) -> BaseTask:
 
 
 def build_task_from_dict(task_dict: dict) -> BaseTask:
-    print(f"Creating task from dict: {task_dict}")
     task_type = task_dict.pop("task_type")
     if task_type not in _TASK_TYPES:
         raise ValueError(f"Unknown task type: {task_type}")

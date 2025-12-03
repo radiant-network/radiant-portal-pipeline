@@ -125,11 +125,11 @@ def test_sequencing_experiment_no_delta(
     assert len(result_df) == 0
 
 
-def test_sequencing_experiment_existing_wgs_case_partition(
+def test_sequencing_experiment_existing_wgs_task_partition(
     postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
 ):
     """
-    Test computing the delta when there's an existing WGS case partition existing.
+    Test computing the delta when there's an existing WGS task partition existing.
     """
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
@@ -188,7 +188,7 @@ def test_sequencing_experiment_existing_wgs_case_partition(
     assert len(result_df) == 9  # 4 total - 1 imported experiments
 
 
-def test_sequencing_experiment_with_recently_updated_case(
+def test_sequencing_experiment_with_recently_updated_task(
     postgres_instance, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
 ):
     """

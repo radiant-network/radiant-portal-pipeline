@@ -39,5 +39,7 @@ def test_process_task(
     occ = iceberg_client.load_table(f"{setup_iceberg_namespace}.germline_cnv_occurrence").scan().to_arrow().to_pandas()
 
     assert not occ.empty, "No occurrences were written to the iceberg table"
-    assert ((occ["aliquot"] == "SA0001") & (occ["seq_id"] == 1)).any(), "Expected sample/case not found in occurrences"
+    assert ((occ["aliquot"] == "SA0001") & (occ["seq_id"] == 1)).any(), (
+        "Expected sample/sequencingID not found in occurrences"
+    )
     assert occ["chromosome"].isin(["1", "X"]).all(), "Some chromosome values are invalid"

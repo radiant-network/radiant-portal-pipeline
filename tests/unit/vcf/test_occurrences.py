@@ -101,7 +101,7 @@ def test_filter_defined():
 
 
 def test_multi_sample():
-    multi_sample_case = RadiantGermlineAnnotationTask(
+    multi_sample_task = RadiantGermlineAnnotationTask(
         task_id=1,
         part=1,
         analysis_type="germline",
@@ -140,7 +140,7 @@ def test_multi_sample():
         vcf_filepath="",
     )
     v = variant("test_occurrence_multi_sample.vcf", 1)
-    occ = process_occurrence(v, Pedigree(multi_sample_case, ["SA0001", "SA0002", "SA0003"]), common)
+    occ = process_occurrence(v, Pedigree(multi_sample_task, ["SA0001", "SA0002", "SA0003"]), common)
 
     assert occ.get(1, None) is not None
     assert occ[1]["zygosity"] == "HOM"

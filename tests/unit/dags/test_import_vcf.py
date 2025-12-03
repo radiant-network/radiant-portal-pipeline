@@ -9,7 +9,7 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-germline-snv-vcf")
-    assert len(dag.tasks) == 5  # get_cases and import_vcf
+    assert len(dag.tasks) == 5  # get_tasks and import_vcf
 
 
 def test_dag_has_correct_tasks(dag_bag):

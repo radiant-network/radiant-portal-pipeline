@@ -42,7 +42,11 @@ def test_staging_variant_frequencies_calculation(starrocks_session, resources_di
     Test the frequencies calculation for variants.
     """
 
-    for table_name in ["germline_snv_occurrence", "staging_sequencing_experiment", "germline_snv_staging_variant_frequency"]:
+    for table_name in [
+        "germline_snv_occurrence",
+        "staging_sequencing_experiment",
+        "germline_snv_staging_variant_frequency",
+    ]:
         _reset_table(starrocks_session, table_name, radiant_mapping)
 
     # Insert some test data into the occurrence table

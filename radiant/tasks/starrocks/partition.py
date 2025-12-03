@@ -100,7 +100,7 @@ class SequencingExperimentPartitionAssigner:
         patient_part: int | None = None,
     ) -> int:
         """
-        Computes the partition based on case and patient parts.
+        Computes the partition based on task and patient parts.
         """
         _task = task_part or self.task_patient_mapping[experimental_strategy].get(task_id)
         _patient = patient_part or self.task_patient_mapping[experimental_strategy].get(patient_id)

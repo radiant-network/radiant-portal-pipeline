@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }} (
     seq_id INT NOT NULL,
     task_id INT NOT NULL,
-    task_type VARCHAR(100),
+    task_type VARCHAR(100) NOT NULL,
     part INT NOT NULL,
     analysis_type VARCHAR(50),
     aliquot VARCHAR(255),
