@@ -15,15 +15,15 @@ def _base_row(task_type: str) -> dict:
         "task_id": 1,
         "part": 0,
         "task_type": task_type,
-        "analysis_type": "wgs",
+        "analysis_type": "germline",
         "seq_id": 123,
         "patient_id": 456,
         "aliquot": "A1",
         "family_role": "proband",
         "affected_status": "affected",
-        "sex": "M",
-        "experimental_strategy": "WGS",
-        "request_priority": "HIGH",
+        "sex": "male",
+        "experimental_strategy": "wgs",
+        "request_priority": "routine",
     }
 
 
@@ -43,7 +43,7 @@ def test_build_experiment_from_row():
     assert exp.patient_id == 456
     assert exp.aliquot == "A1"
     assert exp.family_role == "proband"
-    assert exp.request_priority == "HIGH"
+    assert exp.request_priority == "routine"
 
 
 def test_radiant_germline_annotation_task_build_from_rows_proband_present():
@@ -57,7 +57,7 @@ def test_radiant_germline_annotation_task_build_from_rows_proband_present():
     assert task.task_id == 1
     assert task.part == 0
     assert task.task_type == "radiant_germline_annotation"
-    assert task.analysis_type == "wgs"
+    assert task.analysis_type == "germline"
     assert len(task.experiments) == 1
     assert task.experiments[0].seq_id == row["seq_id"]
     assert task.vcf_filepath == "/path/to/proband.vcf"
@@ -161,7 +161,7 @@ def test_build_task_from_dict_radiant_germline_annotation():
         "task_type": "radiant_germline_annotation",
         "task_id": 1,
         "part": 0,
-        "analysis_type": "wgs",
+        "analysis_type": "germline",
         "experiments": [
             {
                 "seq_id": 123,
@@ -169,9 +169,9 @@ def test_build_task_from_dict_radiant_germline_annotation():
                 "aliquot": "A1",
                 "family_role": "proband",
                 "affected_status": "affected",
-                "sex": "M",
-                "experimental_strategy": "WGS",
-                "request_priority": "HIGH",
+                "sex": "male",
+                "experimental_strategy": "wgs",
+                "request_priority": "routine",
             }
         ],
         "vcf_filepath": "/path/to/proband.vcf",
@@ -191,7 +191,7 @@ def test_build_task_from_dict_unknown_task_type_raises():
         "task_type": "unknown_task_type",
         "task_id": 1,
         "part": 0,
-        "analysis_type": "wgs",
+        "analysis_type": "germline",
         "experiments": [],
     }
 
