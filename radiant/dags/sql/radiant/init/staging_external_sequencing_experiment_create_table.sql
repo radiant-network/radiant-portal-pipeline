@@ -22,9 +22,9 @@ with sequencing_context AS (
             WHEN 3 THEN 'urgent'
 	        ELSE 'routine'
         END AS priority_code
-	FROM radiant_jdbc.public.sequencing_experiment se
-	LEFT JOIN radiant_jdbc.public.case_has_sequencing_experiment chse ON chse.sequencing_experiment_id = se.id
-	JOIN radiant_jdbc.public.cases c ON chse.case_id = c.id
+	FROM  {{ mapping.clinical_sequencing_experiment }} se
+	LEFT JOIN {{ mapping.clinical_case_has_sequencing_experiment }} chse ON chse.sequencing_experiment_id = se.id
+	JOIN {{ mapping.clinical_case }} c ON chse.case_id = c.id
 	WHERE c.status_code in ('in_progress', 'completed')
 	GROUP BY
 		se.id,
