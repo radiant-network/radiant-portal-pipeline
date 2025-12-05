@@ -8,19 +8,20 @@ with sequencing_context AS (
     se.created_on,
     se.updated_on AS updated_on,
     ANY_VALUE(c.case_type_code) as analysis_type,
-    CASE MIN(
-	        CASE priority_code
-	            WHEN 'stat' THEN 1
-	            WHEN 'asap' THEN 2
-	            WHEN 'routine' THEN 3
-	            WHEN NULL THEN 99
-	        END
-	    )
-	    WHEN 1 THEN 'stat'
-	    WHEN 2 THEN 'asap'
-	    WHEN 3 THEN 'routine'
-	    WHEN 99 THEN 'routine'
-	    END AS priority_code
+    CASE
+        MIN(
+                CASE priority_code
+                    WHEN 'stat' THEN 1
+                    WHEN 'asap' THEN 2
+                    WHEN 'urgent' THEN 3
+                    ELSE 4 -- routine
+                END
+            )
+            WHEN 1 THEN 'stat'
+            WHEN 2 THEN 'asap'
+            WHEN 3 THEN 'urgent'
+	        ELSE 'routine'
+        END AS priority_code
 	FROM radiant_jdbc.public.sequencing_experiment se
 	LEFT JOIN radiant_jdbc.public.case_has_sequencing_experiment chse ON chse.sequencing_experiment_id = se.id
 	JOIN radiant_jdbc.public.cases c ON chse.case_id = c.id
@@ -47,7 +48,7 @@ sequencing_experiments AS (
 	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code='gcnv' THEN d.url ELSE NULL END) AS cnv_vcf_filepath,
 	    ANY_VALUE(CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END) AS exomiser_filepath,
         se.created_on AS created_at,
-        IF(tctx.case_id, c.updated_on, se.updated_on) AS updated_at
+        IF(tctx.case_id IS NOT NULL, c.updated_on, se.updated_on) AS updated_at
 	FROM
 	    sequencing_context se
 	LEFT JOIN {{ mapping.clinical_task_context }} tctx ON tctx.sequencing_experiment_id = se.id
