@@ -1,24 +1,57 @@
 CREATE VIEW IF NOT EXISTS {{ mapping.starrocks_staging_external_sequencing_experiment }} AS
-with sequencing_experiments AS (
+with sequencing_context AS (
+	SELECT
+    se.id,
+    se.aliquot,
+    se.sample_id,
+    se.experimental_strategy_code,
+    se.created_on,
+    se.updated_on AS updated_on,
+    ANY_VALUE(c.case_type_code) as analysis_type,
+    CASE MIN(
+	        CASE priority_code
+	            WHEN 'stat' THEN 1
+	            WHEN 'asap' THEN 2
+	            WHEN 'routine' THEN 3
+	            WHEN NULL THEN 99
+	        END
+	    )
+	    WHEN 1 THEN 'stat'
+	    WHEN 2 THEN 'asap'
+	    WHEN 3 THEN 'routine'
+	    WHEN 99 THEN 'routine'
+	    END AS priority_code
+	FROM radiant_jdbc.public.sequencing_experiment se
+	LEFT JOIN radiant_jdbc.public.case_has_sequencing_experiment chse ON chse.sequencing_experiment_id = se.id
+	JOIN radiant_jdbc.public.cases c ON chse.case_id = c.id
+	WHERE c.status_code in ('in_progress', 'completed')
+	GROUP BY
+		se.id,
+	    se.aliquot,
+	    se.sample_id,
+	    se.experimental_strategy_code,
+	    se.created_on,
+	    se.updated_on
+),
+sequencing_experiments AS (
 	SELECT
 	    t.id AS task_id,
 	    t.task_type_code AS task_type,
-	    c.proband_id,
 	    se.id AS seq_id,
 	    se.sample_id,
 	    se.aliquot,
-	    c.case_type_code AS analysis_type,
+	    se.analysis_type,
 	    se.experimental_strategy_code AS experimental_strategy,
-        c.priority_code AS request_priority,
+        COALESCE(se.priority_code, 'routine') AS request_priority,
 	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code='snv' THEN d.url ELSE NULL END) AS vcf_filepath,
 	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code='gcnv' THEN d.url ELSE NULL END) AS cnv_vcf_filepath,
 	    ANY_VALUE(CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END) AS exomiser_filepath,
         se.created_on AS created_at,
-        se.updated_on AS updated_at
+        IF(tctx.case_id, c.updated_on, se.updated_on) AS updated_at
 	FROM
-	    {{ mapping.clinical_sequencing_experiment }} se
+	    sequencing_context se
 	LEFT JOIN {{ mapping.clinical_task_context }} tctx ON tctx.sequencing_experiment_id = se.id
-	JOIN {{ mapping.clinical_case }} c ON tctx.case_id = c.id
+	LEFT JOIN {{ mapping.clinical_case }} c ON tctx.case_id = c.id
 	LEFT JOIN {{ mapping.clinical_task }} t ON t.id = tctx.task_id
 	LEFT JOIN {{ mapping.clinical_task_has_document }} thd ON thd.task_id = t.id AND thd.type = 'output'
 	LEFT JOIN {{ mapping.clinical_document }} d ON d.id = thd.document_id
@@ -27,19 +60,17 @@ with sequencing_experiments AS (
 		OR (d.format_code = 'vcf' AND t.task_type_code = 'alignment_germline_variant_calling')
 		OR (d.url LIKE '%variants.tsv' AND t.task_type_code = 'exomiser')
 	)
-	AND c.status_code in ('in_progress', 'completed')
 	GROUP BY
 	    t.id,
 	    t.task_type_code,
-		c.proband_id,
 		se.id,
 		se.sample_id,
 		se.aliquot,
-		c.case_type_code,
+		se.analysis_type,
 		se.experimental_strategy_code,
-		c.priority_code,
+		se.priority_code,
 		se.created_on,
-		se.updated_on
+		updated_at
 )
 SELECT
 	s.seq_id,
@@ -54,8 +85,8 @@ SELECT
     s.cnv_vcf_filepath,
 	s.exomiser_filepath,
 	p.sex_code AS sex,
-	IF(p.id = s.proband_id, "proband", f.relationship_to_proband_code) AS family_role,
-    IF(p.id = s.proband_id, "affected", f.affected_status_code) AS affected_status,
+	COALESCE(f.relationship_to_proband_code, "proband") AS family_role,
+    COALESCE(f.affected_status_code, "affected") AS affected_status,
 	s.created_at,
 	s.updated_at
 FROM sequencing_experiments s

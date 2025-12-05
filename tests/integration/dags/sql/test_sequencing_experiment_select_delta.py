@@ -238,9 +238,9 @@ def test_sequencing_experiment_with_recently_updated_task(
     ):
         pg_cursor.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
         pg_cursor.execute("""
-                          UPDATE sequencing_experiment
-                          SET updated_on = date_trunc('day', NOW())
-                          WHERE id = 22
+                          UPDATE cases
+                          SET updated_on = NOW()
+                          WHERE id = 8
                           """)
         pg_conn.commit()
 
