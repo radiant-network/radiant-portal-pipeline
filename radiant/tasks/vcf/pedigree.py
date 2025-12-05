@@ -1,34 +1,34 @@
-from radiant.tasks.vcf.experiment import Case
+from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
 
 
 class Pedigree:
     """
-    Represents a pedigree structure for a genetic case study, linking family roles
+    Represents a pedigree structure for a genetic task, linking family roles
     (e.g., father, mother, progenies) to their corresponding experiments.
 
     Attributes:
-       experiments (list[Case.Experiment]): A list of experiments corresponding to the VCF samples,
+       experiments (list[Task.Experiment]): A list of experiments corresponding to the VCF samples,
            ordered as they appear in the VCF file.
-        father_experiment (Case.Experiment or None): The experiment associated with the father, if available.
-        mother_experiment (Case.Experiment or None): The experiment associated with the mother, if available.
+        father_experiment (Task.Experiment or None): The experiment associated with the father, if available.
+        mother_experiment (Task.Experiment or None): The experiment associated with the mother, if available.
         is_father_affected (bool): Indicates if the father is affected by the condition.
         is_mother_affected (bool): Indicates if the mother is affected by the condition.
         father_seq_id (str or None): The sequence ID of the father, if available.
         mother_seq_id (str or None): The sequence ID of the mother, if available.
-        progenies (list[Case.Experiment]): A list of experiments for progenies (e.g., proband, brother, sister).
+        progenies (list[Task.Experiment]): A list of experiments for progenies (e.g., proband, brother, sister).
         is_family (bool): Indicates if the pedigree represents a family (requires at least one parent and one progeny).
 
     Methods:
-        __init__(case: Case, vcf_samples: list[str]):
+        __init__(task: Task, vcf_samples: list[str]):
             Initializes the Pedigree instance by mapping VCF samples to experiments
             and identifying family roles.
     """
 
-    def __init__(self, case: Case, vcf_samples: list[str]):
+    def __init__(self, task: RadiantGermlineAnnotationTask, vcf_samples: list[str]):
         self.experiments = []
         # We save the experiments in the order of the samples in the VCF file
         for vcf_sample in vcf_samples:
-            experiment = next((exp for exp in case.experiments if exp.aliquot == vcf_sample), None)
+            experiment = next((exp for exp in task.experiments if exp.aliquot == vcf_sample), None)
             if experiment:
                 self.experiments.append(experiment)
 

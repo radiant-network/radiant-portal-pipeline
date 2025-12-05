@@ -10,30 +10,30 @@ logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdo
 logger = logging.getLogger(__name__)
 
 
-def main(cases: list[dict]):
+def main(tasks: list[dict]):
     namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
-    import_cnv_vcf(cases, namespace)
+    import_cnv_vcf(tasks, namespace)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Cases from an S3 JSON file")
+    parser = argparse.ArgumentParser(description="Tasks from an S3 JSON file")
 
     parser.add_argument(
-        "--cases",
+        "--tasks",
         required=True,
         help="S3 path to a JSON file containing the table partitions",
     )
     args = parser.parse_args()
-    logger.info(f"Received argument --cases={args.cases}")
+    logger.info(f"Received argument --tasks={args.tasks}")
 
-    local_tmp_path = "/tmp/cases.json"
+    local_tmp_path = "/tmp/tasks.json"
 
     try:
-        cases = download_json_from_s3(args.cases, local_tmp_path, logger)
-        logger.info(f"Downloaded cases: {cases}")
-        main(cases)
+        tasks = download_json_from_s3(args.tasks, local_tmp_path, logger)
+        logger.info(f"Downloaded tasks: {tasks}")
+        main(tasks)
     except Exception as e:
-        logger.error(f"Error while processing cases: {e}")
+        logger.error(f"Error while processing tasks: {e}")
         sys.exit(1)
     finally:
-        delete_s3_object(args.cases, logger)
+        delete_s3_object(args.tasks, logger)

@@ -1,7 +1,7 @@
 import pytest
 
 from radiant.dags import NAMESPACE
-from radiant.dags.import_part import cases_output_processor
+from radiant.dags.import_part import tasks_output_processor
 
 
 @pytest.fixture
@@ -10,6 +10,7 @@ def mock_results():
         [
             (
                 1,
+                "radiant_germline_annotation",
                 "file_1.vcf",
                 1,
                 "germline",
@@ -17,23 +18,22 @@ def mock_results():
                 "cnv_1.vcf",
                 "exomiser_1.tsv",
                 1,
-                1,
                 "wgs",
                 "routine",
                 "sample_1",
-                "role_1",
+                "proband",
                 "M",
                 "affected",
             ),
             (
                 1,
+                "radiant_germline_annotation",
                 "file_1.vcf",
                 1,
                 "germline",
                 2,
                 None,
                 None,
-                2,
                 2,
                 "wgs",
                 "routine",
@@ -44,13 +44,13 @@ def mock_results():
             ),
             (
                 2,
+                "alignment_germline_variant_calling",
                 "file_2.vcf",
                 2,
                 "germline",
                 3,
                 "cnv_2.vcf",
                 None,
-                3,
                 3,
                 "wgs",
                 "routine",
@@ -67,14 +67,14 @@ def mock_results():
 def mock_descriptions():
     return [
         [
-            ("case_id",),
+            ("task_id",),
+            ("task_type",),
             ("vcf_filepath",),
             ("part",),
             ("analysis_type",),
             ("seq_id",),
             ("cnv_vcf_filepath",),
             ("exomiser_filepath",),
-            ("task_id",),
             ("patient_id",),
             ("experimental_strategy",),
             ("request_priority",),
@@ -86,15 +86,15 @@ def mock_descriptions():
     ]
 
 
-def test_cases_output_processor_returns_correct_cases(mock_results, mock_descriptions):
-    result = cases_output_processor(mock_results, mock_descriptions)
+def test_tasks_output_processor_returns_correct_tasks(mock_results, mock_descriptions):
+    result = tasks_output_processor(mock_results, mock_descriptions)
     assert len(result[0]) == 2
-    assert result[0][0]["case_id"] == 1
-    assert result[0][1]["case_id"] == 2
+    assert result[0][0]["task_id"] == 1
+    assert result[0][1]["task_id"] == 2
 
 
-def test_cases_output_processor_handles_empty_results():
-    result = cases_output_processor([[]], [[]])
+def test_tasks_output_processor_handles_empty_results():
+    result = tasks_output_processor([[]], [[]])
     assert result == [[]]
 
 
@@ -116,29 +116,29 @@ def test_dag_contains_all_tasks(dag_bag):
         "fetch_sequencing_experiment_delta",
         "get_iceberg_namespace",
         "get_tables_to_refresh",
-        "sanity_check_cases",
+        "sanity_check_tasks",
         "import_cnv_vcf_k8s",
         "import_germline_snv_vcf",
         "load_exomiser_files",
         "refresh_iceberg_tables",
-        "extract_case_ids",
+        "extract_task_ids",
         "extract_seq_ids",
         "insert_variant_hashes",
-        "overwrite_tmp_variant",
+        "overwrite_germline_snv_tmp_variant",
         "prepare_config",
         "insert_exomiser",
         "germline_cnv_occurrence.sanity_check_cnvs",
         "germline_cnv_occurrence.insert_germline_cnv_occurrences",
-        "insert_occurrence",
-        "insert_stg_variant_freq",
-        "aggregate_variant_freq",
-        "variant.insert_staging_variant",
-        "variant.insert_variant",
-        "variant.compute_parts",
-        "variant.insert_variant_part",
-        "consequence.import_consequence",
-        "consequence.import_consequence_filter",
-        "consequence.insert_consequence_filter_part",
+        "insert_germline_snv_occurrence",
+        "insert_stg_germline_snv_variant_freq",
+        "aggregate_germline_snv_variant_freq",
+        "germline_snv_variant.insert_germline_snv_staging_variant",
+        "germline_snv_variant.insert_germline_snv_variant",
+        "germline_snv_variant.compute_parts",
+        "germline_snv_variant.insert_germline_snv_variant_part",
+        "germline_snv_consequence.import_germline_snv_consequence",
+        "germline_snv_consequence.import_germline_snv_consequence_filter",
+        "germline_snv_consequence.insert_germline_snv_consequence_filter_part",
         "update_sequencing_experiment",
     ]
     assert set(task_ids) == set(expected_tasks)

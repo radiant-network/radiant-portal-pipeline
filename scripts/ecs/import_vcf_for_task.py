@@ -10,17 +10,17 @@ logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdo
 logger = logging.getLogger(__name__)
 
 
-def main(case: dict):
+def main(task: dict):
     namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
-    print(json.dumps(create_parquet_files(case, namespace)))
+    print(json.dumps(create_parquet_files(task, namespace)))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Import VCF for case")
-    parser.add_argument("--case", required=True, help="Case JSON string")
+    parser = argparse.ArgumentParser(description="Import VCF for task")
+    parser.add_argument("--task", required=True, help="Task JSON string")
     args = parser.parse_args()
     logger.info(f"Command line arguments: {args}")
 
-    case = json.loads(args.case)
+    task = json.loads(args.task)
 
-    main(case)
+    main(task)

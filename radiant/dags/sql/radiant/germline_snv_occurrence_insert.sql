@@ -1,4 +1,4 @@
-INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_occurrence }}
+INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_germline_snv_occurrence }}
 SELECT
     o.part,
     o.seq_id,
@@ -58,7 +58,7 @@ SELECT
     e.variant_score AS exomiser_variant_score,
     e.gene_combined_score AS exomiser_gene_combined_score
 FROM {{ mapping.iceberg_occurrence }} o
-JOIN {{ mapping.starrocks_tmp_variant }} v ON o.locus_hash = v.locus_hash
+JOIN {{ mapping.starrocks_germline_snv_tmp_variant }} v ON o.locus_hash = v.locus_hash
 LEFT JOIN (
      SELECT
         *

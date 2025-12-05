@@ -42,7 +42,8 @@ class ImportGermlineSNVVCF(BaseECSOperator):
                         {
                             "name": "radiant-operator-qa-etl-container",
                             "command": [
-                                "python /opt/radiant/import_vcf_for_case.py --case '{{ params.case | tojson }}'"
+                                "python /opt/radiant/import_vcf_for_task.py "
+                                "--task '{{ params.radiant_task | tojson }}'"
                             ],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
@@ -136,7 +137,7 @@ class ImportPart(BaseECSOperator):
                     "containerOverrides": [
                         {
                             "name": "radiant-operator-qa-etl-container",
-                            "command": ["python /opt/radiant/import_cnv_vcf.py --cases '{{ params.stored_cases }}'"],
+                            "command": ["python /opt/radiant/import_cnv_vcf.py --tasks '{{ params.stored_tasks }}'"],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
                                 {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},

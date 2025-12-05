@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }} (
-    case_id INT NOT NULL,
     seq_id INT NOT NULL,
     task_id INT NOT NULL,
+    task_type VARCHAR(100) NOT NULL,
     part INT NOT NULL,
     analysis_type VARCHAR(50),
     aliquot VARCHAR(255),
@@ -18,4 +18,4 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }}
     updated_at DATETIME,
     ingested_at DATETIME
 )
-PRIMARY KEY (case_id, seq_id, task_id)
+PRIMARY KEY (seq_id, task_id)
