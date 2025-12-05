@@ -1313,8 +1313,8 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (242, 'FI0037927.S14029.gvcf.gz.tbi', 'genomic', 'snv', 'gvcf', 2422210, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c833'),
     (243, 'FI0037928.S14857.gvcf.gz', 'genomic', 'snv', 'gvcf', 304055582, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c834'),
     (244, 'FI0037928.S14857.gvcf.gz.tbi', 'genomic', 'snv', 'gvcf', 2411724, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c835'),
-    (245, 'FI0005566.S14029.vcf.gz', 'genomic', 'snv', 'vcf', 307243253, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c836'),
-    (246, 'FI0005566.S14029.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c837');
+    (255, 'FI0005566.S14029.vcf.gz', 'genomic', 'snv', 'vcf', 307243253, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c836'),
+    (256, 'FI0005566.S14029.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c837');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1562,12 +1562,12 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (61, 84, 'output'),
     (61, 231, 'output'),
     (61, 232, 'output'),
-    (62, 245, 'output'),
-    (62, 246, 'output'),
+    (62, 255, 'output'),
+    (62, 256, 'output'),
     (63, 135, 'output'),
     (63, 136, 'output'),
-    (64, 245, 'input'),
-    (64, 246, 'input'),
+    (64, 255, 'input'),
+    (64, 256, 'input'),
     (64, 245, 'output'),
     (65, 235, 'output'),
     (65, 236, 'output'),
