@@ -147,7 +147,7 @@ def get_iceberg_tables(conf=None) -> dict:
 
 
 def get_starrocks_mapping(conf=None) -> dict:
-    tables = STARROCKS_RADIANT_MAPPING | STARROCKS_OPEN_DATA_MAPPING
+    tables = STARROCKS_RADIANT_MAPPING | STARROCKS_OPEN_DATA_MAPPING | CLINICAL_TRANSFORM_LAYER_MAPPING
     _database = get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE)
     return {key: f"{_database}.{value}" for key, value in tables.items()}
 

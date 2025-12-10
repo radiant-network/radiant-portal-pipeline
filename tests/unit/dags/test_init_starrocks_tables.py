@@ -35,7 +35,7 @@ def test_dag_has_all_tasks(dag_bag):
         assert f"create_table_{table}" in task_ids
 
     clinical_tables = [
-        "patient_access",
+        "table_patient_access",
     ]
     for table in clinical_tables:
         assert f"create_{table}" in task_ids
