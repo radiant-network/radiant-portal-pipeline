@@ -123,6 +123,9 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_raw_clinvar_rcv_summary": "raw_clinvar_rcv_summary",
 }
 
+CLINICAL_TRANSFORM_LAYER_MAPPING = {
+    "starrocks_patient_access": "patient_access",
+}
 
 def get_iceberg_germline_snv_mapping(conf=None) -> dict:
     _catalog = get_config_value(conf, RadiantConfigKeys.ICEBERG_CATALOG)
@@ -144,7 +147,7 @@ def get_iceberg_tables(conf=None) -> dict:
 
 
 def get_starrocks_mapping(conf=None) -> dict:
-    tables = STARROCKS_RADIANT_MAPPING | STARROCKS_OPEN_DATA_MAPPING
+    tables = STARROCKS_RADIANT_MAPPING | STARROCKS_OPEN_DATA_MAPPING | CLINICAL_TRANSFORM_LAYER_MAPPING
     _database = get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE)
     return {key: f"{_database}.{value}" for key, value in tables.items()}
 

@@ -6,6 +6,7 @@ from radiant.tasks.starrocks.operator import RadiantStarRocksOperator
 
 _RADIANT_SQL_INIT_DIR = SQL_DIR / "radiant" / "init"
 _OPEN_DATA_SQL_INIT_DIR = SQL_DIR / "open_data" / "init"
+_CLINICAL_SQL_INIT_DIR = SQL_DIR / "clinical" / "init"
 
 
 with DAG(
@@ -42,6 +43,17 @@ with DAG(
             RadiantStarRocksOperator(
                 task_id=f"create_table_{table}",
                 sql=str(_RADIANT_SQL_INIT_DIR / f"{table}_create_table.sql"),
+            )
+        )
+
+    clinical_tables = [
+        "patient_access",
+    ]
+    for table in clinical_tables:
+        tasks.append(
+            RadiantStarRocksOperator(
+                task_id=f"create_table_{table}",
+                sql=str(_CLINICAL_SQL_INIT_DIR / f"{table}_create_table.sql"),
             )
         )
 
