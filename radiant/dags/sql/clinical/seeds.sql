@@ -1572,3 +1572,8 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (65, 235, 'output'),
     (65, 236, 'output'),
     (66, 246, 'output');
+
+-- Reset sequences
+ALTER TABLE patient ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE sample ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE sequencing_experiment ALTER COLUMN id RESTART WITH 1000;
