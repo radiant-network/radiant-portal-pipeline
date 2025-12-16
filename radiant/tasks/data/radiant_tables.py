@@ -125,6 +125,7 @@ STARROCKS_OPEN_DATA_MAPPING = {
 
 CLINICAL_TRANSFORM_LAYER_MAPPING = {
     "starrocks_patient_access": "patient_access",
+    "starrocks_brim": "brim",
 }
 
 
