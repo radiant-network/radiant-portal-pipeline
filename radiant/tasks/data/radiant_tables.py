@@ -127,6 +127,7 @@ CLINICAL_TRANSFORM_LAYER_MAPPING = {
     "starrocks_patient_access": "patient_access",
 }
 
+
 def get_iceberg_germline_snv_mapping(conf=None) -> dict:
     _catalog = get_config_value(conf, RadiantConfigKeys.ICEBERG_CATALOG)
     _database = get_config_value(conf, RadiantConfigKeys.ICEBERG_NAMESPACE)

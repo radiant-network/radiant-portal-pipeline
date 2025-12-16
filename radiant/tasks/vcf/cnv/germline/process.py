@@ -51,9 +51,11 @@ def process_tasks(
                 samples=[exp.aliquot for exp in task.experiments],
             )
             if not vcf.samples:
-                raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
+                raise ValueError(
+                    f"Task {task.task_id} has no matching samples in the CNV VCF file {task.cnv_vcf_filepath}"
+                )
 
-            logger.info(f"Starting processing cnv vcf for task {task.task_id} with file {task.cnv_vcf_filepath}")
+            logger.info(f"Starting processing CNV VCF for task {task.task_id} with file {task.cnv_vcf_filepath}")
             for exp in task.experiments:
                 sample_idx = vcf.samples.index(exp.aliquot)
                 part = 0
