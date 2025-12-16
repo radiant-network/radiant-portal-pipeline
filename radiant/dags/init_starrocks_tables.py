@@ -48,6 +48,7 @@ with DAG(
 
     clinical_tables = [
         "patient_access",
+        "brim",
     ]
     for table in clinical_tables:
         tasks.append(
