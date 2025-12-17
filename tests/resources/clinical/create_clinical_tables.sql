@@ -215,7 +215,9 @@ CREATE TABLE IF NOT EXISTS "cases"
     "condition_code_system"     TEXT,
     "resolution_status_code"    TEXT REFERENCES "resolution_status"("code"),
     "ordering_physician"        TEXT,
-    "ordering_organization_id"  INTEGER REFERENCES "organization" ("id")
+    "ordering_organization_id"  INTEGER REFERENCES "organization" ("id"),
+    "submitter_case_id"         TEXT NOT NULL,
+    CONSTRAINT unique_submitter_case_id UNIQUE (project_id, submitter_case_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_case_proband_id ON "cases" ("proband_id");
