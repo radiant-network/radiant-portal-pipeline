@@ -35,4 +35,4 @@ LEFT JOIN {{ mapping.starrocks_topmed_bravo }} t ON t.locus_id = v.locus_id
 LEFT JOIN {{ mapping.starrocks_1000_genomes }} tg ON tg.locus_id = v.locus_id
 LEFT JOIN {{ mapping.starrocks_clinvar }} cl  ON cl.locus_id = v.locus_id
 LEFT JOIN {{ mapping.starrocks_dbsnp }} d  ON d.locus_id = v.locus_id
-LEFT JOIN {{ mapping.starrocks_omim_gene_panel }} om  ON om.symbol = v.symbol
+LEFT JOIN (SELECT symbol, array_remove(array_unique_agg(inheritance_code), NULL) AS inheritance_code FROM {{ mapping.starrocks_omim_gene_panel }} GROUP BY symbol) om ON om.symbol = v.symbol
