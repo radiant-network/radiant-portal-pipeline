@@ -3,7 +3,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_topmed_bravo }} (
   `af` double COMMENT "",
   `ac` INT(11) COMMENT "",
   `an` INT(11) COMMENT "",
-  `hom` INT(11) COMMENT "",
+  `hom` INT(11) COMMENT ""
 )
 ENGINE=OLAP
 DUPLICATE KEY(`locus_id`)
