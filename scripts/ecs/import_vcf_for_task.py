@@ -23,4 +23,7 @@ if __name__ == "__main__":
 
     task = json.loads(args.task)
 
-    main(task)
+    try:
+        main(task)
+    except Exception as e:
+        logger.exception(f"Error while processing task: {e}")

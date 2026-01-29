@@ -57,6 +57,8 @@ def process_tasks(
 
             logger.info(f"Starting processing CNV VCF for task {task.task_id} with file {task.cnv_vcf_filepath}")
             for exp in task.experiments:
+
+                logger.info(f"Process aliquot: {exp.aliquot} (seq_id: {exp.seq_id})")
                 sample_idx = vcf.samples.index(exp.aliquot)
                 part = 0
                 with tracer.start_as_current_span(f"vcf_task_{task.task_id}_{exp.seq_id}"):
