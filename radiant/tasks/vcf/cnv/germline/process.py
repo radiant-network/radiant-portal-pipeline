@@ -57,7 +57,6 @@ def process_tasks(
 
             logger.info(f"Starting processing CNV VCF for task {task.task_id} with file {task.cnv_vcf_filepath}")
             for exp in task.experiments:
-
                 logger.info(f"Process aliquot: {exp.aliquot} (seq_id: {exp.seq_id})")
                 sample_idx = vcf.samples.index(exp.aliquot)
                 part = 0
@@ -67,7 +66,10 @@ def process_tasks(
                             logger.warning(f"Skipping record with no ALT: {record.CHROM}:{record.POS}-{record.end}")
                             continue
 
-                        logger.info(f"Processing record {record.CHROM}:{record.POS}-{record.end}-{record.ALT} for sample {exp.aliquot}")
+                        logger.info(
+                            f"Processing record {record.CHROM}:{record.POS}-{record.end}-{record.ALT} "
+                            f"for sample {exp.aliquot}"
+                        )
                         occurrence = process_occurrence(record, part, exp.seq_id, exp.aliquot, sample_idx)
                         occurrence_buffer.append(occurrence)
                     vcf.close()
