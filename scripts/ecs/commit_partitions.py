@@ -25,7 +25,7 @@ def main():
         partitions = download_json_from_s3(args.table_partitions, local_tmp_path, logger)
         commit_partitions(partitions)
     except Exception as e:
-        logger.error(f"Error while processing partitions: {e}")
+        logger.exception(f"Error while processing partitions: {e}")
         sys.exit(1)
     finally:
         delete_s3_object(args.table_partitions, logger)

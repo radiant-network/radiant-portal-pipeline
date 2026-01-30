@@ -39,4 +39,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     logger.info(f"Command line arguments: {args}")
 
-    main(table_name=args.table_name)
+    try:
+        main(table_name=args.table_name)
+    except Exception as e:
+        logger.exception(f"Error while initializing Iceberg table: {e}")
+        sys.exit(1)
