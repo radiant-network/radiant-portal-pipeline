@@ -63,6 +63,11 @@ def process_tasks(
                 part = 0
                 with tracer.start_as_current_span(f"vcf_task_{task.task_id}_{exp.seq_id}"):
                     for record in vcf:
+                        if not record.ALT:
+                            logger.warning(f"Skipping record with no ALT: {record.CHROM}:{record.POS}-{record.end}")
+                            continue
+
+                        logger.info(f"Processing record {record.CHROM}:{record.POS}-{record.end}-{record.ALT} for sample {exp.aliquot}")
                         occurrence = process_occurrence(record, part, exp.seq_id, exp.aliquot, sample_idx)
                         occurrence_buffer.append(occurrence)
                     vcf.close()
