@@ -1574,6 +1574,17 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (66, 246, 'output');
 
 -- Reset sequences
-ALTER TABLE patient ALTER COLUMN id RESTART WITH 1000;
-ALTER TABLE sample ALTER COLUMN id RESTART WITH 1000;
-ALTER TABLE sequencing_experiment ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_analysis_catalog }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_case }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_document }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_family_history }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_family }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_obs_string }}  ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_obs_categorical }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_organization }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_panel }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_patient }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_project }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_sample }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_sequencing_experiment }} ALTER COLUMN id RESTART WITH 1000;
+ALTER TABLE {{ params.clinical_task }} ALTER COLUMN id RESTART WITH 1000;

@@ -42,6 +42,10 @@ CLINICAL_MAPPING = {
     "clinical_organization": "organization",
     "clinical_project": "project",
     "clinical_obs_categorical": "obs_categorical",
+    "clinical_project": "project",
+    "clinical_panel": "panel",
+    "clinical_obs_string": "obs_string",
+    "clinical_family_history": "family_history",
 }
 
 # --- Iceberg tables
