@@ -313,8 +313,11 @@ def import_part():
             >> insert_germline_snv_consequences_filter_part
         )
 
-    update_sequencing_experiments = EmptyOperator(
-        task_id="update_sequencing_experiment", task_display_name="[TODO] Update Sequencing Experiments"
+    update_sequencing_experiments = RadiantStarRocksOperator(
+        task_id="update_sequencing_experiment",
+        sql="./sql/radiant/sequencing_experiment_update.sql",
+        task_display_name="[Starrocks] Update Sequencing Experiments",
+        parameters=task_ids,
     )
 
     (
