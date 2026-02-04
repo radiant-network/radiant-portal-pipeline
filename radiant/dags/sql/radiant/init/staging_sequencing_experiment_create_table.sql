@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }}
     affected_status VARCHAR(20),
     created_at DATETIME,
     updated_at DATETIME,
-    ingested_at DATETIME
+    ingested_at DATETIME,
+    deleted BOOLEAN NOT NULL DEFAULT "false"
 )
 PRIMARY KEY (seq_id, task_id)
