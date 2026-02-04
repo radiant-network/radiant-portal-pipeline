@@ -100,6 +100,13 @@ def import_radiant():
 
         insert_new_sequencing_experiment(assigned_partitions)
 
+    updated_deleted_sequencing_experiment = RadiantStarRocksOperator(
+        task_id="update_sequencing_experiment_deleted",
+        sql="./sql/radiant/sequencing_experiment_update_deleted.sql",
+        task_display_name="[StarRocks] Flag sequencing experiment to delete",
+        trigger_rule="none_failed",
+    )
+
     fetch_sequencing_experiment = RadiantStarRocksOperator(
         task_id="fetch_sequencing_experiment",
         sql="./sql/radiant/sequencing_experiment_select.sql",
@@ -133,7 +140,7 @@ def import_radiant():
         map_index_template="Partition: {{ task.conf['part'] }}",
     ).expand(conf=priority)
 
-    (start >> tg_partition_group >> fetch_sequencing_experiment >> import_parts)
+    (start >> tg_partition_group >> updated_deleted_sequencing_experiment >> fetch_sequencing_experiment >> import_parts)
 
 
 import_radiant()
