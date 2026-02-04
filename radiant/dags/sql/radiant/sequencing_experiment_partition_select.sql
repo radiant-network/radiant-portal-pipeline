@@ -20,6 +20,6 @@ SELECT
 FROM {{ mapping.starrocks_staging_sequencing_experiment }}
 WHERE
     part=%(part)s and
-    updated_at >= COALESCE(ingested_at, '1970-01-01 00:00:00')
+    updated_at >= COALESCE(ingested_at, '1970-01-01 00:00:00') and deleted = false
 ORDER BY
     seq_id, task_id
