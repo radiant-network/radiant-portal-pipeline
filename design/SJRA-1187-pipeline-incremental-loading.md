@@ -318,3 +318,103 @@ flowchart LR
 ```
 
 ---
+
+## Implementation Roadmap
+
+The following task breakdown allows incremental development without breaking the existing pipeline.
+
+### Overview
+
+```mermaid
+flowchart TB
+    subgraph Phase0["Phase 0: Schema Preparation"]
+        T0["Add 'deleted' column to<br/>staging_sequencing_experiment<br/>(default: false)"]
+    end
+
+    subgraph Phase1["Phase 1: Two-Phase Loading"]
+        T1A["Implement two-phase loading<br/>for germline_snv_occurrence"]
+        T1B["Implement two-phase loading<br/>for raw_exomiser"]
+    end
+
+    subgraph Phase2["Phase 2: Deletion Handling"]
+        T2A["Implement deletion detection<br/>(set deleted flag)"]
+        T2B["Exclude deleted tasks<br/>during Phase 1 copy"]
+        T2C["Cleanup deleted flags<br/>at end of pipeline"]
+    end
+
+    subgraph Phase3["Phase 3: Activation"]
+        T3["Update ingested_at<br/>at end of pipeline"]
+    end
+
+    Phase0 --> Phase1
+    Phase1 --> Phase2
+    Phase2 --> Phase3
+
+    T1A --> T1B
+    T2A --> T2B --> T2C
+
+    style T0 fill:#e6f3ff,color:#000
+    style T1A fill:#fff2e6,color:#000
+    style T1B fill:#fff2e6,color:#000
+    style T2A fill:#f2e6ff,color:#000
+    style T2B fill:#f2e6ff,color:#000
+    style T2C fill:#f2e6ff,color:#000
+    style T3 fill:#ccffcc,color:#000
+```
+
+---
+
+### Phase 0: Schema Preparation (Non-Breaking)
+
+| Task | Description | Risk | Notes |
+|------|-------------|------|-------|
+| **T0** | Add `deleted` boolean column to `staging_sequencing_experiment` | None | Default value `false`, backward compatible. Existing code unaffected. |
+
+---
+
+### Phase 1: Two-Phase Loading (Issue 2)
+
+| Task | Description | Risk | Notes |
+|------|-------------|------|-------|
+| **T1A** | Implement two-phase loading for `germline_snv_occurrence` | Low | Can be tested in parallel with current behavior. Replaces current INSERT with: (1) COPY existing non-delta records, (2) INSERT delta. |
+| **T1B** | Implement two-phase loading for `raw_exomiser` | Low | Same approach as T1A. |
+
+**Why this is safe:** The pipeline still processes the full partition (ingested_at unchanged), but uses the new loading mechanism. Functionally equivalent, just more efficient architecture.
+
+---
+
+### Phase 2: Deletion Handling (Issue 3)
+
+| Task | Description | Risk | Notes |
+|------|-------------|------|-------|
+| **T2A** | Implement deletion detection logic | None | Sets `deleted = true` flag but doesn't act on it yet. Safe to deploy independently. |
+| **T2B** | Modify Phase 1 copy to exclude deleted task IDs | Low | Requires T1A/T1B and T2A. Adds `WHERE task_id NOT IN (deleted_tasks)` filter. |
+| **T2C** | Add cleanup step: `DELETE WHERE deleted = true` | Low | Runs at end of pipeline after all tables processed. |
+
+**Why this is safe:** T2A can be deployed without T2B/T2C. The flag is set but ignored until exclusion logic is ready.
+
+---
+
+### Phase 3: Activation (Issue 1)
+
+| Task | Description | Risk | Notes |
+|------|-------------|------|-------|
+| **T3** | Update `ingested_at` at end of successful pipeline run | Medium | **This is the activation switch.** Only deploy after all previous phases are validated. |
+
+**Why this must be last:** Once `ingested_at` is updated, the pipeline will only process deltas. All delta-handling logic (Issues 2 & 3) must be in place first.
+
+---
+
+### Summary: JIRA Tickets
+
+| Ticket    | Title | Depends On | Phase |
+|-----------|-------|------------|-------|
+| SJRA-1189 | Add `deleted` column to staging_sequencing_experiment | - | 0 |
+| SJRA-1190 | Implement two-phase loading for germline_snv_occurrence | - | 1 |
+| SJRA-1191 | Implement two-phase loading for raw_exomiser | - | 1 |
+| SJRA-1192 | Implement task deletion detection | Phase 0 | 2 |
+| SJRA-1193 | Exclude deleted tasks during data copy | Phase 1, T2A | 2 |
+| SJRA-1194 | Add cleanup step for deleted task flags | T2B | 2 |
+| SJRA-1195 | Enable incremental loading (update ingested_at) | Phase 1, Phase 2 | 3 |
+
+---
