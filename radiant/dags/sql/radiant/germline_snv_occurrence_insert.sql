@@ -60,10 +60,9 @@ SELECT
 FROM {{ mapping.iceberg_occurrence }} o
 JOIN {{ mapping.starrocks_germline_snv_tmp_variant }} v ON o.locus_hash = v.locus_hash
 LEFT JOIN (
-     SELECT
-        *
+     SELECT e.locus_id, e.seq_id, e.moi, e.acmg_classification, e.acmg_evidence, e.variant_score, e.gene_combined_score
      FROM {{ mapping.starrocks_exomiser }} e
-     WHERE e.variant_rank = 1
+     WHERE e.variant_rank = 1 and e.part=%(part)s
 ) e
     ON o.seq_id = e.seq_id
    AND v.locus_id = e.locus_id
