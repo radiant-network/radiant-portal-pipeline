@@ -219,12 +219,16 @@ def import_part():
         parameters={"part": "{{ params.part }}"},
     )
 
-    insert_germline_snv_occurrences = RadiantStarRocksOperator(
+    insert_germline_snv_occurrences = RadiantStarRocksPartitionSwapOperator(
         task_id="insert_germline_snv_occurrence",
-        sql="./sql/radiant/germline_snv_occurrence_insert.sql",
+        table="{{ mapping.starrocks_germline_snv_occurrence }}",
         task_display_name="[StarRocks] Insert Germline SNV Occurrences Part",
-        submit_task_options=std_submit_task_opts,
-        parameters={"part": "{{ params.part }}"},
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/germline_snv_occurrence_copy_partition.sql",
+        ),
+        parameters=task_ids,
+        insert_partition_sql="./sql/radiant/germline_snv_occurrence_insert_partition_delta.sql",
     )
 
     insert_stg_germline_snv_variants_freq = RadiantStarRocksOperator(
