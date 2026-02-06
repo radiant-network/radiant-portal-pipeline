@@ -344,6 +344,13 @@ def import_part():
             >> import_germline_snv_consequences_filter
             >> insert_germline_snv_consequences_filter_part
         )
+    delete_sequencing_experiments = RadiantStarRocksOperator(
+        task_id="delete_sequencing_experiments",
+        sql="./sql/radiant/sequencing_experiment_delete.sql",
+        task_display_name="[Starrocks] Delete Sequencing Experiments",
+        parameters=task_ids,
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
 
     update_sequencing_experiments = EmptyOperator(
         task_id="update_sequencing_experiment",
@@ -369,7 +376,8 @@ def import_part():
         >> aggregate_germline_snv_variants_frequencies
         >> tg_variants
         >> (check_delta_snv >> tg_consequences)
-        >> ((tg_consequences, tg_variants) >> update_sequencing_experiments)
+        >> ((tg_consequences, tg_variants) >> delete_sequencing_experiments)
+        >> update_sequencing_experiments
     )
 
 
