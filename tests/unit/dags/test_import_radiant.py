@@ -34,9 +34,9 @@ def test_dag_task_dependencies_are_correct(dag_bag):
     assert fetch_delta in start.get_direct_relatives(upstream=False)
     assert assign_partitions in fetch_delta.get_direct_relatives(upstream=False)
     assert insert_exp in assign_partitions.get_direct_relatives(upstream=False)
-    assert update_deleted_exp in insert_exp.get_direct_relatives(upstream=False) or fetch_exp in start.get_direct_relatives(
+    assert update_deleted_exp in insert_exp.get_direct_relatives(
         upstream=False
-    )
+    ) or fetch_exp in start.get_direct_relatives(upstream=False)
     assert fetch_exp in update_deleted_exp.get_direct_relatives(upstream=False)
     assert assign_priority in fetch_exp.get_direct_relatives(upstream=False)
     assert import_part in assign_priority.get_direct_relatives(upstream=False)

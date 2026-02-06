@@ -7,6 +7,7 @@ task = RadiantGermlineAnnotationTask(
     task_id=1,
     part=1,
     analysis_type="germline",
+    deleted=False,
     experiments=[
         Experiment(
             seq_id=1,
