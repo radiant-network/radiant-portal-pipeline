@@ -19,6 +19,7 @@ def test_process_task(
         task_id=1,
         part=1,
         analysis_type="germline",
+        deleted=False,
         experiments=[
             Experiment(
                 seq_id=1,
@@ -92,6 +93,7 @@ def test_process_task_error(
         task_id=1,
         part=1,
         analysis_type="germline",
+        deleted=False,
         experiments=[
             Experiment(
                 seq_id=1,
