@@ -352,10 +352,11 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    update_sequencing_experiments = EmptyOperator(
+    update_sequencing_experiments = RadiantStarRocksOperator(
         task_id="update_sequencing_experiment",
-        task_display_name="[TODO] Update Sequencing Experiments",
-        trigger_rule=TriggerRule.NONE_FAILED,
+        sql="./sql/radiant/sequencing_experiment_update.sql",
+        task_display_name="[Starrocks] Update Sequencing Experiments",
+        parameters=task_ids,
     )
 
     (
