@@ -115,7 +115,8 @@ def test_sequencing_experiment_no_delta(
                               affected_status,
                               created_at,
                               updated_at,
-                              '1970-01-01 00:00:00' AS ingested_at
+                              '1970-01-01 00:00:00' AS ingested_at,
+                              false as deleted
                        FROM staging_external_sequencing_experiment
                        """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
@@ -152,7 +153,8 @@ def test_sequencing_experiment_existing_wgs_task_partition(
                               affected_status,
                               created_at,
                               updated_at,
-                              '1970-01-01 00:00:00' AS ingested_at
+                              '1970-01-01 00:00:00' AS ingested_at,
+                              false as deleted
                        FROM staging_external_sequencing_experiment
                        WHERE seq_id = 22
                          AND task_id = 66
@@ -176,7 +178,8 @@ def test_sequencing_experiment_existing_wgs_task_partition(
                               affected_status,
                               created_at,
                               updated_at,
-                              '1970-01-01 00:00:00' AS ingested_at
+                              '1970-01-01 00:00:00' AS ingested_at,
+                              false as deleted
                        FROM staging_external_sequencing_experiment
                        WHERE seq_id = 4
                          AND task_id = 4
@@ -215,7 +218,8 @@ def test_sequencing_experiment_with_recently_updated_task(
                               affected_status,
                               created_at,
                               updated_at,
-                              '1970-01-01 00:00:00' AS ingested_at
+                              '1970-01-01 00:00:00' AS ingested_at,
+                              false as deleted
                        FROM staging_external_sequencing_experiment
                        WHERE seq_id = 22
                          AND task_id = 66

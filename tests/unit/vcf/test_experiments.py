@@ -24,6 +24,7 @@ def _base_row(task_type: str) -> dict:
         "sex": "male",
         "experimental_strategy": "wgs",
         "request_priority": "routine",
+        "deleted": False,
     }
 
 
@@ -176,6 +177,7 @@ def test_build_task_from_dict_radiant_germline_annotation():
         ],
         "vcf_filepath": "/path/to/proband.vcf",
         "index_vcf_filepath": "/path/to/proband.vcf.idx",
+        "deleted": False,
     }
 
     task = build_task_from_dict(task_dict)

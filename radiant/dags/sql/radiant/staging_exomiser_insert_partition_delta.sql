@@ -16,4 +16,4 @@ SELECT part,
        acmg_classification,
        acmg_evidence
 FROM {{ table }} PARTITION ( p{{ partition }})
-WHERE seq_id NOT IN %(seq_ids)s;
+WHERE seq_id NOT IN %(seq_ids)s AND seq_id NOT IN %(deleted_seq_ids)s;
