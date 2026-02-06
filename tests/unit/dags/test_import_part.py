@@ -24,7 +24,7 @@ def mock_results():
                 "proband",
                 "M",
                 "affected",
-                False
+                False,
             ),
             (
                 1,
@@ -144,7 +144,8 @@ def test_dag_contains_all_tasks(dag_bag):
         "germline_snv_consequence.import_germline_snv_consequence_filter",
         "germline_snv_consequence.insert_germline_snv_consequence_filter_part",
         "update_sequencing_experiment",
-        "sanity_check_delta_snv"
+        "sanity_check_delta_snv",
+        "delete_sequencing_experiments",
     ]
     assert set(task_ids) == set(expected_tasks)
 
