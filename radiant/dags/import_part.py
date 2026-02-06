@@ -185,7 +185,7 @@ def import_part():
     def extract_task_ids(tasks) -> dict[str, list[Any]]:
         return {
             "task_ids": list(set([t["task_id"] for t in tasks if not t["deleted"]])) or [-1],
-            "deleted_task_ids": list(set([t["task_id"] for t in tasks])) or [-1],
+            "deleted_task_ids": list(set([t["task_id"] for t in tasks if t["deleted"]])) or [-1],
         }
 
     @task.short_circuit(
