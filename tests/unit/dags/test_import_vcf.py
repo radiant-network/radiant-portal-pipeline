@@ -26,9 +26,11 @@ def test_dag_task_dependencies_are_correct(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-germline-snv-vcf")
     get_tasks_task = dag.get_task("get_tasks")
     import_vcf_task = dag.get_task("create_parquet_files_k8s")
+    namespace_task = dag.get_task("get_iceberg_namespace")
     merge_commits_task = dag.get_task("merge_commits")
     commit_partitions = dag.get_task("commit_partitions_k8s")
 
+    assert namespace_task in merge_commits_task.upstream_list
     assert import_vcf_task in get_tasks_task.downstream_list
     assert merge_commits_task in import_vcf_task.downstream_list
     assert commit_partitions in merge_commits_task.downstream_list
