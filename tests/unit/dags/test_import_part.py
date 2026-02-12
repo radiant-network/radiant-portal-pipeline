@@ -24,6 +24,7 @@ def mock_results():
                 "proband",
                 "M",
                 "affected",
+                False,
             ),
             (
                 1,
@@ -41,6 +42,7 @@ def mock_results():
                 "role_2",
                 "F",
                 "not_affected",
+                False,
             ),
             (
                 2,
@@ -58,6 +60,7 @@ def mock_results():
                 "role_3",
                 "M",
                 "affected",
+                False,
             ),
         ]
     ]
@@ -82,6 +85,7 @@ def mock_descriptions():
             ("family_role",),
             ("sex",),
             ("affected_status",),
+            ("deleted",),
         ]
     ]
 
@@ -140,6 +144,8 @@ def test_dag_contains_all_tasks(dag_bag):
         "germline_snv_consequence.import_germline_snv_consequence_filter",
         "germline_snv_consequence.insert_germline_snv_consequence_filter_part",
         "update_sequencing_experiment",
+        "sanity_check_delta_snv",
+        "delete_sequencing_experiments",
     ]
     assert set(task_ids) == set(expected_tasks)
 

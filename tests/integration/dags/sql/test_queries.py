@@ -20,6 +20,7 @@ _MOCK_PARAMS = {
     "seq_id": 1,
     "seq_ids": [1, 2, 3],
     "task_ids": [1, 2, 3],
+    "deleted_task_ids": [4, 5, 6],
     "task_type": "radiant_germline_annotation",
     "task_id": 1,
     "analysis_type": "wgs",
@@ -77,6 +78,8 @@ def _explain_insert(starrocks_session, sql_dir):
                 or "load" in sql_file.lower()
                 or "cnv_occurrence_insert_partition_delta" in sql_file.lower()
                 or "cnv_occurrence_copy_partition" in sql_file.lower()
+                or "snv_occurrence_insert_partition_delta" in sql_file.lower()
+                or "snv_occurrence_copy_partition" in sql_file.lower()
             ):
                 # "EXPLAIN" not supported with "LOAD"
                 continue

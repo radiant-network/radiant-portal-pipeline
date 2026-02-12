@@ -21,7 +21,11 @@ from radiant.tasks.starrocks.operator import (
     SubmitTaskOptions,
     SwapPartition,
 )
-from radiant.tasks.vcf.experiment import ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK, build_task_from_rows
+from radiant.tasks.vcf.experiment import (
+    ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
+    RADIANT_GERMLINE_ANNOTATION_TASK,
+    build_task_from_rows,
+)
 
 if IS_AWS:
     from radiant.dags.operators import ecs as operators
@@ -101,7 +105,7 @@ def import_part():
 
         context = get_current_context()
         conf = context["dag_run"].conf or {}
-        conf["tasks"] = tasks
+        conf["tasks"] = [t for t in tasks if not t["deleted"]]
         return conf
 
     _prepare_config = prepare_config(tasks)
@@ -129,11 +133,15 @@ def import_part():
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(tasks) -> dict[str, list[Any]]:
         seq_ids = []
+        deleted_seq_ids = []
         for t in tasks:
             for experiment in t.get("experiments"):
                 if experiment:
-                    seq_ids.append(experiment["seq_id"])
-        return {"seq_ids": seq_ids}
+                    if not t["deleted"]:
+                        seq_ids.append(experiment["seq_id"])
+                    else:
+                        deleted_seq_ids.append(experiment["seq_id"])
+        return {"seq_ids": list(set(seq_ids)) or [-1], "deleted_seq_ids": list(set(deleted_seq_ids)) or [-1]}
 
     sequencing_ids = extract_sequencing_ids(tasks)
 
@@ -176,7 +184,21 @@ def import_part():
 
     @task(task_id="extract_task_ids", task_display_name="[PyOp] Extract Task IDs")
     def extract_task_ids(tasks) -> dict[str, list[Any]]:
-        return {"task_ids": [t["task_id"] for t in tasks]}
+        return {
+            "task_ids": list(set([t["task_id"] for t in tasks if not t["deleted"]])) or [-1],
+            "deleted_task_ids": list(set([t["task_id"] for t in tasks if t["deleted"]])) or [-1],
+        }
+
+    @task.short_circuit(
+        task_id="sanity_check_delta_snv",
+        task_display_name="[PyOp] Sanity Check Delta SNVs",
+        ignore_downstream_trigger_rules=False,
+    )
+    def sanity_check_delta_snv(tasks: Any) -> Any:
+        has_delta_snv = any(
+            t.get("task_type") == RADIANT_GERMLINE_ANNOTATION_TASK and not t.get("deleted") for t in tasks
+        )
+        return has_delta_snv
 
     @task(task_id="get_tables_to_refresh", task_display_name="[PyOp] Get list of iceberg tables to refresh")
     def get_tables_to_refresh():
@@ -218,14 +240,20 @@ def import_part():
         task_display_name="[StarRocks] Insert Exomiser",
         submit_task_options=std_submit_task_opts,
         parameters={"part": "{{ params.part }}"},
+        trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    insert_germline_snv_occurrences = RadiantStarRocksOperator(
+    insert_germline_snv_occurrences = RadiantStarRocksPartitionSwapOperator(
         task_id="insert_germline_snv_occurrence",
-        sql="./sql/radiant/germline_snv_occurrence_insert.sql",
+        table="{{ mapping.starrocks_germline_snv_occurrence }}",
         task_display_name="[StarRocks] Insert Germline SNV Occurrences Part",
-        submit_task_options=std_submit_task_opts,
-        parameters={"part": "{{ params.part }}"},
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/germline_snv_occurrence_copy_partition.sql",
+        ),
+        parameters=task_ids,
+        insert_partition_sql="./sql/radiant/germline_snv_occurrence_insert_partition_delta.sql",
+        trigger_rule=TriggerRule.NONE_FAILED,
     )
 
     insert_stg_germline_snv_variants_freq = RadiantStarRocksOperator(
@@ -234,6 +262,7 @@ def import_part():
         task_display_name="[StarRocks] Insert Stg Germline SNV Variants Freq Part",
         submit_task_options=std_submit_task_opts,
         parameters={"part": "{{ params.part }}"},
+        trigger_rule=TriggerRule.NONE_FAILED,
     )
 
     aggregate_germline_snv_variants_frequencies = RadiantStarRocksOperator(
@@ -241,8 +270,10 @@ def import_part():
         task_display_name="[StarRocks] Aggregate all Germline SNV variants frequencies",
         sql="./sql/radiant/germline_snv_variant_frequency_insert.sql",
         submit_task_options=std_submit_task_opts,
+        trigger_rule=TriggerRule.NONE_FAILED,
     )
 
+    check_delta_snv = sanity_check_delta_snv(tasks)
     with TaskGroup(group_id="germline_snv_variant") as tg_variants:
         insert_germline_snv_staging_variants = RadiantStarRocksOperator(
             task_id="insert_germline_snv_staging_variant",
@@ -256,6 +287,7 @@ def import_part():
             task_display_name="[StarRocks] Insert Germline SNV Variants",
             sql="./sql/radiant/germline_snv_variant_insert.sql",
             submit_task_options=std_submit_task_opts,
+            trigger_rule=TriggerRule.NONE_FAILED,
         )
 
         @task(task_id="compute_parts")
@@ -279,8 +311,8 @@ def import_part():
         )
 
         (
-            insert_germline_snv_staging_variants
-            >> insert_germline_snv_variants_with_freqs
+            (check_delta_snv >> insert_germline_snv_staging_variants)
+            >> (aggregate_germline_snv_variants_frequencies >> insert_germline_snv_variants_with_freqs)
             >> insert_germline_snv_variants_part
         )
 
@@ -313,9 +345,19 @@ def import_part():
             >> import_germline_snv_consequences_filter
             >> insert_germline_snv_consequences_filter_part
         )
+    delete_sequencing_experiments = RadiantStarRocksOperator(
+        task_id="delete_sequencing_experiments",
+        sql="./sql/radiant/sequencing_experiment_delete.sql",
+        task_display_name="[Starrocks] Delete Sequencing Experiments",
+        parameters=task_ids,
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
 
-    update_sequencing_experiments = EmptyOperator(
-        task_id="update_sequencing_experiment", task_display_name="[TODO] Update Sequencing Experiments"
+    update_sequencing_experiments = RadiantStarRocksOperator(
+        task_id="update_sequencing_experiment",
+        sql="./sql/radiant/sequencing_experiment_update.sql",
+        task_display_name="[Starrocks] Update Sequencing Experiments",
+        parameters=task_ids,
     )
 
     (
@@ -329,14 +371,15 @@ def import_part():
         >> load_exomiser
         >> refresh_iceberg_tables
         >> tg_germline_cnv_occurrence
-        >> insert_hashes
+        >> (check_delta_snv >> insert_hashes)
         >> overwrite_germline_snv_tmp_variants
-        >> insert_exomiser
-        >> insert_germline_snv_occurrences
+        >> (load_exomiser >> insert_exomiser)
+        >> (refresh_iceberg_tables >> insert_germline_snv_occurrences)
         >> insert_stg_germline_snv_variants_freq
         >> aggregate_germline_snv_variants_frequencies
         >> tg_variants
-        >> tg_consequences
+        >> (check_delta_snv >> tg_consequences)
+        >> ((tg_consequences, tg_variants) >> delete_sequencing_experiments)
         >> update_sequencing_experiments
     )
 

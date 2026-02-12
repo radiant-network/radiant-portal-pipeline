@@ -27,6 +27,7 @@ class BaseTask(BaseModel, ABC):
     part: int
     analysis_type: str
     experiments: list[Experiment]
+    deleted: bool
 
     @staticmethod
     @abstractmethod
@@ -123,6 +124,7 @@ def build_task_from_rows(rows: list[dict]) -> BaseTask:
         "task_type": rows[0]["task_type"],
         "analysis_type": rows[0]["analysis_type"],
         "experiments": experiments,
+        "deleted": rows[0]["deleted"],
     }
     extra_args = task_cls.gather_additional_args(rows)
     return task_cls(**base_args, **extra_args)

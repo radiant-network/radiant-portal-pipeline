@@ -1,4 +1,3 @@
-INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_germline_snv_occurrence }}
 SELECT
     o.part,
     o.seq_id,
@@ -60,12 +59,11 @@ SELECT
 FROM {{ mapping.iceberg_occurrence }} o
 JOIN {{ mapping.starrocks_germline_snv_tmp_variant }} v ON o.locus_hash = v.locus_hash
 LEFT JOIN (
-     SELECT
-        *
+     SELECT e.locus_id, e.seq_id, e.moi, e.acmg_classification, e.acmg_evidence, e.variant_score, e.gene_combined_score
      FROM {{ mapping.starrocks_exomiser }} e
-     WHERE e.variant_rank = 1
+     WHERE e.variant_rank = 1 and e.part={{ partition }}
 ) e
     ON o.seq_id = e.seq_id
    AND v.locus_id = e.locus_id
-WHERE o.part = %(part)s
+WHERE o.part = {{ partition }} and o.task_id in %(task_ids)s
 AND has_alt;
