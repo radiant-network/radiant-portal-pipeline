@@ -14,6 +14,7 @@ _RADIANT_SQL_PATH = os.path.join(_SQL_DIR, "radiant")
 @pytest.fixture(scope="session")
 def sequencing_delta_columns():
     yield [
+        "case_id",
         "seq_id",
         "task_id",
         "task_type",
@@ -23,15 +24,18 @@ def sequencing_delta_columns():
         "experimental_strategy",
         "request_priority",
         "vcf_filepath",
-        "csv_filepath",
+        "cnv_vcf_filepath",
         "exomiser_filepath",
         "sex",
+        "family_id",
         "family_role",
         "affected_status",
         "created_at",
         "updated_at",
         "patient_part",
-        "task_part",
+        "seq_part",
+        "case_part",
+        "family_part",
         "max_part",
         "max_count",
     ]
@@ -98,7 +102,8 @@ def test_sequencing_experiment_no_delta(
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
-                       SELECT seq_id,
+                       SELECT case_id,
+                              seq_id,
                               task_id,
                               task_type,
                               0                     AS part,
@@ -111,6 +116,7 @@ def test_sequencing_experiment_no_delta(
                               cnv_vcf_filepath,
                               exomiser_filepath,
                               sex,
+                              family_id,
                               family_role,
                               affected_status,
                               created_at,
@@ -136,7 +142,8 @@ def test_sequencing_experiment_existing_wgs_task_partition(
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
-                       SELECT seq_id,
+                       SELECT case_id,
+                              seq_id,
                               task_id,
                               task_type,
                               0                     AS part,
@@ -149,6 +156,7 @@ def test_sequencing_experiment_existing_wgs_task_partition(
                               cnv_vcf_filepath,
                               exomiser_filepath,
                               sex,
+                              family_id,
                               family_role,
                               affected_status,
                               created_at,
@@ -161,7 +169,8 @@ def test_sequencing_experiment_existing_wgs_task_partition(
                        """)
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
-                       SELECT seq_id,
+                       SELECT case_id,
+                              seq_id,
                               task_id,
                               task_type,
                               1                     AS part,
@@ -174,6 +183,7 @@ def test_sequencing_experiment_existing_wgs_task_partition(
                               cnv_vcf_filepath,
                               exomiser_filepath,
                               sex,
+                              family_id,
                               family_role,
                               affected_status,
                               created_at,
@@ -201,7 +211,8 @@ def test_sequencing_experiment_with_recently_updated_task(
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
-                       SELECT seq_id,
+                       SELECT case_id,
+                              seq_id,
                               task_id,
                               task_type,
                               0                     AS part,
@@ -214,6 +225,7 @@ def test_sequencing_experiment_with_recently_updated_task(
                               cnv_vcf_filepath,
                               exomiser_filepath,
                               sex,
+                              family_id,
                               family_role,
                               affected_status,
                               created_at,

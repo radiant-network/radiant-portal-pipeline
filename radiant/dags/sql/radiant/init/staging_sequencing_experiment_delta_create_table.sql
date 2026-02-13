@@ -124,6 +124,7 @@ SELECT
     cnv_vcf_filepath,
     exomiser_filepath,
     sex,
+    family_id,
     family_role,
     affected_status,
     created_at,

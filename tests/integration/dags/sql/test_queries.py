@@ -17,6 +17,7 @@ _MOCK_PARAMS = {
     "variant_part": 1,
     "part_lower": 0,
     "part_upper": 10,
+    "case_id": 1,
     "seq_id": 1,
     "seq_ids": [1, 2, 3],
     "task_ids": [1, 2, 3],

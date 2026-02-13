@@ -250,6 +250,7 @@ def import_part():
             partition="{{ params.part }}",
             copy_partition_sql="./sql/radiant/germline_snv_occurrence_copy_partition.sql",
         ),
+        submit_task_options=std_submit_task_opts,
         parameters=task_ids,
         insert_partition_sql="./sql/radiant/germline_snv_occurrence_insert_partition_delta.sql",
         trigger_rule=TriggerRule.NONE_FAILED,
