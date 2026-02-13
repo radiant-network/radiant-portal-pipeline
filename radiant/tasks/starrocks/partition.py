@@ -8,6 +8,7 @@ DT_EPOCH = datetime(year=1970, month=1, day=1)
 
 
 class SequencingDeltaCommon(BaseModel):
+    case_id: int
     task_id: int
     seq_id: int
     task_type: str
@@ -20,6 +21,7 @@ class SequencingDeltaCommon(BaseModel):
     cnv_vcf_filepath: str | None = None
     exomiser_filepath: str | None = None
     sex: str
+    family_id: int
     family_role: str
     affected_status: str
     created_at: datetime
@@ -28,7 +30,9 @@ class SequencingDeltaCommon(BaseModel):
 
 class SequencingDeltaInput(SequencingDeltaCommon):
     patient_part: int | None = None
-    task_part: int | None = None
+    seq_part: int | None = None
+    case_part: int | None = None
+    family_part: int | None = None
     max_part: int | None = None
     max_count: int | None = None
 
@@ -89,34 +93,61 @@ class SequencingExperimentPartitionAssigner:
 
     def __init__(self):
         self.state = {k: PartitionCounter(id=self.SEQUENCING_TYPES[k].mask, count=0) for k in self.SEQUENCING_TYPES}
-        self.task_patient_mapping = {k: {} for k in self.SEQUENCING_TYPES}
+        self.task_patient_mapping = {
+            k: {"patient_id": {}, "seq_id": {}, "case_id": {}, "family_id": {}} for k in self.SEQUENCING_TYPES
+        }
 
     def _compute_partition(
         self,
         experimental_strategy: str,
-        task_id: int,
         patient_id: int,
-        task_part: int | None = None,
+        seq_id: int,
+        case_id: int,
+        family_id: int,
         patient_part: int | None = None,
+        seq_part: int | None = None,
+        case_part: int | None = None,
+        family_part: int | None = None,
     ) -> int:
         """
         Computes the partition based on task and patient parts.
         """
-        _task = task_part or self.task_patient_mapping[experimental_strategy].get(task_id)
-        _patient = patient_part or self.task_patient_mapping[experimental_strategy].get(patient_id)
-        if _task is not None:
-            assigned_part = _task
-        elif _patient is not None:
-            assigned_part = _patient
-        else:
-            assigned_part = self.state[experimental_strategy].id
+        # A bit of gymnastics to get around the fact that a set can't be created from a list of dicts
+        parts = {
+            patient_part,
+            seq_part,
+            case_part,
+            family_part,
+            self.task_patient_mapping[experimental_strategy]["patient_id"].get(patient_id),
+            self.task_patient_mapping[experimental_strategy]["seq_id"].get(seq_id),
+            self.task_patient_mapping[experimental_strategy]["case_id"].get(case_id),
+            self.task_patient_mapping[experimental_strategy]["family_id"].get(family_id),
+        }
+        parts.discard(None)
 
-        if assigned_part == self.state[experimental_strategy].id:
-            self.state[experimental_strategy].count += 1
+        if parts:
+            if len(parts) > 1:
+                raise ValueError(
+                    "Inconsistent partitioning information provided for "
+                    f"patient_id/part [{patient_id}/{patient_part}], "
+                    f"seq_id/part [{seq_id}/{seq_part}], "
+                    f"case_id/part [{case_id}/{case_part}], "
+                    f"family_id/part [{family_id}/{family_part}]"
+                )
+            return parts.pop()
 
+        # Check if limit was reached before assigning the partition
         if self.state[experimental_strategy].count >= self.SEQUENCING_TYPES[experimental_strategy].limit:
             self.state[experimental_strategy].id += 1
             self.state[experimental_strategy].count = 0
+
+        assigned_part = self.state[experimental_strategy].id
+        self.state[experimental_strategy].count += 1
+
+        self.task_patient_mapping[experimental_strategy]["patient_id"][patient_id] = assigned_part
+        self.task_patient_mapping[experimental_strategy]["seq_id"][seq_id] = assigned_part
+        self.task_patient_mapping[experimental_strategy]["case_id"][case_id] = assigned_part
+        self.task_patient_mapping[experimental_strategy]["family_id"][family_id] = assigned_part
 
         return assigned_part
 
@@ -144,18 +175,19 @@ class SequencingExperimentPartitionAssigner:
                 | {
                     "part": self._compute_partition(
                         experimental_strategy=_item.experimental_strategy,
-                        task_id=_item.task_id,
                         patient_id=_item.patient_id,
-                        task_part=_item.task_part,
+                        seq_id=_item.seq_id,
+                        case_id=_item.case_id,
+                        family_id=_item.family_id,
                         patient_part=_item.patient_part,
+                        seq_part=_item.seq_part,
+                        case_part=_item.case_part,
+                        family_part=_item.family_part,
                     ),
                     "ingested_at": DT_EPOCH,
                 }
             )
             partitioned_items.append(_output)
-
-            self.task_patient_mapping[_output.experimental_strategy][_output.task_id] = _output.part
-            self.task_patient_mapping[_output.experimental_strategy][_output.patient_id] = _output.part
 
         return partitioned_items
 

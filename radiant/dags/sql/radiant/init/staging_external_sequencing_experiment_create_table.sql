@@ -1,6 +1,7 @@
 CREATE VIEW IF NOT EXISTS {{ mapping.starrocks_staging_external_sequencing_experiment }} AS
 with sequencing_context AS (
 	SELECT
+	c.id as case_id,
     se.id,
     se.aliquot,
     se.sample_id,
@@ -27,6 +28,7 @@ with sequencing_context AS (
 	JOIN {{ mapping.clinical_case }} c ON chse.case_id = c.id
 	WHERE c.status_code in ('in_progress', 'completed')
 	GROUP BY
+	    c.id,
 		se.id,
 	    se.aliquot,
 	    se.sample_id,
@@ -36,6 +38,7 @@ with sequencing_context AS (
 ),
 sequencing_experiments AS (
 	SELECT
+        se.case_id,
 	    t.id AS task_id,
 	    t.task_type_code AS task_type,
 	    se.id AS seq_id,
@@ -62,6 +65,7 @@ sequencing_experiments AS (
 		OR (d.url LIKE '%variants.tsv' AND t.task_type_code = 'exomiser')
 	)
 	GROUP BY
+	    se.case_id,
 	    t.id,
 	    t.task_type_code,
 		se.id,
@@ -74,6 +78,7 @@ sequencing_experiments AS (
 		updated_at
 )
 SELECT
+    s.case_id,
 	s.seq_id,
 	s.task_id,
 	s.task_type,
@@ -86,6 +91,7 @@ SELECT
     s.cnv_vcf_filepath,
 	s.exomiser_filepath,
 	p.sex_code AS sex,
+    f.id AS family_id,
 	COALESCE(f.relationship_to_proband_code, "proband") AS family_role,
     COALESCE(f.affected_status_code, "affected") AS affected_status,
 	s.created_at,

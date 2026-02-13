@@ -4,6 +4,7 @@ from datetime import datetime
 import pytest
 
 from radiant.tasks.starrocks.partition import (
+    PriorityLevel,
     SequencingDeltaInput,
     SequencingDeltaOutput,
     SequencingExperimentPartitionAssigner,
@@ -21,6 +22,7 @@ from radiant.tasks.starrocks.partition import (
 def test__partition_assigner__from_empty_single(experimental_strategy, expected_part):
     _delta = [
         SequencingDeltaInput(
+            case_id=1,
             seq_id=1,
             task_id=1,
             task_type="radiant_germline_annotation",
@@ -31,14 +33,11 @@ def test__partition_assigner__from_empty_single(experimental_strategy, expected_
             request_priority="stat",
             vcf_filepath="s3://bucket/path/file.vcf.gz",
             sex="male",
+            family_id=1,
             family_role="proband",
             affected_status="affected",
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
-            patient_part=None,
-            task_part=None,
-            max_part=None,
-            max_count=None,
         ).model_dump()
     ]
 
@@ -56,6 +55,7 @@ def test__partition_assigner__from_empty_single(experimental_strategy, expected_
 def test__partition_assigner__from_empty_multiples_single_partition(experimental_strategy, limit, expected_part):
     _delta = [
         SequencingDeltaInput(
+            case_id=i,
             seq_id=i,
             task_id=i,
             task_type="radiant_germline_annotation",
@@ -66,14 +66,11 @@ def test__partition_assigner__from_empty_multiples_single_partition(experimental
             request_priority="stat",
             vcf_filepath="s3://bucket/path/file.vcf.gz",
             sex="male",
+            family_id=i,
             family_role="proband",
             affected_status="affected",
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
-            patient_part=None,
-            task_part=None,
-            max_part=None,
-            max_count=None,
         ).model_dump()
         for i in range(limit)
     ]
@@ -94,6 +91,7 @@ def test__partition_assigner__from_empty_multiples_single_partition(experimental
 def test__partition_assigner__from_empty_multiples_many_partitions(experimental_strategy, limit, expected_parts):
     _delta = [
         SequencingDeltaInput(
+            case_id=i,
             seq_id=i,
             task_id=i,
             task_type="radiant_germline_annotation",
@@ -104,14 +102,11 @@ def test__partition_assigner__from_empty_multiples_many_partitions(experimental_
             request_priority="stat",
             vcf_filepath="s3://bucket/path/file.vcf.gz",
             sex="male",
+            family_id=i,
             family_role="proband",
             affected_status="affected",
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
-            patient_part=None,
-            task_part=None,
-            max_part=None,
-            max_count=None,
         ).model_dump()
         for i in range(limit)
     ]
@@ -119,71 +114,24 @@ def test__partition_assigner__from_empty_multiples_many_partitions(experimental_
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     parts = Counter([p.part for p in partitioned])
     assert parts == expected_parts
-
 
 @pytest.mark.parametrize(
-    "experimental_strategy, limit, expected_parts",
+    "seq_part, patient_part, case_part, family_part, max_part, max_count, expected_parts",
     [
-        ("wgs", 100, {0x00000000: 101}),
-        ("wxs", 1000, {0x00010000: 1001}),
+        (None, None, None, None, None, None, {0: 1}),  # Empty task
+        (None, 42, None, None, None, None, {42: 1}),  # patient matching
+        (None, None, 42, None, None, None, {42: 1}),  # case matching
+        (None, None, None, 42, None, None, {42: 1}),  # family matching
+        (None, None, None, None, 42, 50, {42: 1}),  # max_part not full
+        (None, 24, None, None, 42, 50, {24: 1}),  # patient matching with max_part
     ],
 )
-def test__partition_assigner__from_empty_extra_matching_task(experimental_strategy, limit, expected_parts):
+def test__partition_assigner__with_matching_patient(
+    seq_part, patient_part, case_part, family_part, max_part, max_count, expected_parts
+):
     _delta = [
         SequencingDeltaInput(
-            seq_id=i,
-            task_id=i,
-            task_type="radiant_germline_annotation",
-            analysis_type="germline",
-            aliquot=str(i),
-            patient_id=i,
-            experimental_strategy=experimental_strategy,
-            request_priority="stat",
-            vcf_filepath="s3://bucket/path/file.vcf.gz",
-            sex="male",
-            family_role="proband",
-            affected_status="affected",
-            created_at=datetime(year=2025, month=1, day=1),
-            updated_at=datetime(year=2025, month=1, day=1),
-            patient_part=None,
-            task_part=None,
-            max_part=None,
-            max_count=None,
-        ).model_dump()
-        for i in range(limit)
-    ]
-
-    _delta.append(
-        SequencingDeltaInput(
-            seq_id=limit + 1,
-            task_id=1,
-            task_type="radiant_germline_annotation",
-            analysis_type="germline",
-            aliquot=str(limit + 1),
-            patient_id=limit + 1,
-            experimental_strategy=experimental_strategy,
-            request_priority="stat",
-            vcf_filepath="s3://bucket/path/file.vcf.gz",
-            sex="male",
-            family_role="proband",
-            affected_status="affected",
-            created_at=datetime(year=2025, month=1, day=1),
-            updated_at=datetime(year=2025, month=1, day=1),
-            patient_part=None,
-            task_part=None,
-            max_part=None,
-            max_count=None,
-        ).model_dump()
-    )
-
-    partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
-    parts = Counter([p.part for p in partitioned])
-    assert parts == expected_parts
-
-
-def test__partition_assigner__with_matching_task():
-    _delta = [
-        SequencingDeltaInput(
+            case_id=0,
             seq_id=0,
             task_id=0,
             task_type="radiant_germline_annotation",
@@ -194,52 +142,15 @@ def test__partition_assigner__with_matching_task():
             request_priority="stat",
             vcf_filepath="s3://bucket/path/file.vcf.gz",
             sex="male",
-            family_role="proband",
-            affected_status="affected",
-            created_at=datetime(year=2025, month=1, day=1),
-            updated_at=datetime(year=2025, month=1, day=1),
-            patient_part=None,
-            task_part=42,
-            max_part=None,
-            max_count=None,
-        ).model_dump()
-    ]
-
-    partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
-    parts = Counter([p.part for p in partitioned])
-    assert parts == {42: 1}
-
-
-@pytest.mark.parametrize(
-    "task_part, patient_part, max_part, max_count, expected_parts",
-    [
-        (None, None, None, None, {0: 1}),  # Empty task
-        (None, 42, None, None, {42: 1}),  # patient matching
-        (None, None, 42, 50, {42: 1}),  # max_part not full
-        (None, 24, 42, 50, {24: 1}),  # patient matching with max_part
-        (24, 42, 0, 50, {24: 1}),  # task matching with patient
-        (24, None, 24, 100, {24: 1}),  # task matching but part is full
-    ],
-)
-def test__partition_assigner__with_matching_patient(task_part, patient_part, max_part, max_count, expected_parts):
-    _delta = [
-        SequencingDeltaInput(
-            seq_id=0,
-            task_id=0,
-            task_type="radiant_germline_annotation",
-            analysis_type="germline",
-            aliquot=str(0),
-            patient_id=0,
-            experimental_strategy="wgs",
-            request_priority="stat",
-            vcf_filepath="s3://bucket/path/file.vcf.gz",
-            sex="male",
+            family_id=0,
             family_role="proband",
             affected_status="affected",
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
             patient_part=patient_part,
-            task_part=task_part,
+            seq_part=seq_part,
+            case_part=case_part,
+            family_part=family_part,
             max_part=max_part,
             max_count=max_count,
         ).model_dump()
@@ -250,6 +161,63 @@ def test__partition_assigner__with_matching_patient(task_part, patient_part, max
     assert parts == expected_parts
 
 
+def test__partition_assigner_with_related_experiments():
+    _delta = [
+        SequencingDeltaInput(
+            case_id=1,
+            seq_id=1,
+            task_id=1,
+            patient_id=1,
+            family_id=1,
+            experimental_strategy="wgs",
+            # dummy values for other fields
+            task_type="",
+            analysis_type="",
+            aliquot="",
+            request_priority="",
+            sex="",
+            family_role="",
+            affected_status="",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        ).model_dump(),
+        SequencingDeltaInput(
+            case_id=2,
+            seq_id=2,
+            task_id=2,
+            patient_id=1,  # Same patient
+            family_id=2,
+            experimental_strategy="wgs",
+            # dummy values for other fields
+            task_type="",
+            analysis_type="",
+            aliquot="",
+            request_priority="",
+            sex="",
+            family_role="",
+            affected_status="",
+            created_at=datetime.now(),
+            updated_at=datetime.now(),
+        ).model_dump(),
+    ]
+    partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
+    assert len(partitioned) == 2
+    assert partitioned[0].part == partitioned[1].part
+
+
+def test_priority_level_enum():
+    assert PriorityLevel.from_string("stat") == PriorityLevel.STAT
+    assert PriorityLevel.from_string("asap") == PriorityLevel.ASAP
+    assert PriorityLevel.from_string("urgent") == PriorityLevel.URGENT
+    assert PriorityLevel.from_string("routine") == PriorityLevel.ROUTINE
+    assert PriorityLevel.from_string(None) == PriorityLevel.ROUTINE
+    assert PriorityLevel.from_string("unknown") == PriorityLevel.ROUTINE
+    assert PriorityLevel.STAT < PriorityLevel.ASAP
+    assert PriorityLevel.ASAP < PriorityLevel.URGENT
+    assert PriorityLevel.URGENT < PriorityLevel.ROUTINE
+    assert min(PriorityLevel) == PriorityLevel.STAT
+
+
 @pytest.mark.parametrize(
     "parts, priorities, expected_priority",
     [
@@ -258,11 +226,13 @@ def test__partition_assigner__with_matching_patient(task_part, patient_part, max
         ([0, 1, 2, 3], ["stat", "urgent", "stat", "routine"], [0, 2, 1, 3]),
         ([0, 1, 2, 3], ["stat", "stat", "stat", "stat"], [0, 1, 2, 3]),
         ([0, 1], ["unknown", "low"], [0, 1]),
+        ([0, 0, 1, 1], ["stat", "asap", "urgent", "routine"], [0, 1]),
     ],
 )
 def test__priority_assigner__assign_priorities(parts, priorities, expected_priority):
     sequencing_experiments = [
         SequencingDeltaOutput(
+            case_id=0,
             seq_id=0,
             task_id=0,
             task_type="radiant_germline_annotation",
@@ -274,6 +244,7 @@ def test__priority_assigner__assign_priorities(parts, priorities, expected_prior
             request_priority=priority,
             vcf_filepath="s3://bucket/path/file.vcf.gz",
             sex="male",
+            family_id=0,
             family_role="proband",
             affected_status="affected",
             created_at=datetime(year=2025, month=1, day=1),

@@ -22,36 +22,44 @@ patient_part AS (
 		sd.patient_id,
 		sd.experimental_strategy
 ),
-enriched_patient AS (
-	SELECT
-		sd.*,
-		pp.part as patient_part
-	FROM sequencing_delta sd
-	LEFT JOIN patient_part pp
-	ON  pp.patient_id = sd.patient_id
-	AND pp.experimental_strategy = sd.experimental_strategy
-),
-task_part AS (
+seq_part AS (
 	SELECT
 		MAX(se.part) as part,
-		sd.task_id,
+		sd.seq_id,
 		sd.experimental_strategy
 	FROM sequencing_delta sd
 	LEFT JOIN {{ mapping.starrocks_staging_sequencing_experiment }} se
-	ON  se.task_id = sd.task_id
+	ON  se.seq_id = sd.seq_id
 	AND se.experimental_strategy = sd.experimental_strategy
 	GROUP BY
-		sd.task_id,
+		sd.seq_id,
 		sd.experimental_strategy
 ),
-enriched_task AS (
+case_part AS (
 	SELECT
-		ep.*,
-		tp.part as task_part
-	FROM enriched_patient ep
-	LEFT JOIN task_part tp
-	ON  tp.task_id = ep.task_id
-	AND tp.experimental_strategy = ep.experimental_strategy
+		MAX(se.part) as part,
+		sd.case_id,
+		sd.experimental_strategy
+	FROM sequencing_delta sd
+	LEFT JOIN {{ mapping.starrocks_staging_sequencing_experiment }} se
+	ON  se.case_id = sd.case_id
+	AND se.experimental_strategy = sd.experimental_strategy
+	GROUP BY
+		sd.case_id,
+		sd.experimental_strategy
+),
+family_part AS (
+	SELECT
+		MAX(se.part) as part,
+		sd.family_id,
+		sd.experimental_strategy
+	FROM sequencing_delta sd
+	LEFT JOIN {{ mapping.starrocks_staging_sequencing_experiment }} se
+	ON  se.family_id = sd.family_id
+	AND se.experimental_strategy = sd.experimental_strategy
+	GROUP BY
+		sd.family_id,
+		sd.experimental_strategy
 ),
 max_part AS (
 	SELECT
@@ -63,19 +71,35 @@ max_part AS (
 	GROUP BY
 		sd.experimental_strategy
 ),
-enriched_max_part AS (
+enriched_data AS (
 	SELECT
-		et.*,
-		mp.part as max_part
-	FROM enriched_task et
+		sd.*,
+		pp.part as patient_part,
+        sp.part as seq_part,
+        cp.part as case_part,
+        fp.part as family_part,
+        mp.part as max_part
+	FROM sequencing_delta sd
+	LEFT JOIN patient_part pp
+	    ON  pp.patient_id = sd.patient_id
+	    AND pp.experimental_strategy = sd.experimental_strategy
+    LEFT JOIN seq_part sp
+        ON  sp.seq_id = sd.seq_id
+        AND sp.experimental_strategy = sd.experimental_strategy
+    LEFT JOIN case_part cp
+        ON  cp.case_id = sd.case_id
+        AND cp.experimental_strategy = sd.experimental_strategy
+    LEFT JOIN family_part fp
+        ON  fp.family_id = sd.family_id
+        AND fp.experimental_strategy = sd.experimental_strategy
 	LEFT JOIN max_part mp
-	ON mp.experimental_strategy = et.experimental_strategy
+	    ON mp.experimental_strategy = sd.experimental_strategy
 ),
 final_data AS (
     SELECT
-        emp.*,
+        ed.*,
         se.max_count as max_count
-    FROM enriched_max_part emp
+    FROM enriched_data ed
     LEFT JOIN (
     	SELECT
 			part,
@@ -84,9 +108,10 @@ final_data AS (
 		FROM {{ mapping.starrocks_staging_sequencing_experiment }}
 		GROUP BY part, experimental_strategy
     ) se
-    ON se.part = emp.max_part
+    ON se.part = ed.max_part
 )
 SELECT
+    case_id,
     seq_id,
     task_id,
     task_type,
@@ -103,8 +128,10 @@ SELECT
     affected_status,
     created_at,
     updated_at,
-    task_part,
     patient_part,
+    seq_part,
+    case_part,
+    family_part,
     max_part,
     max_count
 FROM final_data
