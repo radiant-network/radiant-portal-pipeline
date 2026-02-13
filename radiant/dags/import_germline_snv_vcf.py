@@ -116,9 +116,11 @@ with DAG(
 
     if IS_AWS:
         partition_commit = ecs_create_parquet_files.expand(params=all_tasks)
+        
         merged_commits = merge_commits(partition_commit.output, ecs_env)
         ecs_commit_partitions.expand(params=merged_commits)
     else:
         partition_commit = k8s_create_parquet_files.expand(radiant_task=all_tasks)
         merged_commits = merge_commits(partition_commit)
         k8s_commit_partitions(table_partitions=merged_commits)
+    merged_commits.set_upstream(namespace) # ensure namespace is resolved before downstream tasks

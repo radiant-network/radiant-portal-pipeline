@@ -153,3 +153,7 @@ def test_dag_contains_all_tasks(dag_bag):
 def test_dag_task_dependencies_are_valid(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-part")
     assert dag.validate() is None
+
+    namespace_task = dag.get_task("get_iceberg_namespace")
+    import_cnv_vcf_k8s_task = dag.get_task("import_cnv_vcf_k8s")
+    assert namespace_task in import_cnv_vcf_k8s_task.get_flat_relatives(upstream=True)
