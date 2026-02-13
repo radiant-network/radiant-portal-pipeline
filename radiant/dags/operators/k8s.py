@@ -80,6 +80,7 @@ class ImportPart(BaseK8SOperator):
             **dict(
                 task_id="import_cnv_vcf_k8s",
                 task_display_name="[K8s] Import CNV VCF",
+                doc_md="Imports germline CNV VCF files into Iceberg tables. Runs as a Kubernetes pod that reads VCF files for each task and writes CNV occurrence data to the Iceberg catalog.",
                 name="import-cnv-vcf",
                 do_xcom_push=True,
             )

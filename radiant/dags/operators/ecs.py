@@ -133,6 +133,7 @@ class ImportPart(BaseECSOperator):
             **dict(
                 task_id="import_cnv_vcf_ecs",
                 task_display_name="[ECS] Import CNV VCF",
+                doc_md="Imports germline CNV VCF files into Iceberg tables. Runs as an ECS task that reads VCF files for each task and writes CNV occurrence data to the Iceberg catalog.",
                 overrides={
                     "containerOverrides": [
                         {
