@@ -112,7 +112,9 @@ class SequencingExperimentPartitionAssigner:
         """
         Computes the partition based on task and patient parts.
         """
-        # A bit of gymnastics to get around the fact that a set can't be created from a list of dicts
+
+        # Creates a set of all provided partition information to check for consistency
+        # We should have only one unique partition if any of the partition information is provided
         parts = {
             patient_part,
             seq_part,
@@ -161,14 +163,13 @@ class SequencingExperimentPartitionAssigner:
             _item = SequencingDeltaInput.model_validate(d)
             _item.experimental_strategy = _item.experimental_strategy.lower()
 
-            if (
-                _item.max_part
-                and _item.max_count
-                and _item.max_part > self.state[_item.experimental_strategy].id
-                and _item.max_count > self.state[_item.experimental_strategy].count
-            ):
-                self.state[_item.experimental_strategy].id = _item.max_part
-                self.state[_item.experimental_strategy].count = _item.max_count
+            if _item.max_part is not None and _item.max_count is not None:
+                current_state = self.state[_item.experimental_strategy]
+                if _item.max_part > current_state.id:
+                    current_state.id = _item.max_part
+                    current_state.count = _item.max_count
+                elif _item.max_part == current_state.id:
+                    current_state.count = max(current_state.count, _item.max_count)
 
             _output = SequencingDeltaOutput(
                 **vars(_item)
