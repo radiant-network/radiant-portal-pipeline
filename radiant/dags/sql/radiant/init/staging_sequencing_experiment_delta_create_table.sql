@@ -5,6 +5,7 @@ WITH sequencing_delta AS (
     FROM {{ mapping.starrocks_staging_external_sequencing_experiment }} sse
     LEFT ANTI JOIN {{ mapping.starrocks_staging_sequencing_experiment }} existing
     ON
+    	sse.case_id = existing.case_id AND
         sse.seq_id = existing.seq_id AND
         sse.task_id = existing.task_id AND
         sse.updated_at <= existing.updated_at
