@@ -35,12 +35,12 @@ Partitions are assigned based on the `experimental_strategy` (e.g., WGS, WXS). E
 
 The assigner follows these rules to ensure consistency and efficiency:
 
-1.  **Consistency Check**: It first checks if a partition has already been assigned for any of the following IDs associated with the experiment:
+1.  **Consistency Check**: It first checks if a partition has already been assigned for any of the following IDs associated with the sequencing experiment:
     *   `patient_id`
     *   `seq_id`
     *   `case_id`
     *   `family_id`
-    *   Any existing partition information provided in the input delta (`patient_part`, `seq_part`, `case_part`, `family_part`).
+    *   This is represented in the `staging_sequencing_experiment_delta` view in columns: `patient_part`, `seq_part`, `case_part` or `family_part`.
 
 2.  **Reuse Existing Partition**: If any of the above IDs are already associated with a partition, that partition ID is reused for the current experiment. This ensures that all experiments belonging to the same patient or family are grouped into the same partition.
     *   **Inconsistency Warning**: If multiple different partition IDs are found for the same group of related IDs, the process will raise a `ValueError` to prevent data corruption.
@@ -49,8 +49,6 @@ The assigner follows these rules to ensure consistency and efficiency:
     *   The experiment is assigned to the current active partition for its strategy.
     *   The count of experiments in that partition is incremented.
     *   If the partition reaches its limit (e.g., 100 for WGS), a new partition ID is generated (current ID + 1) and the count is reset.
-
-4.  **State Persistence**: The assigner can synchronize its internal state using `max_part` and `max_count` from the input data, ensuring continuity across different batches.
 
 ### Data Flow
 
