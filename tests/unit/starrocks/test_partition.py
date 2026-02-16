@@ -14,48 +14,89 @@ from radiant.tasks.starrocks.partition import (
 )
 
 
-def test_partition_assigner_rollover_bootstrap():
-    """
-    Test that the assigner correctly updates its state when max_part is higher
-    but max_count is lower (typical rollover scenario).
-    """
-    assigner = SequencingExperimentPartitionAssigner()
+def create_sequencing_delta_input_from_base(**kwargs) -> SequencingDeltaInput:
+    defaults = {
+        "case_id": 1,
+        "seq_id": 1,
+        "task_id": 1,
+        "task_type": "radiant_germline_annotation",
+        "analysis_type": "germline",
+        "aliquot": "1",
+        "patient_id": 1,
+        "experimental_strategy": "wgs",
+        "request_priority": "stat",
+        "vcf_filepath": "s3://bucket/path/file.vcf.gz",
+        "sex": "male",
+        "family_id": 1,
+        "family_role": "proband",
+        "affected_status": "affected",
+        "created_at": datetime(2025, 1, 1),
+        "updated_at": datetime(2025, 1, 1),
+        "max_part": None,
+        "max_count": None,
+        "patient_part": None,
+        "seq_part": None,
+        "case_part": None,
+        "family_part": None,
+    }
 
-    # 1. Simulate starting from a rollover point (max_part=1, max_count=1)
-    # Previous code would fail to update state because max_count (1) is NOT greater
-    # than the initial internal state.count (0).
+    # Update defaults with any arguments passed by the user
+    defaults.update(kwargs)
+
+    return SequencingDeltaInput(**defaults)
+
+
+def test_partition_assigner_bootstrap_uses_max():
+    assigner = SequencingExperimentPartitionAssigner()
     _delta = [
-        SequencingDeltaInput(
-            case_id=1, seq_id=1, task_id=1, patient_id=1, family_id=1,
-            experimental_strategy="wgs", task_type="", analysis_type="", aliquot="",
-            request_priority="", sex="", family_role="", affected_status="",
-            created_at=datetime.now(), updated_at=datetime.now(),
-            max_part=1, max_count=1
+        create_sequencing_delta_input_from_base(
+            case_id=1,
+            seq_id=1,
+            task_id=1,
+            patient_id=1,
+            family_id=1,
+            max_part=1,
+            max_count=50,
+        ).model_dump(),
+        create_sequencing_delta_input_from_base(
+            case_id=2,
+            seq_id=2,
+            task_id=2,
+            patient_id=2,
+            family_id=2,
+            max_part=2,
+            max_count=0,
+        ).model_dump(),
+    ]
+
+    partitioned = assigner.assign_partitions(_delta)
+    assert partitioned[0].part == 2
+    assert assigner.state["wgs"].id == 2
+    assert assigner.state["wgs"].count == 2
+
+
+def test_partition_assigner_bootstrap_rollover():
+    assigner = SequencingExperimentPartitionAssigner()
+    _delta = [
+        create_sequencing_delta_input_from_base(
+            max_part=1,
+            max_count=1,
         ).model_dump()
     ]
 
     partitioned = assigner.assign_partitions(_delta)
-
-    # Assigner should have bootstrapped to part 1, and then incremented count to 2
-    # So the current experiment should be assigned to Part 1
     assert partitioned[0].part == 1
     assert assigner.state["wgs"].id == 1
     assert assigner.state["wgs"].count == 2
 
 
-def test_partition_assigner_same_part_higher_count_bootstrap():
-    """
-    Test that the assigner updates count if part is the same but count is higher.
-    """
+def test_partition_assigner_bootstrap_rollover_same_part_higher_count():
     assigner = SequencingExperimentPartitionAssigner()
 
     _delta = [
-        SequencingDeltaInput(
-            case_id=1, seq_id=1, task_id=1, patient_id=1, family_id=1,
-            experimental_strategy="wgs", task_type="", analysis_type="", aliquot="",
-            request_priority="", sex="", family_role="", affected_status="",
-            created_at=datetime.now(), updated_at=datetime.now(),
-            max_part=0, max_count=50
+        create_sequencing_delta_input_from_base(
+            max_part=0,
+            max_count=50,
         ).model_dump()
     ]
 
@@ -75,23 +116,8 @@ def test_partition_assigner_same_part_higher_count_bootstrap():
 )
 def test__partition_assigner__from_empty_single(experimental_strategy, expected_part):
     _delta = [
-        SequencingDeltaInput(
-            case_id=1,
-            seq_id=1,
-            task_id=1,
-            task_type="radiant_germline_annotation",
-            analysis_type="germline",
-            aliquot=str(1),
-            patient_id=1,
+        create_sequencing_delta_input_from_base(
             experimental_strategy=experimental_strategy,
-            request_priority="stat",
-            vcf_filepath="s3://bucket/path/file.vcf.gz",
-            sex="male",
-            family_id=1,
-            family_role="proband",
-            affected_status="affected",
-            created_at=datetime(year=2025, month=1, day=1),
-            updated_at=datetime(year=2025, month=1, day=1),
         ).model_dump()
     ]
 
@@ -108,25 +134,9 @@ def test__partition_assigner__from_empty_single(experimental_strategy, expected_
 )
 def test__partition_assigner__from_empty_multiples_single_partition(experimental_strategy, limit, expected_part):
     _delta = [
-        SequencingDeltaInput(
-            case_id=i,
-            seq_id=i,
-            task_id=i,
-            task_type="radiant_germline_annotation",
-            analysis_type="germline",
-            aliquot=str(i),
-            patient_id=i,
+        create_sequencing_delta_input_from_base(
             experimental_strategy=experimental_strategy,
-            request_priority="stat",
-            vcf_filepath="s3://bucket/path/file.vcf.gz",
-            sex="male",
-            family_id=i,
-            family_role="proband",
-            affected_status="affected",
-            created_at=datetime(year=2025, month=1, day=1),
-            updated_at=datetime(year=2025, month=1, day=1),
         ).model_dump()
-        for i in range(limit)
     ]
 
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
@@ -144,23 +154,14 @@ def test__partition_assigner__from_empty_multiples_single_partition(experimental
 )
 def test__partition_assigner__from_empty_multiples_many_partitions(experimental_strategy, limit, expected_parts):
     _delta = [
-        SequencingDeltaInput(
+        create_sequencing_delta_input_from_base(
             case_id=i,
             seq_id=i,
             task_id=i,
-            task_type="radiant_germline_annotation",
-            analysis_type="germline",
             aliquot=str(i),
             patient_id=i,
             experimental_strategy=experimental_strategy,
-            request_priority="stat",
-            vcf_filepath="s3://bucket/path/file.vcf.gz",
-            sex="male",
             family_id=i,
-            family_role="proband",
-            affected_status="affected",
-            created_at=datetime(year=2025, month=1, day=1),
-            updated_at=datetime(year=2025, month=1, day=1),
         ).model_dump()
         for i in range(limit)
     ]
@@ -185,23 +186,7 @@ def test__partition_assigner__with_matching_patient(
     seq_part, patient_part, case_part, family_part, max_part, max_count, expected_parts
 ):
     _delta = [
-        SequencingDeltaInput(
-            case_id=0,
-            seq_id=0,
-            task_id=0,
-            task_type="radiant_germline_annotation",
-            analysis_type="germline",
-            aliquot=str(0),
-            patient_id=0,
-            experimental_strategy="wgs",
-            request_priority="stat",
-            vcf_filepath="s3://bucket/path/file.vcf.gz",
-            sex="male",
-            family_id=0,
-            family_role="proband",
-            affected_status="affected",
-            created_at=datetime(year=2025, month=1, day=1),
-            updated_at=datetime(year=2025, month=1, day=1),
+        create_sequencing_delta_input_from_base(
             patient_part=patient_part,
             seq_part=seq_part,
             case_part=case_part,
@@ -218,42 +203,13 @@ def test__partition_assigner__with_matching_patient(
 
 def test__partition_assigner_same_cases():
     _delta = [
-        SequencingDeltaInput(
+        create_sequencing_delta_input_from_base(
             case_id=1,
-            seq_id=1,
-            task_id=1,
-            patient_id=1,
-            family_id=1,
-            experimental_strategy="wgs",
-            # dummy values for other fields
-            task_type="",
-            analysis_type="",
-            aliquot="",
-            request_priority="",
-            sex="",
-            family_role="",
-            affected_status="",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        ).model_dump(),
-        SequencingDeltaInput(
-            case_id=1,
-            seq_id=2,
-            task_id=2,
-            patient_id=2,
-            family_id=2,
-            experimental_strategy="wgs",
-            # dummy values for other fields
-            task_type="",
-            analysis_type="",
-            aliquot="",
-            request_priority="",
-            sex="",
-            family_role="",
-            affected_status="",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        ).model_dump(),
+            seq_id=i,
+            task_id=i,
+            patient_id=i,
+            family_id=i,
+        ).model_dump() for i in range(2)
     ]
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     assert len(partitioned) == 2
@@ -262,42 +218,13 @@ def test__partition_assigner_same_cases():
 
 def test__partition_assigner_same_seq():
     _delta = [
-        SequencingDeltaInput(
-            case_id=1,
+        create_sequencing_delta_input_from_base(
+            case_id=i,
             seq_id=1,
-            task_id=1,
-            patient_id=1,
-            family_id=1,
-            experimental_strategy="wgs",
-            # dummy values for other fields
-            task_type="",
-            analysis_type="",
-            aliquot="",
-            request_priority="",
-            sex="",
-            family_role="",
-            affected_status="",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        ).model_dump(),
-        SequencingDeltaInput(
-            case_id=2,
-            seq_id=1,
-            task_id=2,
-            patient_id=2,
-            family_id=2,
-            experimental_strategy="wgs",
-            # dummy values for other fields
-            task_type="",
-            analysis_type="",
-            aliquot="",
-            request_priority="",
-            sex="",
-            family_role="",
-            affected_status="",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        ).model_dump(),
+            task_id=i,
+            patient_id=i,
+            family_id=i,
+        ).model_dump() for i in range(2)
     ]
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     assert len(partitioned) == 2
@@ -306,42 +233,13 @@ def test__partition_assigner_same_seq():
 
 def test__partition_assigner_same_patients():
     _delta = [
-        SequencingDeltaInput(
-            case_id=1,
-            seq_id=1,
-            task_id=1,
+        create_sequencing_delta_input_from_base(
+            case_id=i,
+            seq_id=i,
+            task_id=i,
             patient_id=1,
-            family_id=1,
-            experimental_strategy="wgs",
-            # dummy values for other fields
-            task_type="",
-            analysis_type="",
-            aliquot="",
-            request_priority="",
-            sex="",
-            family_role="",
-            affected_status="",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        ).model_dump(),
-        SequencingDeltaInput(
-            case_id=2,
-            seq_id=2,
-            task_id=2,
-            patient_id=1,
-            family_id=2,
-            experimental_strategy="wgs",
-            # dummy values for other fields
-            task_type="",
-            analysis_type="",
-            aliquot="",
-            request_priority="",
-            sex="",
-            family_role="",
-            affected_status="",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        ).model_dump(),
+            family_id=i,
+        ).model_dump() for i in range(2)
     ]
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     assert len(partitioned) == 2
@@ -350,42 +248,13 @@ def test__partition_assigner_same_patients():
 
 def test__partition_assigner_same_family():
     _delta = [
-        SequencingDeltaInput(
-            case_id=1,
-            seq_id=1,
-            task_id=1,
-            patient_id=1,
+        create_sequencing_delta_input_from_base(
+            case_id=i,
+            seq_id=i,
+            task_id=i,
+            patient_id=i,
             family_id=1,
-            experimental_strategy="wgs",
-            # dummy values for other fields
-            task_type="",
-            analysis_type="",
-            aliquot="",
-            request_priority="",
-            sex="",
-            family_role="",
-            affected_status="",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        ).model_dump(),
-        SequencingDeltaInput(
-            case_id=2,
-            seq_id=2,
-            task_id=2,
-            patient_id=2,
-            family_id=1,
-            experimental_strategy="wgs",
-            # dummy values for other fields
-            task_type="",
-            analysis_type="",
-            aliquot="",
-            request_priority="",
-            sex="",
-            family_role="",
-            affected_status="",
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        ).model_dump(),
+        ).model_dump() for i in range(2)
     ]
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     assert len(partitioned) == 2
@@ -401,25 +270,73 @@ def test__partition_assigner_wgs_same_values_with_limits():
     assert parts == Counter({0: 104, 1: 100})
 
 
+def test__partition_assigner_match_increases_current_part_count():
+    _delta = [
+        create_sequencing_delta_input_from_base(
+            case_id=1,  # Same case
+            seq_id=i,
+            task_id=i,
+            aliquot=str(i),
+            patient_id=i,
+            family_id=i,
+        ).model_dump()
+        for i in range(100)
+    ]
+
+    _delta.append(
+        create_sequencing_delta_input_from_base(
+            case_id=2,
+            seq_id=100,
+            task_id=100,
+            aliquot="100",
+            patient_id=100,
+            family_id=100,
+        ).model_dump()
+    )
+
+    _delta.extend(
+        [
+            create_sequencing_delta_input_from_base(
+                case_id=1,  # Same case as first 100 items
+                seq_id=i,
+                task_id=i,
+                aliquot=str(i),
+                patient_id=i,
+                family_id=i,
+            ).model_dump()
+            for i in range(101, 151)
+        ]
+    )
+
+    _delta.append(
+        create_sequencing_delta_input_from_base(
+            case_id=2,
+            seq_id=200,
+            task_id=200,
+            aliquot="200",
+            patient_id=200,
+            family_id=200,
+        ).model_dump()
+    )
+
+    partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
+    parts = Counter([p.part for p in partitioned])
+    assert parts == Counter({0: 150, 1: 2})
+    assert partitioned[0].part == 0
+    assert partitioned[-2].part == 0
+    assert partitioned[100].part == 1
+    assert partitioned[-1].part == 1
+
+
 def test__partition_assigner_wgs_limits():
     _delta = [
-        SequencingDeltaInput(
+        create_sequencing_delta_input_from_base(
             case_id=i,
             seq_id=i,
             task_id=i,
-            task_type="radiant_germline_annotation",
-            analysis_type="germline",
             aliquot=str(i),
             patient_id=i,
-            experimental_strategy="wgs",
-            request_priority="stat",
-            vcf_filepath="s3://bucket/path/file.vcf.gz",
-            sex="male",
             family_id=i,
-            family_role="proband",
-            affected_status="affected",
-            created_at=datetime(year=2025, month=1, day=1),
-            updated_at=datetime(year=2025, month=1, day=1),
         ).model_dump()
         for i in range(500)
     ]
@@ -430,23 +347,14 @@ def test__partition_assigner_wgs_limits():
 
 def test__partition_assigner_wxs_limits():
     _delta = [
-        SequencingDeltaInput(
+        create_sequencing_delta_input_from_base(
             case_id=i,
             seq_id=i,
             task_id=i,
-            task_type="radiant_germline_annotation",
-            analysis_type="germline",
+            experimental_strategy="wxs",
             aliquot=str(i),
             patient_id=i,
-            experimental_strategy="wxs",
-            request_priority="stat",
-            vcf_filepath="s3://bucket/path/file.vcf.gz",
-            sex="male",
             family_id=i,
-            family_role="proband",
-            affected_status="affected",
-            created_at=datetime(year=2025, month=1, day=1),
-            updated_at=datetime(year=2025, month=1, day=1),
         ).model_dump()
         for i in range(5000)
     ]

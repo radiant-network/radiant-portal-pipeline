@@ -136,7 +136,13 @@ class SequencingExperimentPartitionAssigner:
                     f"case_id/part [{case_id}/{case_part}], "
                     f"family_id/part [{family_id}/{family_part}]"
                 )
-            return parts.pop()
+            _p = parts.pop()
+
+            # If were still within the same partition, we need to increment the count to reflect the new assignment
+            if _p == self.state[experimental_strategy].id:
+                self.state[experimental_strategy].count += 1
+
+            return _p
 
         # Check if limit was reached before assigning the partition
         if self.state[experimental_strategy].count >= self.SEQUENCING_TYPES[experimental_strategy].limit:
@@ -153,23 +159,46 @@ class SequencingExperimentPartitionAssigner:
 
         return assigned_part
 
+    def _bootstrap_state(self, inputs: list[SequencingDeltaInput]) -> None:
+        for strategy in self.SEQUENCING_TYPES:
+            # Gather all bootstrap info for this strategy
+            bootstrap_candidates = [
+                (i.max_part, i.max_count)
+                for i in inputs
+                if i.experimental_strategy == strategy and i.max_part is not None and i.max_count is not None
+            ]
+
+            if not bootstrap_candidates:
+                continue
+
+            # Find the highest part/count combination (e.g., Part 11 > Part 10)
+            target_part, target_count = max(bootstrap_candidates)
+
+            current_state = self.state[strategy]
+
+            # Apply update only if it advances the state (or catches up)
+            if target_part > current_state.id:
+                current_state.id = target_part
+                current_state.count = target_count
+            elif target_part == current_state.id:
+                current_state.count = max(current_state.count, target_count)
+
     def assign_partitions(self, delta: list[dict]) -> list[SequencingDeltaOutput]:
         """
         Assigns a partition based on the partition key.
         This is a placeholder for the actual partitioning logic.
         """
-        partitioned_items = []
+        inputs: list[SequencingDeltaInput] = []
         for d in delta:
             _item = SequencingDeltaInput.model_validate(d)
             _item.experimental_strategy = _item.experimental_strategy.lower()
+            inputs.append(_item)
 
-            if _item.max_part is not None and _item.max_count is not None:
-                current_state = self.state[_item.experimental_strategy]
-                if _item.max_part > current_state.id:
-                    current_state.id = _item.max_part
-                    current_state.count = _item.max_count
-                elif _item.max_part == current_state.id:
-                    current_state.count = max(current_state.count, _item.max_count)
+        self._bootstrap_state(inputs)
+
+        partitioned_items = []
+        for _item in inputs:
+            _item.experimental_strategy = _item.experimental_strategy.lower()
 
             _output = SequencingDeltaOutput(
                 **vars(_item)
