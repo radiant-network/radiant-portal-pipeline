@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }}
     cnv_vcf_filepath VARCHAR(1024),
     exomiser_filepath VARCHAR(1024),
     sex VARCHAR(10),
-    family_id INT NOT NULL,
+    family_id INT,
     family_role VARCHAR(20),
     affected_status VARCHAR(20),
     created_at DATETIME,

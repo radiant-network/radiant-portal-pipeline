@@ -103,14 +103,14 @@ class SequencingExperimentPartitionAssigner:
         patient_id: int,
         seq_id: int,
         case_id: int,
-        family_id: int,
+        family_id: int | None = None,
         patient_part: int | None = None,
         seq_part: int | None = None,
         case_part: int | None = None,
         family_part: int | None = None,
     ) -> int:
         """
-        Computes the partition based on task and patient parts.
+        Computes the partition based on case, sequencing experiments, patients and family parts.
         """
 
         # Creates a set of all provided partition information to check for consistency
@@ -123,8 +123,9 @@ class SequencingExperimentPartitionAssigner:
             self.task_patient_mapping[experimental_strategy]["patient_id"].get(patient_id),
             self.task_patient_mapping[experimental_strategy]["seq_id"].get(seq_id),
             self.task_patient_mapping[experimental_strategy]["case_id"].get(case_id),
-            self.task_patient_mapping[experimental_strategy]["family_id"].get(family_id),
         }
+        if family_id is not None:
+            parts.add(self.task_patient_mapping[experimental_strategy]["family_id"].get(family_id))
         parts.discard(None)
 
         if parts:
@@ -155,7 +156,9 @@ class SequencingExperimentPartitionAssigner:
         self.task_patient_mapping[experimental_strategy]["patient_id"][patient_id] = assigned_part
         self.task_patient_mapping[experimental_strategy]["seq_id"][seq_id] = assigned_part
         self.task_patient_mapping[experimental_strategy]["case_id"][case_id] = assigned_part
-        self.task_patient_mapping[experimental_strategy]["family_id"][family_id] = assigned_part
+
+        if family_id is not None:
+            self.task_patient_mapping[experimental_strategy]["family_id"][family_id] = assigned_part
 
         return assigned_part
 
