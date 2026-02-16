@@ -160,8 +160,15 @@ class SequencingExperimentPartitionAssigner:
         return assigned_part
 
     def _bootstrap_state(self, inputs: list[SequencingDeltaInput]) -> None:
+        """
+        This bootstraps the state of the partition assigner only if it moves the state forward.
+
+        Verify all the inputs to get the highest `max_part` and `max_count` combination
+        for a specific `experimental_strategy`.
+
+        This is used as the initial partition start for adding new sequencing experiments.
+        """
         for strategy in self.SEQUENCING_TYPES:
-            # Gather all bootstrap info for this strategy
             bootstrap_candidates = [
                 (i.max_part, i.max_count)
                 for i in inputs
@@ -171,12 +178,9 @@ class SequencingExperimentPartitionAssigner:
             if not bootstrap_candidates:
                 continue
 
-            # Find the highest part/count combination (e.g., Part 11 > Part 10)
             target_part, target_count = max(bootstrap_candidates)
-
             current_state = self.state[strategy]
 
-            # Apply update only if it advances the state (or catches up)
             if target_part > current_state.id:
                 current_state.id = target_part
                 current_state.count = target_count

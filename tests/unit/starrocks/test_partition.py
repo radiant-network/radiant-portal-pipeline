@@ -14,6 +14,11 @@ from radiant.tasks.starrocks.partition import (
 )
 
 
+@pytest.fixture
+def assigner():
+    return SequencingExperimentPartitionAssigner()
+
+
 def create_sequencing_delta_input_from_base(**kwargs) -> SequencingDeltaInput:
     defaults = {
         "case_id": 1,
@@ -46,26 +51,64 @@ def create_sequencing_delta_input_from_base(**kwargs) -> SequencingDeltaInput:
     return SequencingDeltaInput(**defaults)
 
 
-def test_partition_assigner_bootstrap_uses_max():
+def test_partition_assigner_bootstrap_state_empty(assigner):
+    assigner._bootstrap_state([])
+    assert assigner.state["wgs"].id == 0
+    assert assigner.state["wgs"].count == 0
+
+
+def test_partition_assigner_bootstrap_state_single_strategy(assigner):
+    inputs = [
+        create_sequencing_delta_input_from_base(experimental_strategy="wgs", max_part=1, max_count=50),
+        create_sequencing_delta_input_from_base(experimental_strategy="wgs", max_part=1, max_count=60),
+        create_sequencing_delta_input_from_base(experimental_strategy="wgs", max_part=0, max_count=90),
+    ]
+    assigner._bootstrap_state(inputs)
+    assert assigner.state["wgs"].id == 1
+    assert assigner.state["wgs"].count == 60
+
+
+def test_partition_assigner_bootstrap_state_multi_strategy(assigner):
+    inputs = [
+        create_sequencing_delta_input_from_base(experimental_strategy="wgs", max_part=2, max_count=10),
+        create_sequencing_delta_input_from_base(experimental_strategy="wxs", max_part=65537, max_count=500),
+    ]
+    assigner._bootstrap_state(inputs)
+    assert assigner.state["wgs"].id == 2
+    assert assigner.state["wgs"].count == 10
+    assert assigner.state["wxs"].id == 65537
+    assert assigner.state["wxs"].count == 500
+
+
+def test_partition_assigner_bootstrap_state_rollover(assigner):
+    inputs = [
+        create_sequencing_delta_input_from_base(experimental_strategy="wgs", max_part=0, max_count=100),
+        create_sequencing_delta_input_from_base(experimental_strategy="wgs", max_part=1, max_count=1),
+    ]
+    assigner._bootstrap_state(inputs)
+    assert assigner.state["wgs"].id == 1
+    assert assigner.state["wgs"].count == 1
+
+
+def test_partition_assigner_bootstrap_state_no_move_backward(assigner):
+    assigner.state["wgs"].id = 5
+    assigner.state["wgs"].count = 50
+
+    inputs = [create_sequencing_delta_input_from_base(experimental_strategy="wgs", max_part=4, max_count=100)]
+    assigner._bootstrap_state(inputs)
+
+    assert assigner.state["wgs"].id == 5
+    assert assigner.state["wgs"].count == 50
+
+
+def test_partition_assigner_uses_max():
     assigner = SequencingExperimentPartitionAssigner()
     _delta = [
         create_sequencing_delta_input_from_base(
-            case_id=1,
-            seq_id=1,
-            task_id=1,
-            patient_id=1,
-            family_id=1,
-            max_part=1,
-            max_count=50,
+            case_id=1, seq_id=1, task_id=1, patient_id=1, family_id=1, max_part=1, max_count=50
         ).model_dump(),
         create_sequencing_delta_input_from_base(
-            case_id=2,
-            seq_id=2,
-            task_id=2,
-            patient_id=2,
-            family_id=2,
-            max_part=2,
-            max_count=0,
+            case_id=2, seq_id=2, task_id=2, patient_id=2, family_id=2, max_part=2, max_count=0
         ).model_dump(),
     ]
 
@@ -75,7 +118,7 @@ def test_partition_assigner_bootstrap_uses_max():
     assert assigner.state["wgs"].count == 2
 
 
-def test_partition_assigner_bootstrap_rollover():
+def test_partition_assigner_rollover():
     assigner = SequencingExperimentPartitionAssigner()
     _delta = [
         create_sequencing_delta_input_from_base(
@@ -90,7 +133,7 @@ def test_partition_assigner_bootstrap_rollover():
     assert assigner.state["wgs"].count == 2
 
 
-def test_partition_assigner_bootstrap_rollover_same_part_higher_count():
+def test_partition_assigner_rollover_same_part_higher_count():
     assigner = SequencingExperimentPartitionAssigner()
 
     _delta = [
@@ -209,7 +252,8 @@ def test__partition_assigner_same_cases():
             task_id=i,
             patient_id=i,
             family_id=i,
-        ).model_dump() for i in range(2)
+        ).model_dump()
+        for i in range(2)
     ]
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     assert len(partitioned) == 2
@@ -224,7 +268,8 @@ def test__partition_assigner_same_seq():
             task_id=i,
             patient_id=i,
             family_id=i,
-        ).model_dump() for i in range(2)
+        ).model_dump()
+        for i in range(2)
     ]
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     assert len(partitioned) == 2
@@ -239,7 +284,8 @@ def test__partition_assigner_same_patients():
             task_id=i,
             patient_id=1,
             family_id=i,
-        ).model_dump() for i in range(2)
+        ).model_dump()
+        for i in range(2)
     ]
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     assert len(partitioned) == 2
@@ -254,7 +300,8 @@ def test__partition_assigner_same_family():
             task_id=i,
             patient_id=i,
             family_id=1,
-        ).model_dump() for i in range(2)
+        ).model_dump()
+        for i in range(2)
     ]
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     assert len(partitioned) == 2
