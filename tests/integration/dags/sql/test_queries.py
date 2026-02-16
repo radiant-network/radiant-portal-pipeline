@@ -22,6 +22,7 @@ _MOCK_PARAMS = {
     "seq_ids": [1, 2, 3],
     "task_ids": [1, 2, 3],
     "deleted_task_ids": [4, 5, 6],
+    "family_id": 1,
     "task_type": "radiant_germline_annotation",
     "task_id": 1,
     "analysis_type": "wgs",
