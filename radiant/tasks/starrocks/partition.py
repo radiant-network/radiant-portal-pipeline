@@ -21,7 +21,7 @@ class SequencingDeltaCommon(BaseModel):
     cnv_vcf_filepath: str | None = None
     exomiser_filepath: str | None = None
     sex: str
-    family_id: int
+    family_id: int | None = None
     family_role: str
     affected_status: str
     created_at: datetime
