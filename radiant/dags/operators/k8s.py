@@ -6,6 +6,11 @@ from airflow.decorators import task
 class BaseK8SOperator:
     @staticmethod
     def _get_k8s_context(radiant_namespace: str):
+        iceberg_env_vars = {
+            key: value
+            for key, value in os.environ.items()
+            if key.startswith("PYICEBERG_CATALOG__DEFAULT__")
+        }
         return dict(
             namespace=os.getenv("RADIANT_TASK_OPERATOR_KUBERNETES_NAMESPACE"),
             image=os.getenv("RADIANT_TASK_OPERATOR_IMAGE"),
@@ -18,13 +23,10 @@ class BaseK8SOperator:
                 "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
                 "AWS_ENDPOINT_URL": os.getenv("AWS_ENDPOINT_URL"),
                 "AWS_ALLOW_HTTP": os.getenv("AWS_ALLOW_HTTP"),
-                "PYICEBERG_CATALOG__DEFAULT__URI": os.getenv("PYICEBERG_CATALOG__DEFAULT__URI"),
-                "PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT": os.getenv("PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT"),
-                "PYICEBERG_CATALOG__DEFAULT__TOKEN": os.getenv("PYICEBERG_CATALOG__DEFAULT__TOKEN"),
                 "RADIANT_ICEBERG_NAMESPACE": radiant_namespace,
                 "PYTHONPATH": os.getenv("RADIANT_TASK_OPERATOR_PYTHONPATH"),
                 "LD_LIBRARY_PATH": os.getenv("RADIANT_TASK_OPERATOR_LD_LIBRARY_PATH"),
-            },
+            } | iceberg_env_vars,
         )
 
 

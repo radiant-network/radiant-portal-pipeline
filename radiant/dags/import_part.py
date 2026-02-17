@@ -119,15 +119,16 @@ def import_part():
         poke_interval=2,
     )
 
+    namespace_task = get_namespace()
     if IS_AWS:
         ecs_env = ECSEnv()
         import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(
-            radiant_namespace=get_namespace(),
+            radiant_namespace=namespace_task,
             ecs_env=ecs_env,
         )
 
     else:
-        import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(get_namespace())
+        import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(namespace_task)
 
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(tasks) -> dict[str, list[Any]]:
@@ -363,6 +364,7 @@ def import_part():
 
     (
         start
+        >> namespace_task # ensure namespace is resolved before downstream tasks
         >> fetch_sequencing_experiment_delta
         >> (
             import_vcf,
