@@ -209,10 +209,14 @@ def s3_fs(minio_instance):
 def iceberg_catalog_properties(rest_iceberg_catalog_instance, minio_instance):
     return {
         "uri": rest_iceberg_catalog_instance.endpoint,
-        "token": rest_iceberg_catalog_instance.token,
+        "warehouse": rest_iceberg_catalog_instance.catalog_name,
+        "credential": f"{rest_iceberg_catalog_instance.client_id}:{rest_iceberg_catalog_instance.client_secret}",
+        "scope": "PRINCIPAL_ROLE:CATALOG_MANAGE_CONTENT",
+        "header.Polaris-Realm": rest_iceberg_catalog_instance.realm,
         "s3.endpoint": minio_instance.endpoint,
         "s3.access-key-id": minio_instance.access_key,
         "s3.secret-access-key": minio_instance.secret_key,
+        "oauth2-server-uri": rest_iceberg_catalog_instance.endpoint + "v1/oauth/tokens"
     }
 
 
@@ -299,17 +303,17 @@ def clinical_snv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
 
         with starrocks_session.cursor() as cursor:
             cursor.execute(f"""
-                SELECT 
+                SELECT
                      aliquot,
                      d.name
                 FROM {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.sequencing_experiment se
-                LEFT JOIN 
-                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
+                LEFT JOIN
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse
                 ON se.id = thse.sequencing_experiment_id
-                LEFT JOIN 
-                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd 
+                LEFT JOIN
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd
                 ON thse.task_id = thd.task_id
-                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d 
+                LEFT JOIN {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d
                 ON thd.document_id = d.id
                 WHERE d.data_type_code='snv' and d.format_code='vcf'
                 """)
@@ -341,18 +345,18 @@ def clinical_cnv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
 
         with starrocks_session.cursor() as cursor:
             cursor.execute(f"""
-                SELECT 
+                SELECT
                      aliquot,
                      d.name
                 FROM {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.sequencing_experiment se
                 LEFT JOIN 
-                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse 
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_sequencing_experiment thse
                 ON se.id = thse.sequencing_experiment_id
-                LEFT JOIN 
+                LEFT JOIN
                 {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd 
                 ON thse.task_id = thd.task_id
-                LEFT JOIN 
-                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d 
+                LEFT JOIN
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d
                 ON thd.document_id = d.id
                 WHERE d.data_type_code='cnv' and d.format_code='vcf'
                 """)

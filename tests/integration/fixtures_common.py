@@ -6,7 +6,10 @@ MINIO_CONSOLE_PORT = 9001
 
 ICEBERG_REST_PORT = 8181
 ICEBERG_REST_CATALOG_NAME = "radiant"
-ICEBERG_REST_TOKEN = "mysecret"
+ICEBERG_REST_USER = "root"
+ICEBERG_REST_PASSWORD = "password"
+ICEBERG_REST_REALM_NAME = "radiant"
+
 
 POSTGRES_PORT = 5432
 
@@ -39,12 +42,22 @@ class MinioInstance:
 
 
 class RestIcebergCatalogInstance:
-    def __init__(self, host, port, catalog_name, token, internal_host, internal_port):
+    def __init__(self, host, port, realm, catalog_name, client_id, client_secret, internal_host, internal_port):
         self.host = host
         self.port = port
-        self.endpoint = f"http://{host}:{port}"
-        self.token = token
+        self.endpoint = f"http://{host}:{port}/api/catalog/"
+        self.client_id = client_id
+        self.client_secret = client_secret
         self.catalog_name = catalog_name
+        self.internal_host = internal_host
+        self.internal_port = internal_port
+        self.realm = realm
+
+
+class RestIcebergServiceInstance:
+    def __init__(self, host, port, internal_host, internal_port):
+        self.host = host
+        self.port = port
         self.internal_host = internal_host
         self.internal_port = internal_port
 

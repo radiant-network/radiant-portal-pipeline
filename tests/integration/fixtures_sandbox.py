@@ -19,7 +19,7 @@ def minio_instance():
 @pytest.fixture(scope="session")
 def rest_iceberg_catalog_instance(minio_instance):
     return RestIcebergCatalogInstance(
-        "localhost", 8181, ICEBERG_REST_CATALOG_NAME, ICEBERG_REST_TOKEN, "radiant-iceberg-rest", 8181
+        "localhost", 8181, ICEBERG_REST_REALM_NAME, ICEBERG_REST_CATALOG_NAME, ICEBERG_REST_USER, ICEBERG_REST_PASSWORD, "radiant-polaris-rest", 8181
     )
 
 

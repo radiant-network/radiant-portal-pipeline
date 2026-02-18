@@ -59,9 +59,11 @@ x-airflow-common:
     AWS_SECRET_ACCESS_KEY: password
     AWS_ENDPOINT_URL: http://radiant-minio:9000
     AWS_ALLOW_HTTP: true
-    PYICEBERG_CATALOG__DEFAULT__URI: http://radiant-iceberg-rest:8181
+    PYICEBERG_CATALOG__DEFAULT__URI: http://radiant-polaris-rest:8181
     PYICEBERG_CATALOG__DEFAULT__S3__ENDPOINT: http://radiant-minio:9000
-    PYICEBERG_CATALOG__DEFAULT__TOKEN: mysecret
+    PYICEBERG_CATALOG__DEFAULT__WAREHOUSE: polaris
+    PYICEBERG_CATALOG__DEFAULT__CREDENTIAL: root:password
+    PYICEBERG_CATALOG__DEFAULT__HEADER__Polaris-Realm: radiant
     RADIANT_ICEBERG_NAMESPACE: radiant_iceberg_namespace
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/airflow
@@ -157,7 +159,7 @@ services:
       - |
         psql -h postgres -U postgres -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'airflow'" | grep -q 1 || psql -h postgres -U postgres -d postgres -c "CREATE DATABASE airflow WITH OWNER postgres;";
         psql -h postgres -U postgres -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'radiant'" | grep -q 1 || psql -h postgres -U postgres -d postgres -c "CREATE DATABASE radiant WITH OWNER postgres;";
-        psql -h postgres -U postgres -d airflow -c "CREATE SCHEMA IF NOT EXISTS iceberg_catalog;";
+        psql -h postgres -U postgres -d postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'polaris_catalog'" | grep -q 1 || psql -h postgres -U postgres -d postgres -c "CREATE DATABASE polaris_catalog WITH OWNER postgres;";
 
     environment:
       PGPASSWORD: postgres
@@ -404,32 +406,101 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  radiant-iceberg-rest:
-    image: ferlabcrsj/iceberg-rest-catalog:1.0.0
-    container_name: radiant-iceberg-rest
+
+  radiant-polaris-rest:
+    image: apache/polaris:1.3.0-incubating
+    container_name: radiant-polaris-rest
     networks:
-      airflow_network:
-        aliases:
-          - radiant-iceberg-rest.minio
+      - airflow_network
     depends_on:
       - postgres
       - schema-init
     ports:
       - 8181:8181
+      - 8182:8182
     environment:
-      - AWS_ACCESS_KEY_ID=admin
-      - AWS_SECRET_ACCESS_KEY=password
-      - AWS_REGION=us-east-1
-      - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
-      - CATALOG_S3_ENDPOINT=http://radiant-minio:9000
-      - CATALOG_S3_PATH__STYLE__ACCESS=true
-      - CATALOG_CATALOG__IMPL=org.apache.iceberg.jdbc.JdbcCatalog
-      - CATALOG_CATALOG__NAME=iceberg
-      - CATALOG_SECRET=mysecret
-      - CATALOG_JDBC_PASSWORD=postgres
-      - CATALOG_JDBC_USER=postgres
-      - CATALOG_URI=jdbc:postgresql://postgres:5432/airflow?currentSchema=iceberg_catalog
-      - CATALOG_WAREHOUSE=s3a://warehouse/
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: postgres
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/polaris_catalog
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      AWS_ENDPOINT_URL: http://radiant-minio:9000
+      POLARIS_REALM_CONTEXT_REALMS: radiant
+      POLARIS_AUTHENTICATION_TOKEN_BROKER_MAX_TOKEN_GENERATION: PT1H
+      POLARIS_AUTHENTICATION_TOKEN_BROKER_TYPE: symmetric-key
+      POLARIS_AUTHENTICATION_TOKEN_BROKER_SYMMETRIC_KEY_SECRET: password
+      POLARIS_FEATURES_ALLOW_SETTING_S3_ENDPOINTS: true
+      POLARIS_FEATURES_SUPPORTED_CATALOG_STORAGE_TYPES: S3
+      POLARIS_PERSISTENCE_TYPE: relational-jdbc
+    healthcheck:
+      test: 'curl -sf http://localhost:8182/q/health/ready > /dev/null'
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  radiant-polaris-init:
+    image: apache/polaris-admin-tool:1.3.0-incubating
+    depends_on:
+      radiant-polaris-rest:
+        condition: service_healthy
+    networks:
+      - airflow_network
+    environment:
+      QUARKUS_DATASOURCE_USERNAME: postgres
+      QUARKUS_DATASOURCE_PASSWORD: postgres
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://postgres:5432/polaris_catalog
+      REALM_NAME: radiant
+      REALM_USER: root
+      REALM_PASSWORD: password
+      POLARIS_SERVICE_HOST: radiant-polaris-rest:8181
+      CATALOG_NAME: polaris
+      CATALOG_WAREHOUSE: s3://warehouse/
+      CATALOG_ENDPOINT: http://radiant-minio:9000
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        # Bootstrap realm
+        echo "bootstrap realm"
+        java -jar /deployments/polaris-admin-tool.jar bootstrap -r "$$REALM_NAME" -c "$$REALM_NAME,$$REALM_USER,$$REALM_PASSWORD" -p 2>&1
+
+        # Get token
+        echo "get token"
+        token_response=$$(curl --fail-with-body -s -S -X POST "http://$$POLARIS_SERVICE_HOST/api/catalog/v1/oauth/tokens" \
+        -H 'Content-Type: application/x-www-form-urlencoded' \
+        -d "grant_type=client_credentials&client_id=$${REALM_USER}&client_secret=$${REALM_PASSWORD}&scope=PRINCIPAL_ROLE:ALL" 2>&1)
+        token=$$(echo "$$token_response" | grep -o '"access_token":"[^"]*"' | sed 's/"access_token":"//;s/"//')
+
+        # Create catalog
+        catalog_payload="{
+          \"catalog\": {
+            \"name\": \"$${CATALOG_NAME}\",
+            \"type\": \"INTERNAL\",
+            \"readOnly\": false,
+            \"properties\": {
+              \"default-base-location\": \"$${CATALOG_WAREHOUSE}\"
+            },
+            \"storageConfigInfo\": {
+              \"storageType\": \"S3\",
+              \"allowedLocations\": [\"$${CATALOG_WAREHOUSE}\"],
+              \"endpoint\": \"$${CATALOG_ENDPOINT}\",
+              \"pathStyleAccess\": true
+            }
+          }
+        }"
+        echo "creating catalog"
+        curl --fail-with-body -s -S -X POST "http://$$POLARIS_SERVICE_HOST/api/management/v1/catalogs" \
+          -H "Authorization: Bearer $$token" -H "Polaris-Realm: $$REALM_NAME" -H "Accept: application/json" -H "Content-Type: application/json" \
+          -d "$$catalog_payload"
+        echo "\n"
+
+        # Grant privilege CATALOG_MANAGE_CONTENT to realm root user
+        grant_payload="{\"type\": \"catalog\", \"privilege\": \"CATALOG_MANAGE_CONTENT\"}"
+        echo "granting privilege"
+        curl --fail-with-body -s -S -X PUT "http://$$POLARIS_SERVICE_HOST/api/management/v1/catalogs/$${CATALOG_NAME}/catalog-roles/catalog_admin/grants" \
+          -H "Authorization: Bearer $$token" -H "Polaris-Realm: $$REALM_NAME" -H "Accept: application/json" -H "Content-Type: application/json" \
+          -d "$$grant_payload"
 
   radiant-minio:
     image: minio/minio:RELEASE.2024-10-29T16-01-48Z
@@ -572,12 +643,13 @@ services:
      networks:
        - airflow_network
 
-  init-iceberg-catalog:
+
+  init-starrocks-iceberg-catalog:
     image: starrocks/fe-ubuntu:3.4.2  # TODO Changes this to 3.4.3 when available
-    container_name: init-iceberg-catalog
+    container_name: init-starrocks-iceberg-catalog
     depends_on:
       - radiant-starrocks-cn
-      - radiant-iceberg-rest
+      - radiant-polaris-init
     entrypoint: >
       /bin/bash -c "
       sleep 15;
@@ -588,8 +660,11 @@ services:
       (
         'type'='iceberg',
         'iceberg.catalog.type'='rest',
-        'iceberg.catalog.uri'='http://radiant-iceberg-rest:8181',
-        'iceberg.catalog.token' = 'mysecret',
+        'iceberg.catalog.uri'='http://radiant-polaris-rest:8181/api/catalog',
+        'iceberg.catalog.warehouse'='polaris',
+        'iceberg.catalog.security'='oauth2',
+        'iceberg.catalog.oauth2.credential'='root:polaris',
+        'iceberg.catalog.vended-credentials-enabled'='false'
         'aws.s3.region'='us-east-1',
         'aws.s3.access_key'='admin',
         'aws.s3.secret_key'='password',
@@ -598,6 +673,7 @@ services:
         'client.factory'='com.starrocks.connector.share.iceberg.IcebergAwsClientFactory'
       );\"
       "
+
     networks:
       - airflow_network
 
