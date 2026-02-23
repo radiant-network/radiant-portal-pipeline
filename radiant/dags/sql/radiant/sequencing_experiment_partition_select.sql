@@ -1,4 +1,4 @@
-SELECT
+SELECT DISTINCT
     seq_id,
     task_id,
     task_type,
