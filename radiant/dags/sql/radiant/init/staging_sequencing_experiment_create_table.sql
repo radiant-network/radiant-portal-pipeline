@@ -1,4 +1,5 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }} (
+    case_id INT NOT NULL,
     seq_id INT NOT NULL,
     task_id INT NOT NULL,
     task_type VARCHAR(100) NOT NULL,
@@ -12,6 +13,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }}
     cnv_vcf_filepath VARCHAR(1024),
     exomiser_filepath VARCHAR(1024),
     sex VARCHAR(10),
+    family_id INT,
     family_role VARCHAR(20),
     affected_status VARCHAR(20),
     created_at DATETIME,
@@ -19,4 +21,4 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_sequencing_experiment }}
     ingested_at DATETIME,
     deleted BOOLEAN NOT NULL DEFAULT "false"
 )
-PRIMARY KEY (seq_id, task_id)
+PRIMARY KEY (case_id, seq_id, task_id)
