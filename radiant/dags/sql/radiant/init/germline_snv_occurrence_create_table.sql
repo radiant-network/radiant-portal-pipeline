@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_occurrence }} (
     mother_calls ARRAY<INT>,
     mother_zygosity CHAR(3),
     transmission_mode VARCHAR(50),
-    info_old_record VARCHAR(2000),
+    info_old_record VARCHAR(4000),
     exomiser_moi VARCHAR(10),
     exomiser_acmg_classification  VARCHAR(300),
     exomiser_acmg_evidence        ARRAY<VARCHAR (10)>,
