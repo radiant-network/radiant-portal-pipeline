@@ -13,10 +13,10 @@ from radiant.tasks.tracing.trace import get_tracer
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
 from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
 from radiant.tasks.vcf.pedigree import Pedigree
-from radiant.tasks.vcf.snv.germline.common import process_common
-from radiant.tasks.vcf.snv.germline.consequence import parse_csq_header, process_consequence
+from radiant.tasks.vcf.snv.common import process_common
+from radiant.tasks.vcf.snv.consequence import parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.germline.occurrence import process_occurrence
-from radiant.tasks.vcf.snv.germline.variant import process_variant
+from radiant.tasks.vcf.snv.variant import process_variant
 
 logger = logging.getLogger("airflow.task")
 tracer = get_tracer(__name__)

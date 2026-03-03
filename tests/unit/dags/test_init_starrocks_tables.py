@@ -9,7 +9,7 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-starrocks-tables")
-    assert len(dag.tasks) == 41  # 17 radiant tables + 2 clinical table + 20 open data tables + 2 create function
+    assert len(dag.tasks) == 42  # 18 radiant tables + 2 clinical table + 20 open data tables + 2 create function
 
 
 def test_dag_has_all_tasks(dag_bag):
@@ -30,6 +30,7 @@ def test_dag_has_all_tasks(dag_bag):
         "snv_staging_variant_frequency",
         "snv_variant_frequency",
         "snv_variant_partitioned",
+        "somatic_snv_occurrence",
     ]
     for table in tables:
         assert f"create_table_{table}" in task_ids

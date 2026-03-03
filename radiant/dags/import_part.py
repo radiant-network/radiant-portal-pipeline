@@ -230,7 +230,7 @@ def import_part():
     overwrite_snv_tmp_variants = RadiantStarRocksOperator(
         task_id="overwrite_snv_tmp_variant",
         sql="./sql/radiant/snv_tmp_variant_insert.sql",
-        task_display_name="[StarRocks] Insert Germline SNV Variants Tmp tables",
+        task_display_name="[StarRocks] Insert SNV Variants Tmp tables",
         submit_task_options=std_submit_task_opts,
         parameters=task_ids,
     )
@@ -258,19 +258,19 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    insert_stg_snv_variants_freq = RadiantStarRocksOperator(
-        task_id="insert_stg_snv_variant_freq",
-        sql="./sql/radiant/snv_staging_variant_freq_insert.sql",
-        task_display_name="[StarRocks] Insert Stg SNV Variants Freq Part",
+    insert_stg_germline_snv_variants_freq = RadiantStarRocksOperator(
+        task_id="insert_stg_germline_snv_variant_freq",
+        sql="./sql/radiant/germline_snv_staging_variant_freq_insert.sql",
+        task_display_name="[StarRocks] Insert Stg Germline SNV Variants Freq Part",
         submit_task_options=std_submit_task_opts,
         parameters={"part": "{{ params.part }}"},
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    aggregate_snv_variants_frequencies = RadiantStarRocksOperator(
-        task_id="aggregate_snv_variant_freq",
-        task_display_name="[StarRocks] Aggregate all SNV variants frequencies",
-        sql="./sql/radiant/snv_variant_frequency_insert.sql",
+    aggregate_germline_snv_variants_frequencies = RadiantStarRocksOperator(
+        task_id="aggregate_germline_snv_variant_freq",
+        task_display_name="[StarRocks] Aggregate all Germline SNV variants frequencies",
+        sql="./sql/radiant/germline_snv_variant_frequency_insert.sql",
         submit_task_options=std_submit_task_opts,
         trigger_rule=TriggerRule.NONE_FAILED,
     )
@@ -314,7 +314,7 @@ def import_part():
 
         (
             (check_delta_snv >> insert_snv_staging_variants)
-            >> (aggregate_snv_variants_frequencies >> insert_snv_variants_with_freqs)
+            >> (aggregate_germline_snv_variants_frequencies >> insert_snv_variants_with_freqs)
             >> insert_snv_variants_part
         )
 
@@ -377,8 +377,8 @@ def import_part():
         >> overwrite_snv_tmp_variants
         >> (load_exomiser >> insert_exomiser)
         >> (refresh_iceberg_tables >> insert_germline_snv_occurrences)
-        >> insert_stg_snv_variants_freq
-        >> aggregate_snv_variants_frequencies
+        >> insert_stg_germline_snv_variants_freq
+        >> aggregate_germline_snv_variants_frequencies
         >> tg_variants
         >> (check_delta_snv >> tg_consequences)
         >> ((tg_consequences, tg_variants) >> delete_sequencing_experiments)

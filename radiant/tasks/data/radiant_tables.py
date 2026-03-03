@@ -92,15 +92,15 @@ STARROCKS_RADIANT_MAPPING = {
     "starrocks_exomiser": "exomiser",
     "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
     "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
+    "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
+    "starrocks_germline_snv_staging_variant_frequency": "germline__snv__staging_variant_frequency_part",
     "starrocks_snv_consequence": "snv__consequence",
     "starrocks_snv_consequence_filter": "snv__consequence_filter",
     "starrocks_snv_consequence_filter_partitioned": "snv__consequence_filter_partitioned",
     "starrocks_snv_tmp_variant": "snv__tmp_variant",
     "starrocks_snv_variant": "snv__variant",
-    "starrocks_snv_variant_frequency": "snv__variant_frequency",
     "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
     "starrocks_snv_staging_variant": "snv__staging_variant",
-    "starrocks_snv_staging_variant_frequency": "snv__staging_variant_frequency_part",
     "starrocks_somatic_snv_occurrence": "somatic__snv__occurrence",
 }
 
