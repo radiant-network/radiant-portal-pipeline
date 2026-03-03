@@ -19,11 +19,13 @@ def main(table_name: str):
         initialization.create_consequences_table()
     elif table_name == "germline_cnv_occurrence":
         initialization.create_germline_cnv_occurrence_table()
+    elif table_name == "somatic_snv_occurrence":
+        initialization.create_somatic_snv_occurrence_table()
     else:
         raise ValueError(
             f"Unknown initialization name: {table_name}, possible values are: "
             "'database', 'germline_snv_occurrence', 'variant', "
-            "'consequence', 'germline_cnv_occurrence'"
+            "'consequence', 'germline_cnv_occurrence', 'somatic_snv_occurrence'"
         )
 
 
@@ -34,7 +36,7 @@ if __name__ == "__main__":
         required=True,
         help="Iceberg target to initialize, possible values are: "
         "'database', 'germline_snv_occurrence', 'variant', "
-        "'consequence', 'germline_cnv_occurrence'",
+        "'consequence', 'germline_cnv_occurrence', 'somatic_snv_occurrence'",
     )
     args = parser.parse_args()
     logger.info(f"Command line arguments: {args}")

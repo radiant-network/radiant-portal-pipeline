@@ -1,8 +1,8 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_occurrence }} (
     part             INT NOT NULL,
     task_id          INT NOT NULL,
-    locus_id         BIGINT NOT NULL,
     tumor_seq_id     INT NOT NULL,
+    locus_id         BIGINT NOT NULL,
     normal_seq_id    INT,
     quality          FLOAT,
     filter           VARCHAR(255),

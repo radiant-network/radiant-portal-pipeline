@@ -47,6 +47,9 @@ with DAG(
         create_germline_cnv_occurrence_table = ecs.InitIcebergTables.get_init_iceberg(
             namespace_task, "germline_cnv_occurrence", ecs_env
         )
+        create_somatic_snv_occurrence_table = ecs.InitIcebergTables.get_init_iceberg(
+            namespace_task, "somatic_snv_occurrence", ecs_env
+        )
 
     else:
         try:
@@ -64,12 +67,16 @@ with DAG(
         create_germline_cnv_occurrence_table = k8s.InitIcebergTables.get_create_germline_cnv_occurrence_table(
             namespace_task
         )
-
-        (
-            namespace_task  # ensure namespace is resolved before downstream tasks
-            >> init_database()
-            >> create_germline_snv_occurrence_table()
-            >> create_germline_variant_table()
-            >> create_germline_consequence_table()
-            >> create_germline_cnv_occurrence_table()
+        create_somatic_snv_occurrence_table = k8s.InitIcebergTables.get_create_somatic_snv_occurrence_table(
+            namespace_task
         )
+
+    (
+        namespace_task  # ensure namespace is resolved before downstream tasks
+        >> init_database()
+        >> create_germline_variant_table()
+        >> create_germline_consequence_table()
+        >> create_germline_snv_occurrence_table()
+        >> create_germline_cnv_occurrence_table()
+        >> create_somatic_snv_occurrence_table()
+    )

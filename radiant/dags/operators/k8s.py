@@ -184,3 +184,21 @@ class InitIcebergTables(BaseK8SOperator):
             initialization.create_germline_cnv_occurrence_table()
 
         return create_germline_cnv_occurrence_table
+
+    @staticmethod
+    def get_create_somatic_snv_occurrence_table(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                task_id="create_somatic_snv_occurrence_table_k8s",
+                task_display_name="[K8s] Create Somatic SNV Occurrences Table",
+                name="create-somatic-snv-occurrences-table",
+                do_xcom_push=True,
+            )
+            | InitIcebergTables._get_k8s_context(radiant_namespace)
+        )
+        def create_somatic_snv_occurrence_table():
+            from radiant.tasks.iceberg import initialization
+
+            initialization.create_somatic_snv_occurrence_table()
+
+        return create_somatic_snv_occurrence_table

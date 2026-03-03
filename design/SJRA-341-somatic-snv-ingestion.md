@@ -24,15 +24,15 @@ The pseudocode branch was written when the ETL used a `Case`/`Experiment` model.
 current ETL uses a task-based model (`BaseTask` → concrete task types). The key
 differences are:
 
-| Concern | Pseudocode (old) | Current ETL |
-|---|---|---|
-| Data unit | `Case` with `experiments[]` | `BaseTask` subclass with `experiments[]` |
-| Identity key | `case_id` | `task_id` |
-| Deletion handling | Not supported | `deleted` flag on tasks |
-| VCF DAG dispatch | `@task.external_python` directly | Operator abstraction (`k8s` / `ecs`) |
-| StarRocks table prefix | `occurrence`, `variant`, etc. | `germline__snv__occurrence`, `somatic__snv__occurrence`, etc. |
-| Table registry | Flat dicts in `radiant_tables.py` | Enum-based `RadiantConfigKeys` + structured dicts |
-| Import dispatch | One static trigger | Short-circuit + task-type filtering per task type |
+| Concern                | Pseudocode (old)                  | Current ETL                                                   |
+|------------------------|-----------------------------------|---------------------------------------------------------------|
+| Data unit              | `Case` with `experiments[]`       | `BaseTask` subclass with `experiments[]`                      |
+| Identity key           | `case_id`                         | `task_id`                                                     |
+| Deletion handling      | Not supported                     | `deleted` flag on tasks                                       |
+| VCF DAG dispatch       | `@task.external_python` directly  | Operator abstraction (`k8s` / `ecs`)                          |
+| StarRocks table prefix | `occurrence`, `variant`, etc.     | `germline__snv__occurrence`, `somatic__snv__occurrence`, etc. |
+| Table registry         | Flat dicts in `radiant_tables.py` | Enum-based `RadiantConfigKeys` + structured dicts             |
+| Import dispatch        | One static trigger                | Short-circuit + task-type filtering per task type             |
 
 ### 2.2 Tumor-Normal VCF Structure
 
@@ -162,59 +162,59 @@ The table stores the raw parsed VCF data for somatic. Schema is defined in
 Key fields (extending germline `COMMON_SCHEMA` which provides `locus_hash`, `chromosome`,
 `start`, `end`, `reference`, `alternate`):
 
-| Field | Type | Notes |
-|---|---|---|
-| `part` | `INT` | Partition key |
-| `task_id` | `INT` | Replaces `case_id` from pseudocode |
-| `quality` | `FLOAT` | Record-level QUAL |
-| `filter` | `STRING` | Record-level FILTER |
-| `info_hotspotallele` | `STRING` | INFO/HotSpotAllele |
-| `info_old_record` | `STRING` | INFO/OLD_RECORD |
-| `info_baseq_rank_sum` | `FLOAT` | INFO/BaseQRankSum |
-| `info_excess_het` | `FLOAT` | INFO/ExcessHet |
-| `info_fs` | `FLOAT` | INFO/FS |
-| `info_ds` | `BOOL` | INFO/DS |
-| `info_fraction_informative_reads` | `FLOAT` | INFO/FractionInformativeReads |
-| `info_inbreed_coeff` | `FLOAT` | INFO/InbreedCoeff |
-| `info_mleac` | `INT` | INFO/MLEAC |
-| `info_mleaf` | `FLOAT` | INFO/MLEAF |
-| `info_mq` | `FLOAT` | INFO/MQ |
-| `info_mq0` | `FLOAT` | INFO/MQ0 |
-| `info_m_qrank_sum` | `FLOAT` | INFO/MQRankSum |
-| `info_qd` | `FLOAT` | INFO/QD |
-| `info_r2_5p_bias` | `FLOAT` | INFO/R2_5P_bias |
-| `info_read_pos_rank_sum` | `FLOAT` | INFO/ReadPosRankSum |
-| `info_sor` | `FLOAT` | INFO/SOR |
-| `info_vqslod` | `FLOAT` | INFO/VQSLod |
-| `info_culprit` | `STRING` | INFO/Culprit |
-| `info_dp` | `INT` | INFO/DP |
-| `info_haplotype_score` | `FLOAT` | INFO/HaplotypeScore |
-| `tumor_seq_id` | `INT` | Tumor sample seq_id |
-| `tumor_calls` | `LIST<INT>` | Tumor genotype calls |
-| `tumor_dp` | `INT` | Tumor FORMAT/DP |
-| `tumor_gq` | `INT` | Tumor FORMAT/GQ |
-| `tumor_has_alt` | `BOOL` | Has alternate allele |
-| `tumor_af` | `FLOAT` | Tumor allele frequency |
-| `tumor_zygosity` | `STRING` | HET/HOM/WT/UNK/HEM |
-| `tumor_ad_ref` | `INT` | Tumor ref allele depth |
-| `tumor_ad_alt` | `INT` | Tumor alt allele depth |
-| `tumor_ad_total` | `INT` | Tumor total depth |
-| `tumor_ad_ratio` | `FLOAT` | Tumor alt/total ratio |
-| `tumor_phased` | `BOOL` | Tumor phased flag |
-| `tumor_gt_status` | `STRING` | Tumor genotype status (TBD, §5.4) |
-| `normal_seq_id` | `INT` | Normal sample seq_id |
-| `normal_calls` | `LIST<INT>` | Normal genotype calls |
-| `normal_dp` | `INT` | Normal FORMAT/DP |
-| `normal_gq` | `INT` | Normal FORMAT/GQ |
-| `normal_has_alt` | `BOOL` | Has alternate allele |
-| `normal_af` | `FLOAT` | Normal allele frequency |
-| `normal_zygosity` | `STRING` | HET/HOM/WT/UNK/HEM |
-| `normal_ad_ref` | `INT` | Normal ref allele depth |
-| `normal_ad_alt` | `INT` | Normal alt allele depth |
-| `normal_ad_total` | `INT` | Normal total depth |
-| `normal_ad_ratio` | `FLOAT` | Normal alt/total ratio |
-| `normal_phased` | `BOOL` | Normal phased flag |
-| `normal_gt_status` | `STRING` | Normal genotype status (TBD, §5.4) |
+| Field                             | Type        | Notes                              |
+|-----------------------------------|-------------|------------------------------------|
+| `part`                            | `INT`       | Partition key                      |
+| `task_id`                         | `INT`       | Replaces `case_id` from pseudocode |
+| `quality`                         | `FLOAT`     | Record-level QUAL                  |
+| `filter`                          | `STRING`    | Record-level FILTER                |
+| `info_hotspotallele`              | `STRING`    | INFO/HotSpotAllele                 |
+| `info_old_record`                 | `STRING`    | INFO/OLD_RECORD                    |
+| `info_baseq_rank_sum`             | `FLOAT`     | INFO/BaseQRankSum                  |
+| `info_excess_het`                 | `FLOAT`     | INFO/ExcessHet                     |
+| `info_fs`                         | `FLOAT`     | INFO/FS                            |
+| `info_ds`                         | `BOOL`      | INFO/DS                            |
+| `info_fraction_informative_reads` | `FLOAT`     | INFO/FractionInformativeReads      |
+| `info_inbreed_coeff`              | `FLOAT`     | INFO/InbreedCoeff                  |
+| `info_mleac`                      | `INT`       | INFO/MLEAC                         |
+| `info_mleaf`                      | `FLOAT`     | INFO/MLEAF                         |
+| `info_mq`                         | `FLOAT`     | INFO/MQ                            |
+| `info_mq0`                        | `FLOAT`     | INFO/MQ0                           |
+| `info_m_qrank_sum`                | `FLOAT`     | INFO/MQRankSum                     |
+| `info_qd`                         | `FLOAT`     | INFO/QD                            |
+| `info_r2_5p_bias`                 | `FLOAT`     | INFO/R2_5P_bias                    |
+| `info_read_pos_rank_sum`          | `FLOAT`     | INFO/ReadPosRankSum                |
+| `info_sor`                        | `FLOAT`     | INFO/SOR                           |
+| `info_vqslod`                     | `FLOAT`     | INFO/VQSLod                        |
+| `info_culprit`                    | `STRING`    | INFO/Culprit                       |
+| `info_dp`                         | `INT`       | INFO/DP                            |
+| `info_haplotype_score`            | `FLOAT`     | INFO/HaplotypeScore                |
+| `tumor_seq_id`                    | `INT`       | Tumor sample seq_id                |
+| `tumor_calls`                     | `LIST<INT>` | Tumor genotype calls               |
+| `tumor_dp`                        | `INT`       | Tumor FORMAT/DP                    |
+| `tumor_gq`                        | `INT`       | Tumor FORMAT/GQ                    |
+| `tumor_has_alt`                   | `BOOL`      | Has alternate allele               |
+| `tumor_af`                        | `FLOAT`     | Tumor allele frequency             |
+| `tumor_zygosity`                  | `STRING`    | HET/HOM/WT/UNK/HEM                 |
+| `tumor_ad_ref`                    | `INT`       | Tumor ref allele depth             |
+| `tumor_ad_alt`                    | `INT`       | Tumor alt allele depth             |
+| `tumor_ad_total`                  | `INT`       | Tumor total depth                  |
+| `tumor_ad_ratio`                  | `FLOAT`     | Tumor alt/total ratio              |
+| `tumor_phased`                    | `BOOL`      | Tumor phased flag                  |
+| `tumor_gt_status`                 | `STRING`    | Tumor genotype status (TBD, §5.4)  |
+| `normal_seq_id`                   | `INT`       | Normal sample seq_id               |
+| `normal_calls`                    | `LIST<INT>` | Normal genotype calls              |
+| `normal_dp`                       | `INT`       | Normal FORMAT/DP                   |
+| `normal_gq`                       | `INT`       | Normal FORMAT/GQ                   |
+| `normal_has_alt`                  | `BOOL`      | Has alternate allele               |
+| `normal_af`                       | `FLOAT`     | Normal allele frequency            |
+| `normal_zygosity`                 | `STRING`    | HET/HOM/WT/UNK/HEM                 |
+| `normal_ad_ref`                   | `INT`       | Normal ref allele depth            |
+| `normal_ad_alt`                   | `INT`       | Normal alt allele depth            |
+| `normal_ad_total`                 | `INT`       | Normal total depth                 |
+| `normal_ad_ratio`                 | `FLOAT`     | Normal alt/total ratio             |
+| `normal_phased`                   | `BOOL`      | Normal phased flag                 |
+| `normal_gt_status`                | `STRING`    | Normal genotype status (TBD, §5.4) |
 
 ### 4.6 Shared Table Renames: `snv_variant` and `snv_consequence`
 
@@ -225,24 +225,24 @@ dependent tables follow suit.
 
 #### Iceberg renames
 
-| Old name | New name |
-|---|---|
-| `germline_snv_variant` | `snv_variant` |
+| Old name                   | New name          |
+|----------------------------|-------------------|
+| `germline_snv_variant`     | `snv_variant`     |
 | `germline_snv_consequence` | `snv_consequence` |
 
 #### StarRocks renames
 
-| Old name | New name |
-|---|---|
-| `germline__snv__variant` | `snv__variant` |
-| `germline__snv__consequence` | `snv__consequence` |
-| `germline__snv__consequence_filter` | `snv__consequence_filter` |
+| Old name                                        | New name                              |
+|-------------------------------------------------|---------------------------------------|
+| `germline__snv__variant`                        | `snv__variant`                        |
+| `germline__snv__consequence`                    | `snv__consequence`                    |
+| `germline__snv__consequence_filter`             | `snv__consequence_filter`             |
 | `germline__snv__consequence_filter_partitioned` | `snv__consequence_filter_partitioned` |
-| `germline__snv__variant_frequency` | `snv__variant_frequency` |
-| `germline__snv__staging_variant` | `snv__staging_variant` |
+| `germline__snv__variant_frequency`              | `snv__variant_frequency`              |
+| `germline__snv__staging_variant`                | `snv__staging_variant`                |
 | `germline__snv__staging_variant_frequency_part` | `snv__staging_variant_frequency_part` |
-| `germline__snv__tmp_variant` | `snv__tmp_variant` |
-| `germline__snv__variant_partitioned` | `snv__variant_partitioned` |
+| `germline__snv__tmp_variant`                    | `snv__tmp_variant`                    |
+| `germline__snv__variant_partitioned`            | `snv__variant_partitioned`            |
 
 > The occurrence tables are **not** renamed — they remain analysis-type-specific:
 > `germline__snv__occurrence` and `somatic__snv__occurrence`.
@@ -252,19 +252,19 @@ dependent tables follow suit.
 Mapping keys in `STARROCKS_RADIANT_MAPPING` and `ICEBERG_GERMLINE_SNV_MAPPING` are
 updated to reflect shared ownership:
 
-| Old key | New key |
-|---|---|
-| `iceberg_variant` | `iceberg_snv_variant` |
-| `iceberg_consequence` | `iceberg_snv_consequence` |
-| `starrocks_germline_snv_variant` | `starrocks_snv_variant` |
-| `starrocks_germline_snv_consequence` | `starrocks_snv_consequence` |
-| `starrocks_germline_snv_consequence_filter` | `starrocks_snv_consequence_filter` |
+| Old key                                                 | New key                                        |
+|---------------------------------------------------------|------------------------------------------------|
+| `iceberg_variant`                                       | `iceberg_snv_variant`                          |
+| `iceberg_consequence`                                   | `iceberg_snv_consequence`                      |
+| `starrocks_germline_snv_variant`                        | `starrocks_snv_variant`                        |
+| `starrocks_germline_snv_consequence`                    | `starrocks_snv_consequence`                    |
+| `starrocks_germline_snv_consequence_filter`             | `starrocks_snv_consequence_filter`             |
 | `starrocks_germline_snv_consequence_filter_partitioned` | `starrocks_snv_consequence_filter_partitioned` |
-| `starrocks_germline_snv_variant_frequency` | `starrocks_snv_variant_frequency` |
-| `starrocks_germline_snv_staging_variant` | `starrocks_snv_staging_variant` |
-| `starrocks_germline_snv_staging_variant_frequency` | `starrocks_snv_staging_variant_frequency` |
-| `starrocks_germline_snv_tmp_variant` | `starrocks_snv_tmp_variant` |
-| `starrocks_germline_snv_variant_partitioned` | `starrocks_snv_variant_partitioned` |
+| `starrocks_germline_snv_variant_frequency`              | `starrocks_snv_variant_frequency`              |
+| `starrocks_germline_snv_staging_variant`                | `starrocks_snv_staging_variant`                |
+| `starrocks_germline_snv_staging_variant_frequency`      | `starrocks_snv_staging_variant_frequency`      |
+| `starrocks_germline_snv_tmp_variant`                    | `starrocks_snv_tmp_variant`                    |
+| `starrocks_germline_snv_variant_partitioned`            | `starrocks_snv_variant_partitioned`            |
 
 The `ICEBERG_GERMLINE_SNV_MAPPING` dict is split into three:
 
@@ -296,51 +296,51 @@ columns for tumor-normal frequencies. The existing germline columns are unchange
 
 `pc` = patient carrier count, `pn` = total patients, `pf` = frequency (`pc / pn`).
 
-| Old column name | New column name | Scope |
-|---|---|---|
-| `pc_wgs` | `pc_germline_wgs` | All WGS germline patients carrying the variant |
-| `pn_wgs` | `pn_germline_wgs` | Total WGS germline patients |
-| `pf_wgs` | `pf_germline_wgs` | WGS germline frequency |
-| `pc_wgs_affected` | `pc_germline_wgs_affected` | WGS affected carriers |
-| `pn_wgs_affected` | `pn_germline_wgs_affected` | Total WGS affected patients |
-| `pf_wgs_affected` | `pf_germline_wgs_affected` | WGS affected frequency |
-| `pc_wgs_not_affected` | `pc_germline_wgs_not_affected` | WGS non-affected carriers |
-| `pn_wgs_not_affected` | `pn_germline_wgs_not_affected` | Total WGS non-affected patients |
-| `pf_wgs_not_affected` | `pf_germline_wgs_not_affected` | WGS non-affected frequency |
-| `pc_wxs` | `pc_germline_wxs` | All WXS germline patients carrying the variant |
-| `pn_wxs` | `pn_germline_wxs` | Total WXS germline patients |
-| `pf_wxs` | `pf_germline_wxs` | WXS germline frequency |
-| `pc_wxs_affected` | `pc_germline_wxs_affected` | WXS affected carriers |
-| `pn_wxs_affected` | `pn_germline_wxs_affected` | Total WXS affected patients |
-| `pf_wxs_affected` | `pf_germline_wxs_affected` | WXS affected frequency |
-| `pc_wxs_not_affected` | `pc_germline_wxs_not_affected` | WXS non-affected carriers |
-| `pn_wxs_not_affected` | `pn_germline_wxs_not_affected` | Total WXS non-affected patients |
-| `pf_wxs_not_affected` | `pf_germline_wxs_not_affected` | WXS non-affected frequency |
+| Old column name       | New column name                | Scope                                          |
+|-----------------------|--------------------------------|------------------------------------------------|
+| `pc_wgs`              | `pc_germline_wgs`              | All WGS germline patients carrying the variant |
+| `pn_wgs`              | `pn_germline_wgs`              | Total WGS germline patients                    |
+| `pf_wgs`              | `pf_germline_wgs`              | WGS germline frequency                         |
+| `pc_wgs_affected`     | `pc_germline_wgs_affected`     | WGS affected carriers                          |
+| `pn_wgs_affected`     | `pn_germline_wgs_affected`     | Total WGS affected patients                    |
+| `pf_wgs_affected`     | `pf_germline_wgs_affected`     | WGS affected frequency                         |
+| `pc_wgs_not_affected` | `pc_germline_wgs_not_affected` | WGS non-affected carriers                      |
+| `pn_wgs_not_affected` | `pn_germline_wgs_not_affected` | Total WGS non-affected patients                |
+| `pf_wgs_not_affected` | `pf_germline_wgs_not_affected` | WGS non-affected frequency                     |
+| `pc_wxs`              | `pc_germline_wxs`              | All WXS germline patients carrying the variant |
+| `pn_wxs`              | `pn_germline_wxs`              | Total WXS germline patients                    |
+| `pf_wxs`              | `pf_germline_wxs`              | WXS germline frequency                         |
+| `pc_wxs_affected`     | `pc_germline_wxs_affected`     | WXS affected carriers                          |
+| `pn_wxs_affected`     | `pn_germline_wxs_affected`     | Total WXS affected patients                    |
+| `pf_wxs_affected`     | `pf_germline_wxs_affected`     | WXS affected frequency                         |
+| `pc_wxs_not_affected` | `pc_germline_wxs_not_affected` | WXS non-affected carriers                      |
+| `pn_wxs_not_affected` | `pn_germline_wxs_not_affected` | Total WXS non-affected patients                |
+| `pf_wxs_not_affected` | `pf_germline_wxs_not_affected` | WXS non-affected frequency                     |
 
 #### New tumor-normal columns
 
 `pc_tn` = count of **tumor-normal pairs** where `tumor_has_alt = TRUE`.
 `pn_tn` = total tumor-normal pairs in the cohort. `pf_tn` = `pc_tn / pn_tn`.
 
-| Column | Type | Description |
-|---|---|---|
+| Column      | Type     | Description                                 |
+|-------------|----------|---------------------------------------------|
 | `pc_tn_wgs` | `BIGINT` | Tumor-normal WGS pairs carrying the variant |
-| `pn_tn_wgs` | `BIGINT` | Total tumor-normal WGS pairs in cohort |
-| `pf_tn_wgs` | `DOUBLE` | Tumor-normal WGS frequency |
+| `pn_tn_wgs` | `BIGINT` | Total tumor-normal WGS pairs in cohort      |
+| `pf_tn_wgs` | `DOUBLE` | Tumor-normal WGS frequency                  |
 | `pc_tn_wxs` | `BIGINT` | Tumor-normal WXS pairs carrying the variant |
-| `pn_tn_wxs` | `BIGINT` | Total tumor-normal WXS pairs in cohort |
-| `pf_tn_wxs` | `DOUBLE` | Tumor-normal WXS frequency |
+| `pn_tn_wxs` | `BIGINT` | Total tumor-normal WXS pairs in cohort      |
+| `pf_tn_wxs` | `DOUBLE` | Tumor-normal WXS frequency                  |
 
 #### Future tumor-only columns (deferred)
 
-| Column | Type | Description |
-|---|---|---|
+| Column      | Type     | Description                                 |
+|-------------|----------|---------------------------------------------|
 | `pc_to_wgs` | `BIGINT` | Tumor-only WGS samples carrying the variant |
-| `pn_to_wgs` | `BIGINT` | Total tumor-only WGS samples |
-| `pf_to_wgs` | `DOUBLE` | Tumor-only WGS frequency |
+| `pn_to_wgs` | `BIGINT` | Total tumor-only WGS samples                |
+| `pf_to_wgs` | `DOUBLE` | Tumor-only WGS frequency                    |
 | `pc_to_wxs` | `BIGINT` | Tumor-only WXS samples carrying the variant |
-| `pn_to_wxs` | `BIGINT` | Total tumor-only WXS samples |
-| `pf_to_wxs` | `DOUBLE` | Tumor-only WXS frequency |
+| `pn_to_wxs` | `BIGINT` | Total tumor-only WXS samples                |
+| `pf_to_wxs` | `DOUBLE` | Tumor-only WXS frequency                    |
 
 #### Staging frequency insert changes
 
@@ -611,26 +611,26 @@ appropriate to the somatic caller.
 
 ## 6. Files to Create / Modify
 
-| Action | File |
-|---|---|
-| **Create** | `radiant/tasks/vcf/snv/somatic/__init__.py` |
-| **Create** | `radiant/tasks/vcf/snv/somatic/occurrence.py` |
-| **Create** | `radiant/tasks/vcf/snv/somatic/process.py` |
-| **Create** | `radiant/dags/import_somatic_snv_vcf.py` |
-| **Create** | `radiant/dags/sql/radiant/somatic_snv_occurrence_insert_partition_delta.sql` |
-| **Create** | `radiant/dags/sql/radiant/init/somatic_snv_occurrence_create_table.sql` |
-| **Modify** | `radiant/tasks/vcf/experiment.py` — add `RADIANT_SOMATIC_ANNOTATION_TASK` + `RadiantSomaticAnnotationTask` |
-| **Modify** | `radiant/tasks/data/radiant_tables.py` — split Iceberg mapping dicts, rename StarRocks keys, add somatic entries |
-| **Modify** | `radiant/dags/import_part.py` — trigger somatic DAG, short-circuit guard, somatic occurrence insert, updated table refresh keys |
-| **Modify** | `radiant/dags/import_germline_snv_vcf.py` — update Iceberg table target names (`snv_variant`, `snv_consequence`) |
-| **Modify** | `radiant/dags/init_iceberg_tables.py` — rename variant/consequence tables, register `somatic_snv_occurrence` |
-| **Modify** | `radiant/dags/init_starrocks_tables.py` — rename all shared `germline__snv__*` tables, add `somatic__snv__occurrence` |
+| Action              | File                                                                                                                                                                                          |
+|---------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Create**          | `radiant/tasks/vcf/snv/somatic/__init__.py`                                                                                                                                                   |
+| **Create**          | `radiant/tasks/vcf/snv/somatic/occurrence.py`                                                                                                                                                 |
+| **Create**          | `radiant/tasks/vcf/snv/somatic/process.py`                                                                                                                                                    |
+| **Create**          | `radiant/dags/import_somatic_snv_vcf.py`                                                                                                                                                      |
+| **Create**          | `radiant/dags/sql/radiant/somatic_snv_occurrence_insert_partition_delta.sql`                                                                                                                  |
+| **Create**          | `radiant/dags/sql/radiant/init/somatic_snv_occurrence_create_table.sql`                                                                                                                       |
+| **Modify**          | `radiant/tasks/vcf/experiment.py` — add `RADIANT_SOMATIC_ANNOTATION_TASK` + `RadiantSomaticAnnotationTask`                                                                                    |
+| **Modify**          | `radiant/tasks/data/radiant_tables.py` — split Iceberg mapping dicts, rename StarRocks keys, add somatic entries                                                                              |
+| **Modify**          | `radiant/dags/import_part.py` — trigger somatic DAG, short-circuit guard, somatic occurrence insert, updated table refresh keys                                                               |
+| **Modify**          | `radiant/dags/import_germline_snv_vcf.py` — update Iceberg table target names (`snv_variant`, `snv_consequence`)                                                                              |
+| **Modify**          | `radiant/dags/init_iceberg_tables.py` — rename variant/consequence tables, register `somatic_snv_occurrence`                                                                                  |
+| **Modify**          | `radiant/dags/init_starrocks_tables.py` — rename all shared `germline__snv__*` tables, add `somatic__snv__occurrence`                                                                         |
 | **Rename + Modify** | `germline_snv_staging_variant_freq_insert.sql` → `snv_staging_variant_freq_insert.sql` — rename germline columns (`pc_wgs` → `pc_germline_wgs`, etc.), add tumor-normal frequency computation |
-| **Rename + Modify** | `germline_snv_variant_frequency_insert.sql` → `snv_variant_frequency_insert.sql` — rename germline columns, add `pc_tn_*` / `pn_tn_*` / `pf_tn_*` columns |
-| **Rename + Modify** | `init/germline_snv_variant_frequency_create_table.sql` → `init/snv_variant_frequency_create_table.sql` — rename germline columns, add new frequency columns |
-| **Rename + Modify** | `init/germline_snv_staging_variant_frequency_create_table.sql` → `init/snv_staging_variant_frequency_create_table.sql` — rename germline columns, add new frequency columns |
-| **Modify** | `init/germline_snv_variant_create_table.sql` → `init/snv_variant_create_table.sql` — rename inline frequency columns (`pf_wgs` → `pf_germline_wgs`, `pc_wgs` → `pc_germline_wgs`, etc.) |
-| **Rename** | All other `germline_snv_*` SQL files referencing shared tables — update mapping key references throughout |
+| **Rename + Modify** | `germline_snv_variant_frequency_insert.sql` → `snv_variant_frequency_insert.sql` — rename germline columns, add `pc_tn_*` / `pn_tn_*` / `pf_tn_*` columns                                     |
+| **Rename + Modify** | `init/germline_snv_variant_frequency_create_table.sql` → `init/snv_variant_frequency_create_table.sql` — rename germline columns, add new frequency columns                                   |
+| **Rename + Modify** | `init/germline_snv_staging_variant_frequency_create_table.sql` → `init/snv_staging_variant_frequency_create_table.sql` — rename germline columns, add new frequency columns                   |
+| **Modify**          | `init/germline_snv_variant_create_table.sql` → `init/snv_variant_create_table.sql` — rename inline frequency columns (`pf_wgs` → `pf_germline_wgs`, `pc_wgs` → `pc_germline_wgs`, etc.)       |
+| **Rename**          | All other `germline_snv_*` SQL files referencing shared tables — update mapping key references throughout                                                                                     |
 
 ---
 
@@ -646,19 +646,19 @@ appropriate to the somatic caller.
 
 ```
 -- Consequence tables
-ALTER TABLE radiant.germline__snv__consequence RENAME TO snv__consequence;
-ALTER TABLE radiant.germline__snv__consequence_filter RENAME TO snv__consequence_filter;
-ALTER TABLE radiant.germline__snv__consequence_filter_partitioned RENAME TO snv__consequence_filter_partitioned;
+ALTER TABLE radiant.germline__snv__consequence RENAME snv__consequence;
+ALTER TABLE radiant.germline__snv__consequence_filter RENAME snv__consequence_filter;
+ALTER TABLE radiant.germline__snv__consequence_filter_partitioned RENAME snv__consequence_filter_partitioned;
 
 -- Variant tables
-ALTER TABLE radiant.germline__snv__variant RENAME TO snv__variant;
-ALTER TABLE radiant.germline__snv__staging_variant RENAME TO snv__staging_variant;
-ALTER TABLE radiant.germline__snv__tmp_variant RENAME TO snv__tmp_variant;
-ALTER TABLE radiant.germline__snv__variant_partitioned RENAME TO snv__variant_partitioned; 
+ALTER TABLE radiant.germline__snv__variant RENAME snv__variant;
+ALTER TABLE radiant.germline__snv__staging_variant RENAME snv__staging_variant;
+ALTER TABLE radiant.germline__snv__tmp_variant RENAME snv__tmp_variant;
+ALTER TABLE radiant.germline__snv__variant_partitioned RENAME snv__variant_partitioned; 
 
 -- Frequencies (table and column renames)
-ALTER TABLE radiant.germline__snv__variant_frequency RENAME TO snv__variant_frequency;
-ALTER TABLE radiant.germline__snv__staging_variant_frequency RENAME TO snv__staging_variant_frequency_part;
+ALTER TABLE radiant.germline__snv__variant_frequency RENAME snv__variant_frequency;
+ALTER TABLE radiant.germline__snv__staging_variant_frequency_part RENAME snv__staging_variant_frequency_part;
 
 ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pc_wgs TO pc_germline_wgs;
 ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pn_wgs TO pn_germline_wgs;
