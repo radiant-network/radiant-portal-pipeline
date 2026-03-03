@@ -59,8 +59,8 @@ with DAG(
         create_germline_snv_occurrence_table = k8s.InitIcebergTables.get_create_germline_snv_occurrence_table(
             namespace_task
         )
-        create_germline_variant_table = k8s.InitIcebergTables.get_create_germline_variant_table(namespace_task)
-        create_germline_consequence_table = k8s.InitIcebergTables.get_create_germline_consequence_table(namespace_task)
+        create_germline_variant_table = k8s.InitIcebergTables.get_create_variant_table(namespace_task)
+        create_germline_consequence_table = k8s.InitIcebergTables.get_create_consequence_table(namespace_task)
         create_germline_cnv_occurrence_table = k8s.InitIcebergTables.get_create_germline_cnv_occurrence_table(
             namespace_task
         )

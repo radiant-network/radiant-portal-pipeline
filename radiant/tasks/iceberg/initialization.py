@@ -25,18 +25,18 @@ def create_germline_cnv_occurrence_table():
     catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA)
 
 
-def create_germline_consequences_table():
+def create_consequences_table():
     import os
 
     from pyiceberg.catalog import load_catalog
     from pyiceberg.partitioning import PartitionField, PartitionSpec
     from pyiceberg.transforms import IdentityTransform
 
-    from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
+    from radiant.tasks.vcf.snv.consequence import SCHEMA as CONSEQUENCE_SCHEMA
 
     namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
     catalog = load_catalog("default")
-    table_name = f"{namespace}.germline_snv_consequence"
+    table_name = f"{namespace}.snv_consequence"
     if catalog.table_exists(table_name):
         catalog.drop_table(table_name)
 
@@ -55,18 +55,18 @@ def create_germline_consequences_table():
     catalog.create_table_if_not_exists(table_name, schema=CONSEQUENCE_SCHEMA, partition_spec=partition_spec)
 
 
-def create_germline_variant_table():
+def create_variant_table():
     import os
 
     from pyiceberg.catalog import load_catalog
     from pyiceberg.partitioning import PartitionField, PartitionSpec
     from pyiceberg.transforms import IdentityTransform
 
-    from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
+    from radiant.tasks.vcf.snv.variant import SCHEMA as VARIANT_SCHEMA
 
     namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
     catalog = load_catalog("default")
-    table_name = f"{namespace}.germline_snv_variant"
+    table_name = f"{namespace}.snv_variant"
     if catalog.table_exists(table_name):
         catalog.drop_table(table_name)
 

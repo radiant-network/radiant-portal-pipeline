@@ -52,8 +52,8 @@ def process_task(
             vcf.set_index(index_path=task.index_vcf_filepath)
 
         occurrences_table_name = f"{namespace}.germline_snv_occurrence"
-        variants_table_name = f"{namespace}.germline_snv_variant"
-        consequences_table_name = f"{namespace}.germline_snv_consequence"
+        variants_table_name = f"{namespace}.snv_variant"
+        consequences_table_name = f"{namespace}.snv_consequence"
         if not vcf.samples:
             raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
 

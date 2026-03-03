@@ -13,17 +13,17 @@ def main(table_name: str):
         initialization.init_database()
     elif table_name == "germline_snv_occurrence":
         initialization.create_germline_snv_occurrence_table()
-    elif table_name == "germline_variant":
-        initialization.create_germline_variant_table()
-    elif table_name == "germline_consequence":
-        initialization.create_germline_consequences_table()
+    elif table_name == "variant":
+        initialization.create_variant_table()
+    elif table_name == "consequence":
+        initialization.create_consequences_table()
     elif table_name == "germline_cnv_occurrence":
         initialization.create_germline_cnv_occurrence_table()
     else:
         raise ValueError(
             f"Unknown initialization name: {table_name}, possible values are: "
-            "'database', 'germline_snv_occurrence', 'germline_variant', "
-            "'germline_consequence', 'germline_cnv_occurrence'"
+            "'database', 'germline_snv_occurrence', 'variant', "
+            "'consequence', 'germline_cnv_occurrence'"
         )
 
 
@@ -33,8 +33,8 @@ if __name__ == "__main__":
         "--table_name",
         required=True,
         help="Iceberg target to initialize, possible values are: "
-        "'database', 'germline_snv_occurrence', 'germline_variant', "
-        "'germline_consequence', 'germline_cnv_occurrence'",
+        "'database', 'germline_snv_occurrence', 'variant', "
+        "'consequence', 'germline_cnv_occurrence'",
     )
     args = parser.parse_args()
     logger.info(f"Command line arguments: {args}")

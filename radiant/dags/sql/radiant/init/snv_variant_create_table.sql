@@ -1,5 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_variant_partitioned }} (
-    part INT NOT NULL,
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_variant }} (
     locus_id BIGINT NOT NULL,
     pf_wgs DOUBLE,
     pf_wxs DOUBLE,
@@ -48,7 +47,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_variant_partitioned
     transcript_id varchar(100) COMMENT "",
     omim_inheritance_code array<varchar(5)> COMMENT ""
 )
-PARTITION BY (`part`)
+PRIMARY KEY(locus_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10
 PROPERTIES (
     "colocate_with" = "{{ mapping.colocate_query_group }}"

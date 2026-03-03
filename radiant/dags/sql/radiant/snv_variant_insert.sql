@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ mapping.starrocks_germline_snv_variant }}
+INSERT OVERWRITE {{ mapping.starrocks_snv_variant }}
 SELECT
     v.locus_id,
     COALESCE(vf.pf_wgs, 0) as pf_wgs,
@@ -48,4 +48,4 @@ SELECT
     v.transcript_id,
     v.omim_inheritance_code
 FROM {{ mapping.starrocks_germline_snv_staging_variant }} v
-LEFT JOIN {{ mapping.starrocks_germline_snv_variant_frequency }} vf ON vf.locus_id = v.locus_id
+LEFT JOIN {{ mapping.starrocks_snv_variant_frequency }} vf ON vf.locus_id = v.locus_id

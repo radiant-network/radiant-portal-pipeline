@@ -4,7 +4,7 @@ import pytest
 
 from radiant.tasks.vcf.experiment import Experiment, RadiantGermlineAnnotationTask
 from radiant.tasks.vcf.pedigree import Pedigree
-from radiant.tasks.vcf.snv.germline.common import Common
+from radiant.tasks.vcf.snv.common import Common
 from radiant.tasks.vcf.snv.germline.occurrence import (
     AUTOSOMAL_ORIGINS_LOOKUP,
     X_ORIGINS_LOOKUP,

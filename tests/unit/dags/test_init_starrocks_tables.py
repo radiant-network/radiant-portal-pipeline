@@ -16,20 +16,20 @@ def test_dag_has_all_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-starrocks-tables")
     task_ids = [task.task_id for task in dag.tasks]
     tables = [
-        "germline_snv_consequence",
-        "germline_snv_consequence_filter",
-        "germline_snv_consequence_filter_partitioned",
+        "snv_consequence",
+        "snv_consequence_filter",
+        "snv_consequence_filter_partitioned",
         "germline_cnv_occurrence",
         "germline_snv_occurrence",
         "staging_sequencing_experiment",
         "staging_external_sequencing_experiment",
-        "germline_snv_tmp_variant",
-        "germline_snv_staging_variant",
+        "snv_tmp_variant",
+        "snv_staging_variant",
         "variant_lookup",
-        "germline_snv_variant",
-        "germline_snv_staging_variant_frequency",
-        "germline_snv_variant_frequency",
-        "germline_snv_variant_partitioned",
+        "snv_variant",
+        "snv_staging_variant_frequency",
+        "snv_variant_frequency",
+        "snv_variant_partitioned",
     ]
     for table in tables:
         assert f"create_table_{table}" in task_ids

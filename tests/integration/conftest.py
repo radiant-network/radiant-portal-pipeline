@@ -240,12 +240,12 @@ def setup_iceberg_namespace(s3_fs, iceberg_client, iceberg_namespace, random_tes
     iceberg_client.create_table_if_not_exists(
         f"{iceberg_namespace}.germline_snv_occurrence", schema=SNV_OCCURRENCE_SCHEMA
     )
-    iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.germline_snv_variant", schema=VARIANT_SCHEMA)
+    iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.snv_variant", schema=VARIANT_SCHEMA)
     iceberg_client.create_table_if_not_exists(
         f"{iceberg_namespace}.germline_cnv_occurrence", schema=CNV_OCCURRENCE_SCHEMA
     )
     iceberg_client.create_table_if_not_exists(
-        f"{iceberg_namespace}.germline_snv_consequence", schema=CONSEQUENCE_SCHEMA
+        f"{iceberg_namespace}.snv_consequence", schema=CONSEQUENCE_SCHEMA
     )
     yield iceberg_namespace
 
