@@ -7,8 +7,9 @@ build-docker:
 install:
 	pip install -r requirements.txt
 
-install-dev: install
+install-dev:
 	pip install -r requirements-dev.txt
+	pip install -r requirements.txt
 
 	# Required for standalone unit tests
 	airflow db init
