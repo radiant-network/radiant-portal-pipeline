@@ -4,6 +4,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import pytest
+from alembic.command import history
 
 from radiant.tasks.starrocks.partition import (
     PriorityLevel,
@@ -35,6 +36,7 @@ def create_sequencing_delta_input_from_base(**kwargs) -> SequencingDeltaInput:
         "family_id": 1,
         "family_role": "proband",
         "affected_status": "affected",
+        "histology_type": "normal",
         "created_at": datetime(2025, 1, 1),
         "updated_at": datetime(2025, 1, 1),
         "max_part": None,
@@ -452,6 +454,7 @@ def test__priority_assigner__assign_priorities(parts, priorities, expected_prior
             family_id=0,
             family_role="proband",
             affected_status="affected",
+            histology_type="normal",
             created_at=datetime(year=2025, month=1, day=1),
             updated_at=datetime(year=2025, month=1, day=1),
             ingested_at=datetime(year=2025, month=1, day=1),
