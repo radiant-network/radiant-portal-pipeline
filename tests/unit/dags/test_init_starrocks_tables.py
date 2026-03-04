@@ -30,6 +30,8 @@ def test_dag_has_all_tasks(dag_bag):
         "germline_snv_staging_variant_frequency",
         "germline_snv_variant_frequency",
         "snv_variant_partitioned",
+        "staging_exomiser",
+        "exomiser",
         "somatic_snv_occurrence",
         "somatic_snv_variant_frequency",
         "somatic_snv_staging_variant_frequency",

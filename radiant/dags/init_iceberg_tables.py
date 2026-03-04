@@ -39,10 +39,10 @@ with DAG(
             namespace_task, "germline_snv_occurrence", ecs_env
         )
         create_germline_variant_table = ecs.InitIcebergTables.get_init_iceberg(
-            namespace_task, "germline_variant", ecs_env
+            namespace_task, "snv_variant", ecs_env
         )
         create_germline_consequence_table = ecs.InitIcebergTables.get_init_iceberg(
-            namespace_task, "germline_consequence", ecs_env
+            namespace_task, "snv_consequence", ecs_env
         )
         create_germline_cnv_occurrence_table = ecs.InitIcebergTables.get_init_iceberg(
             namespace_task, "germline_cnv_occurrence", ecs_env

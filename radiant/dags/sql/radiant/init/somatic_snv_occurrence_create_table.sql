@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_occurrence }} (
     tumor_ad_alt     INT,
     tumor_ad_total   INT,
     tumor_ad_ratio   FLOAT,
-    tumor_phased     BOOLEAN NOT NULL,
+    tumor_phased     BOOLEAN,
     tumor_gt_status  VARCHAR(50),
     -- Normal FORMAT
     normal_calls     ARRAY<INT>,
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_occurrence }} (
     normal_ad_alt    INT,
     normal_ad_total  INT,
     normal_ad_ratio  FLOAT,
-    normal_phased    BOOLEAN NOT NULL,
+    normal_phased    BOOLEAN,
     normal_gt_status VARCHAR(50),
     INDEX locus_id_index (`locus_id`) USING BITMAP COMMENT ''
 )

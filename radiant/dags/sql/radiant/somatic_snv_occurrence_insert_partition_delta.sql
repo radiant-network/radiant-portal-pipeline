@@ -1,8 +1,8 @@
 SELECT
     o.part,
     o.task_id,
-    v.locus_id,
     o.tumor_seq_id,
+    v.locus_id,
     o.normal_seq_id,
     o.quality,
     o.filter,

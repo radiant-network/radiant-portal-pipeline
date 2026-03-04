@@ -30,6 +30,7 @@ def sequencing_delta_columns():
         "family_id",
         "family_role",
         "affected_status",
+        "histology_type",
         "created_at",
         "updated_at",
         "patient_part",

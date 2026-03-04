@@ -112,7 +112,7 @@ def create_germline_snv_occurrence_table():
                 transform=IdentityTransform(),
             ),
             PartitionField(
-                field_id=1001,
+                field_id=1002,
                 source_id=task_id_field.field_id,
                 name=task_id_field.name,
                 transform=IdentityTransform(),
@@ -149,7 +149,7 @@ def create_somatic_snv_occurrence_table():
                 transform=IdentityTransform(),
             ),
             PartitionField(
-                field_id=1001,
+                field_id=1002,
                 source_id=task_id_field.field_id,
                 name=task_id_field.name,
                 transform=IdentityTransform(),

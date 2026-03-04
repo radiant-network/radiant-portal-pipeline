@@ -676,4 +676,24 @@ ALTER TABLE radiant.snv__variant RENAME COLUMN pf_wxs_affected TO germline_pf_wx
 ALTER TABLE radiant.snv__variant RENAME COLUMN pc_wxs_not_affected TO germline_pc_wxs_not_affected;
 ALTER TABLE radiant.snv__variant RENAME COLUMN pn_wxs_not_affected TO germline_pn_wxs_not_affected;
 ALTER TABLE radiant.snv__variant RENAME COLUMN pf_wxs_not_affected TO germline_pf_wxs_not_affected;
+
+-- Variant partitioned tables
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wgs TO germline_pf_wgs;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wxs TO germline_pf_wxs;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pc_wgs TO germline_pc_wgs;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pn_wgs TO germline_pn_wgs;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pc_wgs_affected TO germline_pc_wgs_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pn_wgs_affected TO germline_pn_wgs_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wgs_affected TO germline_pf_wgs_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pc_wgs_not_affected TO germline_pc_wgs_not_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pn_wgs_not_affected TO germline_pn_wgs_not_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wgs_not_affected TO germline_pf_wgs_not_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pc_wxs TO germline_pc_wxs;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pn_wxs TO germline_pn_wxs;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pc_wxs_affected TO germline_pc_wxs_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pn_wxs_affected TO germline_pn_wxs_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wxs_affected TO germline_pf_wxs_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pc_wxs_not_affected TO germline_pc_wxs_not_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pn_wxs_not_affected TO germline_pn_wxs_not_affected;
+ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wxs_not_affected TO germline_pf_wxs_not_affected;
 ```
