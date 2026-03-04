@@ -342,11 +342,7 @@ def import_part():
             parameters={"part": "{{ params.part }}"},
         )
 
-        (
-            import_snv_consequences
-            >> import_snv_consequences_filter
-            >> insert_snv_consequences_filter_part
-        )
+        (import_snv_consequences >> import_snv_consequences_filter >> insert_snv_consequences_filter_part)
     delete_sequencing_experiments = RadiantStarRocksOperator(
         task_id="delete_sequencing_experiments",
         sql="./sql/radiant/sequencing_experiment_delete.sql",

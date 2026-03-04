@@ -1,8 +1,8 @@
 INSERT OVERWRITE {{ mapping.starrocks_snv_variant }}
 SELECT
     v.locus_id,
-    COALESCE(vf.pf_wgs, 0) as pf_wgs,
-    COALESCE(vf.pf_wxs, 0) as pf_wxs,
+    COALESCE(vf.pf_wgs, 0) as germline_pf_wgs,
+    COALESCE(vf.pf_wxs, 0) as germline_pf_wxs,
     v.gnomad_v3_af,
     v.topmed_af,
     v.tg_af,
@@ -22,6 +22,12 @@ SELECT
     COALESCE(vf.pc_wxs_not_affected, 0) AS germline_pc_wxs_not_affected,
     COALESCE(vf.pn_wxs_not_affected, 0) AS germline_pn_wxs_not_affected,
     COALESCE(vf.pf_wxs_not_affected, 0) AS germline_pf_wxs_not_affected,
+    COALESCE(svf.pc_tn_wgs, 0) AS somatic_pc_tn_wgs,
+	COALESCE(svf.pn_tn_wgs, 0) AS somatic_pn_tn_wgs,
+	COALESCE(svf.pf_tn_wgs, 0) AS somatic_pf_tn_wgs,
+	COALESCE(svf.pc_tn_wxs, 0) AS somatic_pc_tn_wxs,
+	COALESCE(svf.pn_tn_wxs, 0) AS somatic_pn_tn_wxs,
+	COALESCE(svf.pf_tn_wxs, 0) AS somatic_pf_tn_wxs,
     v.chromosome,
     v.start,
     v.end,
@@ -49,3 +55,4 @@ SELECT
     v.omim_inheritance_code
 FROM {{ mapping.starrocks_snv_staging_variant }} v
 LEFT JOIN {{ mapping.starrocks_germline_snv_variant_frequency }} vf ON vf.locus_id = v.locus_id
+LEFT JOIN {{ mapping.starrocks_somatic_snv_variant_frequency }} svf ON svf.locus_id = v.locus_id

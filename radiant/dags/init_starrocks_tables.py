@@ -37,6 +37,8 @@ with DAG(
         "snv_variant",
         "snv_variant_partitioned",
         "somatic_snv_occurrence",
+        "somatic_snv_staging_variant_frequency",
+        "somatic_snv_variant_frequency",
         "variant_lookup",
     ]
     for table in tables:

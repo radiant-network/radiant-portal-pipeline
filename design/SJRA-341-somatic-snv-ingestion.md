@@ -296,26 +296,26 @@ columns for tumor-normal frequencies. The existing germline columns are unchange
 
 `pc` = patient carrier count, `pn` = total patients, `pf` = frequency (`pc / pn`).
 
-| Old column name       | New column name                | Scope                                          |
-|-----------------------|--------------------------------|------------------------------------------------|
-| `pc_wgs`              | `pc_germline_wgs`              | All WGS germline patients carrying the variant |
-| `pn_wgs`              | `pn_germline_wgs`              | Total WGS germline patients                    |
-| `pf_wgs`              | `pf_germline_wgs`              | WGS germline frequency                         |
-| `pc_wgs_affected`     | `pc_germline_wgs_affected`     | WGS affected carriers                          |
-| `pn_wgs_affected`     | `pn_germline_wgs_affected`     | Total WGS affected patients                    |
-| `pf_wgs_affected`     | `pf_germline_wgs_affected`     | WGS affected frequency                         |
-| `pc_wgs_not_affected` | `pc_germline_wgs_not_affected` | WGS non-affected carriers                      |
-| `pn_wgs_not_affected` | `pn_germline_wgs_not_affected` | Total WGS non-affected patients                |
-| `pf_wgs_not_affected` | `pf_germline_wgs_not_affected` | WGS non-affected frequency                     |
-| `pc_wxs`              | `pc_germline_wxs`              | All WXS germline patients carrying the variant |
-| `pn_wxs`              | `pn_germline_wxs`              | Total WXS germline patients                    |
-| `pf_wxs`              | `pf_germline_wxs`              | WXS germline frequency                         |
-| `pc_wxs_affected`     | `pc_germline_wxs_affected`     | WXS affected carriers                          |
-| `pn_wxs_affected`     | `pn_germline_wxs_affected`     | Total WXS affected patients                    |
-| `pf_wxs_affected`     | `pf_germline_wxs_affected`     | WXS affected frequency                         |
-| `pc_wxs_not_affected` | `pc_germline_wxs_not_affected` | WXS non-affected carriers                      |
-| `pn_wxs_not_affected` | `pn_germline_wxs_not_affected` | Total WXS non-affected patients                |
-| `pf_wxs_not_affected` | `pf_germline_wxs_not_affected` | WXS non-affected frequency                     |
+| Old column name       | New column name              | Scope                                          |
+|-----------------------|------------------------------|------------------------------------------------|
+| `pc_wgs`              | `germline_pc_wgs`              | All WGS germline patients carrying the variant |
+| `pn_wgs`              | `germline_pn_wgs`              | Total WGS germline patients                    |
+| `pf_wgs`              | `germline_pf_wgs`              | WGS germline frequency                         |
+| `pc_wgs_affected`     | `germline_pc_wgs_affected`     | WGS affected carriers                          |
+| `pn_wgs_affected`     | `germline_pn_wgs_affected`     | Total WGS affected patients                    |
+| `pf_wgs_affected`     | `germline_pf_wgs_affected`     | WGS affected frequency                         |
+| `pc_wgs_not_affected` | `germline_pc_wgs_not_affected` | WGS non-affected carriers                      |
+| `pn_wgs_not_affected` | `germline_pn_wgs_not_affected` | Total WGS non-affected patients                |
+| `pf_wgs_not_affected` | `germline_pf_wgs_not_affected` | WGS non-affected frequency                     |
+| `pc_wxs`              | `germline_pc_wxs`              | All WXS germline patients carrying the variant |
+| `pn_wxs`              | `germline_pn_wxs`              | Total WXS germline patients                    |
+| `pf_wxs`              | `germline_pf_wxs`              | WXS germline frequency                         |
+| `pc_wxs_affected`     | `germline_pc_wxs_affected`     | WXS affected carriers                          |
+| `pn_wxs_affected`     | `germline_pn_wxs_affected`     | Total WXS affected patients                    |
+| `pf_wxs_affected`     | `germline_pf_wxs_affected`     | WXS affected frequency                         |
+| `pc_wxs_not_affected` | `germline_pc_wxs_not_affected` | WXS non-affected carriers                      |
+| `pn_wxs_not_affected` | `germline_pn_wxs_not_affected` | Total WXS non-affected patients                |
+| `pf_wxs_not_affected` | `germline_pf_wxs_not_affected` | WXS non-affected frequency                     |
 
 #### New tumor-normal columns
 
@@ -644,6 +644,8 @@ appropriate to the somatic caller.
 
 ## Appendix: SQL migration code
 
+To change in-place the current tabless into the proposed new schema, the following SQL commands can be used:
+
 ```
 -- Consequence tables
 ALTER TABLE radiant.germline__snv__consequence RENAME snv__consequence;
@@ -656,26 +658,22 @@ ALTER TABLE radiant.germline__snv__staging_variant RENAME snv__staging_variant;
 ALTER TABLE radiant.germline__snv__tmp_variant RENAME snv__tmp_variant;
 ALTER TABLE radiant.germline__snv__variant_partitioned RENAME snv__variant_partitioned; 
 
--- Frequencies (table and column renames)
-ALTER TABLE radiant.germline__snv__variant_frequency RENAME snv__variant_frequency;
-ALTER TABLE radiant.germline__snv__staging_variant_frequency_part RENAME snv__staging_variant_frequency_part;
-
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pc_wgs TO pc_germline_wgs;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pn_wgs TO pn_germline_wgs;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pf_wgs TO pf_germline_wgs;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pc_wgs_affected TO pc_germline_wgs_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pn_wgs_affected TO pn_germline_wgs_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pf_wgs_affected TO pf_germline_wgs_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pc_wgs_not_affected TO pc_germline_wgs_not_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pn_wgs_not_affected TO pn_germline_wgs_not_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pf_wgs_not_affected TO pf_germline_wgs_not_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pc_wxs TO pc_germline_wxs;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pn_wxs TO pn_germline_wxs;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pf_wxs TO pf_germline_wxs;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pc_wxs_affected TO pc_germline_wxs_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pn_wxs_affected TO pn_germline_wxs_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pf_wxs_affected TO pf_germline_wxs_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pc_wxs_not_affected TO pc_germline_wxs_not_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pn_wxs_not_affected TO pn_germline_wxs_not_affected;
-ALTER TABLE radiant.snv__variant_frequency RENAME COLUMN pf_wxs_not_affected TO pf_germline_wxs_not_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pf_wgs TO germline_pf_wgs;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pf_wxs TO germline_pf_wxs;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pc_wgs TO germline_pc_wgs;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pn_wgs TO germline_pn_wgs;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pc_wgs_affected TO germline_pc_wgs_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pn_wgs_affected TO germline_pn_wgs_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pf_wgs_affected TO germline_pf_wgs_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pc_wgs_not_affected TO germline_pc_wgs_not_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pn_wgs_not_affected TO germline_pn_wgs_not_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pf_wgs_not_affected TO germline_pf_wgs_not_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pc_wxs TO germline_pc_wxs;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pn_wxs TO germline_pn_wxs;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pc_wxs_affected TO germline_pc_wxs_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pn_wxs_affected TO germline_pn_wxs_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pf_wxs_affected TO germline_pf_wxs_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pc_wxs_not_affected TO germline_pc_wxs_not_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pn_wxs_not_affected TO germline_pn_wxs_not_affected;
+ALTER TABLE radiant.snv__variant RENAME COLUMN pf_wxs_not_affected TO germline_pf_wxs_not_affected;
 ```

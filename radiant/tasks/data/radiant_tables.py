@@ -102,6 +102,8 @@ STARROCKS_RADIANT_MAPPING = {
     "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
     "starrocks_snv_staging_variant": "snv__staging_variant",
     "starrocks_somatic_snv_occurrence": "somatic__snv__occurrence",
+    "starrocks_somatic_snv_variant_frequency": "somatic__snv__variant_frequency",
+    "starrocks_somatic_snv_staging_variant_frequency": "somatic__snv__staging_variant_frequency_part",
 }
 
 
