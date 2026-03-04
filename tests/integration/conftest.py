@@ -17,9 +17,9 @@ from radiant.tasks.data.radiant_tables import (
     get_radiant_mapping,
 )
 from radiant.tasks.vcf.cnv.germline.occurrence import SCHEMA as CNV_OCCURRENCE_SCHEMA
-from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
+from radiant.tasks.vcf.snv.consequence import SCHEMA as CONSEQUENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as SNV_OCCURRENCE_SCHEMA
-from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
+from radiant.tasks.vcf.snv.variant import SCHEMA as VARIANT_SCHEMA
 
 USE_DOCKER_FIXTURES = os.getenv("USE_DOCKER_FIXTURES", "false").lower() == "true"
 if USE_DOCKER_FIXTURES:
@@ -244,9 +244,7 @@ def setup_iceberg_namespace(s3_fs, iceberg_client, iceberg_namespace, random_tes
     iceberg_client.create_table_if_not_exists(
         f"{iceberg_namespace}.germline_cnv_occurrence", schema=CNV_OCCURRENCE_SCHEMA
     )
-    iceberg_client.create_table_if_not_exists(
-        f"{iceberg_namespace}.snv_consequence", schema=CONSEQUENCE_SCHEMA
-    )
+    iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.snv_consequence", schema=CONSEQUENCE_SCHEMA)
     yield iceberg_namespace
 
 

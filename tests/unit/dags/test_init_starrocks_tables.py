@@ -27,8 +27,8 @@ def test_dag_has_all_tasks(dag_bag):
         "snv_staging_variant",
         "variant_lookup",
         "snv_variant",
-        "snv_staging_variant_frequency",
-        "snv_variant_frequency",
+        "germline_snv_staging_variant_frequency",
+        "germline_snv_variant_frequency",
         "snv_variant_partitioned",
         "somatic_snv_occurrence",
     ]
