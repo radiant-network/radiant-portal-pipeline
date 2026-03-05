@@ -96,6 +96,27 @@ class ImportPart(BaseK8SOperator):
 
         return import_cnv_vcf
 
+    @staticmethod
+    def get_import_somatic_snv_vcf(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                task_id="import_somatic_snv_vcf",
+                task_display_name="[K8s] Import Somatic SNV VCF",
+                name="import-somatic-snv-vcf",
+                do_xcom_push=True,
+            )
+            | ImportPart._get_k8s_context(radiant_namespace)
+        )
+        def import_cnv_vcf(tasks: list[dict]) -> None:
+            import os
+
+            from radiant.tasks.vcf.snv.somatic.process import create_parquet_files
+
+            namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
+            create_parquet_files(tasks=tasks, namespace=namespace)
+
+        return import_cnv_vcf
+
 
 class InitIcebergTables(BaseK8SOperator):
     @staticmethod

@@ -4,7 +4,6 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import pytest
-from alembic.command import history
 
 from radiant.tasks.starrocks.partition import (
     PriorityLevel,

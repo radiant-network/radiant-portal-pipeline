@@ -24,6 +24,7 @@ from radiant.tasks.starrocks.operator import (
 from radiant.tasks.vcf.experiment import (
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
     RADIANT_GERMLINE_ANNOTATION_TASK,
+    RADIANT_SOMATIC_ANNOTATION_TASK,
     build_task_from_rows,
 )
 
@@ -109,7 +110,7 @@ def import_part():
         return conf
 
     _prepare_config = prepare_config(tasks)
-    import_vcf = TriggerDagRunOperator(
+    import_germline_snv_vcf = TriggerDagRunOperator(
         task_id="import_germline_snv_vcf",
         task_display_name="[DAG] Import Germline SNV VCF into Iceberg",
         trigger_dag_id=f"{NAMESPACE}-import-germline-snv-vcf",
@@ -127,8 +128,13 @@ def import_part():
             ecs_env=ecs_env,
         )
 
+        import_somatic_snv_vcf = operators.ImportPart.get_import_somatic_snv_vcf(
+            radiant_namespace=namespace_task,
+            ecs_env=ecs_env,
+        )
     else:
         import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(namespace_task)
+        import_somatic_snv_vcf = operators.ImportPart.get_import_somatic_snv_vcf(namespace_task)
 
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(tasks) -> dict[str, list[Any]]:
@@ -191,15 +197,43 @@ def import_part():
         }
 
     @task.short_circuit(
-        task_id="sanity_check_delta_snv",
-        task_display_name="[PyOp] Sanity Check Delta SNVs",
+        task_id="sanity_check_delta_any_snv",
+        task_display_name="[PyOp] Sanity Check Any SNVs",
         ignore_downstream_trigger_rules=False,
     )
-    def sanity_check_delta_snv(tasks: Any) -> Any:
+    def sanity_check_delta_any_snv(tasks: Any) -> Any:
+        has_delta_snv = any(
+            t.get("task_type") in (RADIANT_GERMLINE_ANNOTATION_TASK, RADIANT_SOMATIC_ANNOTATION_TASK)
+            and not t.get("deleted")
+            for t in tasks
+        )
+        return has_delta_snv
+
+    @task.short_circuit(
+        task_id="sanity_check_delta_germline_snv",
+        task_display_name="[PyOp] Sanity Check Delta Germline SNVs",
+        ignore_downstream_trigger_rules=False,
+    )
+    def sanity_check_delta_germline_snv(tasks: Any) -> Any:
         has_delta_snv = any(
             t.get("task_type") == RADIANT_GERMLINE_ANNOTATION_TASK and not t.get("deleted") for t in tasks
         )
         return has_delta_snv
+
+    @task.short_circuit(
+        task_id="sanity_check_delta_somatic_snv",
+        task_display_name="[PyOp] Sanity Check Delta Somatic SNVs",
+        ignore_downstream_trigger_rules=False,
+    )
+    def sanity_check_delta_somatic_snv(tasks: Any) -> Any:
+        has_delta_snv = any(
+            t.get("task_type") == RADIANT_SOMATIC_ANNOTATION_TASK and not t.get("deleted") for t in tasks
+        )
+        return has_delta_snv
+
+    check_any_snv = sanity_check_delta_any_snv(tasks)
+    check_germline_snv = sanity_check_delta_germline_snv(tasks)
+    check_somatic_snv = sanity_check_delta_somatic_snv(tasks)
 
     @task(task_id="get_tables_to_refresh", task_display_name="[PyOp] Get list of iceberg tables to refresh")
     def get_tables_to_refresh():
@@ -244,44 +278,91 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    insert_germline_snv_occurrences = RadiantStarRocksPartitionSwapOperator(
-        task_id="insert_germline_snv_occurrence",
-        table="{{ mapping.starrocks_germline_snv_occurrence }}",
-        task_display_name="[StarRocks] Insert Germline SNV Occurrences Part",
-        swap_partition=SwapPartition(
-            partition="{{ params.part }}",
-            copy_partition_sql="./sql/radiant/germline_snv_occurrence_copy_partition.sql",
-        ),
-        submit_task_options=std_submit_task_opts,
-        parameters=task_ids,
-        insert_partition_sql="./sql/radiant/germline_snv_occurrence_insert_partition_delta.sql",
-        trigger_rule=TriggerRule.NONE_FAILED,
-    )
+    with TaskGroup(group_id="germline_snv_occurrence") as tg_germline_snv_occurrence:
+        insert_germline_snv_occurrences = RadiantStarRocksPartitionSwapOperator(
+            task_id="insert_germline_snv_occurrence",
+            table="{{ mapping.starrocks_germline_snv_occurrence }}",
+            task_display_name="[StarRocks] Insert Germline SNV Occurrences Part",
+            swap_partition=SwapPartition(
+                partition="{{ params.part }}",
+                copy_partition_sql="./sql/radiant/germline_snv_occurrence_copy_partition.sql",
+            ),
+            submit_task_options=std_submit_task_opts,
+            parameters=task_ids,
+            insert_partition_sql="./sql/radiant/germline_snv_occurrence_insert_partition_delta.sql",
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+        )
 
-    insert_stg_germline_snv_variants_freq = RadiantStarRocksOperator(
-        task_id="insert_stg_germline_snv_variant_freq",
-        sql="./sql/radiant/germline_snv_staging_variant_freq_insert.sql",
-        task_display_name="[StarRocks] Insert Stg Germline SNV Variants Freq Part",
-        submit_task_options=std_submit_task_opts,
-        parameters={"part": "{{ params.part }}"},
-        trigger_rule=TriggerRule.NONE_FAILED,
-    )
+        insert_stg_germline_snv_variants_freq = RadiantStarRocksOperator(
+            task_id="insert_stg_germline_snv_variant_freq",
+            sql="./sql/radiant/germline_snv_staging_variant_freq_insert.sql",
+            task_display_name="[StarRocks] Insert Stg Germline SNV Variants Freq Part",
+            submit_task_options=std_submit_task_opts,
+            parameters={"part": "{{ params.part }}"},
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+        )
 
-    aggregate_germline_snv_variants_frequencies = RadiantStarRocksOperator(
-        task_id="aggregate_germline_snv_variant_freq",
-        task_display_name="[StarRocks] Aggregate all Germline SNV variants frequencies",
-        sql="./sql/radiant/germline_snv_variant_frequency_insert.sql",
-        submit_task_options=std_submit_task_opts,
-        trigger_rule=TriggerRule.NONE_FAILED,
-    )
+        aggregate_germline_snv_variants_frequencies = RadiantStarRocksOperator(
+            task_id="aggregate_germline_snv_variant_freq",
+            task_display_name="[StarRocks] Aggregate all Germline SNV variants frequencies",
+            sql="./sql/radiant/germline_snv_variant_frequency_insert.sql",
+            submit_task_options=std_submit_task_opts,
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+        )
 
-    check_delta_snv = sanity_check_delta_snv(tasks)
+        (
+            check_germline_snv
+            >> insert_germline_snv_occurrences
+            >> insert_stg_germline_snv_variants_freq
+            >> aggregate_germline_snv_variants_frequencies
+        )
+
+    with TaskGroup(group_id="somatic_snv_occurrence") as tg_somatic_snv_occurrence:
+        insert_somatic_snv_occurrences = RadiantStarRocksPartitionSwapOperator(
+            task_id="insert_somatic_snv_occurrences",
+            table="{{ mapping.starrocks_somatic_snv_occurrence }}",
+            task_display_name="[StarRocks] Insert Somatic SNV Occurrences Part",
+            swap_partition=SwapPartition(
+                partition="{{ params.part }}",
+                copy_partition_sql="./sql/radiant/somatic_snv_occurrence_copy_partition.sql",
+            ),
+            submit_task_options=std_submit_task_opts,
+            parameters=task_ids,
+            insert_partition_sql="./sql/radiant/somatic_snv_occurrence_insert_partition_delta.sql",
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+        )
+
+        insert_stg_somatic_snv_variants_freq = RadiantStarRocksOperator(
+            task_id="insert_stg_somatic_snv_variant_freq",
+            sql="./sql/radiant/somatic_snv_staging_variant_freq_insert.sql",
+            task_display_name="[StarRocks] Insert Stg Somatic SNV Variants Freq Part",
+            submit_task_options=std_submit_task_opts,
+            parameters={"part": "{{ params.part }}"},
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+        )
+
+        aggregate_somatic_snv_variants_frequencies = RadiantStarRocksOperator(
+            task_id="aggregate_somatic_snv_variant_freq",
+            task_display_name="[StarRocks] Aggregate all Somatic SNV variants frequencies",
+            sql="./sql/radiant/somatic_snv_variant_frequency_insert.sql",
+            submit_task_options=std_submit_task_opts,
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+        )
+
+        (
+            check_somatic_snv
+            >> insert_somatic_snv_occurrences
+            >> insert_stg_somatic_snv_variants_freq
+            >> aggregate_somatic_snv_variants_frequencies
+        )
+
     with TaskGroup(group_id="snv_variant") as tg_variants:
         insert_snv_staging_variants = RadiantStarRocksOperator(
             task_id="insert_snv_staging_variant",
             task_display_name="[StarRocks] Insert Staging SNV Variants",
             sql="./sql/radiant/snv_staging_variant_insert.sql",
             submit_task_options=std_submit_task_opts,
+            trigger_rule=TriggerRule.NONE_FAILED,
         )
 
         insert_snv_variants_with_freqs = RadiantStarRocksOperator(
@@ -292,7 +373,7 @@ def import_part():
             trigger_rule=TriggerRule.NONE_FAILED,
         )
 
-        @task(task_id="compute_parts")
+        @task(task_id="compute_parts", trigger_rule=TriggerRule.NONE_FAILED)
         def compute_part(params):
             _magic = 10
             variant_part = int(params["part"]) // _magic
@@ -310,13 +391,10 @@ def import_part():
             task_display_name="[StarRocks] Insert SNV Variants Part",
             submit_task_options=std_submit_task_opts,
             parameters=_compute_part,
+            trigger_rule=TriggerRule.NONE_FAILED,
         )
 
-        (
-            (check_delta_snv >> insert_snv_staging_variants)
-            >> (aggregate_germline_snv_variants_frequencies >> insert_snv_variants_with_freqs)
-            >> insert_snv_variants_part
-        )
+        ((check_any_snv >> insert_snv_staging_variants) >> insert_snv_variants_with_freqs >> insert_snv_variants_part)
 
     with TaskGroup(group_id="snv_consequence") as tg_consequences:
         import_snv_consequences = RadiantStarRocksOperator(
@@ -325,6 +403,7 @@ def import_part():
             task_display_name="[StarRocks] Insert SNV Consequences",
             submit_task_options=std_submit_task_opts,
             parameters=task_ids,
+            trigger_rule=TriggerRule.NONE_FAILED,
         )
 
         import_snv_consequences_filter = RadiantStarRocksOperator(
@@ -332,6 +411,7 @@ def import_part():
             sql="./sql/radiant/snv_consequence_filter_insert.sql",
             task_display_name="[StarRocks] Insert SNV Consequences Filter",
             submit_task_options=std_submit_task_opts,
+            trigger_rule=TriggerRule.NONE_FAILED,
         )
 
         insert_snv_consequences_filter_part = RadiantStarRocksOperator(
@@ -340,9 +420,11 @@ def import_part():
             task_display_name="[StarRocks] Insert SNV Consequences Filter Part",
             submit_task_options=std_submit_task_opts,
             parameters={"part": "{{ params.part }}"},
+            trigger_rule=TriggerRule.NONE_FAILED,
         )
 
         (import_snv_consequences >> import_snv_consequences_filter >> insert_snv_consequences_filter_part)
+
     delete_sequencing_experiments = RadiantStarRocksOperator(
         task_id="delete_sequencing_experiments",
         sql="./sql/radiant/sequencing_experiment_delete.sql",
@@ -356,6 +438,7 @@ def import_part():
         sql="./sql/radiant/sequencing_experiment_update.sql",
         task_display_name="[Starrocks] Update Sequencing Experiments",
         parameters=task_ids,
+        trigger_rule=TriggerRule.NONE_FAILED,
     )
 
     (
@@ -363,20 +446,19 @@ def import_part():
         >> namespace_task  # ensure namespace is resolved before downstream tasks
         >> fetch_sequencing_experiment_delta
         >> (
-            import_vcf,
+            import_germline_snv_vcf,
             import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(tasks=tasks),
+            import_somatic_snv_vcf(tasks=tasks),
         )
         >> load_exomiser
         >> refresh_iceberg_tables
         >> tg_germline_cnv_occurrence
-        >> (check_delta_snv >> insert_hashes)
+        >> (check_any_snv >> insert_hashes)
         >> overwrite_snv_tmp_variants
         >> (load_exomiser >> insert_exomiser)
-        >> (refresh_iceberg_tables >> insert_germline_snv_occurrences)
-        >> insert_stg_germline_snv_variants_freq
-        >> aggregate_germline_snv_variants_frequencies
+        >> (refresh_iceberg_tables >> tg_germline_snv_occurrence >> tg_somatic_snv_occurrence)
         >> tg_variants
-        >> (check_delta_snv >> tg_consequences)
+        >> (check_any_snv >> tg_consequences)
         >> ((tg_consequences, tg_variants) >> delete_sequencing_experiments)
         >> update_sequencing_experiments
     )

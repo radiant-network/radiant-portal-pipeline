@@ -16,7 +16,7 @@ def main(task: dict):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Import VCF for task")
+    parser = argparse.ArgumentParser(description="Import Germline SNV VCF for task")
     parser.add_argument("--task", required=True, help="Task JSON string")
     args = parser.parse_args()
     logger.info(f"Command line arguments: {args}")

@@ -5,6 +5,7 @@ from pydantic import BaseModel, ConfigDict
 RADIANT_GERMLINE_ANNOTATION_TASK = "radiant_germline_annotation"
 ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK = "alignment_germline_variant_calling"
 EXOMISER_TASK = "exomiser"
+RADIANT_SOMATIC_ANNOTATION_TASK = "radiant_somatic_annotation"
 
 
 class Experiment(BaseModel):
@@ -77,10 +78,27 @@ class ExomiserTask(BaseTask):
         }
 
 
+class RadiantSomaticAnnotationTask(BaseTask):
+    task_type: str = RADIANT_SOMATIC_ANNOTATION_TASK
+    vcf_filepath: str
+    index_vcf_filepath: str | None = None
+
+    @staticmethod
+    def gather_additional_args(rows: list[dict]) -> dict:
+        for r in rows:
+            if r["family_role"] == "tumor":  # see §5.1 for discussion
+                return {
+                    "vcf_filepath": r["vcf_filepath"],
+                    "index_vcf_filepath": r.get("index_vcf_filepath"),
+                }
+        raise ValueError("No tumor sample found in rows for `radiant_somatic_annotation` task.")
+
+
 _TASK_TYPES = {
     RADIANT_GERMLINE_ANNOTATION_TASK: RadiantGermlineAnnotationTask,
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK: AlignmentGermlineVariantCallingTask,
     EXOMISER_TASK: ExomiserTask,
+    RADIANT_SOMATIC_ANNOTATION_TASK: RadiantSomaticAnnotationTask,
 }
 
 

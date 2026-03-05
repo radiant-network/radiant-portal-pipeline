@@ -1,5 +1,10 @@
 INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_germline_snv_staging_variant_frequency }}
-WITH patients_total_count
+WITH
+	germline_sequencings AS
+		SELECT * FROM
+		FROM {{ mapping.starrocks_staging_sequencing_experiment }} s
+        WHERE s.analysis_type = 'germline' AND s.seq_id in (select seq_id from  {{ mapping.starrocks_germline_snv_occurrence }} where part = %(part)s)),
+	patients_total_count
          AS (SELECT COUNT(DISTINCT CASE WHEN s.experimental_strategy = 'wgs' then s.patient_id end)                   AS cnt_wgs,
                     COUNT(DISTINCT CASE
                                        WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'affected'
@@ -14,8 +19,7 @@ WITH patients_total_count
                     COUNT(DISTINCT CASE
                                        WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'non_affected'
                                            then s.patient_id end)                                                  AS cnt_wxs_not_affected
-             FROM {{ mapping.starrocks_staging_sequencing_experiment }} s
-             where s.seq_id in (select seq_id from  {{ mapping.starrocks_germline_snv_occurrence }} where part = %(part)s)),
+             FROM germline_sequencings s
      freqs as (SELECT o.part,
                       o.locus_id,
                       COUNT(distinct CASE WHEN s.experimental_strategy = 'wgs' then patient_id end)                   AS pc_wgs,
