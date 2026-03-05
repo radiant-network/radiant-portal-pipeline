@@ -13,6 +13,8 @@ def test_import_radiant(
     starrocks_session,
     random_test_id,
     clinical_snv_vcf,
+    clinical_cnv_vcf,
+    clinical_exomiser_tsv,
     sample_exomiser_tsv,
     mapping_conf,
 ):

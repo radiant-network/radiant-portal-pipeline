@@ -60,15 +60,14 @@ def poll_dag_until_success(airflow_container, dag_id, run_id, timeout=120) -> bo
 
 
 def get_pyarrow_table_from_csv(
-    csv_path, sep: str | None, json_fields: list[str] | None = None, is_clinvar: bool = False
-) -> pa.Table:
+    csv_path, sep: str | None, json_fields: list[str] | None = None, na_fill=None) -> pa.Table:
     """
     Get the pyarrow schema from a CSV file.
     """
     df = pd.read_csv(csv_path, sep=sep)
 
-    if is_clinvar:
-        df = df.map(lambda x: [""] if pd.isna(x) else x)
+    if na_fill is not None:
+        df = df.map(lambda x: na_fill if pd.isna(x) else x)
 
     if json_fields:
         for field in json_fields:

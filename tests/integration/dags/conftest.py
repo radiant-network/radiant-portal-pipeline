@@ -5,8 +5,8 @@ from radiant.tasks.data.radiant_tables import RadiantConfigKeys
 from tests.utils.dags import get_pyarrow_table_from_csv, poll_dag_until_success, trigger_dag, unpause_dag
 
 
-def create_and_append_table(iceberg_client, namespace, table_name, file_path, json_fields=None, is_clinvar=False):
-    content = get_pyarrow_table_from_csv(csv_path=file_path, sep="\t", json_fields=json_fields, is_clinvar=is_clinvar)
+def create_and_append_table(iceberg_client, namespace, table_name, file_path, json_fields=None, na_fill=None):
+    content = get_pyarrow_table_from_csv(csv_path=file_path, sep="\t", json_fields=json_fields, na_fill=na_fill)
     if iceberg_client.namespace_exists(namespace):
         if iceberg_client.table_exists(f"{namespace}.{table_name}"):
             return
@@ -53,13 +53,18 @@ def open_data_iceberg_tables(iceberg_client, iceberg_namespace, resources_dir, r
     }
 
     for table, json_fields in tables.items():
+        na_fill_map = {
+            "clinvar": [""],
+            "ensembl_gene": "",
+            "ensembl_exon_by_gene": "",
+        }
         create_and_append_table(
             iceberg_client,
             iceberg_namespace,
             f"{table}",
             resources_dir / "open_data" / f"{table}.tsv",
             json_fields=json_fields,
-            is_clinvar=(table == "clinvar"),
+            na_fill=na_fill_map.get(table)
         )
 
 
