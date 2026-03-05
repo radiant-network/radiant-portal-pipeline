@@ -10,20 +10,20 @@ logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdo
 logger = logging.getLogger(__name__)
 
 
-def main(task: dict):
+def main(tasks: list[dict]):
     namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
-    print(json.dumps(create_parquet_files(task, namespace)))
+    print(json.dumps(create_parquet_files(tasks, namespace)))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Import Somatic SNV VCF for task")
-    parser.add_argument("--task", required=True, help="Task JSON string")
+    parser.add_argument("--tasks", required=True, help="Tasks JSON string")
     args = parser.parse_args()
     logger.info(f"Command line arguments: {args}")
 
-    task = json.loads(args.task)
+    tasks = json.loads(args.tasks)
 
     try:
-        main(task)
+        main(tasks)
     except Exception as e:
         logger.exception(f"Error while processing task: {e}")
