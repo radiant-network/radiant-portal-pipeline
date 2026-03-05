@@ -86,7 +86,7 @@ class RadiantSomaticAnnotationTask(BaseTask):
     @staticmethod
     def gather_additional_args(rows: list[dict]) -> dict:
         for r in rows:
-            if r["family_role"] == "tumor":  # see §5.1 for discussion
+            if r["histology_type"] == "tumor":
                 return {
                     "vcf_filepath": r["vcf_filepath"],
                     "index_vcf_filepath": r.get("index_vcf_filepath"),
