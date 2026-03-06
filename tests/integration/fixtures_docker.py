@@ -19,7 +19,8 @@ RADIANT_DIR = CURRENT_DIR.parent.parent / "radiant"
 # Constants
 MINIO_IMAGE = "minio/minio:latest"
 
-ICEBERG_REST_IMAGE = "ferlabcrsj/iceberg-rest-catalog:1.0.0"
+ICEBERG_REST_IMAGE = "apache/polaris:1.3.0-incubating"
+ICEBERG_INIT_IMAGE = "apache/polaris-admin-tool:1.3.0-incubating"
 
 STARROCKS_FE_HOSTNAME = "radiant-starrocks-fe"
 STARROCKS_ALLIN1_HOSTNAME = "radiant-starrocks-allin1"
@@ -68,35 +69,68 @@ def minio_instance(network):
 
 
 @pytest.fixture(scope="session")
-def rest_iceberg_catalog_instance(network, minio_instance):
+def rest_iceberg_service(network, minio_instance):
     container = (
         DockerContainer(ICEBERG_REST_IMAGE)
-        .with_name("radiant-iceberg-rest")
-        .with_env("CATALOG_WAREHOUSE", "s3a://warehouse")
-        .with_env("CATALOG_CATALOG__NAME", ICEBERG_REST_CATALOG_NAME)
-        .with_env("CATALOG_S3_ENDPOINT", minio_instance.internal_endpoint)
-        .with_env("CATALOG_S3_ACCESS_KEY_ID", minio_instance.access_key)
-        .with_env("CATALOG_S3_SECRET_ACCESS_KEY", minio_instance.secret_key)
-        .with_env("CATALOG_SECRET", ICEBERG_REST_TOKEN)
-        .with_env("CATALOG_CATALOG__IMPL", "org.apache.iceberg.inmemory.InMemoryCatalog")
+        .with_name("radiant-polaris-rest")
+        .with_env("AWS_REGION", "us-east-1")
+        .with_env("AWS_ACCESS_KEY_ID", minio_instance.access_key)
+        .with_env("AWS_SECRET_ACCESS_KEY", minio_instance.secret_key)
+        .with_env("AWS_ENDPOINT_URL", minio_instance.internal_endpoint)
+        .with_env("POLARIS_AUTHENTICATION_TOKEN_BROKER_SYMMETRIC_KEY_SECRET", "password")
+        .with_env("POLARIS_REALM_CONTEXT_REALMS", ICEBERG_REST_REALM_NAME)
+        .with_env("POLARIS_AUTHENTICATION_TOKEN_BROKER_MAX_TOKEN_GENERATION", "PT1H")
+        .with_env("POLARIS_AUTHENTICATION_TOKEN_BROKER_TYPE", "symmetric-key")
+        .with_env("POLARIS_FEATURES_ALLOW_SETTING_S3_ENDPOINTS", "true")
+        .with_env("POLARIS_FEATURES_SUPPORTED_CATALOG_STORAGE_TYPES", "S3")
+        .with_env("POLARIS_BOOTSTRAP_CREDENTIALS", f"{ICEBERG_REST_REALM_NAME},{ICEBERG_REST_USER},{ICEBERG_REST_PASSWORD}")
         .with_exposed_ports(ICEBERG_REST_PORT)
         .with_network(network)
     )
     container.start()
-    wait_for_logs(container, "Started ServerConnector", timeout=60)
+    wait_for_logs(container, "Installed features", timeout=60)
 
     rest_port = container.get_exposed_port(ICEBERG_REST_PORT)
 
-    yield RestIcebergCatalogInstance(
-        container.get_container_host_ip(),
-        rest_port,
-        ICEBERG_REST_CATALOG_NAME,
-        ICEBERG_REST_TOKEN,
-        "radiant-iceberg-rest",
-        ICEBERG_REST_PORT,
+    yield RestIcebergServiceInstance(
+        host=container.get_container_host_ip(),
+        port=rest_port,
+        internal_host="radiant-polaris-rest",
+        internal_port=ICEBERG_REST_PORT
     )
-
     container.stop()
+
+
+@pytest.fixture(scope="session")
+def rest_iceberg_catalog_instance(network, rest_iceberg_service, minio_instance):
+    container = (
+        DockerContainer(ICEBERG_INIT_IMAGE)
+        .with_name("radiant-polaris-init")
+        .with_env("POLARIS_SERVICE_HOST", f"{rest_iceberg_service.internal_host}:{rest_iceberg_service.internal_port}")
+        .with_env("REALM_NAME", ICEBERG_REST_REALM_NAME)
+        .with_env("REALM_USER", ICEBERG_REST_USER)
+        .with_env("REALM_PASSWORD", ICEBERG_REST_PASSWORD)
+        .with_env("CATALOG_NAME", ICEBERG_REST_CATALOG_NAME)
+        .with_env("CATALOG_ENDPOINT", minio_instance.internal_endpoint)
+        .with_env("CATALOG_WAREHOUSE", "s3://warehouse")
+        .with_env("QUARKUS_OTEL_SDK_DISABLED", "true")
+        .with_network(network)
+        .with_volume_mapping(f"{RESOURCES_DIR}/polaris/init_polaris_catalog.sh", "/opt/scripts/init_polaris_catalog.sh")
+    )
+    container.start()
+    container.exec(["/bin/bash", "/opt/scripts/init_polaris_catalog.sh"])
+    container.stop()
+
+    yield RestIcebergCatalogInstance(
+        host=rest_iceberg_service.host,
+        port=rest_iceberg_service.port,
+        realm=ICEBERG_REST_REALM_NAME,
+        catalog_name=ICEBERG_REST_CATALOG_NAME,
+        client_id=ICEBERG_REST_USER,
+        client_secret=ICEBERG_REST_PASSWORD,
+        internal_host=rest_iceberg_service.internal_host,
+        internal_port=rest_iceberg_service.internal_port
+    )
 
 
 @pytest.fixture(scope="session")
@@ -176,8 +210,12 @@ def starrocks_iceberg_catalog(starrocks_session, rest_iceberg_catalog_instance, 
         (
             'type'='iceberg',
             'iceberg.catalog.type'='rest',
-            'iceberg.catalog.uri'='http://{rest_iceberg_catalog_instance.internal_host}:{rest_iceberg_catalog_instance.internal_port}',
-            'iceberg.catalog.token' = '{rest_iceberg_catalog_instance.token}',
+            'iceberg.catalog.uri'='http://{rest_iceberg_catalog_instance.internal_host}:{rest_iceberg_catalog_instance.internal_port}/api/catalog',
+            'iceberg.catalog.warehouse'='{rest_iceberg_catalog_instance.catalog_name}',
+            'iceberg.catalog.security'='oauth2',
+            'iceberg.catalog.oauth2.credential'='{rest_iceberg_catalog_instance.client_id}:{rest_iceberg_catalog_instance.client_secret}',
+            'iceberg.catalog.oauth2.scope'='PRINCIPAL_ROLE:CATALOG_MANAGE_CONTENT',
+            'iceberg.catalog.vended-credentials-enabled'='false',
             'aws.s3.region'='us-east-1',
             'aws.s3.access_key'='{minio_instance.access_key}',
             'aws.s3.secret_key'='{minio_instance.secret_key}',
