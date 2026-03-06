@@ -647,12 +647,12 @@ appropriate to the somatic caller.
 To change in-place the current tabless into the proposed new schema, the following SQL commands can be used:
 
 ```
--- Consequence tables
+-- Consequence table
 ALTER TABLE radiant.germline__snv__consequence RENAME snv__consequence;
 ALTER TABLE radiant.germline__snv__consequence_filter RENAME snv__consequence_filter;
 ALTER TABLE radiant.germline__snv__consequence_filter_partitioned RENAME snv__consequence_filter_partitioned;
 
--- Variant tables
+-- Variant table renames
 ALTER TABLE radiant.germline__snv__variant RENAME snv__variant;
 ALTER TABLE radiant.germline__snv__staging_variant RENAME snv__staging_variant;
 ALTER TABLE radiant.germline__snv__tmp_variant RENAME snv__tmp_variant;
@@ -677,7 +677,7 @@ ALTER TABLE radiant.snv__variant RENAME COLUMN pc_wxs_not_affected TO germline_p
 ALTER TABLE radiant.snv__variant RENAME COLUMN pn_wxs_not_affected TO germline_pn_wxs_not_affected;
 ALTER TABLE radiant.snv__variant RENAME COLUMN pf_wxs_not_affected TO germline_pf_wxs_not_affected;
 
--- Variant partitioned tables
+-- Variant partitioned table renames
 ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wgs TO germline_pf_wgs;
 ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wxs TO germline_pf_wxs;
 ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pc_wgs TO germline_pc_wgs;
@@ -696,4 +696,27 @@ ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wxs_affected TO ge
 ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pc_wxs_not_affected TO germline_pc_wxs_not_affected;
 ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pn_wxs_not_affected TO germline_pn_wxs_not_affected;
 ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wxs_not_affected TO germline_pf_wxs_not_affected;
+
+
+-- Variant table new columns
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_wgs DOUBLE AFTER germline_pf_wxs;
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_wxs DOUBLE AFTER somatic_pf_wgs;
+
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pc_to_wgs INT(11) AFTER germline_pf_wxs_not_affected;
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pn_to_wgs INT(11) AFTER somatic_pc_to_wgs;
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_to_wgs DOUBLE AFTER somatic_pn_to_wgs;
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pc_to_wxs INT(11) AFTER somatic_pf_to_wgs;
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pn_to_wxs INT(11) AFTER somatic_pc_to_wxs;
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_to_wxs DOUBLE AFTER somatic_pn_to_wxs;
+
+-- Variant table new columns
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_wgs DOUBLE AFTER germline_pf_wxs;
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_wxs DOUBLE AFTER somatic_pf_wgs;
+
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pc_to_wgs INT(11) AFTER germline_pf_wxs_not_affected;
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pn_to_wgs INT(11) AFTER somatic_pc_to_wgs;
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_to_wgs DOUBLE AFTER somatic_pn_to_wgs;
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pc_to_wxs INT(11) AFTER somatic_pf_to_wgs;
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pn_to_wxs INT(11) AFTER somatic_pc_to_wxs;
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_to_wxs DOUBLE AFTER somatic_pn_to_wxs;
 ```

@@ -1,7 +1,9 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_variant }} (
     locus_id BIGINT NOT NULL,
-    pf_wgs DOUBLE,
-    pf_wxs DOUBLE,
+    germline_pf_wgs DOUBLE,
+    germline_pf_wxs DOUBLE,
+    somatic_pf_wgs DOUBLE,
+    somatic_pf_wxs DOUBLE,
     gnomad_v3_af DOUBLE,
     topmed_af DOUBLE,
     tg_af DOUBLE,
