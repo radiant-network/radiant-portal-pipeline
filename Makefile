@@ -8,8 +8,8 @@ install:
 	pip install -r requirements.txt
 
 install-dev:
-	pip install -r requirements-dev.txt
-	pip install -r requirements.txt
+	# Installing requirements in a single command to ensure constraints from both requirement files are resolved together
+	pip install -r requirements.txt -r requirements-dev.txt
 
 	# Required for standalone unit tests
 	airflow db init

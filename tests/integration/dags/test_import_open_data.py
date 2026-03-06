@@ -10,11 +10,12 @@ def test_import_open_data(
     starrocks_session,
     random_test_id,
     clinvar_rcv_summary_ndjson,
+    cytoband,
     mapping_conf,
 ):
     dag_id = "radiant-import-open-data"
     unpause_dag(radiant_airflow_container, dag_id)
-    dag_conf = {"raw_rcv_filepaths": ["s3://opendata/*.ndjson"], **mapping_conf}
+    dag_conf = {"raw_rcv_filepaths": ["s3://opendata/*.ndjson"], "cytoband_filepath": ["s3://opendata/cytoband/*.txt.gz"], **mapping_conf}
     trigger_dag(radiant_airflow_container, dag_id, random_test_id, conf=dag_conf)
     assert poll_dag_until_success(
         airflow_container=radiant_airflow_container, dag_id=dag_id, run_id=random_test_id, timeout=360

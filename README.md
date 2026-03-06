@@ -67,6 +67,24 @@ The following are examples and should be adjusted to your environment:
 | `Dockerfile`                   | Main image used by Airflow's webserver, scheduler, etc... in Kubernetes-based deployments.         |
 | `Dockerfile-radiant-operator`  | Used as the pod images for running tasks with Radiant dependencies (for both K8S/ECS deployments). |
 
+
+### Unit Tests
+
+To run unit and fast integration tests:
+
+```sh
+python -m venv .venv
+source .venv/bin/activate
+make install-dev
+USE_DOCKER_FIXTURES=true make test
+```
+
+To run the slow integration tests, follow these steps:
+1. **Start the sandbox environment**:  See the radiant-portal-sandbox repository for setup instructions
+2. **Add a hosts entry**: Add the following to your `/etc/hosts` file: `127.0.0.1 radiant-minio`
+3. **Run the tests**: Use the same virtual environment as for other tests, and run `USE_DOCKER_FIXTURES=false make test-integration-slow`
+
+
 ### MWAA Artifacts
 
 Running the Radiant ETL pipeline using AWS MWAA and ECS requires additional setup. 
