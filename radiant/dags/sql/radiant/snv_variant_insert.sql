@@ -1,10 +1,10 @@
 INSERT OVERWRITE {{ mapping.starrocks_snv_variant }}
 SELECT
     v.locus_id,
-    COALESCE(vf.germline_pf_wgs, 0) as germline_pf_wgs,
-    COALESCE(vf.germline_pf_wxs, 0) as germline_pf_wxs,
-	COALESCE(vf.somatic_pf_wgs, 0) as somatic_pf_wgs,
-    COALESCE(vf.somatic_pf_wxs, 0) as somatic_pf_wxs,
+    COALESCE(vf.pf_wgs, 0) as germline_pf_wgs,
+    COALESCE(vf.pf_wxs, 0) as germline_pf_wxs,
+	COALESCE(vf.pf_wgs, 0) as somatic_pf_wgs,
+    COALESCE(vf.pf_wxs, 0) as somatic_pf_wxs,
     v.gnomad_v3_af,
     v.topmed_af,
     v.tg_af,
