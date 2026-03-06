@@ -196,45 +196,6 @@ def import_part():
             "deleted_task_ids": list(set([t["task_id"] for t in tasks if t["deleted"]])) or [-1],
         }
 
-    @task.short_circuit(
-        task_id="sanity_check_delta_any_snv",
-        task_display_name="[PyOp] Sanity Check Any SNVs",
-        ignore_downstream_trigger_rules=False,
-    )
-    def sanity_check_delta_any_snv(tasks: Any) -> Any:
-        has_delta_snv = any(
-            t.get("task_type") in (RADIANT_GERMLINE_ANNOTATION_TASK, RADIANT_SOMATIC_ANNOTATION_TASK)
-            and not t.get("deleted")
-            for t in tasks
-        )
-        return has_delta_snv
-
-    @task.short_circuit(
-        task_id="sanity_check_delta_germline_snv",
-        task_display_name="[PyOp] Sanity Check Delta Germline SNVs",
-        ignore_downstream_trigger_rules=False,
-    )
-    def sanity_check_delta_germline_snv(tasks: Any) -> Any:
-        has_delta_snv = any(
-            t.get("task_type") == RADIANT_GERMLINE_ANNOTATION_TASK and not t.get("deleted") for t in tasks
-        )
-        return has_delta_snv
-
-    @task.short_circuit(
-        task_id="sanity_check_delta_somatic_snv",
-        task_display_name="[PyOp] Sanity Check Delta Somatic SNVs",
-        ignore_downstream_trigger_rules=False,
-    )
-    def sanity_check_delta_somatic_snv(tasks: Any) -> Any:
-        has_delta_snv = any(
-            t.get("task_type") == RADIANT_SOMATIC_ANNOTATION_TASK and not t.get("deleted") for t in tasks
-        )
-        return has_delta_snv
-
-    check_any_snv = sanity_check_delta_any_snv(tasks)
-    check_germline_snv = sanity_check_delta_germline_snv(tasks)
-    check_somatic_snv = sanity_check_delta_somatic_snv(tasks)
-
     @task(task_id="get_tables_to_refresh", task_display_name="[PyOp] Get list of iceberg tables to refresh")
     def get_tables_to_refresh():
         from airflow.operators.python import get_current_context
@@ -279,6 +240,18 @@ def import_part():
     )
 
     with TaskGroup(group_id="germline_snv_occurrence") as tg_germline_snv_occurrence:
+
+        @task.short_circuit(
+            task_id="sanity_check_delta_germline_snv",
+            task_display_name="[PyOp] Sanity Check Delta Germline SNVs",
+            ignore_downstream_trigger_rules=False,
+        )
+        def sanity_check_delta_germline_snv(tasks: Any) -> Any:
+            has_delta_snv = any(
+                t.get("task_type") == RADIANT_GERMLINE_ANNOTATION_TASK and not t.get("deleted") for t in tasks
+            )
+            return has_delta_snv
+
         insert_germline_snv_occurrences = RadiantStarRocksPartitionSwapOperator(
             task_id="insert_germline_snv_occurrence",
             table="{{ mapping.starrocks_germline_snv_occurrence }}",
@@ -311,13 +284,25 @@ def import_part():
         )
 
         (
-            check_germline_snv
+            sanity_check_delta_germline_snv(tasks)
             >> insert_germline_snv_occurrences
             >> insert_stg_germline_snv_variants_freq
             >> aggregate_germline_snv_variants_frequencies
         )
 
     with TaskGroup(group_id="somatic_snv_occurrence") as tg_somatic_snv_occurrence:
+
+        @task.short_circuit(
+            task_id="sanity_check_delta_somatic_snv",
+            task_display_name="[PyOp] Sanity Check Delta Somatic SNVs",
+            ignore_downstream_trigger_rules=False,
+        )
+        def sanity_check_delta_somatic_snv(tasks: Any) -> Any:
+            has_delta_snv = any(
+                t.get("task_type") == RADIANT_SOMATIC_ANNOTATION_TASK and not t.get("deleted") for t in tasks
+            )
+            return has_delta_snv
+
         insert_somatic_snv_occurrences = RadiantStarRocksPartitionSwapOperator(
             task_id="insert_somatic_snv_occurrences",
             table="{{ mapping.starrocks_somatic_snv_occurrence }}",
@@ -350,7 +335,7 @@ def import_part():
         )
 
         (
-            check_somatic_snv
+            sanity_check_delta_somatic_snv(tasks)
             >> insert_somatic_snv_occurrences
             >> insert_stg_somatic_snv_variants_freq
             >> aggregate_somatic_snv_variants_frequencies
@@ -362,7 +347,7 @@ def import_part():
             task_display_name="[StarRocks] Insert Staging SNV Variants",
             sql="./sql/radiant/snv_staging_variant_insert.sql",
             submit_task_options=std_submit_task_opts,
-            trigger_rule=TriggerRule.NONE_FAILED,
+            trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
         )
 
         insert_snv_variants_with_freqs = RadiantStarRocksOperator(
@@ -394,7 +379,7 @@ def import_part():
             trigger_rule=TriggerRule.NONE_FAILED,
         )
 
-        ((check_any_snv >> insert_snv_staging_variants) >> insert_snv_variants_with_freqs >> insert_snv_variants_part)
+        insert_snv_staging_variants >> insert_snv_variants_with_freqs >> insert_snv_variants_part
 
     with TaskGroup(group_id="snv_consequence") as tg_consequences:
         import_snv_consequences = RadiantStarRocksOperator(
@@ -441,27 +426,57 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
+    start >> namespace_task >> fetch_sequencing_experiment_delta
+
+    # Parallel VCF Imports
+    vcf_imports = [
+        import_germline_snv_vcf,
+        import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(tasks=tasks),
+        import_somatic_snv_vcf(tasks=tasks),
+    ]
+
+    checkpoint_setup = EmptyOperator(
+        task_id="checkpoint_after_setup",
+        task_display_name="[ --- CHECKPOINT --- ] After Setup",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_setup.set_upstream([start, namespace_task, fetch_sequencing_experiment_delta])
+    checkpoint_setup.set_downstream(vcf_imports)
+
+    checkpoint_imports = EmptyOperator(
+        task_id="checkpoint_after_vcf_imports",
+        task_display_name="[ --- CHECKPOINT --- ] After VCF Imports",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_imports.set_upstream(vcf_imports)
+    checkpoint_imports.set_downstream(load_exomiser)
+
     (
-        start
-        >> namespace_task  # ensure namespace is resolved before downstream tasks
-        >> fetch_sequencing_experiment_delta
-        >> (
-            import_germline_snv_vcf,
-            import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(tasks=tasks),
-            import_somatic_snv_vcf(tasks=tasks),
-        )
-        >> load_exomiser
+        load_exomiser
         >> refresh_iceberg_tables
         >> tg_germline_cnv_occurrence
-        >> (check_any_snv >> insert_hashes)
+        >> insert_hashes
         >> overwrite_snv_tmp_variants
-        >> (load_exomiser >> insert_exomiser)
-        >> (refresh_iceberg_tables >> tg_germline_snv_occurrence >> tg_somatic_snv_occurrence)
-        >> tg_variants
-        >> (check_any_snv >> tg_consequences)
-        >> ((tg_consequences, tg_variants) >> delete_sequencing_experiments)
-        >> update_sequencing_experiments
+        >> insert_exomiser
     )
+
+    checkpoint_after_exomiser = EmptyOperator(
+        task_id="checkpoint_after_exomiser",
+        task_display_name="[ --- CHECKPOINT --- ] After Exomiser",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_after_exomiser.set_upstream([checkpoint_imports, insert_exomiser])
+    checkpoint_after_exomiser.set_downstream([tg_germline_snv_occurrence, tg_somatic_snv_occurrence, tg_variants, tg_consequences])
+
+    [tg_germline_snv_occurrence, tg_somatic_snv_occurrence] >> tg_variants >> tg_consequences
+
+    checkpoint_variants = EmptyOperator(
+        task_id="checkpoint_after_variants",
+        task_display_name="[ --- CHECKPOINT --- ] After Variant & Consequence Insertions",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_variants.set_upstream([tg_variants, tg_consequences])
+    checkpoint_variants.set_downstream([delete_sequencing_experiments, update_sequencing_experiments])
 
 
 import_part()
