@@ -456,7 +456,6 @@ def import_part():
         import_somatic_snv_vcf(tasks=tasks),
     ]
 
-
     # --- DAG Flow ---
 
     # Phase 1: Setup
@@ -489,5 +488,6 @@ def import_part():
 
     # Final Phase: Update Sequencing Experiments (deletions and updates)
     checkpoint_variants >> [delete_sequencing_experiments, update_sequencing_experiments]
+
 
 import_part()
