@@ -477,7 +477,7 @@ def import_part():
     vcf_imports = [
         import_germline_snv_vcf,
         import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(tasks=tasks),
-        import_somatic_snv_vcf(tasks=tasks),
+        import_somatic_snv_vcf(tasks=stored_tasks) if IS_AWS else import_somatic_snv_vcf(tasks=tasks),
     ]
 
     # --- DAG Flow ---
