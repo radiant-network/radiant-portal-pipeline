@@ -719,4 +719,8 @@ ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_to_wgs DOUBLE
 ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pc_to_wxs INT(11) AFTER somatic_pf_to_wgs;
 ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pn_to_wxs INT(11) AFTER somatic_pc_to_wxs;
 ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_to_wxs DOUBLE AFTER somatic_pn_to_wxs;
+
+-- Sequencing Experiment table new columns
+ALTER TABLE radiant.staging_sequencing_experiment ADD COLUMN histology_type VARCHAR(50) AFTER affected_status;
+UPDATE TABLE radiant.staging_sequencing_experiment SET histology_type = 'normal' WHERE histology_type IS NULL;
 ```
