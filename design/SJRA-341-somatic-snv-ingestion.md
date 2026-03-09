@@ -699,26 +699,22 @@ ALTER TABLE radiant.snv__variant_partitioned RENAME COLUMN pf_wxs_not_affected T
 
 
 -- Variant table new columns
-ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_wgs DOUBLE AFTER germline_pf_wxs;
-ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_wxs DOUBLE AFTER somatic_pf_wgs;
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_to_wgs DOUBLE AFTER germline_pf_wxs;
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_to_wxs DOUBLE AFTER somatic_pf_to_wgs;
 
 ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pc_to_wgs INT(11) AFTER germline_pf_wxs_not_affected;
 ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pn_to_wgs INT(11) AFTER somatic_pc_to_wgs;
-ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_to_wgs DOUBLE AFTER somatic_pn_to_wgs;
-ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pc_to_wxs INT(11) AFTER somatic_pf_to_wgs;
+ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pc_to_wxs INT(11) AFTER somatic_pn_to_wgs;
 ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pn_to_wxs INT(11) AFTER somatic_pc_to_wxs;
-ALTER TABLE radiant.snv__variant ADD COLUMN somatic_pf_to_wxs DOUBLE AFTER somatic_pn_to_wxs;
 
 -- Variant table new columns
-ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_wgs DOUBLE AFTER germline_pf_wxs;
-ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_wxs DOUBLE AFTER somatic_pf_wgs;
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_to_wgs DOUBLE AFTER germline_pf_wxs;
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_to_wxs DOUBLE AFTER somatic_pf_to_wgs;
 
 ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pc_to_wgs INT(11) AFTER germline_pf_wxs_not_affected;
 ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pn_to_wgs INT(11) AFTER somatic_pc_to_wgs;
-ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_to_wgs DOUBLE AFTER somatic_pn_to_wgs;
-ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pc_to_wxs INT(11) AFTER somatic_pf_to_wgs;
+ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pc_to_wxs INT(11) AFTER somatic_pn_to_wgs;
 ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pn_to_wxs INT(11) AFTER somatic_pc_to_wxs;
-ALTER TABLE radiant.snv__variant_partitioned ADD COLUMN somatic_pf_to_wxs DOUBLE AFTER somatic_pn_to_wxs;
 
 -- Sequencing Experiment table new columns
 ALTER TABLE radiant.staging_sequencing_experiment ADD COLUMN histology_type VARCHAR(100) AFTER affected_status;
