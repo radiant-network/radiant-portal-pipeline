@@ -466,7 +466,9 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_after_exomiser.set_upstream([checkpoint_imports, insert_exomiser])
-    checkpoint_after_exomiser.set_downstream([tg_germline_snv_occurrence, tg_somatic_snv_occurrence, tg_variants, tg_consequences])
+    checkpoint_after_exomiser.set_downstream(
+        [tg_germline_snv_occurrence, tg_somatic_snv_occurrence, tg_variants, tg_consequences]
+    )
 
     tg_germline_snv_occurrence >> tg_somatic_snv_occurrence >> tg_variants >> tg_consequences
 

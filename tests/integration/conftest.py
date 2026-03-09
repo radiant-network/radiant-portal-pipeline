@@ -217,7 +217,7 @@ def iceberg_catalog_properties(rest_iceberg_catalog_instance, minio_instance):
         "s3.endpoint": minio_instance.endpoint,
         "s3.access-key-id": minio_instance.access_key,
         "s3.secret-access-key": minio_instance.secret_key,
-        "oauth2-server-uri": rest_iceberg_catalog_instance.endpoint + "v1/oauth/tokens"
+        "oauth2-server-uri": rest_iceberg_catalog_instance.endpoint + "v1/oauth/tokens",
     }
 
 
@@ -363,7 +363,7 @@ def clinical_exomiser_tsv(s3_fs, starrocks_session, starrocks_jdbc_catalog):
 
 
 @pytest.fixture(scope="session")
-def clinical_cnv_vcf(s3_fs,  starrocks_session, starrocks_jdbc_catalog):
+def clinical_cnv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
     """
     Creates "mock" CNV VCFs for clinical documents.
     """

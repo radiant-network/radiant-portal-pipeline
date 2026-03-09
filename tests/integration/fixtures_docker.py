@@ -83,7 +83,9 @@ def rest_iceberg_service(network, minio_instance):
         .with_env("POLARIS_AUTHENTICATION_TOKEN_BROKER_TYPE", "symmetric-key")
         .with_env("POLARIS_FEATURES_ALLOW_SETTING_S3_ENDPOINTS", "true")
         .with_env("POLARIS_FEATURES_SUPPORTED_CATALOG_STORAGE_TYPES", "S3")
-        .with_env("POLARIS_BOOTSTRAP_CREDENTIALS", f"{ICEBERG_REST_REALM_NAME},{ICEBERG_REST_USER},{ICEBERG_REST_PASSWORD}")
+        .with_env(
+            "POLARIS_BOOTSTRAP_CREDENTIALS", f"{ICEBERG_REST_REALM_NAME},{ICEBERG_REST_USER},{ICEBERG_REST_PASSWORD}"
+        )
         .with_exposed_ports(ICEBERG_REST_PORT)
         .with_network(network)
     )
@@ -96,7 +98,7 @@ def rest_iceberg_service(network, minio_instance):
         host=container.get_container_host_ip(),
         port=rest_port,
         internal_host="radiant-polaris-rest",
-        internal_port=ICEBERG_REST_PORT
+        internal_port=ICEBERG_REST_PORT,
     )
     container.stop()
 
@@ -115,7 +117,9 @@ def rest_iceberg_catalog_instance(network, rest_iceberg_service, minio_instance)
         .with_env("CATALOG_WAREHOUSE", "s3://warehouse")
         .with_env("QUARKUS_OTEL_SDK_DISABLED", "true")
         .with_network(network)
-        .with_volume_mapping(f"{RESOURCES_DIR}/polaris/init_polaris_catalog.sh", "/opt/scripts/init_polaris_catalog.sh")
+        .with_volume_mapping(
+            f"{RESOURCES_DIR}/polaris/init_polaris_catalog.sh", "/opt/scripts/init_polaris_catalog.sh"
+        )
     )
     container.start()
     container.exec(["/bin/bash", "/opt/scripts/init_polaris_catalog.sh"])
@@ -129,7 +133,7 @@ def rest_iceberg_catalog_instance(network, rest_iceberg_service, minio_instance)
         client_id=ICEBERG_REST_USER,
         client_secret=ICEBERG_REST_PASSWORD,
         internal_host=rest_iceberg_service.internal_host,
-        internal_port=rest_iceberg_service.internal_port
+        internal_port=rest_iceberg_service.internal_port,
     )
 
 

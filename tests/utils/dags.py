@@ -60,7 +60,8 @@ def poll_dag_until_success(airflow_container, dag_id, run_id, timeout=120) -> bo
 
 
 def get_pyarrow_table_from_csv(
-    csv_path, sep: str | None, json_fields: list[str] | None = None, na_fill=None) -> pa.Table:
+    csv_path, sep: str | None, json_fields: list[str] | None = None, na_fill=None
+) -> pa.Table:
     """
     Get the pyarrow schema from a CSV file.
     """
