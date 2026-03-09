@@ -204,7 +204,9 @@ def import_part():
     )
     def sanity_check_any_snv(tasks: Any) -> Any:
         has_delta_snv = any(
-            t.get("task_type") in (RADIANT_GERMLINE_ANNOTATION_TASK, RADIANT_SOMATIC_ANNOTATION_TASK) and not t.get("deleted") for t in tasks
+            t.get("task_type") in (RADIANT_GERMLINE_ANNOTATION_TASK, RADIANT_SOMATIC_ANNOTATION_TASK)
+            and not t.get("deleted")
+            for t in tasks
         )
         return has_delta_snv
 
@@ -392,7 +394,12 @@ def import_part():
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
-        sanity_check_any_snv(tasks=tasks) >> insert_snv_staging_variants >> insert_snv_variants_with_freqs >> insert_snv_variants_part
+        (
+            sanity_check_any_snv(tasks=tasks)
+            >> insert_snv_staging_variants
+            >> insert_snv_variants_with_freqs
+            >> insert_snv_variants_part
+        )
 
     with TaskGroup(group_id="snv_consequence") as tg_consequences:
         import_snv_consequences = RadiantStarRocksOperator(
@@ -421,7 +428,12 @@ def import_part():
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
-        (sanity_check_any_snv(tasks=tasks) >> import_snv_consequences >> import_snv_consequences_filter >> insert_snv_consequences_filter_part)
+        (
+            sanity_check_any_snv(tasks=tasks)
+            >> import_snv_consequences
+            >> import_snv_consequences_filter
+            >> insert_snv_consequences_filter_part
+        )
 
     delete_sequencing_experiments = RadiantStarRocksOperator(
         task_id="delete_sequencing_experiments",

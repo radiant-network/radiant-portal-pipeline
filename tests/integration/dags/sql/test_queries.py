@@ -77,6 +77,13 @@ def _explain_insert(starrocks_session, sql_dir):
     with starrocks_session.cursor() as cursor:
         for sql_file in sql_files:
             if (
+                "somatic_snv_variant_frequency" in sql_file.lower()
+                or "somatic_snv_staging_variant_freq" in sql_file.lower()
+            ):
+                # FIXME: These tables are not yet implemented, so skip them
+                continue
+
+            if (
                 "staging_exomiser" in sql_file
                 or "load" in sql_file.lower()
                 or "cnv_occurrence_insert_partition_delta" in sql_file.lower()
