@@ -296,6 +296,7 @@ def import_part():
             task_id="sanity_check_delta_somatic_snv",
             task_display_name="[PyOp] Sanity Check Delta Somatic SNVs",
             ignore_downstream_trigger_rules=False,
+            trigger_rule=TriggerRule.NONE_FAILED,  # If we have germline only, we don't want to skip somatic
         )
         def sanity_check_delta_somatic_snv(tasks: Any) -> Any:
             has_delta_snv = any(
