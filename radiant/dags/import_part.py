@@ -426,7 +426,27 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    start >> namespace_task >> fetch_sequencing_experiment_delta
+    # Checkpoint objects
+    checkpoint_setup = EmptyOperator(
+        task_id="checkpoint_after_setup",
+        task_display_name="[ --- CHECKPOINT --- ] Before VCF Imports",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_imports = EmptyOperator(
+        task_id="checkpoint_after_vcf_imports",
+        task_display_name="[ --- CHECKPOINT --- ] Before Post-VCF Processing",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_after_exomiser = EmptyOperator(
+        task_id="checkpoint_after_exomiser",
+        task_display_name="[ --- CHECKPOINT --- ] Before Occurrence, Variant, Consequence Insertions",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_variants = EmptyOperator(
+        task_id="checkpoint_after_variants",
+        task_display_name="[ --- CHECKPOINT --- ] Before Sequencing Experiment Updates",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
 
     # Parallel VCF Imports
     vcf_imports = [
@@ -435,50 +455,38 @@ def import_part():
         import_somatic_snv_vcf(tasks=tasks),
     ]
 
-    checkpoint_setup = EmptyOperator(
-        task_id="checkpoint_after_setup",
-        task_display_name="[ --- CHECKPOINT --- ] After Setup",
-        trigger_rule=TriggerRule.NONE_FAILED,
-    )
-    checkpoint_setup.set_upstream([start, namespace_task, fetch_sequencing_experiment_delta])
-    checkpoint_setup.set_downstream(vcf_imports)
 
-    checkpoint_imports = EmptyOperator(
-        task_id="checkpoint_after_vcf_imports",
-        task_display_name="[ --- CHECKPOINT --- ] After VCF Imports",
-        trigger_rule=TriggerRule.NONE_FAILED,
-    )
-    checkpoint_imports.set_upstream(vcf_imports)
-    checkpoint_imports.set_downstream(load_exomiser)
+    # --- DAG Flow ---
 
+    # Phase 1: Setup
+    start >> namespace_task >> fetch_sequencing_experiment_delta >> checkpoint_setup
+
+    # Phase 2: VCF Imports
+    checkpoint_setup >> vcf_imports >> checkpoint_imports
+
+    # Phase 3: Post-VCF Processing (hashes, exomiser)
     (
-        load_exomiser
+        checkpoint_imports
+        >> load_exomiser
         >> refresh_iceberg_tables
         >> tg_germline_cnv_occurrence
         >> insert_hashes
         >> overwrite_snv_tmp_variants
         >> insert_exomiser
+        >> checkpoint_after_exomiser
     )
 
-    checkpoint_after_exomiser = EmptyOperator(
-        task_id="checkpoint_after_exomiser",
-        task_display_name="[ --- CHECKPOINT --- ] After Exomiser",
-        trigger_rule=TriggerRule.NONE_FAILED,
-    )
-    checkpoint_after_exomiser.set_upstream([checkpoint_imports, insert_exomiser])
-    checkpoint_after_exomiser.set_downstream(
-        [tg_germline_snv_occurrence, tg_somatic_snv_occurrence, tg_variants, tg_consequences]
+    # Phase 4: Occurrence, Variants, Consequences, and Frequencies Insertions
+    (
+        checkpoint_after_exomiser
+        >> tg_germline_snv_occurrence
+        >> tg_somatic_snv_occurrence
+        >> tg_variants
+        >> tg_consequences
+        >> checkpoint_variants
     )
 
-    tg_germline_snv_occurrence >> tg_somatic_snv_occurrence >> tg_variants >> tg_consequences
-
-    checkpoint_variants = EmptyOperator(
-        task_id="checkpoint_after_variants",
-        task_display_name="[ --- CHECKPOINT --- ] After Variant & Consequence Insertions",
-        trigger_rule=TriggerRule.NONE_FAILED,
-    )
-    checkpoint_variants.set_upstream([tg_variants, tg_consequences])
-    checkpoint_variants.set_downstream([delete_sequencing_experiments, update_sequencing_experiments])
-
+    # Final Phase: Update Sequencing Experiments (deletions and updates)
+    checkpoint_variants >> [delete_sequencing_experiments, update_sequencing_experiments]
 
 import_part()
