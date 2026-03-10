@@ -91,10 +91,7 @@ SELECT
     s.cnv_vcf_filepath,
 	s.exomiser_filepath,
 	p.sex_code AS sex,
-    CASE
-    	WHEN s.analysis_type = 'germline'
-    	OR (s.analysis_type = 'somatic' AND f.relationship_to_proband_code = 'proband')
-    	THEN f.id ELSE NULL END AS family_id,
+    f.id AS family_id,
     CASE
         WHEN s.analysis_type = 'germline' THEN COALESCE(f.relationship_to_proband_code, "proband")
         ELSE "proband"
