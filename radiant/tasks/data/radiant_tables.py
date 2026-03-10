@@ -48,7 +48,7 @@ CLINICAL_MAPPING = {
 }
 
 # --- Iceberg tables
-ICEBERG_SNV_MAPPING = {
+ICEBERG_RADIANT_MAPPING = {
     "iceberg_germline_cnv_occurrence": "germline_cnv_occurrence",
     "iceberg_germline_snv_occurrence": "germline_snv_occurrence",
     "iceberg_snv_variant": "snv_variant",
@@ -136,10 +136,10 @@ CLINICAL_TRANSFORM_LAYER_MAPPING = {
 }
 
 
-def get_iceberg_snv_mapping(conf=None) -> dict:
+def get_iceberg_radiant_mapping(conf=None) -> dict:
     _catalog = get_config_value(conf, RadiantConfigKeys.ICEBERG_CATALOG)
     _database = get_config_value(conf, RadiantConfigKeys.ICEBERG_NAMESPACE)
-    return {key: f"{_catalog}.{_database}.{value}" for key, value in ICEBERG_SNV_MAPPING.items()}
+    return {key: f"{_catalog}.{_database}.{value}" for key, value in ICEBERG_RADIANT_MAPPING.items()}
 
 
 def get_iceberg_open_data_mapping(conf=None) -> dict:
@@ -150,7 +150,7 @@ def get_iceberg_open_data_mapping(conf=None) -> dict:
 
 def get_iceberg_tables(conf=None) -> dict:
     return {
-        **get_iceberg_snv_mapping(conf),
+        **get_iceberg_radiant_mapping(conf),
         **get_iceberg_open_data_mapping(conf),
     }
 

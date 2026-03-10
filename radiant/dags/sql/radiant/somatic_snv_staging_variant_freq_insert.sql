@@ -16,7 +16,7 @@
 --                FROM  {{ mapping.starrocks_somatic_snv_occurrence }} o
 --                         JOIN {{ mapping.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.seq_id
 --                WHERE o.part = %(part)s
---                  AND o.gq >= 20 AND o.filter='PASS' AND o.ad_alt > 3
+--                  AND o.gq >= 20 AND o.filter='PASS' AND o.ad_alt > 2
 --                GROUP BY locus_id, o.part)
 -- SELECT part,
 --        locus_id,

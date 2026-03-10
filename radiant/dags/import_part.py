@@ -13,7 +13,7 @@ from airflow.utils.task_group import TaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
 from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, ECSEnv, get_namespace, load_docs_md
-from radiant.tasks.data.radiant_tables import get_iceberg_snv_mapping
+from radiant.tasks.data.radiant_tables import get_iceberg_radiant_mapping
 from radiant.tasks.starrocks.operator import (
     RadiantLoadExomiserOperator,
     RadiantStarRocksOperator,
@@ -217,7 +217,7 @@ def import_part():
         context = get_current_context()
         dag_conf = context["dag_run"].conf or {}
 
-        return [{"table": v} for v in get_iceberg_snv_mapping(dag_conf).values()]
+        return [{"table": v} for v in get_iceberg_radiant_mapping(dag_conf).values()]
 
     refresh_iceberg_tables = RadiantStarRocksOperator.partial(
         task_id="refresh_iceberg_tables",
