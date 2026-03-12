@@ -1,8 +1,12 @@
+from cyvcf2 import Variant
 from pyiceberg.schema import Schema
 from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, NestedField, StringType
 
 from radiant.tasks.iceberg.utils import merge_schemas
+from radiant.tasks.vcf.experiment import Experiment
 from radiant.tasks.vcf.snv.common import SCHEMA as COMMON_SCHEMA
+from radiant.tasks.vcf.snv.common import Common
+from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT, calls_without_phased
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -59,3 +63,170 @@ SCHEMA = merge_schemas(
         NestedField(572, "normal_gt_status", StringType(), required=False),
     ),
 )
+
+
+def process_occurrence(record: Variant, experiments: list[Experiment], common: Common) -> dict:
+    """
+    Mirrors germline styled occurrence processing, adapted for somatic VCF structure.
+    """
+    occurrences = {}
+
+    info_fields = record.INFO
+    quality = int(record.QUAL) if record.QUAL is not None else None
+    filter = record.FILTER or "PASS"
+    # hotspotallele = info_fields.get("HotSpotAllele", None)
+    old_record = info_fields.get("OLD_RECORD", None)
+    baseq_ranksum = info_fields.get("BaseQRankSum", None)
+    fs = info_fields.get("FS", None)
+    ds = info_fields.get("DS", None)
+    fraction_informative_reads = info_fields.get("FractionInformativeReads", None)
+    inbreed_coeff = info_fields.get("InbreedCoeff", None)
+    mleac = info_fields.get("MLEAC", None)
+    mleaf = info_fields.get("MLEAF", None)
+    mq = info_fields.get("MQ", None)
+    # mq0 = info_fields.get("MQ0", None)
+    mq_ranksum = info_fields.get("MQRankSum", None)
+    qd = info_fields.get("QD", None)
+    r2_5p_bias = info_fields.get("R2_5P_bias", None)
+    read_pos_rank_su = info_fields.get("ReadPosRankSum", None)
+    sor = info_fields.get("SOR", None)
+    vqslod = info_fields.get("VQSLod", None)
+    culprit = info_fields.get("Culprit", None)
+    info_dp = info_fields.get("DP", None)
+    haplotype_score = info_fields.get("HaplotypeScore", None)
+    excess_het = info_fields.get("ExcessHet", None)
+
+    """
+    --- Replace the germline ped loop with this somatic block ---
+
+    Assumption is tumor col comes first, normal second.
+    But there could be files that don't follow this order.
+    Need to implement logic to identify tumor/normal indices based on sample metadata as a check 
+    or a warning if the order is unexpected. 
+
+    1. First check sample ID in model. If not found, output error and have an option to indicate which order to use.
+        - Use cases where the sample IDs in the VCFs are different than the sample IDs in the model. 
+        - In CHOP VCFs, the sample IDs in the VCF should match the aliquot ID in the model.
+    2. If found, confirm tumor/normal order. 
+
+    This logic can also be applied to joint genotyped VCFs.
+    """
+
+    tumor_idx = 1  # replace with somatic indexing logic
+    normal_idx = 0  # replace with somatic indexing logic
+    tumor_exp = experiments[1]  # replace with somatic sample extraction logic
+    normal_exp = experiments[0]  # replace with somatic sample extraction logic
+
+    # Tumor FORMAT
+    t_dp = record.format("DP")[tumor_idx][0] if "DP" in record.FORMAT else 0
+    t_gq = record.format("GQ")[tumor_idx][0] if "GQ" in record.FORMAT else 0
+    t_ad_ref = record.gt_ref_depths[tumor_idx] if record.gt_ref_depths[tumor_idx] > 0 else None
+    t_ad_alt = record.gt_alt_depths[tumor_idx] if record.gt_alt_depths[tumor_idx] > 0 else None
+    t_calls = calls_without_phased(record, tumor_idx)
+    t_calls, t_zygosity = adjust_calls_and_zygosity(t_calls, record.gt_types[tumor_idx], t_ad_ref, t_ad_alt)
+    t_has_alt = 1 in t_calls
+    t_ad_total = record.gt_depths[tumor_idx] if record.gt_depths[tumor_idx] > 0 else None
+    t_ad_ratio = record.gt_alt_freqs[tumor_idx] if record.gt_alt_freqs[tumor_idx] > 0 else None
+    t_af = t_ad_ratio
+    t_phased = record.gt_phases[tumor_idx]
+
+    # Normal FORMAT
+    n_dp = record.format("DP")[normal_idx][0] if "DP" in record.FORMAT else 0
+    n_gq = record.format("GQ")[normal_idx][0] if "GQ" in record.FORMAT else 0
+    n_ad_ref = record.gt_ref_depths[normal_idx] if record.gt_ref_depths[normal_idx] > 0 else None
+    n_ad_alt = record.gt_alt_depths[normal_idx] if record.gt_alt_depths[normal_idx] > 0 else None
+    n_calls = calls_without_phased(record, normal_idx)
+    n_calls, n_zyg = adjust_calls_and_zygosity(n_calls, record.gt_types[normal_idx], n_ad_ref, n_ad_alt)
+    n_has_alt = 1 in n_calls if n_calls is not None else None
+    n_ad_total = record.gt_depths[normal_idx] if record.gt_depths[normal_idx] > 0 else None
+    n_ad_ratio = record.gt_alt_freqs[normal_idx] if record.gt_alt_freqs[normal_idx] > 0 else None
+    n_af = n_ad_ratio
+    n_phased = record.gt_phases[normal_idx]
+
+    occurrences[tumor_exp.seq_id] = {
+        # common
+        "part": common.part,
+        "task_id": common.task_id,
+        "locus": common.locus,
+        "locus_hash": common.locus_hash,
+        "chromosome": common.chromosome,
+        "start": common.start,
+        "end": common.end,
+        "reference": common.reference,
+        "alternate": common.alternate,
+        # info
+        "quality": quality,
+        "filter": filter,
+        "info_old_record": old_record,
+        "info_baseq_rank_sum": baseq_ranksum,
+        "info_excess_het": excess_het,
+        "info_fs": fs,
+        "info_ds": ds,
+        "info_fraction_informative_reads": fraction_informative_reads,
+        "info_inbreed_coeff": inbreed_coeff,
+        "info_mleac": mleac,
+        "info_mleaf": mleaf,
+        "info_mq": mq,
+        "info_mq0": info_fields.get("MQ0", None),
+        "info_m_qrank_sum": mq_ranksum,
+        "info_qd": qd,
+        "info_r2_5p_bias": r2_5p_bias,
+        "info_read_pos_rank_sum": read_pos_rank_su,
+        "info_sor": sor,
+        "info_vqslod": vqslod,
+        "info_culprit": culprit,
+        "info_dp": info_dp,
+        "info_haplotype_score": haplotype_score,
+        "info_hotspotallele": info_fields.get("HotspotAllele", None),
+        "info_cal": info_fields.get("CAL", None),
+        # tumor FORMAT
+        "tumor_seq_id": tumor_exp.seq_id,
+        "tumor_calls": t_calls,
+        "tumor_dp": t_dp if t_dp > 0 else None,
+        "tumor_gq": t_gq if t_gq > 0 else None,
+        "tumor_ad_ref": t_ad_ref,
+        "tumor_ad_alt": t_ad_alt,
+        "tumor_ad_total": t_ad_total,
+        "tumor_ad_ratio": t_ad_ratio,
+        "tumor_af": t_af,  # replace with somatic logic
+        "tumor_zygosity": t_zygosity,
+        "tumor_phased": t_phased,
+        "tumor_has_alt": t_has_alt,
+        "tumor_gt_status": None,  # replace with somatic logic
+        # normal FORMAT
+        "normal_seq_id": normal_exp.seq_id,
+        "normal_calls": n_calls,
+        "normal_dp": n_dp if n_dp > 0 else None,
+        "normal_gq": n_gq if n_gq > 0 else None,
+        "normal_ad_ref": n_ad_ref,
+        "normal_ad_alt": n_ad_alt,
+        "normal_ad_total": n_ad_total,
+        "normal_ad_ratio": n_ad_ratio,
+        "normal_af": n_af,  # replace with somatic logic
+        "normal_zygosity": n_zyg,
+        "normal_phased": n_phased,
+        "normal_has_alt": n_has_alt,
+        "normal_gt_status": None,  # replace with somatic logic
+    }
+
+    return occurrences
+
+
+def adjust_calls_and_zygosity(
+    calls: list[int], zygosity: int, ad_ref: int | None, ad_alt: int | None
+) -> tuple[list[int], str]:
+    """
+    Copied from germline occurrence logic for now; needs somatic-specific review.
+    """
+    if (
+        ad_alt
+        and (zygosity in (ZYGOSITY_HET, ZYGOSITY_HOM) and ad_alt < 3)
+        or ad_ref
+        and zygosity == ZYGOSITY_WT
+        and ad_ref < 3
+    ):
+        return [-1 for _ in range(len(calls))], "UNK"
+    elif zygosity == 3 and len(calls) == 1:
+        return calls, "HEM"
+    else:
+        return calls, ZYGOSITY[zygosity]

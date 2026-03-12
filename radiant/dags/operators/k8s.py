@@ -110,10 +110,10 @@ class ImportPart(BaseK8SOperator):
         def get_import_somatic_snv_vcf(tasks: list[dict]) -> None:
             import os
 
-            from radiant.tasks.vcf.snv.somatic.process import create_parquet_files
+            from radiant.tasks.vcf.snv.somatic.process import import_somatic_snv
 
             namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
-            create_parquet_files(tasks=tasks, namespace=namespace)
+            import_somatic_snv(tasks=tasks, namespace=namespace)
 
         return get_import_somatic_snv_vcf
 

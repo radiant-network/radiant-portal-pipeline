@@ -1,11 +1,10 @@
 import argparse
-import json
 import logging
 import os
 import sys
 
 from radiant.tasks.utils import delete_s3_object, download_json_from_s3
-from radiant.tasks.vcf.snv.somatic.process import create_parquet_files
+from radiant.tasks.vcf.snv.somatic.process import import_somatic_snv
 
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
@@ -13,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 def main(tasks: list[dict]):
     namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
-    print(json.dumps(create_parquet_files(tasks, namespace)))
+    import_somatic_snv(tasks, namespace)
 
 
 if __name__ == "__main__":
