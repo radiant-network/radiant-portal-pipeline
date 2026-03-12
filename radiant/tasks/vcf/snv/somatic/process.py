@@ -35,7 +35,7 @@ def process_task(
     occurrences_partition_commit = []
     variants_partition_commit = []
     consequences_partition_commit = []
-    catalog = load_catalog(catalog_name, **catalog_properties) if catalog_properties else load_catalog(catalog_name)
+    catalog = load_catalog(catalog_name, **(catalog_properties or {}))
 
     vcf = VCF(
         task.vcf_filepath,
@@ -87,32 +87,31 @@ def process_task(
                 f" this is a multi allelic variant, mult-allelic are not supported. Please split vcf file."
             )
 
-        #### End of VCF file processing, flush buffers ####
-        occurrence_buffer.write_files()
-        occurrences_partition_commit.append(
-            PartitionCommit(
-                parquet_files=occurrence_buffer.parquet_paths,
-                partition_filter=occurrence_buffer.partition_filter,
-            )
+    #### End of VCF file processing, flush buffers ####
+    occurrence_buffer.write_files()
+    occurrences_partition_commit.append(
+        PartitionCommit(
+            parquet_files=occurrence_buffer.parquet_paths,
+            partition_filter=occurrence_buffer.partition_filter,
         )
+    )
 
-        variant_buffer.write_files()
-        variants_partition_commit.append(
-            PartitionCommit(
-                parquet_files=variant_buffer.parquet_paths, partition_filter=variant_buffer.partition_filter
-            )
+    variant_buffer.write_files()
+    variants_partition_commit.append(
+        PartitionCommit(
+            parquet_files=variant_buffer.parquet_paths, partition_filter=variant_buffer.partition_filter
         )
+    )
 
-        consequence_buffer.write_files()
-        consequences_partition_commit.append(
-            PartitionCommit(
-                parquet_files=consequence_buffer.parquet_paths,
-                partition_filter=consequence_buffer.partition_filter,
-            )
+    consequence_buffer.write_files()
+    consequences_partition_commit.append(
+        PartitionCommit(
+            parquet_files=consequence_buffer.parquet_paths,
+            partition_filter=consequence_buffer.partition_filter,
         )
+    )
 
-        logger.info(f"✅ Parquet files created: {task.task_id}, file {task.vcf_filepath}")
-
+    logger.info(f"✅ Parquet files created: {task.task_id}, file {task.vcf_filepath}")
     vcf.close()
     return {
         occurrences_table_name: occurrences_partition_commit,
@@ -125,7 +124,7 @@ def commit_partitions(table_partitions: dict[str, list[dict]], iceberg_catalog_p
     logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
     logger = logging.getLogger(__name__)
 
-    catalog = load_catalog() if iceberg_catalog_properties is None else load_catalog(**iceberg_catalog_properties)
+    catalog = load_catalog(**(iceberg_catalog_properties or {}))
     for table_name, partitions in table_partitions.items():
         if not partitions:
             continue
@@ -136,10 +135,9 @@ def commit_partitions(table_partitions: dict[str, list[dict]], iceberg_catalog_p
         logger.info(f"✅ Changes commited to table {table_name}")
 
 
-def merge_partitions(merged_partitions: defaultdict, partitions_list: dict[str, list[dict]]) -> dict[str, list[dict]]:
+def merge_partitions_in_place(merged_partitions: defaultdict, partitions_list: dict[str, list[dict]]):
     for table_name, partition_commits in partitions_list.items():
         merged_partitions[table_name].extend(partition_commits)
-    return dict(merged_partitions)
 
 
 def import_somatic_snv(tasks: list[dict], namespace: str):
@@ -153,16 +151,15 @@ def import_somatic_snv(tasks: list[dict], namespace: str):
         with tempfile.TemporaryDirectory() as tmpdir:
             vcf_local = download_s3_file(task["vcf_filepath"], tmpdir)
             index_local = download_s3_file(task["vcf_filepath"] + ".tbi", tmpdir)
-            task["vcf_filepath"] = vcf_local
-            task["index_vcf_filepath"] = index_local
+            task_data = {**task, "vcf_filepath": vcf_local, "index_vcf_filepath": index_local}
 
-            task = RadiantSomaticAnnotationTask.model_validate(task)
-            logger.info(f"🔁 STARTING IMPORT Somatic SNV for Task: {task.task_id}")
+            task = RadiantSomaticAnnotationTask.model_validate(task_data)
+            logger.info(f"🔁 STARTING IMPORT Somatic SNV for Task: {task_data["task_id"]}")
             logger.info("=" * 80)
 
             partitions = process_task(task, namespace=namespace, vcf_threads=4)
-            logger.info(f"✅ Parquet files created: {task.task_id}, file {task.vcf_filepath}")
-            merge_partitions(merged_partitions, partitions)
+            logger.info(f"✅ Parquet files created: {task_data["task_id"]}, file {task_data["vcf_filepath"]}")
+            merge_partitions_in_place(merged_partitions, partitions)
 
     # Merge results from all tasks and convert PartitionCommit objects to dicts
     commit_partitions(merged_partitions)

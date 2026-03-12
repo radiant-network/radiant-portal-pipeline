@@ -1,7 +1,7 @@
 from collections import defaultdict
 
 from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask
-from radiant.tasks.vcf.snv.somatic.process import commit_partitions, merge_partitions, process_task
+from radiant.tasks.vcf.snv.somatic.process import commit_partitions, merge_partitions_in_place, process_task
 
 
 def test_import_somatic_snv_vcf(
@@ -49,7 +49,7 @@ def test_import_somatic_snv_vcf(
     partitions = process_task(
         task=task, namespace=setup_iceberg_namespace, catalog_properties=iceberg_catalog_properties
     )
-    merge_partitions(merged_partitions, partitions)
+    merge_partitions_in_place(merged_partitions, partitions)
     commit_partitions(merged_partitions, iceberg_catalog_properties=iceberg_catalog_properties)
 
     # Check that the expected tables were created and contain data
