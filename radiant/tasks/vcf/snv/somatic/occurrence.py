@@ -65,7 +65,9 @@ SCHEMA = merge_schemas(
 )
 
 
-def process_occurrence(record: Variant, experiments: list[Experiment], common: Common) -> dict:
+def process_occurrence(
+    record: Variant, experiments: list[Experiment], common: Common, tumor_index: int, normal_index: int
+) -> dict:
     """
     Mirrors germline styled occurrence processing, adapted for somatic VCF structure.
     """
@@ -111,38 +113,34 @@ def process_occurrence(record: Variant, experiments: list[Experiment], common: C
 
     This logic can also be applied to joint genotyped VCFs.
     """
-
-    # FIXME: implement somatic-specific logic to identify tumor vs normal samples and extract relevant FORMAT fields accordingly
-    tumor_idx = 1  # replace with somatic indexing logic
-    normal_idx = 0  # replace with somatic indexing logic
-    tumor_exp = experiments[1]  # replace with somatic sample extraction logic
-    normal_exp = experiments[0]  # replace with somatic sample extraction logic
+    tumor_exp = experiments[tumor_index]
+    normal_exp = experiments[normal_index]
 
     # Tumor FORMAT
-    t_dp = record.format("DP")[tumor_idx][0] if "DP" in record.FORMAT else 0
-    t_gq = record.format("GQ")[tumor_idx][0] if "GQ" in record.FORMAT else 0
-    t_ad_ref = record.gt_ref_depths[tumor_idx] if record.gt_ref_depths[tumor_idx] > 0 else None
-    t_ad_alt = record.gt_alt_depths[tumor_idx] if record.gt_alt_depths[tumor_idx] > 0 else None
-    t_calls = calls_without_phased(record, tumor_idx)
-    t_calls, t_zygosity = adjust_calls_and_zygosity(t_calls, record.gt_types[tumor_idx], t_ad_ref, t_ad_alt)
+    t_dp = record.format("DP")[tumor_index][0] if "DP" in record.FORMAT else 0
+    t_gq = record.format("GQ")[tumor_index][0] if "GQ" in record.FORMAT else 0
+    t_ad_ref = record.gt_ref_depths[tumor_index] if record.gt_ref_depths[tumor_index] > 0 else None
+    t_ad_alt = record.gt_alt_depths[tumor_index] if record.gt_alt_depths[tumor_index] > 0 else None
+    t_calls = calls_without_phased(record, tumor_index)
+    t_calls, t_zygosity = adjust_calls_and_zygosity(t_calls, record.gt_types[tumor_index], t_ad_ref, t_ad_alt)
     t_has_alt = 1 in t_calls
-    t_ad_total = record.gt_depths[tumor_idx] if record.gt_depths[tumor_idx] > 0 else None
-    t_ad_ratio = record.gt_alt_freqs[tumor_idx] if record.gt_alt_freqs[tumor_idx] > 0 else None
+    t_ad_total = record.gt_depths[tumor_index] if record.gt_depths[tumor_index] > 0 else None
+    t_ad_ratio = record.gt_alt_freqs[tumor_index] if record.gt_alt_freqs[tumor_index] > 0 else None
     t_af = t_ad_ratio
-    t_phased = record.gt_phases[tumor_idx]
+    t_phased = record.gt_phases[tumor_index]
 
     # Normal FORMAT
-    n_dp = record.format("DP")[normal_idx][0] if "DP" in record.FORMAT else 0
-    n_gq = record.format("GQ")[normal_idx][0] if "GQ" in record.FORMAT else 0
-    n_ad_ref = record.gt_ref_depths[normal_idx] if record.gt_ref_depths[normal_idx] > 0 else None
-    n_ad_alt = record.gt_alt_depths[normal_idx] if record.gt_alt_depths[normal_idx] > 0 else None
-    n_calls = calls_without_phased(record, normal_idx)
-    n_calls, n_zyg = adjust_calls_and_zygosity(n_calls, record.gt_types[normal_idx], n_ad_ref, n_ad_alt)
+    n_dp = record.format("DP")[normal_index][0] if "DP" in record.FORMAT else 0
+    n_gq = record.format("GQ")[normal_index][0] if "GQ" in record.FORMAT else 0
+    n_ad_ref = record.gt_ref_depths[normal_index] if record.gt_ref_depths[normal_index] > 0 else None
+    n_ad_alt = record.gt_alt_depths[normal_index] if record.gt_alt_depths[normal_index] > 0 else None
+    n_calls = calls_without_phased(record, normal_index)
+    n_calls, n_zyg = adjust_calls_and_zygosity(n_calls, record.gt_types[normal_index], n_ad_ref, n_ad_alt)
     n_has_alt = 1 in n_calls if n_calls is not None else None
-    n_ad_total = record.gt_depths[normal_idx] if record.gt_depths[normal_idx] > 0 else None
-    n_ad_ratio = record.gt_alt_freqs[normal_idx] if record.gt_alt_freqs[normal_idx] > 0 else None
+    n_ad_total = record.gt_depths[normal_index] if record.gt_depths[normal_index] > 0 else None
+    n_ad_ratio = record.gt_alt_freqs[normal_index] if record.gt_alt_freqs[normal_index] > 0 else None
     n_af = n_ad_ratio
-    n_phased = record.gt_phases[normal_idx]
+    n_phased = record.gt_phases[normal_index]
 
     occurrences[tumor_exp.seq_id] = {
         # common

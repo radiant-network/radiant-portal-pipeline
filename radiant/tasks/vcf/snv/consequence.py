@@ -13,6 +13,8 @@ Dependencies:
 - Common metadata and schema merging from internal modules.
 """
 
+from collections import namedtuple
+
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
 from pyiceberg.types import BooleanType, IntegerType, ListType, StringType, StructType
@@ -22,6 +24,8 @@ from radiant.tasks.vcf.snv.common import SCHEMA as COMMON_SCHEMA
 from radiant.tasks.vcf.snv.common import Common
 
 CSQ_FORMAT_FIELD = "CSQ"
+
+SomaticIndex = namedtuple("SomaticIndex", ["tumor_index", "normal_index"])
 
 # Iceberg schema definition for the consequence annotations,
 # merged with a common schema shared across VCF processors.

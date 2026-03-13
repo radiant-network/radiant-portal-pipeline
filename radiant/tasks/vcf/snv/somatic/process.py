@@ -10,7 +10,7 @@ from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
 from radiant.tasks.iceberg.utils import commit_files
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
-from radiant.tasks.vcf.experiment import RadiantSomaticAnnotationTask
+from radiant.tasks.vcf.experiment import RadiantSomaticAnnotationTask, Experiment
 from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence
@@ -65,13 +65,22 @@ def process_task(
 
     consequence_table = catalog.load_table(consequences_table_name)
     consequence_buffer = TableAccumulator(consequence_table, partition_filter=variant_csq_partition_filter)
+
+    tumor_index, normal_index = get_somatic_indexes(task.experiments, vcf.samples)
+
     for record in vcf:
         if len(record.ALT) <= 1:
             if record.CHROM in SUPPORTED_CHROMOSOMES:
                 common = process_common(record, task_id=task.task_id, part=task.part)
                 picked_consequence, consequences = process_consequence(record, csq_header, common)
                 consequence_buffer.extend(consequences)
-                occurrences = process_occurrence(record, experiments=task.experiments, common=common)
+                occurrences = process_occurrence(
+                    record,
+                    experiments=task.experiments,
+                    common=common,
+                    tumor_index=tumor_index,
+                    normal_index=normal_index,
+                )
                 occurrence_buffer.extend(list(occurrences.values()))
                 variant = process_variant(record, picked_consequence, common)
                 variant_buffer.append(variant)
@@ -98,9 +107,7 @@ def process_task(
 
     variant_buffer.write_files()
     variants_partition_commit.append(
-        PartitionCommit(
-            parquet_files=variant_buffer.parquet_paths, partition_filter=variant_buffer.partition_filter
-        )
+        PartitionCommit(parquet_files=variant_buffer.parquet_paths, partition_filter=variant_buffer.partition_filter)
     )
 
     consequence_buffer.write_files()
@@ -118,6 +125,19 @@ def process_task(
         variants_table_name: variants_partition_commit,
         consequences_table_name: consequences_partition_commit,
     }
+
+
+def get_somatic_indexes(experiments: list[Experiment], samples: list[str]):
+    tumor_index = None
+    normal_index = None
+    for exp in experiments:
+        if exp.histology_type == "tumoral":
+            tumor_index = samples.index(exp.aliquot)
+        elif exp.histology_type == "normal":
+            normal_index = samples.index(exp.aliquot)
+    if tumor_index is None or normal_index is None:
+        raise ValueError("Could not find both tumor and normal samples in the VCF for the given experiments.")
+    return tumor_index, normal_index
 
 
 def commit_partitions(table_partitions: dict[str, list[dict]], iceberg_catalog_properties: dict | None = None):
@@ -154,11 +174,11 @@ def import_somatic_snv(tasks: list[dict], namespace: str):
             task_data = {**task, "vcf_filepath": vcf_local, "index_vcf_filepath": index_local}
 
             task = RadiantSomaticAnnotationTask.model_validate(task_data)
-            logger.info(f"🔁 STARTING IMPORT Somatic SNV for Task: {task_data["task_id"]}")
+            logger.info(f"🔁 STARTING IMPORT Somatic SNV for Task: {task_data['task_id']}")
             logger.info("=" * 80)
 
             partitions = process_task(task, namespace=namespace, vcf_threads=4)
-            logger.info(f"✅ Parquet files created: {task_data["task_id"]}, file {task_data["vcf_filepath"]}")
+            logger.info(f"✅ Parquet files created: {task_data['task_id']}, file {task_data['vcf_filepath']}")
             merge_partitions_in_place(merged_partitions, partitions)
 
     # Merge results from all tasks and convert PartitionCommit objects to dicts
