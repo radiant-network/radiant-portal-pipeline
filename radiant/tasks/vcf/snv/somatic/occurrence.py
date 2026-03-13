@@ -118,6 +118,9 @@ def process_occurrence(
 
     # Tumor FORMAT
     t_dp = record.format("DP")[tumor_index][0] if "DP" in record.FORMAT else 0
+
+    # FIXME `GQ` doesn't exist for somatics,
+    #        need to check with bioinformatics team on what the best quality metric for calls
     t_gq = record.format("GQ")[tumor_index][0] if "GQ" in record.FORMAT else 0
     t_ad_ref = record.gt_ref_depths[tumor_index] if record.gt_ref_depths[tumor_index] > 0 else None
     t_ad_alt = record.gt_alt_depths[tumor_index] if record.gt_alt_depths[tumor_index] > 0 else None
@@ -131,6 +134,8 @@ def process_occurrence(
 
     # Normal FORMAT
     n_dp = record.format("DP")[normal_index][0] if "DP" in record.FORMAT else 0
+
+    # FIXME same thing here for `GQ`
     n_gq = record.format("GQ")[normal_index][0] if "GQ" in record.FORMAT else 0
     n_ad_ref = record.gt_ref_depths[normal_index] if record.gt_ref_depths[normal_index] > 0 else None
     n_ad_alt = record.gt_alt_depths[normal_index] if record.gt_alt_depths[normal_index] > 0 else None
