@@ -161,4 +161,4 @@ def commit_partitions(table_partitions: dict[str, list[dict]]):
         parts = [PartitionCommit.model_validate(pc) for pc in partitions]
         logger.info(f"🔁 Starting commit for table {table_name}")
         commit_files(table, parts)
-        logger.info(f"✅ Changes commited to table {table_name}")
+        logger.info(f"✅ Changes committed to table {table_name}")

@@ -132,7 +132,7 @@ def commit_partitions(table_partitions: dict[str, list[dict]], iceberg_catalog_p
         parts = [PartitionCommit.model_validate(pc) for pc in partitions]
         logger.info(f"🔁 Starting commit for table {table_name}")
         commit_files(table, parts)
-        logger.info(f"✅ Changes commited to table {table_name}")
+        logger.info(f"✅ Changes committed to table {table_name}")
 
 
 def merge_partitions_in_place(merged_partitions: defaultdict, partitions_list: dict[str, list[dict]]):

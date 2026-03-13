@@ -534,6 +534,7 @@ VALUES ('alignment', 'Genome Alignment'),
        ('somatic_variant_calling', 'Somatic Variant Calling by Tumor-Normal Paired Samples'),
        ('tumor_only_variant_calling', 'Somatic Variant Calling by Tumor-Only Sample'),
        ('radiant_germline_annotation', 'RADIANT Germline Annotation'),
+       ('radiant_somatic_annotation', 'RADIANT Somatic Annotation'),
        ('exomiser', 'Exomiser'),
        ('rnaseq_analysis', 'RNAseq Analysis of Transcriptome Profiling and Gene Fusion Calling')
 ON CONFLICT (code) DO NOTHING;

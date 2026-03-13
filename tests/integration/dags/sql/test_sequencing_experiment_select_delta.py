@@ -90,7 +90,7 @@ def test_sequencing_experiment_empty(
 
     assert results is not None, "Results should not be None"
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 10
+    assert len(result_df) == 12
 
 
 def test_sequencing_experiment_no_delta(
@@ -202,7 +202,7 @@ def test_sequencing_experiment_existing_wgs_task_partition(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 9  # 4 total - 1 imported experiments
+    assert len(result_df) == 11
 
 
 def test_sequencing_experiment_with_recently_updated_task(
@@ -245,7 +245,7 @@ def test_sequencing_experiment_with_recently_updated_task(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 9
+    assert len(result_df) == 11
 
     with (
         psycopg2.connect(
@@ -271,4 +271,4 @@ def test_sequencing_experiment_with_recently_updated_task(
 
     # Should capture the updated experiment
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 10
+    assert len(result_df) == 12

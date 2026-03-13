@@ -112,6 +112,7 @@ def process_occurrence(record: Variant, experiments: list[Experiment], common: C
     This logic can also be applied to joint genotyped VCFs.
     """
 
+    # FIXME: implement somatic-specific logic to identify tumor vs normal samples and extract relevant FORMAT fields accordingly
     tumor_idx = 1  # replace with somatic indexing logic
     normal_idx = 0  # replace with somatic indexing logic
     tumor_exp = experiments[1]  # replace with somatic sample extraction logic
