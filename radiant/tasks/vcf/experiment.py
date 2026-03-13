@@ -114,6 +114,7 @@ def _build_experiments(rows: list[dict]) -> list[Experiment]:
             sex=row["sex"],
             experimental_strategy=row["experimental_strategy"],
             request_priority=row.get("request_priority"),
+            histology_type=row.get("histology_type"),
         )
         for row in rows
     ]

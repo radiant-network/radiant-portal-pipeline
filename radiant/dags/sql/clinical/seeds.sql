@@ -855,7 +855,7 @@ INSERT INTO {{ params.clinical_sequencing_experiment }} (id, sample_id, status_c
     (60, 60, 'incomplete', 'S14858', 6, 1676, 'A00516_0228', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina'),
     (61, 61, 'incomplete', 'S14859', 6, 1677, 'A00516_0229', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina'),
     (62, 123, 'incomplete', 'TCR002361_SRX1091647-T', 6, 1677, 'TCR002361_SRX1091647-Tumor', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina'),
-	(63, 124, 'incomplete', 'TCR002361_SRX1091647-N', 6, 1677, 'TCR002361_SRX1091647-Normal', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina');
+	(63, 124, 'incomplete', 'TCR002361_SRX1091646-N', 6, 1677, 'TCR002361_SRX1091646-Normal', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina');
 
 
 TRUNCATE {{ params.clinical_case_has_sequencing_experiment }} CASCADE;
