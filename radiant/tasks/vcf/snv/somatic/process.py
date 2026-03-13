@@ -10,7 +10,7 @@ from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
 from radiant.tasks.iceberg.utils import commit_files
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
-from radiant.tasks.vcf.experiment import RadiantSomaticAnnotationTask, Experiment
+from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence
