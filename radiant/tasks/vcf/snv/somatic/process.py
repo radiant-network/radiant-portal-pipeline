@@ -10,7 +10,7 @@ from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
 from radiant.tasks.iceberg.utils import commit_files
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
-from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask, RADIANT_SOMATIC_ANNOTATION_TASK
+from radiant.tasks.vcf.experiment import RADIANT_SOMATIC_ANNOTATION_TASK, Experiment, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence
@@ -136,7 +136,10 @@ def get_somatic_indexes(experiments: list[Experiment], samples: list[str]):
         elif exp.histology_type == "normal":
             normal_index = samples.index(exp.aliquot)
     if tumor_index is None or normal_index is None:
-        raise ValueError(f"Could not find both tumor and normal samples [{samples}] in the VCF for the given experiments: {experiments}.")
+        raise ValueError(
+            f"Could not find both tumor and normal samples [{samples}] "
+            f"in the VCF for the given experiments: {experiments}."
+        )
     return tumor_index, normal_index
 
 
