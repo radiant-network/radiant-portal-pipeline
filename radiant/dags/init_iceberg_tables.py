@@ -38,14 +38,15 @@ with DAG(
         create_germline_snv_occurrence_table = ecs.InitIcebergTables.get_init_iceberg(
             namespace_task, "germline_snv_occurrence", ecs_env
         )
-        create_germline_variant_table = ecs.InitIcebergTables.get_init_iceberg(
-            namespace_task, "germline_variant", ecs_env
-        )
+        create_germline_variant_table = ecs.InitIcebergTables.get_init_iceberg(namespace_task, "snv_variant", ecs_env)
         create_germline_consequence_table = ecs.InitIcebergTables.get_init_iceberg(
-            namespace_task, "germline_consequence", ecs_env
+            namespace_task, "snv_consequence", ecs_env
         )
         create_germline_cnv_occurrence_table = ecs.InitIcebergTables.get_init_iceberg(
             namespace_task, "germline_cnv_occurrence", ecs_env
+        )
+        create_somatic_snv_occurrence_table = ecs.InitIcebergTables.get_init_iceberg(
+            namespace_task, "somatic_snv_occurrence", ecs_env
         )
 
     else:
@@ -59,17 +60,21 @@ with DAG(
         create_germline_snv_occurrence_table = k8s.InitIcebergTables.get_create_germline_snv_occurrence_table(
             namespace_task
         )
-        create_germline_variant_table = k8s.InitIcebergTables.get_create_germline_variant_table(namespace_task)
-        create_germline_consequence_table = k8s.InitIcebergTables.get_create_germline_consequence_table(namespace_task)
+        create_germline_variant_table = k8s.InitIcebergTables.get_create_variant_table(namespace_task)
+        create_germline_consequence_table = k8s.InitIcebergTables.get_create_consequence_table(namespace_task)
         create_germline_cnv_occurrence_table = k8s.InitIcebergTables.get_create_germline_cnv_occurrence_table(
             namespace_task
         )
-
-        (
-            namespace_task  # ensure namespace is resolved before downstream tasks
-            >> init_database()
-            >> create_germline_snv_occurrence_table()
-            >> create_germline_variant_table()
-            >> create_germline_consequence_table()
-            >> create_germline_cnv_occurrence_table()
+        create_somatic_snv_occurrence_table = k8s.InitIcebergTables.get_create_somatic_snv_occurrence_table(
+            namespace_task
         )
+
+    (
+        namespace_task  # ensure namespace is resolved before downstream tasks
+        >> init_database()
+        >> create_germline_variant_table()
+        >> create_germline_consequence_table()
+        >> create_germline_snv_occurrence_table()
+        >> create_germline_cnv_occurrence_table()
+        >> create_somatic_snv_occurrence_table()
+    )

@@ -48,11 +48,12 @@ CLINICAL_MAPPING = {
 }
 
 # --- Iceberg tables
-ICEBERG_GERMLINE_SNV_MAPPING = {
-    "iceberg_consequence": "germline_snv_consequence",
-    "iceberg_occurrence": "germline_snv_occurrence",
-    "iceberg_variant": "germline_snv_variant",
+ICEBERG_RADIANT_MAPPING = {
     "iceberg_germline_cnv_occurrence": "germline_cnv_occurrence",
+    "iceberg_germline_snv_occurrence": "germline_snv_occurrence",
+    "iceberg_snv_variant": "snv_variant",
+    "iceberg_snv_consequence": "snv_consequence",
+    "iceberg_somatic_snv_occurrence": "somatic_snv_occurrence",
 }
 
 ICEBERG_OPEN_DATA_MAPPING = {
@@ -90,16 +91,19 @@ STARROCKS_RADIANT_MAPPING = {
     "starrocks_staging_exomiser": "raw_exomiser",
     "starrocks_exomiser": "exomiser",
     "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
-    "starrocks_germline_snv_consequence": "germline__snv__consequence",
-    "starrocks_germline_snv_consequence_filter": "germline__snv__consequence_filter",
-    "starrocks_germline_snv_consequence_filter_partitioned": "germline__snv__consequence_filter_partitioned",
     "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
-    "starrocks_germline_snv_tmp_variant": "germline__snv__tmp_variant",
-    "starrocks_germline_snv_variant": "germline__snv__variant",
     "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
-    "starrocks_germline_snv_variant_partitioned": "germline__snv__variant_partitioned",
-    "starrocks_germline_snv_staging_variant": "germline__snv__staging_variant",
     "starrocks_germline_snv_staging_variant_frequency": "germline__snv__staging_variant_frequency_part",
+    "starrocks_snv_consequence": "snv__consequence",
+    "starrocks_snv_consequence_filter": "snv__consequence_filter",
+    "starrocks_snv_consequence_filter_partitioned": "snv__consequence_filter_partitioned",
+    "starrocks_snv_tmp_variant": "snv__tmp_variant",
+    "starrocks_snv_variant": "snv__variant",
+    "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
+    "starrocks_snv_staging_variant": "snv__staging_variant",
+    "starrocks_somatic_snv_occurrence": "somatic__snv__occurrence",
+    "starrocks_somatic_snv_variant_frequency": "somatic__snv__variant_frequency",
+    "starrocks_somatic_snv_staging_variant_frequency": "somatic__snv__staging_variant_frequency_part",
 }
 
 
@@ -132,10 +136,10 @@ CLINICAL_TRANSFORM_LAYER_MAPPING = {
 }
 
 
-def get_iceberg_germline_snv_mapping(conf=None) -> dict:
+def get_iceberg_radiant_mapping(conf=None) -> dict:
     _catalog = get_config_value(conf, RadiantConfigKeys.ICEBERG_CATALOG)
     _database = get_config_value(conf, RadiantConfigKeys.ICEBERG_NAMESPACE)
-    return {key: f"{_catalog}.{_database}.{value}" for key, value in ICEBERG_GERMLINE_SNV_MAPPING.items()}
+    return {key: f"{_catalog}.{_database}.{value}" for key, value in ICEBERG_RADIANT_MAPPING.items()}
 
 
 def get_iceberg_open_data_mapping(conf=None) -> dict:
@@ -146,7 +150,7 @@ def get_iceberg_open_data_mapping(conf=None) -> dict:
 
 def get_iceberg_tables(conf=None) -> dict:
     return {
-        **get_iceberg_germline_snv_mapping(conf),
+        **get_iceberg_radiant_mapping(conf),
         **get_iceberg_open_data_mapping(conf),
     }
 

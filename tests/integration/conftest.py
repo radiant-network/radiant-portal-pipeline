@@ -17,9 +17,9 @@ from radiant.tasks.data.radiant_tables import (
     get_radiant_mapping,
 )
 from radiant.tasks.vcf.cnv.germline.occurrence import SCHEMA as CNV_OCCURRENCE_SCHEMA
-from radiant.tasks.vcf.snv.germline.consequence import SCHEMA as CONSEQUENCE_SCHEMA
+from radiant.tasks.vcf.snv.consequence import SCHEMA as CONSEQUENCE_SCHEMA
 from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as SNV_OCCURRENCE_SCHEMA
-from radiant.tasks.vcf.snv.germline.variant import SCHEMA as VARIANT_SCHEMA
+from radiant.tasks.vcf.snv.variant import SCHEMA as VARIANT_SCHEMA
 
 USE_DOCKER_FIXTURES = os.getenv("USE_DOCKER_FIXTURES", "false").lower() == "true"
 if USE_DOCKER_FIXTURES:
@@ -217,7 +217,7 @@ def iceberg_catalog_properties(rest_iceberg_catalog_instance, minio_instance):
         "s3.endpoint": minio_instance.endpoint,
         "s3.access-key-id": minio_instance.access_key,
         "s3.secret-access-key": minio_instance.secret_key,
-        "oauth2-server-uri": rest_iceberg_catalog_instance.endpoint + "v1/oauth/tokens"
+        "oauth2-server-uri": rest_iceberg_catalog_instance.endpoint + "v1/oauth/tokens",
     }
 
 
@@ -245,13 +245,11 @@ def setup_iceberg_namespace(s3_fs, iceberg_client, iceberg_namespace, random_tes
     iceberg_client.create_table_if_not_exists(
         f"{iceberg_namespace}.germline_snv_occurrence", schema=SNV_OCCURRENCE_SCHEMA
     )
-    iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.germline_snv_variant", schema=VARIANT_SCHEMA)
+    iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.snv_variant", schema=VARIANT_SCHEMA)
     iceberg_client.create_table_if_not_exists(
         f"{iceberg_namespace}.germline_cnv_occurrence", schema=CNV_OCCURRENCE_SCHEMA
     )
-    iceberg_client.create_table_if_not_exists(
-        f"{iceberg_namespace}.germline_snv_consequence", schema=CONSEQUENCE_SCHEMA
-    )
+    iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.snv_consequence", schema=CONSEQUENCE_SCHEMA)
     yield iceberg_namespace
 
 
@@ -365,7 +363,7 @@ def clinical_exomiser_tsv(s3_fs, starrocks_session, starrocks_jdbc_catalog):
 
 
 @pytest.fixture(scope="session")
-def clinical_cnv_vcf(s3_fs,  starrocks_session, starrocks_jdbc_catalog):
+def clinical_cnv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
     """
     Creates "mock" CNV VCFs for clinical documents.
     """

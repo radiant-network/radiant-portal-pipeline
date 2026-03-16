@@ -14,6 +14,7 @@ SELECT DISTINCT
     sex,
     family_role,
     affected_status,
+    histology_type,
     created_at,
     updated_at,
     ingested_at,

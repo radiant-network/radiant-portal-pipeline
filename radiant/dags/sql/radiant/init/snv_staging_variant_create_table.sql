@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_staging_variant }} (
+CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_staging_variant }} (
     locus_id BIGINT NOT NULL,
     gnomad_v3_af DOUBLE,
     topmed_af DOUBLE,

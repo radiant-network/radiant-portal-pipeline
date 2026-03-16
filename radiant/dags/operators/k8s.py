@@ -7,9 +7,7 @@ class BaseK8SOperator:
     @staticmethod
     def _get_k8s_context(radiant_namespace: str):
         iceberg_env_vars = {
-            key: value
-            for key, value in os.environ.items()
-            if key.startswith("PYICEBERG_CATALOG__DEFAULT__")
+            key: value for key, value in os.environ.items() if key.startswith("PYICEBERG_CATALOG__DEFAULT__")
         }
         return dict(
             namespace=os.getenv("RADIANT_TASK_OPERATOR_KUBERNETES_NAMESPACE"),
@@ -26,7 +24,8 @@ class BaseK8SOperator:
                 "RADIANT_ICEBERG_NAMESPACE": radiant_namespace,
                 "PYTHONPATH": os.getenv("RADIANT_TASK_OPERATOR_PYTHONPATH"),
                 "LD_LIBRARY_PATH": os.getenv("RADIANT_TASK_OPERATOR_LD_LIBRARY_PATH"),
-            } | iceberg_env_vars,
+            }
+            | iceberg_env_vars,
         )
 
 
@@ -97,6 +96,27 @@ class ImportPart(BaseK8SOperator):
 
         return import_cnv_vcf
 
+    @staticmethod
+    def get_import_somatic_snv_vcf(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                task_id="import_somatic_snv_vcf",
+                task_display_name="[K8s] Import Somatic SNV VCF",
+                name="import-somatic-snv-vcf",
+                do_xcom_push=True,
+            )
+            | ImportPart._get_k8s_context(radiant_namespace)
+        )
+        def get_import_somatic_snv_vcf(tasks: list[dict]) -> None:
+            import os
+
+            from radiant.tasks.vcf.snv.somatic.process import create_parquet_files
+
+            namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
+            create_parquet_files(tasks=tasks, namespace=namespace)
+
+        return get_import_somatic_snv_vcf
+
 
 class InitIcebergTables(BaseK8SOperator):
     @staticmethod
@@ -133,40 +153,40 @@ class InitIcebergTables(BaseK8SOperator):
         return create_germline_snv_occurrence_table
 
     @staticmethod
-    def get_create_germline_variant_table(radiant_namespace: str):
+    def get_create_variant_table(radiant_namespace: str):
         @task.kubernetes(
             **dict(
-                task_id="create_germline_variant_table_k8s",
-                task_display_name="[K8s] Create Germline SNV Variants Table",
-                name="create-germline-snv-variants-table",
+                task_id="create_variant_table_k8s",
+                task_display_name="[K8s] Create SNV Variants Table",
+                name="create-snv-variants-table",
                 do_xcom_push=True,
             )
             | InitIcebergTables._get_k8s_context(radiant_namespace)
         )
-        def create_germline_variant_table():
+        def create_variant_table():
             from radiant.tasks.iceberg import initialization
 
-            initialization.create_germline_variant_table()
+            initialization.create_variant_table()
 
-        return create_germline_variant_table
+        return create_variant_table
 
     @staticmethod
-    def get_create_germline_consequence_table(radiant_namespace: str):
+    def get_create_consequence_table(radiant_namespace: str):
         @task.kubernetes(
             **dict(
-                task_id="create_germline_consequence_table_k8s",
-                task_display_name="[K8s] Create Germline SNV Consequences Table",
-                name="create-germline-snv-consequences-table",
+                task_id="create_consequence_table_k8s",
+                task_display_name="[K8s] Create SNV Consequences Table",
+                name="create-snv-consequences-table",
                 do_xcom_push=True,
             )
             | InitIcebergTables._get_k8s_context(radiant_namespace)
         )
-        def create_germline_consequences_table():
+        def create_consequences_table():
             from radiant.tasks.iceberg import initialization
 
-            initialization.create_germline_consequences_table()
+            initialization.create_consequences_table()
 
-        return create_germline_consequences_table
+        return create_consequences_table
 
     @staticmethod
     def get_create_germline_cnv_occurrence_table(radiant_namespace: str):
@@ -185,3 +205,21 @@ class InitIcebergTables(BaseK8SOperator):
             initialization.create_germline_cnv_occurrence_table()
 
         return create_germline_cnv_occurrence_table
+
+    @staticmethod
+    def get_create_somatic_snv_occurrence_table(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                task_id="create_somatic_snv_occurrence_table_k8s",
+                task_display_name="[K8s] Create Somatic SNV Occurrences Table",
+                name="create-somatic-snv-occurrences-table",
+                do_xcom_push=True,
+            )
+            | InitIcebergTables._get_k8s_context(radiant_namespace)
+        )
+        def create_somatic_snv_occurrence_table():
+            from radiant.tasks.iceberg import initialization
+
+            initialization.create_somatic_snv_occurrence_table()
+
+        return create_somatic_snv_occurrence_table

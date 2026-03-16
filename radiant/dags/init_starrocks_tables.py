@@ -20,23 +20,26 @@ with DAG(
     tasks = []
 
     tables = [
-        "germline_snv_consequence",
-        "germline_snv_consequence_filter",
-        "germline_snv_consequence_filter_partitioned",
+        "snv_consequence",
+        "snv_consequence_filter",
+        "snv_consequence_filter_partitioned",
         "germline_snv_occurrence",
         "germline_cnv_occurrence",
+        "germline_snv_staging_variant_frequency",
+        "germline_snv_variant_frequency",
         "staging_exomiser",
         "exomiser",
         "staging_external_sequencing_experiment",
         "staging_sequencing_experiment",
         "staging_sequencing_experiment_delta",
-        "germline_snv_tmp_variant",
-        "germline_snv_staging_variant",
+        "snv_tmp_variant",
+        "snv_staging_variant",
+        "snv_variant",
+        "snv_variant_partitioned",
+        "somatic_snv_occurrence",
+        "somatic_snv_staging_variant_frequency",
+        "somatic_snv_variant_frequency",
         "variant_lookup",
-        "germline_snv_variant",
-        "germline_snv_staging_variant_frequency",
-        "germline_snv_variant_frequency",
-        "germline_snv_variant_partitioned",
     ]
     for table in tables:
         tasks.append(

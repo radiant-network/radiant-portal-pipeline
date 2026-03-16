@@ -11,7 +11,7 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
                GROUP BY o.name, o.seq_id),
      snv AS (SELECT o.name, o.seq_id, COUNT(1) AS nb_snv
              FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
-             JOIN {{ mapping.iceberg_occurrence }} s ON s.chromosome = o.chromosome AND s.start <= o.end
+             JOIN {{ mapping.iceberg_germline_snv_occurrence }} s ON s.chromosome = o.chromosome AND s.start <= o.end
                     AND s.start >= o.start AND o.seq_id = s.seq_id
              WHERE s.has_alt = true AND s.seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s AND s.part={{ partition }}
              GROUP BY o.name, o.seq_id),

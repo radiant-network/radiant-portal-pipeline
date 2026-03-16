@@ -24,6 +24,7 @@ class SequencingDeltaCommon(BaseModel):
     family_id: int | None = None
     family_role: str
     affected_status: str
+    histology_type: str | None = None
     created_at: datetime
     updated_at: datetime
 

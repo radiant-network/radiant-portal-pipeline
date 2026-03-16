@@ -60,7 +60,7 @@ sequencing_experiments AS (
 	LEFT JOIN {{ mapping.clinical_task_has_document }} thd ON thd.task_id = t.id AND thd.type = 'output'
 	LEFT JOIN {{ mapping.clinical_document }} d ON d.id = thd.document_id
 	WHERE (
-		(d.format_code = 'vcf' AND t.task_type_code = 'radiant_germline_annotation')
+		(d.format_code = 'vcf' AND t.task_type_code IN ('radiant_germline_annotation', 'radiant_somatic_annotation'))
 		OR (d.format_code = 'vcf' AND t.task_type_code = 'alignment_germline_variant_calling')
 		OR (d.url LIKE '%variants.tsv' AND t.task_type_code = 'exomiser')
 	)
@@ -92,8 +92,15 @@ SELECT
 	s.exomiser_filepath,
 	p.sex_code AS sex,
     f.id AS family_id,
-	COALESCE(f.relationship_to_proband_code, "proband") AS family_role,
-    COALESCE(f.affected_status_code, "affected") AS affected_status,
+    CASE
+        WHEN s.analysis_type = 'germline' THEN COALESCE(f.relationship_to_proband_code, "proband")
+        ELSE "proband"
+    END AS family_role,
+    CASE
+    	WHEN s.analysis_type = 'germline' THEN COALESCE(f.affected_status_code, "affected")
+		ELSE "affected"
+	END AS affected_status,
+	sa.histology_code AS histology_type,
 	s.created_at,
 	s.updated_at
 FROM sequencing_experiments s

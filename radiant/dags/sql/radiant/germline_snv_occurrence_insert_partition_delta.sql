@@ -56,8 +56,8 @@ SELECT
     e.acmg_evidence AS exomiser_acmg_evidence,
     e.variant_score AS exomiser_variant_score,
     e.gene_combined_score AS exomiser_gene_combined_score
-FROM {{ mapping.iceberg_occurrence }} o
-JOIN {{ mapping.starrocks_germline_snv_tmp_variant }} v ON o.locus_hash = v.locus_hash
+FROM {{ mapping.iceberg_germline_snv_occurrence }} o
+JOIN {{ mapping.starrocks_snv_tmp_variant }} v ON o.locus_hash = v.locus_hash
 LEFT JOIN (
      SELECT e.locus_id, e.seq_id, e.moi, e.acmg_classification, e.acmg_evidence, e.variant_score, e.gene_combined_score
      FROM {{ mapping.starrocks_exomiser }} e

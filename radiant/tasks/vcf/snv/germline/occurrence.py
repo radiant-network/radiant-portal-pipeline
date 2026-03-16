@@ -4,8 +4,8 @@ from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, Strin
 
 from radiant.tasks.iceberg.utils import merge_schemas
 from radiant.tasks.vcf.pedigree import Pedigree
-from radiant.tasks.vcf.snv.germline.common import SCHEMA as COMMON_SCHEMA
-from radiant.tasks.vcf.snv.germline.common import Common
+from radiant.tasks.vcf.snv.common import SCHEMA as COMMON_SCHEMA
+from radiant.tasks.vcf.snv.common import Common
 from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT, calls_without_phased
 
 SCHEMA = merge_schemas(

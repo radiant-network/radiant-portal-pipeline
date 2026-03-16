@@ -9,27 +9,32 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-starrocks-tables")
-    assert len(dag.tasks) == 41  # 17 radiant tables + 2 clinical table + 20 open data tables + 2 create function
+    assert len(dag.tasks) == 44  # 20 radiant tables + 2 clinical table + 20 open data tables + 2 create function
 
 
 def test_dag_has_all_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-starrocks-tables")
     task_ids = [task.task_id for task in dag.tasks]
     tables = [
-        "germline_snv_consequence",
-        "germline_snv_consequence_filter",
-        "germline_snv_consequence_filter_partitioned",
+        "snv_consequence",
+        "snv_consequence_filter",
+        "snv_consequence_filter_partitioned",
         "germline_cnv_occurrence",
         "germline_snv_occurrence",
         "staging_sequencing_experiment",
         "staging_external_sequencing_experiment",
-        "germline_snv_tmp_variant",
-        "germline_snv_staging_variant",
+        "snv_tmp_variant",
+        "snv_staging_variant",
         "variant_lookup",
-        "germline_snv_variant",
+        "snv_variant",
         "germline_snv_staging_variant_frequency",
         "germline_snv_variant_frequency",
-        "germline_snv_variant_partitioned",
+        "snv_variant_partitioned",
+        "staging_exomiser",
+        "exomiser",
+        "somatic_snv_occurrence",
+        "somatic_snv_variant_frequency",
+        "somatic_snv_staging_variant_frequency",
     ]
     for table in tables:
         assert f"create_table_{table}" in task_ids

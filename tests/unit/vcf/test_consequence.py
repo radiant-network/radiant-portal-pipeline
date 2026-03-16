@@ -1,6 +1,6 @@
 from radiant.tasks.vcf.experiment import Experiment, RadiantGermlineAnnotationTask
-from radiant.tasks.vcf.snv.germline.common import Common
-from radiant.tasks.vcf.snv.germline.consequence import parse_csq_header, process_consequence
+from radiant.tasks.vcf.snv.common import Common
+from radiant.tasks.vcf.snv.consequence import parse_csq_header, process_consequence
 from tests.unit.vcf.vcf_test_utils import variant, vcf
 
 task = RadiantGermlineAnnotationTask(

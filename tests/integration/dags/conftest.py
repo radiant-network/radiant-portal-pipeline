@@ -64,7 +64,7 @@ def open_data_iceberg_tables(iceberg_client, iceberg_namespace, resources_dir, r
             f"{table}",
             resources_dir / "open_data" / f"{table}.tsv",
             json_fields=json_fields,
-            na_fill=na_fill_map.get(table)
+            na_fill=na_fill_map.get(table),
         )
 
 

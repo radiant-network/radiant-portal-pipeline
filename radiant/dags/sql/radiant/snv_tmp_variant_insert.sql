@@ -1,4 +1,4 @@
-INSERT OVERWRITE {{ mapping.starrocks_germline_snv_tmp_variant }}
+INSERT OVERWRITE {{ mapping.starrocks_snv_tmp_variant }}
 SELECT COALESCE(GET_VARIANT_ID(t.chromosome, t.start, t.reference, t.alternate), v.locus_id) as locus_id,
     t.chromosome,
     t.start,
@@ -23,6 +23,6 @@ SELECT COALESCE(GET_VARIANT_ID(t.chromosome, t.start, t.reference, t.alternate),
     t.dna_change,
     t.aa_change,
     t.transcript_id
-FROM {{ mapping.iceberg_variant }} t
+FROM {{ mapping.iceberg_snv_variant }} t
 LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON t.locus_hash = v.locus_hash
 where t.task_id in %(task_ids)s and t.alternate <> '*';

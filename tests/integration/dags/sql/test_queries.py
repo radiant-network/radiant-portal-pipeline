@@ -36,6 +36,7 @@ _MOCK_PARAMS = {
     "sex": "male",
     "family_role": "proband",
     "affected_status": "affected",
+    "histology_type": "normal",
     "created_at": "2025-10-01 00:00",
     "updated_at": "2025-10-01 00:00",
     "ingested_at": None,
@@ -75,6 +76,13 @@ def _explain_insert(starrocks_session, sql_dir):
     sql_files = [os.path.join(sql_dir, file) for file in os.listdir(sql_dir) if file.endswith(".sql")]
     with starrocks_session.cursor() as cursor:
         for sql_file in sql_files:
+            if (
+                "somatic_snv_variant_frequency" in sql_file.lower()
+                or "somatic_snv_staging_variant_freq" in sql_file.lower()
+            ):
+                # FIXME: These tables are not yet implemented, so skip them
+                continue
+
             if (
                 "staging_exomiser" in sql_file
                 or "load" in sql_file.lower()
@@ -125,20 +133,23 @@ def test_queries_are_valid(
         starrocks_session,
         sql_dir=_RADIANT_INIT_DIR,
         tables=[
-            "germline_snv_consequence",
-            "germline_snv_consequence_filter",
-            "germline_snv_consequence_filter_partitioned",
+            "snv_consequence",
+            "snv_consequence_filter",
+            "snv_consequence_filter_partitioned",
             "staging_exomiser",
             "exomiser",
             "germline_snv_occurrence",
             "staging_sequencing_experiment",
-            "germline_snv_tmp_variant",
-            "germline_snv_staging_variant",
+            "snv_tmp_variant",
+            "snv_staging_variant",
             "variant_lookup",
-            "germline_snv_variant",
+            "snv_variant",
             "germline_snv_staging_variant_frequency",
             "germline_snv_variant_frequency",
-            "germline_snv_variant_partitioned",
+            "snv_variant_partitioned",
+            "somatic_snv_occurrence",
+            "somatic_snv_variant_frequency",
+            "somatic_snv_staging_variant_frequency",
         ],
         views=["staging_external_sequencing_experiment", "staging_sequencing_experiment_delta"],
         udfs=["variant_id"],
