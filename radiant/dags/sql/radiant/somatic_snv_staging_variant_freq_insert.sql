@@ -38,7 +38,7 @@ freqs_tumor AS (
     FROM {{ mapping.starrocks_somatic_snv_occurrence }} o
     JOIN {{ mapping.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.tumor_seq_id
     WHERE o.part = %(part)s
-      -- AND o.gq >= 0
+      -- AND o.gq >= 0  FIXME validate GQ extraction from somatic VCF
       AND o.filter = 'PASS'
       AND o.tumor_ad_alt > 2
     GROUP BY o.locus_id, o.part
