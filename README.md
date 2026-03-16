@@ -79,11 +79,17 @@ make install-dev
 USE_DOCKER_FIXTURES=true make test
 ```
 
-To run the slow integration tests, follow these steps:
-1. **Start the sandbox environment**:  See the radiant-portal-sandbox repository for setup instructions
-2. **Add a hosts entry**: Add the following to your `/etc/hosts` file: `127.0.0.1 radiant-minio`
-3. **Run the tests**: Use the same virtual environment as for other tests, and run `USE_DOCKER_FIXTURES=false make test-integration-slow`
+This will execute all tests that do not require the external sandbox environment, using local Docker fixtures.
 
+To run full integration tests (slow or fast) with the sandbox, follow these steps:
+
+1. **Start the sandbox environment**:  See the radiant-portal-sandbox repository for setup instructions
+
+2. **Run the tests**: Use the same virtual environment as above but set set USE_DOCKER_FIXTURES=false`:
+```sh
+USE_DOCKER_FIXTURES=false make test-integration-slow # For slow integration tests
+USE_DOCKER_FIXTURES=false make test-integration # For fast (non slow) integration tests
+```
 
 ### MWAA Artifacts
 
