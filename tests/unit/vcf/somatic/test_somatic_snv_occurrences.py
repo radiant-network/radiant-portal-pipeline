@@ -165,6 +165,28 @@ def test_input_calls_list_is_not_mutated(calls, zygosity, ad_alt):
     assert calls == original
 
 
+@pytest.mark.parametrize(
+    "calls,zygosity,ad_alt,expected_calls,expected_zyg",
+    [
+        # No alt → WT
+        ([0, 0], 0, None, [0, 0], ZYGOSITY[ZYGOSITY_WT]),
+        ([0, 0], 0, 5, [0, 0], ZYGOSITY[ZYGOSITY_WT]),
+        # Alt present, insufficient depth → UNK
+        ([0, 1], 1, None, [-1, -1], "UNK"),
+        ([0, 1], 1, 1, [-1, -1], "UNK"),
+        # Alt present, single call → HEM
+        ([1], 1, 3, [1], "HEM"),
+        # Alt present, multi-call, sufficient depth → ZYGOSITY lookup
+        ([0, 1], 1, 5, [0, 1], ZYGOSITY[1]),
+        ([1, 1], 3, 10, [1, 1], ZYGOSITY[3]),
+    ],
+)
+def test_adjust_somatic_calls_and_zygosity(calls, zygosity, ad_alt, expected_calls, expected_zyg):
+    result_calls, result_zyg = adjust_somatic_calls_and_zygosity(calls, zygosity, ad_alt)
+    assert result_calls == expected_calls
+    assert result_zyg == expected_zyg
+
+
 def run_process(record, experiments, common, tumor_index=TUMOR_INDEX, normal_index=NORMAL_INDEX):
     with (
         patch("radiant.tasks.vcf.vcf_utils.calls_without_phased") as mock_calls,
@@ -354,25 +376,3 @@ def test_missing_format_gq_defaults_to_none(experiments, common):
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result["tumor_gq"] is None
     assert result["normal_gq"] is None
-
-
-@pytest.mark.parametrize(
-    "calls,zygosity,ad_alt,expected_calls,expected_zyg",
-    [
-        # No alt → WT
-        ([0, 0], 0, None, [0, 0], ZYGOSITY[ZYGOSITY_WT]),
-        ([0, 0], 0, 5, [0, 0], ZYGOSITY[ZYGOSITY_WT]),
-        # Alt present, insufficient depth → UNK
-        ([0, 1], 1, None, [-1, -1], "UNK"),
-        ([0, 1], 1, 1, [-1, -1], "UNK"),
-        # Alt present, single call → HEM
-        ([1], 1, 3, [1], "HEM"),
-        # Alt present, multi-call, sufficient depth → ZYGOSITY lookup
-        ([0, 1], 1, 5, [0, 1], ZYGOSITY[1]),
-        ([1, 1], 3, 10, [1, 1], ZYGOSITY[3]),
-    ],
-)
-def test_adjust_somatic_calls_and_zygosity(calls, zygosity, ad_alt, expected_calls, expected_zyg):
-    result_calls, result_zyg = adjust_somatic_calls_and_zygosity(calls, zygosity, ad_alt)
-    assert result_calls == expected_calls
-    assert result_zyg == expected_zyg
