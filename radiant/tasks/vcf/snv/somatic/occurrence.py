@@ -117,7 +117,7 @@ def process_occurrence(
     t_ad_ref = record.gt_ref_depths[tumor_index] if record.gt_ref_depths[tumor_index] > 0 else None
     t_ad_alt = record.gt_alt_depths[tumor_index] if record.gt_alt_depths[tumor_index] > 0 else None
     t_calls = calls_without_phased(record, tumor_index)
-    t_calls, t_zygosity = adjust_calls_and_zygosity(t_calls, record.gt_types[tumor_index], t_ad_ref, t_ad_alt)
+    t_calls, t_zygosity = adjust_somatic_calls_and_zygosity(t_calls, record.gt_types[tumor_index], t_ad_ref, t_ad_alt)
     t_has_alt = 1 in t_calls
     t_ad_total = record.gt_depths[tumor_index] if record.gt_depths[tumor_index] > 0 else None
     t_ad_ratio = record.gt_alt_freqs[tumor_index] if record.gt_alt_freqs[tumor_index] > 0 else None
@@ -132,7 +132,7 @@ def process_occurrence(
     n_ad_ref = record.gt_ref_depths[normal_index] if record.gt_ref_depths[normal_index] > 0 else None
     n_ad_alt = record.gt_alt_depths[normal_index] if record.gt_alt_depths[normal_index] > 0 else None
     n_calls = calls_without_phased(record, normal_index)
-    n_calls, n_zyg = adjust_calls_and_zygosity(n_calls, record.gt_types[normal_index], n_ad_ref, n_ad_alt)
+    n_calls, n_zyg = adjust_somatic_calls_and_zygosity(n_calls, record.gt_types[normal_index], n_ad_ref, n_ad_alt)
     n_has_alt = 1 in n_calls if n_calls is not None else None
     n_ad_total = record.gt_depths[normal_index] if record.gt_depths[normal_index] > 0 else None
     n_ad_ratio = record.gt_alt_freqs[normal_index] if record.gt_alt_freqs[normal_index] > 0 else None
@@ -208,26 +208,42 @@ def process_occurrence(
     return occurrences
 
 
-def adjust_calls_and_zygosity(
+def adjust_somatic_calls_and_zygosity(
     calls: list[int], zygosity: int, ad_alt: int | None
 ) -> tuple[list[int], str]:
     """
-    For somatic variants, zygosity categories (HET/HOM/WT) from germline calling
-    are not meaningful. Instead, we determine presence based on allelic depth (AD)
-    support:
+    Adjusts the somatic calls and zygosity based on alternate allele depths.
 
-               alt allele present (1 in calls)?
-               /                    \
-             YES                     NO
-              |                       |
-        ad_alt >= 2?            return calls,
-        /          \               ZYGOSITY_WT ("WT")
-      YES            NO
-       |              |
-    return calls,  return -1s,
-    "HEM" if        "UNK"
-    single call,
-    else ZYGOSITY[z]
+    Parameters:
+        calls (list[int]): A list of genotype calls, where each call represents an allele
+        (e.g., 0 for reference, 1 for alternate).
+        zygosity (int): The zygosity type, represented as an integer (e.g., 0 for WT, 1 for HET, 3 for HOM, 2 for UNK).
+        ad_alt (Optional[int]): The depth of reads supporting the alternate allele. Can be None if not available.
+
+    Returns:
+    Tuple[list[int], str]: A tuple containing:
+        - The adjusted list of genotype calls.
+        - The zygosity as a string (e.g., "WT", "HET", "HOM", "UNK", or "HEM").
+
+    Behavior:
+
+            For somatic variants, zygosity categories (HET/HOM/WT) from germline calling
+            are not meaningful. Instead, we determine presence based on allelic depth (AD)
+            support:
+
+                       alt allele present (1 in calls)?
+                       /                    \
+                     YES                     NO
+                      |                       |
+                ad_alt >= 2?            return calls,
+                /          \               ZYGOSITY_WT ("WT")
+              YES            NO
+               |              |
+            return calls,  return -1s,
+            "HEM" if        "UNK"
+            single call,
+            else ZYGOSITY[z]
+
     """
     has_alt = 1 in calls if calls else False
 
