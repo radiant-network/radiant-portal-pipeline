@@ -69,6 +69,10 @@ def process_task(
     tumor_index, normal_index = get_somatic_indexes(task.experiments, vcf.samples)
 
     sort_key = {"tumoral": tumor_index, "normal": normal_index}
+
+    if not all([exp.histology_type for exp in task.experiments]):
+        raise ValueError(f"Not all experiments have a valid histology type in task {task.task_id}. ")
+
     sorted_task_experiments = sorted(task.experiments, key=lambda x: sort_key[x.histology_type])
 
     for record in vcf:
