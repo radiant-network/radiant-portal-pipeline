@@ -69,7 +69,14 @@ def process_occurrence(
     record: Variant, experiments: list[Experiment], common: Common, tumor_index: int, normal_index: int
 ) -> dict:
     """
-    Mirrors germline styled occurrence processing, adapted for somatic VCF structure.
+
+
+    :param record:
+    :param experiments:
+    :param common:
+    :param tumor_index:
+    :param normal_index:
+    :return:
     """
     occurrences = {}
 
@@ -177,11 +184,11 @@ def process_occurrence(
         "tumor_ad_alt": t_ad_alt,
         "tumor_ad_total": t_ad_total,
         "tumor_ad_ratio": t_ad_ratio,
-        "tumor_af": t_af,  # replace with somatic logic
+        "tumor_af": t_af,
         "tumor_zygosity": t_zygosity,
         "tumor_phased": t_phased,
         "tumor_has_alt": t_has_alt,
-        "tumor_gt_status": None,  # replace with somatic logic
+        "tumor_gt_status": None,
         # normal FORMAT
         "normal_seq_id": normal_exp.seq_id,
         "normal_calls": n_calls,
@@ -191,31 +198,49 @@ def process_occurrence(
         "normal_ad_alt": n_ad_alt,
         "normal_ad_total": n_ad_total,
         "normal_ad_ratio": n_ad_ratio,
-        "normal_af": n_af,  # replace with somatic logic
+        "normal_af": n_af,
         "normal_zygosity": n_zyg,
         "normal_phased": n_phased,
         "normal_has_alt": n_has_alt,
-        "normal_gt_status": None,  # replace with somatic logic
+        "normal_gt_status": None,
     }
 
     return occurrences
 
 
 def adjust_calls_and_zygosity(
-    calls: list[int], zygosity: int, ad_ref: int | None, ad_alt: int | None
+    calls: list[int], zygosity: int, ad_alt: int | None
 ) -> tuple[list[int], str]:
     """
-    Copied from germline occurrence logic for now; needs somatic-specific review.
+    For somatic variants, zygosity categories (HET/HOM/WT) from germline calling
+    are not meaningful. Instead, we determine presence based on allelic depth (AD)
+    support:
+
+               alt allele present (1 in calls)?
+               /                    \
+             YES                     NO
+              |                       |
+        ad_alt >= 2?            return calls,
+        /          \               ZYGOSITY_WT ("WT")
+      YES            NO
+       |              |
+    return calls,  return -1s,
+    "HEM" if        "UNK"
+    single call,
+    else ZYGOSITY[z]
     """
-    if (
-        ad_alt
-        and (zygosity in (ZYGOSITY_HET, ZYGOSITY_HOM) and ad_alt < 3)
-        or ad_ref
-        and zygosity == ZYGOSITY_WT
-        and ad_ref < 3
-    ):
+    has_alt = 1 in calls if calls else False
+
+    if not has_alt:
+        # No alt allele called — treat as wild-type
+        return calls, ZYGOSITY[ZYGOSITY_WT]
+
+    # Alt allele present but insufficient read support — unknown
+    if ad_alt is None or ad_alt < 2:
         return [-1 for _ in range(len(calls))], "UNK"
-    elif zygosity == 3 and len(calls) == 1:
+
+    # Single-call with alt — hemizygous (e.g. LOH or haploid region)
+    if len(calls) == 1:
         return calls, "HEM"
-    else:
-        return calls, ZYGOSITY[zygosity]
+
+    return calls, ZYGOSITY[zygosity]
