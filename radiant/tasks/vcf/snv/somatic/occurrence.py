@@ -98,21 +98,6 @@ def process_occurrence(
     haplotype_score = info_fields.get("HaplotypeScore", None)
     excess_het = info_fields.get("ExcessHet", None)
 
-    """
-    --- Replace the germline ped loop with this somatic block ---
-
-    Assumption is tumor col comes first, normal second.
-    But there could be files that don't follow this order.
-    Need to implement logic to identify tumor/normal indices based on sample metadata as a check 
-    or a warning if the order is unexpected. 
-
-    1. First check sample ID in model. If not found, output error and have an option to indicate which order to use.
-        - Use cases where the sample IDs in the VCFs are different than the sample IDs in the model. 
-        - In CHOP VCFs, the sample IDs in the VCF should match the aliquot ID in the model.
-    2. If found, confirm tumor/normal order. 
-
-    This logic can also be applied to joint genotyped VCFs.
-    """
     tumor_exp = experiments[tumor_index]
     normal_exp = experiments[normal_index]
 
