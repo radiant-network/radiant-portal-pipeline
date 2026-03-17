@@ -1,12 +1,22 @@
-import pytest
 from unittest.mock import MagicMock, patch
 
-from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence, adjust_somatic_calls_and_zygosity
+import pytest
+
+from radiant.tasks.vcf.snv.somatic.occurrence import adjust_somatic_calls_and_zygosity, process_occurrence
 from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT
 
 
-def make_common(part=1, task_id="task_1", locus="chr1:100", locus_hash="abc123",
-                chromosome="chr1", start=100, end=101, reference="A", alternate="T"):
+def make_common(
+    part=1,
+    task_id="task_1",
+    locus="chr1:100",
+    locus_hash="abc123",
+    chromosome="chr1",
+    start=100,
+    end=101,
+    reference="A",
+    alternate="T",
+):
     common = MagicMock()
     common.part = part
     common.task_id = task_id
@@ -47,8 +57,7 @@ def make_record(
     record.FORMAT = format_keys
 
     record.format.side_effect = lambda key: (
-        [[dp_values[0]], [dp_values[1]]] if key == "DP" else
-        [[gq_values[0]], [gq_values[1]]] if key == "GQ" else None
+        [[dp_values[0]], [dp_values[1]]] if key == "DP" else [[gq_values[0]], [gq_values[1]]] if key == "GQ" else None
     )
 
     record.gt_ref_depths = gt_ref_depths
@@ -75,7 +84,6 @@ def experiments():
 @pytest.fixture
 def common():
     return make_common()
-
 
 
 @pytest.mark.parametrize(
@@ -158,8 +166,10 @@ def test_input_calls_list_is_not_mutated(calls, zygosity, ad_alt):
 
 
 def run_process(record, experiments, common, tumor_index=TUMOR_INDEX, normal_index=NORMAL_INDEX):
-    with patch("radiant.tasks.vcf.vcf_utils.calls_without_phased") as mock_calls, \
-         patch("radiant.tasks.vcf.snv.somatic.occurrence.adjust_somatic_calls_and_zygosity") as mock_adjust:
+    with (
+        patch("radiant.tasks.vcf.vcf_utils.calls_without_phased") as mock_calls,
+        patch("radiant.tasks.vcf.snv.somatic.occurrence.adjust_somatic_calls_and_zygosity") as mock_adjust,
+    ):
         mock_calls.side_effect = lambda r, idx: [0, 1] if idx == tumor_index else [0, 0]
         mock_adjust.side_effect = lambda calls, zyg, ad_alt: (calls, "HET") if 1 in calls else (calls, "WT")
         return process_occurrence(record, experiments, common, tumor_index, normal_index)
@@ -192,65 +202,87 @@ def test_seq_ids_are_set(experiments, common):
     assert result["tumor_seq_id"] == TUMOR_SEQ_ID
     assert result["normal_seq_id"] == NORMAL_SEQ_ID
 
-@pytest.mark.parametrize("qual,expected", [
-    (50.0, 50),
-    (0.0, 0),
-    (None, None),
-])
+
+@pytest.mark.parametrize(
+    "qual,expected",
+    [
+        (50.0, 50),
+        (0.0, 0),
+        (None, None),
+    ],
+)
 def test_quality_parsing(qual, expected, experiments, common):
     record = make_record(qual=qual)
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result["quality"] == expected
 
 
-@pytest.mark.parametrize("filter_val,expected", [
-    (None, "PASS"),
-    ("LowQual", "LowQual"),
-    ("PASS", "PASS"),
-])
+@pytest.mark.parametrize(
+    "filter_val,expected",
+    [
+        (None, "PASS"),
+        ("LowQual", "LowQual"),
+        ("PASS", "PASS"),
+    ],
+)
 def test_filter_parsing(filter_val, expected, experiments, common):
     record = make_record(filter_val=filter_val)
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result["filter"] == expected
 
-@pytest.mark.parametrize("info_key,result_key,value", [
-    ("OLD_RECORD", "info_old_record", "old_val"),
-    ("BaseQRankSum", "info_baseq_rank_sum", 1.5),
-    ("ExcessHet", "info_excess_het", 0.01),
-    ("FS", "info_fs", 2.3),
-    ("DS", "info_ds", True),
-    ("FractionInformativeReads", "info_fraction_informative_reads", 0.95),
-    ("InbreedCoeff", "info_inbreed_coeff", -0.1),
-    ("MLEAC", "info_mleac", 2),
-    ("MLEAF", "info_mleaf", 0.5),
-    ("MQ", "info_mq", 60.0),
-    ("MQ0", "info_mq0", 0.0),
-    ("MQRankSum", "info_m_qrank_sum", -1.2),
-    ("QD", "info_qd", 25.0),
-    ("R2_5P_bias", "info_r2_5p_bias", 0.3),
-    ("ReadPosRankSum", "info_read_pos_rank_sum", 0.7),
-    ("SOR", "info_sor", 0.8),
-    ("VQSLod", "info_vqslod", 10.5),
-    ("Culprit", "info_culprit", "MQ"),
-    ("DP", "info_dp", 150),
-    ("HaplotypeScore", "info_haplotype_score", 3.2),
-    ("HotspotAllele", "info_hotspotallele", "TP53"),
-    ("CAL", "info_cal", "COSMIC"),
-])
+
+@pytest.mark.parametrize(
+    "info_key,result_key,value",
+    [
+        ("OLD_RECORD", "info_old_record", "old_val"),
+        ("BaseQRankSum", "info_baseq_rank_sum", 1.5),
+        ("ExcessHet", "info_excess_het", 0.01),
+        ("FS", "info_fs", 2.3),
+        ("DS", "info_ds", True),
+        ("FractionInformativeReads", "info_fraction_informative_reads", 0.95),
+        ("InbreedCoeff", "info_inbreed_coeff", -0.1),
+        ("MLEAC", "info_mleac", 2),
+        ("MLEAF", "info_mleaf", 0.5),
+        ("MQ", "info_mq", 60.0),
+        ("MQ0", "info_mq0", 0.0),
+        ("MQRankSum", "info_m_qrank_sum", -1.2),
+        ("QD", "info_qd", 25.0),
+        ("R2_5P_bias", "info_r2_5p_bias", 0.3),
+        ("ReadPosRankSum", "info_read_pos_rank_sum", 0.7),
+        ("SOR", "info_sor", 0.8),
+        ("VQSLod", "info_vqslod", 10.5),
+        ("Culprit", "info_culprit", "MQ"),
+        ("DP", "info_dp", 150),
+        ("HaplotypeScore", "info_haplotype_score", 3.2),
+        ("HotspotAllele", "info_hotspotallele", "TP53"),
+        ("CAL", "info_cal", "COSMIC"),
+    ],
+)
 def test_info_fields_are_mapped(info_key, result_key, value, experiments, common):
     record = make_record(info={info_key: value})
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result[result_key] == value
 
 
-@pytest.mark.parametrize("result_key", [
-    "info_old_record", "info_baseq_rank_sum", "info_excess_het", "info_fs",
-    "info_ds", "info_mq", "info_culprit", "info_hotspotallele", "info_cal",
-])
+@pytest.mark.parametrize(
+    "result_key",
+    [
+        "info_old_record",
+        "info_baseq_rank_sum",
+        "info_excess_het",
+        "info_fs",
+        "info_ds",
+        "info_mq",
+        "info_culprit",
+        "info_hotspotallele",
+        "info_cal",
+    ],
+)
 def test_missing_info_fields_are_none(result_key, experiments, common):
     record = make_record(info={})
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result[result_key] is None
+
 
 @pytest.mark.parametrize("dp,expected", [(100, 100), (0, None)])
 def test_tumor_dp_zero_coalesced(dp, expected, experiments, common):
@@ -324,19 +356,22 @@ def test_missing_format_gq_defaults_to_none(experiments, common):
     assert result["normal_gq"] is None
 
 
-@pytest.mark.parametrize("calls,zygosity,ad_alt,expected_calls,expected_zyg", [
-    # No alt → WT
-    ([0, 0], 0, None,  [0, 0],  ZYGOSITY[ZYGOSITY_WT]),
-    ([0, 0], 0, 5,     [0, 0],  ZYGOSITY[ZYGOSITY_WT]),
-    # Alt present, insufficient depth → UNK
-    ([0, 1], 1, None,  [-1, -1], "UNK"),
-    ([0, 1], 1, 1,     [-1, -1], "UNK"),
-    # Alt present, single call → HEM
-    ([1],    1, 3,     [1],     "HEM"),
-    # Alt present, multi-call, sufficient depth → ZYGOSITY lookup
-    ([0, 1], 1, 5,     [0, 1],  ZYGOSITY[1]),
-    ([1, 1], 3, 10,    [1, 1],  ZYGOSITY[3]),
-])
+@pytest.mark.parametrize(
+    "calls,zygosity,ad_alt,expected_calls,expected_zyg",
+    [
+        # No alt → WT
+        ([0, 0], 0, None, [0, 0], ZYGOSITY[ZYGOSITY_WT]),
+        ([0, 0], 0, 5, [0, 0], ZYGOSITY[ZYGOSITY_WT]),
+        # Alt present, insufficient depth → UNK
+        ([0, 1], 1, None, [-1, -1], "UNK"),
+        ([0, 1], 1, 1, [-1, -1], "UNK"),
+        # Alt present, single call → HEM
+        ([1], 1, 3, [1], "HEM"),
+        # Alt present, multi-call, sufficient depth → ZYGOSITY lookup
+        ([0, 1], 1, 5, [0, 1], ZYGOSITY[1]),
+        ([1, 1], 3, 10, [1, 1], ZYGOSITY[3]),
+    ],
+)
 def test_adjust_somatic_calls_and_zygosity(calls, zygosity, ad_alt, expected_calls, expected_zyg):
     result_calls, result_zyg = adjust_somatic_calls_and_zygosity(calls, zygosity, ad_alt)
     assert result_calls == expected_calls

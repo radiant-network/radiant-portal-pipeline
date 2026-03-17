@@ -22,7 +22,6 @@ from radiant.tasks.vcf.vcf_utils import (
     ZYGOSITY_UNK,
     ZYGOSITY_WT,
 )
-
 from tests.unit.vcf.vcf_test_utils import variant
 
 task = RadiantGermlineAnnotationTask(
