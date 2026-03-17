@@ -68,6 +68,9 @@ def process_task(
 
     tumor_index, normal_index = get_somatic_indexes(task.experiments, vcf.samples)
 
+    sort_key = {"tumoral": tumor_index, "normal": normal_index}
+    task.experiments = sorted(task.experiments, key=lambda x: sort_key[x.histology_type])
+
     for record in vcf:
         if len(record.ALT) <= 1:
             if record.CHROM in SUPPORTED_CHROMOSOMES:

@@ -69,14 +69,85 @@ def process_occurrence(
     record: Variant, experiments: list[Experiment], common: Common, tumor_index: int, normal_index: int
 ) -> dict:
     """
+    Processes a somatic variant occurrence and extracts relevant information for each sample in the pedigree.
 
+    Parameters:
+        record (Variant): A `cyvcf2.Variant` object representing the somatic variant to process.
+        experiments (list[Experiment]): A list of experiments corresponding to the samples in the VCF, where the tumor sample is at `tumor_index` and the normal sample is at `normal_index`.
+        common (Common): A `Common` object containing shared attributes for the variant, such as locus and chromosome.
+        tumor_index (int): The index of the tumor sample in the VCF record's samples.
+        normal_index (int): The index of the normal sample in the VCF record's samples
 
-    :param record:
-    :param experiments:
-    :param common:
-    :param tumor_index:
-    :param normal_index:
-    :return:
+    Returns:
+        dict: A dictionary containing the processed occurrence information for the somatic variant, structured as follows:
+        {
+            tumor_exp.seq_id: {
+                "part": ...,
+                "task_id": ...,
+                "locus": ...,
+                "locus_hash": ...,
+                "chromosome": ...,
+                "start": ...,
+                "end": ...,
+                "reference": ...,
+                "alternate": ...,
+                "quality": ...,
+                "filter": ...,
+                "info_old_record": ...,
+                "info_baseq_rank_sum": ...,
+                "info_excess_het": ...,
+                "info_fs": ...,
+                "info_ds": ...,
+                "info_fraction_informative_reads": ...,
+                "info_inbreed_coeff": ...,
+                "info_mleac": ...,
+                "info_mleaf": ...,
+                "info_mq": ...,
+                "info_mq0": ...,
+                "info_m_qrank_sum": ...,
+                "info_qd": ...,
+                "info_r2_5p_bias": ...,
+                "info_read_pos_rank_sum": ...,
+                "info_sor": ...,
+                "info_vqslod": ...,
+                "info_culprit": ...,
+                "info_dp": ...,
+                "info_haplotype_score": ...,
+                "info_hotspotallele": ...,
+                "info_cal": ...,
+                "tumor_seq_id": ...,
+                "tumor_calls": ...,
+                "tumor_dp": ...,
+                "tumor_gq": ...,
+                "tumor_ad_ref": ...,
+                "tumor_ad_alt": ...,
+                "tumor_ad_total": ...,
+                "tumor_ad_ratio": ...,
+                "tumor_af": ...,
+                "tumor_zygosity": ...,
+                "tumor_phased": ...,
+                "tumor_has_alt": ...,
+                "tumor_gt_status": ...,
+                "normal_seq_id": ...,
+                "normal_calls": ...,
+                "normal_dp": ...,
+                "normal_gq": ...,
+                "normal_ad_ref": ...,
+                "normal_ad_alt": ...,
+                "normal_ad_total": ...,
+                "normal_ad_ratio": ...,
+                "normal_af": ...,
+                "normal_zygosity": ...,
+                "normal_phased": ...,
+                "normal_has_alt": ...,
+                "normal_gt_status": ...,
+            }
+            ```
+
+    Behavior:
+    - Extracts common fields from the `common` object and variant-specific information from the `record`'s INFO and FORMAT fields.
+    - For the tumor and normal samples, it processes genotype calls, depth, allele frequencies, and other relevant metrics, adjusting calls and zygosity for somatic context.
+    - Returns a dictionary keyed by the tumor sample's `seq_id`, containing all the extracted and processed information for that sample, as well as the normal sample for reference.
     """
     occurrences = {}
 
