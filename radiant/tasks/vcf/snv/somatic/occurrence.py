@@ -188,7 +188,7 @@ def process_occurrence(
     t_ad_ref = record.gt_ref_depths[tumor_index] if record.gt_ref_depths[tumor_index] > 0 else None
     t_ad_alt = record.gt_alt_depths[tumor_index] if record.gt_alt_depths[tumor_index] > 0 else None
     t_calls = calls_without_phased(record, tumor_index)
-    t_calls, t_zygosity = adjust_somatic_calls_and_zygosity(t_calls, record.gt_types[tumor_index], t_ad_ref, t_ad_alt)
+    t_calls, t_zygosity = adjust_somatic_calls_and_zygosity(t_calls, record.gt_types[tumor_index], t_ad_alt)
     t_has_alt = 1 in t_calls
     t_ad_total = record.gt_depths[tumor_index] if record.gt_depths[tumor_index] > 0 else None
     t_ad_ratio = record.gt_alt_freqs[tumor_index] if record.gt_alt_freqs[tumor_index] > 0 else None
@@ -203,7 +203,7 @@ def process_occurrence(
     n_ad_ref = record.gt_ref_depths[normal_index] if record.gt_ref_depths[normal_index] > 0 else None
     n_ad_alt = record.gt_alt_depths[normal_index] if record.gt_alt_depths[normal_index] > 0 else None
     n_calls = calls_without_phased(record, normal_index)
-    n_calls, n_zyg = adjust_somatic_calls_and_zygosity(n_calls, record.gt_types[normal_index], n_ad_ref, n_ad_alt)
+    n_calls, n_zyg = adjust_somatic_calls_and_zygosity(n_calls, record.gt_types[normal_index], n_ad_alt)
     n_has_alt = 1 in n_calls if n_calls is not None else None
     n_ad_total = record.gt_depths[normal_index] if record.gt_depths[normal_index] > 0 else None
     n_ad_ratio = record.gt_alt_freqs[normal_index] if record.gt_alt_freqs[normal_index] > 0 else None
