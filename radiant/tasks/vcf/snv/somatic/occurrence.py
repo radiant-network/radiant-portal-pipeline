@@ -6,7 +6,7 @@ from radiant.tasks.iceberg.utils import merge_schemas
 from radiant.tasks.vcf.experiment import Experiment
 from radiant.tasks.vcf.snv.common import SCHEMA as COMMON_SCHEMA
 from radiant.tasks.vcf.snv.common import Common
-from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT, calls_without_phased
+from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_WT, calls_without_phased
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -148,7 +148,7 @@ def process_occurrence(
     - Extracts common fields from the `common` object and variant-specific information from the `record`'s INFO and FORMAT fields.
     - For the tumor and normal samples, it processes genotype calls, depth, allele frequencies, and other relevant metrics, adjusting calls and zygosity for somatic context.
     - Returns a dictionary keyed by the tumor sample's `seq_id`, containing all the extracted and processed information for that sample, as well as the normal sample for reference.
-    """
+    """  # noqa: E501
     occurrences = {}
 
     info_fields = record.INFO
@@ -279,9 +279,7 @@ def process_occurrence(
     return occurrences
 
 
-def adjust_somatic_calls_and_zygosity(
-    calls: list[int], zygosity: int, ad_alt: int | None
-) -> tuple[list[int], str]:
+def adjust_somatic_calls_and_zygosity(calls: list[int], zygosity: int, ad_alt: int | None) -> tuple[list[int], str]:
     """
     Adjusts the somatic calls and zygosity based on alternate allele depths.
 
