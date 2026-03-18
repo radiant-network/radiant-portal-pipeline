@@ -280,7 +280,7 @@ def test_filter_parsing(filter_val, expected, experiments, common):
         ("Culprit", "info_culprit", "MQ"),
         ("DP", "info_dp", 150),
         ("HaplotypeScore", "info_haplotype_score", 3.2),
-        ("HotspotAllele", "info_hotspotallele", "TP53"),
+        ("HotspotAllele", "info_hotspotallele", "foobar"),
         ("CAL", "info_cal", "COSMIC"),
     ],
 )
