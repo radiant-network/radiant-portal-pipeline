@@ -187,7 +187,7 @@ def test_adjust_somatic_calls_and_zygosity(calls, zygosity, ad_alt, expected_cal
 
 def run_process(record, experiments, common, tumor_index=TUMOR_INDEX, normal_index=NORMAL_INDEX):
     with (
-        patch("radiant.tasks.vcf.vcf_utils.calls_without_phased") as mock_calls,
+        patch("radiant.tasks.vcf.snv.somatic.occurrence.calls_without_phased") as mock_calls,
         patch("radiant.tasks.vcf.snv.somatic.occurrence.adjust_somatic_calls_and_zygosity") as mock_adjust,
     ):
         mock_calls.side_effect = lambda r, idx: [0, 1] if idx == tumor_index else [0, 0]
