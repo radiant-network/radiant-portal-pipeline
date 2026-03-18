@@ -59,6 +59,11 @@ def test_import_somatic_snv_vcf(
         iceberg_client.load_table(f"{setup_iceberg_namespace}.snv_consequence").scan().to_arrow().to_pandas()
     )
 
-    assert not occ.empty, "No occurrences were written to the iceberg table"
-    assert not variants.empty, "No variants were written to the iceberg table"
-    assert not consequences.empty, "No consequences were written to the iceberg table"
+    assert len(occ) == 21, "Unexpected number of rows in occurrences table"
+    assert occ.chromosome.unique().tolist() == ["1", "4", "12"], "Unexpected chromosome values in occurrences table"
+
+    assert len(variants) == 21, "Unexpected number of rows in variants table"
+    assert variants.chromosome.unique().tolist() == ["1", "4", "12"], "Unexpected chromosome values in variants table"
+
+    assert len(consequences) == 236, "Unexpected number of rows in consequences table"
+    assert variants.chromosome.unique().tolist() == ["1", "4", "12"], "Unexpected chromosome values in consequences table"
