@@ -70,7 +70,7 @@ def process_occurrence(
     record: Variant, experiments: list[Experiment], common: Common, tumor_index: int, normal_index: int
 ) -> dict:
     """
-    Processes a somatic variant occurrence and extracts relevant information for each sample in the pedigree.
+    Processes a somatic variant occurrence and extracts relevant information.
 
     Parameters:
         record (Variant): A `cyvcf2.Variant` object representing the somatic variant to process.
@@ -281,11 +281,10 @@ def process_occurrence(
 
 def adjust_somatic_calls_and_zygosity(calls: list[int], zygosity: int, ad_alt: int | None) -> tuple[list[int], str]:
     """
-    Adjusts the somatic calls and zygosity based on alternate allele depths.
+    Adjusts the somatic calls and zygosity based on alternate allele depth.
 
     Parameters:
-        calls (list[int]): A list of genotype calls, where each call represents an allele
-        (e.g., 0 for reference, 1 for alternate).
+        calls (list[int]): A list of genotype calls, where each call represents an allele (e.g., 0 for reference, 1 for alternate).
         zygosity (int): The zygosity type, represented as an integer (e.g., 0 for WT, 1 for HET, 3 for HOM, 2 for UNK).
         ad_alt (Optional[int]): The depth of reads supporting the alternate allele. Can be None if not available.
 
@@ -296,8 +295,7 @@ def adjust_somatic_calls_and_zygosity(calls: list[int], zygosity: int, ad_alt: i
 
     Behavior:
 
-            For somatic variants, zygosity categories (HET/HOM/WT) from germline calling
-            are not meaningful. Instead, we determine presence based on allelic depth (AD)
+            For somatic variants, we determine presence based on allelic depth (AD)
             support:
 
                        alt allele present (1 in calls)?
@@ -313,7 +311,7 @@ def adjust_somatic_calls_and_zygosity(calls: list[int], zygosity: int, ad_alt: i
             single call,
             else ZYGOSITY[z]
 
-    """
+    """ # noqa: E501
     has_alt = 1 in calls if calls else False
 
     if not has_alt:

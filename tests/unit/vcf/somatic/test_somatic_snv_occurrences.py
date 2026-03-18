@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from radiant.tasks.vcf.snv.somatic.occurrence import adjust_somatic_calls_and_zygosity, process_occurrence
+from radiant.tasks.vcf.snv.somatic.process import FilteredExperiment, get_sorted_task_experiments
 from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT
 
 
@@ -30,9 +31,11 @@ def make_common(
     return common
 
 
-def make_experiment(seq_id):
+def make_experiment(seq_id, aliquot="ALIQUOT", histology_type="tumoral"):
     exp = MagicMock()
     exp.seq_id = seq_id
+    exp.aliquot = aliquot
+    exp.histology_type = histology_type
     return exp
 
 
@@ -73,6 +76,8 @@ NORMAL_SEQ_ID = 20
 TUMOR_INDEX = 0
 NORMAL_INDEX = 1
 
+TUMOR = make_experiment(TUMOR_SEQ_ID, "tumor_sample", "tumoral")
+NORMAL = make_experiment(NORMAL_SEQ_ID, "normal_sample", "normal")
 
 @pytest.fixture
 def experiments():
@@ -352,3 +357,72 @@ def test_gt_status_fields_are_none(experiments, common):
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result["tumor_gt_status"] is None
     assert result["normal_gt_status"] is None
+
+
+@pytest.mark.parametrize("samples, expected_tumor_index, expected_normal_index, expected_order", [
+    # Tumor appears first in the VCF → tumor_index=0, normal_index=1
+    (["tumor_sample", "normal_sample"], 0, 1, ["tumor_sample", "normal_sample"]),
+    # Normal appears first in the VCF → tumor_index=1, normal_index=0
+    (["normal_sample", "tumor_sample"], 1, 0, ["normal_sample", "tumor_sample"]),
+])
+def test_get_sorted_task_experiments__sorted_experiments_order_and_indexes(samples, expected_tumor_index, expected_normal_index, expected_order):
+    result = get_sorted_task_experiments([TUMOR, NORMAL], samples)
+
+    assert isinstance(result, FilteredExperiment)
+    assert result.tumor_index == expected_tumor_index
+    assert result.normal_index == expected_normal_index
+    assert [exp.aliquot for exp in result.experiments] == expected_order
+
+
+def test_get_sorted_task_experiments__experiments_not_in_samples_are_filtered_out():
+    extra = make_experiment("unrelated_sample", "tumoral")
+    # extra is not in `samples`, so it should be silently dropped before
+    # get_somatic_indexes is called — meaning we still get a valid result.
+    result = get_sorted_task_experiments([TUMOR, NORMAL, extra], ["tumor_sample", "normal_sample"])
+
+    aliquots = [exp.aliquot for exp in result.experiments]
+    assert "unrelated_sample" not in aliquots
+    assert set(aliquots) == {"tumor_sample", "normal_sample"}
+
+
+@pytest.mark.parametrize("experiments, samples, match", [
+    # Only tumor provided
+    (
+        [TUMOR],
+        ["tumor_sample"],
+        "Could not find both tumor and normal",
+    ),
+    # Only normal provided
+    (
+        [NORMAL],
+        ["normal_sample"],
+        "Could not find both tumor and normal",
+    ),
+    # Both aliquots present in VCF but normal experiment missing from task
+    (
+        [TUMOR],
+        ["tumor_sample", "normal_sample"],
+        "Could not find both tumor and normal",
+    ),
+])
+def test_get_sorted_task_experiments__missing_tumor_or_normal_raises(experiments, samples, match):
+    with pytest.raises(ValueError, match=match):
+        get_sorted_task_experiments(experiments, samples)
+
+
+@pytest.mark.parametrize("bad_histology", ["germline", "metastatic", "", "TUMORAL"])
+def test_get_sorted_task_experiments__invalid_histology_type_raises(bad_histology):
+    bad_exp = make_experiment(42, "bad_sample", bad_histology)
+    # Include a valid pair so filtering passes, but inject the bad experiment
+    experiments = [TUMOR, NORMAL, bad_exp]
+    samples = ["tumor_sample", "normal_sample", "bad_sample"]
+
+    with pytest.raises(ValueError, match="valid histology type"):
+        get_sorted_task_experiments(experiments, samples)
+
+
+def test_get_sorted_task_experiments__return_type_is_filtered_experiment():
+    result = get_sorted_task_experiments([TUMOR, NORMAL], ["tumor_sample", "normal_sample"])
+    assert hasattr(result, "tumor_index")
+    assert hasattr(result, "normal_index")
+    assert hasattr(result, "experiments")

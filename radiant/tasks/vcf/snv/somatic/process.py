@@ -1,7 +1,7 @@
 import logging
 import sys
 import tempfile
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
@@ -22,6 +22,8 @@ logger = logging.getLogger("airflow.task")
 SUPPORTED_CHROMOSOMES = tuple(f"chr{i}" for i in range(1, 23)) + ("chrX", "chrY", "chrM")
 
 SUPPORTED_HISTOLOGY_TYPES = ("tumoral", "normal")
+
+FilteredExperiment = namedtuple('FilteredExperiment', ['tumor_index', 'normal_index', 'experiments'])
 
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
 # Airflow will treat the task as successful if the error is not captured properly.
@@ -67,14 +69,10 @@ def process_task(
     consequence_table = catalog.load_table(consequences_table_name)
     consequence_buffer = TableAccumulator(consequence_table, partition_filter=variant_csq_partition_filter)
 
-    tumor_index, normal_index = get_somatic_indexes(task.experiments, vcf.samples)
-
-    sort_key = {"tumoral": tumor_index, "normal": normal_index}
-
-    if not all([exp.histology_type in SUPPORTED_HISTOLOGY_TYPES for exp in task.experiments]):
-        raise ValueError(f"Not all experiments have a valid histology type in task {task.task_id}. ")
-
-    sorted_task_experiments = sorted(task.experiments, key=lambda x: sort_key[x.histology_type])
+    # Here we need to sort the experiments in the same order as the samples appears
+    # in the VCF file. This is required because each row contains both the tumor and normal information.
+    # Therefore, we need to make sure the index match the order in which the samples appear in the file.
+    filtered_experiments = get_sorted_task_experiments(task.experiments, vcf.samples)
 
     for record in vcf:
         if len(record.ALT) <= 1:
@@ -84,10 +82,10 @@ def process_task(
                 consequence_buffer.extend(consequences)
                 occurrences = process_occurrence(
                     record,
-                    experiments=sorted_task_experiments,
+                    experiments=filtered_experiments.experiments,
                     common=common,
-                    tumor_index=tumor_index,
-                    normal_index=normal_index,
+                    tumor_index=filtered_experiments.tumor_index,
+                    normal_index=filtered_experiments.normal_index,
                 )
                 occurrence_buffer.extend(list(occurrences.values()))
                 variant = process_variant(record, picked_consequence, common)
@@ -149,6 +147,22 @@ def get_somatic_indexes(experiments: list[Experiment], samples: list[str]):
             f"in the VCF for the given experiments: {experiments}."
         )
     return tumor_index, normal_index
+
+
+def get_sorted_task_experiments(experiments: list[Experiment], samples: list[str]) -> FilteredExperiment:
+    filtered_experiments = [exp for exp in experiments if exp.aliquot in samples]
+    tumor_index, normal_index = get_somatic_indexes(filtered_experiments, samples)
+
+    sort_key = {"tumoral": tumor_index, "normal": normal_index}
+    if not all([exp.histology_type in SUPPORTED_HISTOLOGY_TYPES for exp in filtered_experiments]):
+        raise ValueError(f"Not all experiments have a valid histology type in task.")
+
+    sorted_task_experiments = sorted(filtered_experiments, key=lambda x: sort_key[x.histology_type])
+    return FilteredExperiment(
+        tumor_index=tumor_index,
+        normal_index=normal_index,
+        experiments=sorted_task_experiments
+    )
 
 
 def commit_partitions(table_partitions: dict[str, list[dict]], iceberg_catalog_properties: dict | None = None):
