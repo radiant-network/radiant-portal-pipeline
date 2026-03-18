@@ -35,6 +35,9 @@ SCHEMA = merge_schemas(
         NestedField(528, "info_culprit", StringType(), required=False),
         NestedField(529, "info_dp", IntegerType(), required=False),
         NestedField(530, "info_haplotype_score", FloatType(), required=False),
+        NestedField(531, "info_germq", FloatType(), required=False),
+        NestedField(532, "info_tlod", FloatType(), required=False),
+        NestedField(533, "info_mapq", FloatType(), required=False),
         NestedField(540, "tumor_seq_id", IntegerType(), required=True),
         NestedField(541, "tumor_calls", ListType(241, IntegerType()), required=False),
         NestedField(542, "tumor_dp", IntegerType(), required=False),
@@ -113,6 +116,9 @@ def process_occurrence(
                 "info_haplotype_score": ...,
                 "info_hotspotallele": ...,
                 "info_cal": ...,
+                "info_germq": ...,
+                "info_tlod": ...,
+                "info_mapq": ...,
                 "tumor_seq_id": ...,
                 "tumor_calls": ...,
                 "tumor_dp": ...,
@@ -148,27 +154,33 @@ def process_occurrence(
     occurrences = {}
 
     info_fields = record.INFO
-    quality = int(record.QUAL) if record.QUAL is not None else None
-    filter = record.FILTER or "PASS"
-    old_record = info_fields.get("OLD_RECORD", None)
+    info_quality = int(record.QUAL) if record.QUAL is not None else None
+    info_filter = record.FILTER or "PASS"
+    info_old_record = info_fields.get("OLD_RECORD", None)
     baseq_ranksum = info_fields.get("BaseQRankSum", None)
-    fs = info_fields.get("FS", None)
-    ds = info_fields.get("DS", None)
-    fraction_informative_reads = info_fields.get("FractionInformativeReads", None)
-    inbreed_coeff = info_fields.get("InbreedCoeff", None)
-    mleac = info_fields.get("MLEAC", None)
-    mleaf = info_fields.get("MLEAF", None)
-    mq = info_fields.get("MQ", None)
-    mq_ranksum = info_fields.get("MQRankSum", None)
-    qd = info_fields.get("QD", None)
-    r2_5p_bias = info_fields.get("R2_5P_bias", None)
-    read_pos_rank_su = info_fields.get("ReadPosRankSum", None)
-    sor = info_fields.get("SOR", None)
-    vqslod = info_fields.get("VQSLod", None)
-    culprit = info_fields.get("Culprit", None)
+    info_fs = info_fields.get("FS", None)
+    info_ds = info_fields.get("DS", None)
+    info_fraction_informative_reads = info_fields.get("FractionInformativeReads", None)
+    info_inbreed_coeff = info_fields.get("InbreedCoeff", None)
+    info_mleac = info_fields.get("MLEAC", None)
+    info_mleaf = info_fields.get("MLEAF", None)
+    info_mq = info_fields.get("MQ", None)
+    info_mq0 = info_fields.get("MQ0", None)
+    info_mq_ranksum = info_fields.get("MQRankSum", None)
+    info_qd = info_fields.get("QD", None)
+    info_r2_5p_bias = info_fields.get("R2_5P_bias", None)
+    info_read_pos_rank_su = info_fields.get("ReadPosRankSum", None)
+    info_sor = info_fields.get("SOR", None)
+    info_vqslod = info_fields.get("VQSLod", None)
+    info_culprit = info_fields.get("Culprit", None)
     info_dp = info_fields.get("DP", None)
-    haplotype_score = info_fields.get("HaplotypeScore", None)
-    excess_het = info_fields.get("ExcessHet", None)
+    info_haplotype_score = info_fields.get("HaplotypeScore", None)
+    info_hotspotallele = info_fields.get("HotspotAllele", None)
+    info_cal = info_fields.get("CAL", None)
+    info_excess_het = info_fields.get("ExcessHet", None)
+    info_germq = info_fields.get("GERMQ", None)
+    info_tlod = info_fields.get("TLOD", None)
+    info_mapq = info_fields.get("MAPQ", None)
 
     tumor_exp = experiments[tumor_index]
     normal_exp = experiments[normal_index]
@@ -209,30 +221,33 @@ def process_occurrence(
         "reference": common.reference,
         "alternate": common.alternate,
         # info
-        "quality": quality,
-        "filter": filter,
-        "info_old_record": old_record,
+        "quality": info_quality,
+        "filter": info_filter,
+        "info_old_record": info_old_record,
         "info_baseq_rank_sum": baseq_ranksum,
-        "info_excess_het": excess_het,
-        "info_fs": fs,
-        "info_ds": ds,
-        "info_fraction_informative_reads": fraction_informative_reads,
-        "info_inbreed_coeff": inbreed_coeff,
-        "info_mleac": mleac,
-        "info_mleaf": mleaf,
-        "info_mq": mq,
-        "info_mq0": info_fields.get("MQ0", None),
-        "info_m_qrank_sum": mq_ranksum,
-        "info_qd": qd,
-        "info_r2_5p_bias": r2_5p_bias,
-        "info_read_pos_rank_sum": read_pos_rank_su,
-        "info_sor": sor,
-        "info_vqslod": vqslod,
-        "info_culprit": culprit,
+        "info_excess_het": info_excess_het,
+        "info_fs": info_fs,
+        "info_ds": info_ds,
+        "info_fraction_informative_reads": info_fraction_informative_reads,
+        "info_inbreed_coeff": info_inbreed_coeff,
+        "info_mleac": info_mleac,
+        "info_mleaf": info_mleaf,
+        "info_mq": info_mq,
+        "info_mq0": info_mq0,
+        "info_m_qrank_sum": info_mq_ranksum,
+        "info_qd": info_qd,
+        "info_r2_5p_bias": info_r2_5p_bias,
+        "info_read_pos_rank_sum": info_read_pos_rank_su,
+        "info_sor": info_sor,
+        "info_vqslod": info_vqslod,
+        "info_culprit": info_culprit,
         "info_dp": info_dp,
-        "info_haplotype_score": haplotype_score,
-        "info_hotspotallele": info_fields.get("HotspotAllele", None),
-        "info_cal": info_fields.get("CAL", None),
+        "info_haplotype_score": info_haplotype_score,
+        "info_hotspotallele": info_hotspotallele,
+        "info_cal": info_cal,
+        "info_germq": info_germq,
+        "info_tlod": info_tlod,
+        "info_mapq": info_mapq,
         # tumor FORMAT
         "tumor_seq_id": tumor_exp.seq_id,
         "tumor_calls": t_calls,

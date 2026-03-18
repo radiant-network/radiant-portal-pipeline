@@ -28,10 +28,12 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_occurrence }} (
     info_culprit                    VARCHAR(255),
     info_dp                         INT,
     info_haplotype_score            FLOAT,
+    info_germq                      FLOAT,
+    info_tlod                       FLOAT,
+    info_mapq                       FLOAT,
     -- Tumor FORMAT
     tumor_calls      ARRAY<INT>,
     tumor_dp         INT,
-    tumor_gq         INT,
     tumor_has_alt    BOOLEAN,
     tumor_af         FLOAT,
     tumor_zygosity   CHAR(3),
@@ -44,7 +46,6 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_occurrence }} (
     -- Normal FORMAT
     normal_calls     ARRAY<INT>,
     normal_dp        INT,
-    normal_gq        INT,
     normal_has_alt   BOOLEAN,
     normal_af        FLOAT,
     normal_zygosity  CHAR(3),
