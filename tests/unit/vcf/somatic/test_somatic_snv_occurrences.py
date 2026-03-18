@@ -79,6 +79,7 @@ NORMAL_INDEX = 1
 TUMOR = make_experiment(TUMOR_SEQ_ID, "tumor_sample", "tumoral")
 NORMAL = make_experiment(NORMAL_SEQ_ID, "normal_sample", "normal")
 
+
 @pytest.fixture
 def experiments():
     return [make_experiment(TUMOR_SEQ_ID), make_experiment(NORMAL_SEQ_ID)]
@@ -359,13 +360,18 @@ def test_gt_status_fields_are_none(experiments, common):
     assert result["normal_gt_status"] is None
 
 
-@pytest.mark.parametrize("samples, expected_tumor_index, expected_normal_index, expected_order", [
-    # Tumor appears first in the VCF → tumor_index=0, normal_index=1
-    (["tumor_sample", "normal_sample"], 0, 1, ["tumor_sample", "normal_sample"]),
-    # Normal appears first in the VCF → tumor_index=1, normal_index=0
-    (["normal_sample", "tumor_sample"], 1, 0, ["normal_sample", "tumor_sample"]),
-])
-def test_get_sorted_task_experiments__sorted_experiments_order_and_indexes(samples, expected_tumor_index, expected_normal_index, expected_order):
+@pytest.mark.parametrize(
+    "samples, expected_tumor_index, expected_normal_index, expected_order",
+    [
+        # Tumor appears first in the VCF → tumor_index=0, normal_index=1
+        (["tumor_sample", "normal_sample"], 0, 1, ["tumor_sample", "normal_sample"]),
+        # Normal appears first in the VCF → tumor_index=1, normal_index=0
+        (["normal_sample", "tumor_sample"], 1, 0, ["normal_sample", "tumor_sample"]),
+    ],
+)
+def test_get_sorted_task_experiments__sorted_experiments_order_and_indexes(
+    samples, expected_tumor_index, expected_normal_index, expected_order
+):
     result = get_sorted_task_experiments([TUMOR, NORMAL], samples)
 
     assert isinstance(result, FilteredExperiment)
@@ -385,26 +391,29 @@ def test_get_sorted_task_experiments__experiments_not_in_samples_are_filtered_ou
     assert set(aliquots) == {"tumor_sample", "normal_sample"}
 
 
-@pytest.mark.parametrize("experiments, samples, match", [
-    # Only tumor provided
-    (
-        [TUMOR],
-        ["tumor_sample"],
-        "Could not find both tumor and normal",
-    ),
-    # Only normal provided
-    (
-        [NORMAL],
-        ["normal_sample"],
-        "Could not find both tumor and normal",
-    ),
-    # Both aliquots present in VCF but normal experiment missing from task
-    (
-        [TUMOR],
-        ["tumor_sample", "normal_sample"],
-        "Could not find both tumor and normal",
-    ),
-])
+@pytest.mark.parametrize(
+    "experiments, samples, match",
+    [
+        # Only tumor provided
+        (
+            [TUMOR],
+            ["tumor_sample"],
+            "Could not find both tumor and normal",
+        ),
+        # Only normal provided
+        (
+            [NORMAL],
+            ["normal_sample"],
+            "Could not find both tumor and normal",
+        ),
+        # Both aliquots present in VCF but normal experiment missing from task
+        (
+            [TUMOR],
+            ["tumor_sample", "normal_sample"],
+            "Could not find both tumor and normal",
+        ),
+    ],
+)
 def test_get_sorted_task_experiments__missing_tumor_or_normal_raises(experiments, samples, match):
     with pytest.raises(ValueError, match=match):
         get_sorted_task_experiments(experiments, samples)

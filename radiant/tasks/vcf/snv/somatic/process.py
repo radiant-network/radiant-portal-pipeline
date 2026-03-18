@@ -23,7 +23,8 @@ SUPPORTED_CHROMOSOMES = tuple(f"chr{i}" for i in range(1, 23)) + ("chrX", "chrY"
 
 SUPPORTED_HISTOLOGY_TYPES = ("tumoral", "normal")
 
-FilteredExperiment = namedtuple('FilteredExperiment', ['tumor_index', 'normal_index', 'experiments'])
+FilteredExperiment = namedtuple("FilteredExperiment", ["tumor_index", "normal_index", "experiments"])
+
 
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
 # Airflow will treat the task as successful if the error is not captured properly.
@@ -155,14 +156,10 @@ def get_sorted_task_experiments(experiments: list[Experiment], samples: list[str
 
     sort_key = {"tumoral": tumor_index, "normal": normal_index}
     if not all([exp.histology_type in SUPPORTED_HISTOLOGY_TYPES for exp in filtered_experiments]):
-        raise ValueError(f"Not all experiments have a valid histology type in task.")
+        raise ValueError("Not all experiments have a valid histology type in task.")
 
     sorted_task_experiments = sorted(filtered_experiments, key=lambda x: sort_key[x.histology_type])
-    return FilteredExperiment(
-        tumor_index=tumor_index,
-        normal_index=normal_index,
-        experiments=sorted_task_experiments
-    )
+    return FilteredExperiment(tumor_index=tumor_index, normal_index=normal_index, experiments=sorted_task_experiments)
 
 
 def commit_partitions(table_partitions: dict[str, list[dict]], iceberg_catalog_properties: dict | None = None):

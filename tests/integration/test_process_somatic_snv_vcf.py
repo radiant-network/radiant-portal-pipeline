@@ -66,4 +66,6 @@ def test_import_somatic_snv_vcf(
     assert variants.chromosome.unique().tolist() == ["1", "4", "12"], "Unexpected chromosome values in variants table"
 
     assert len(consequences) == 236, "Unexpected number of rows in consequences table"
-    assert variants.chromosome.unique().tolist() == ["1", "4", "12"], "Unexpected chromosome values in consequences table"
+    assert variants.chromosome.unique().tolist() == ["1", "4", "12"], (
+        "Unexpected chromosome values in consequences table"
+    )

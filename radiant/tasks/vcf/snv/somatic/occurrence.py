@@ -311,7 +311,7 @@ def adjust_somatic_calls_and_zygosity(calls: list[int], zygosity: int, ad_alt: i
             single call,
             else ZYGOSITY[z]
 
-    """ # noqa: E501
+    """  # noqa: E501
     has_alt = 1 in calls if calls else False
 
     if not has_alt:
