@@ -38,7 +38,6 @@ SCHEMA = merge_schemas(
         NestedField(540, "tumor_seq_id", IntegerType(), required=True),
         NestedField(541, "tumor_calls", ListType(241, IntegerType()), required=False),
         NestedField(542, "tumor_dp", IntegerType(), required=False),
-        NestedField(543, "tumor_gq", IntegerType(), required=False),
         NestedField(544, "tumor_has_alt", BooleanType(), required=False),
         NestedField(545, "tumor_af", FloatType(), required=False),
         NestedField(546, "tumor_zygosity", StringType(), required=False),
@@ -51,7 +50,6 @@ SCHEMA = merge_schemas(
         NestedField(560, "normal_seq_id", IntegerType(), required=False),
         NestedField(561, "normal_calls", ListType(261, IntegerType()), required=False),
         NestedField(562, "normal_dp", IntegerType(), required=False),
-        NestedField(563, "normal_gq", IntegerType(), required=False),
         NestedField(564, "normal_has_alt", BooleanType(), required=False),
         NestedField(565, "normal_af", FloatType(), required=False),
         NestedField(566, "normal_zygosity", StringType(), required=False),
@@ -118,7 +116,6 @@ def process_occurrence(
                 "tumor_seq_id": ...,
                 "tumor_calls": ...,
                 "tumor_dp": ...,
-                "tumor_gq": ...,
                 "tumor_ad_ref": ...,
                 "tumor_ad_alt": ...,
                 "tumor_ad_total": ...,
@@ -131,7 +128,6 @@ def process_occurrence(
                 "normal_seq_id": ...,
                 "normal_calls": ...,
                 "normal_dp": ...,
-                "normal_gq": ...,
                 "normal_ad_ref": ...,
                 "normal_ad_alt": ...,
                 "normal_ad_total": ...,
@@ -154,7 +150,6 @@ def process_occurrence(
     info_fields = record.INFO
     quality = int(record.QUAL) if record.QUAL is not None else None
     filter = record.FILTER or "PASS"
-    # hotspotallele = info_fields.get("HotSpotAllele", None)
     old_record = info_fields.get("OLD_RECORD", None)
     baseq_ranksum = info_fields.get("BaseQRankSum", None)
     fs = info_fields.get("FS", None)
@@ -164,7 +159,6 @@ def process_occurrence(
     mleac = info_fields.get("MLEAC", None)
     mleaf = info_fields.get("MLEAF", None)
     mq = info_fields.get("MQ", None)
-    # mq0 = info_fields.get("MQ0", None)
     mq_ranksum = info_fields.get("MQRankSum", None)
     qd = info_fields.get("QD", None)
     r2_5p_bias = info_fields.get("R2_5P_bias", None)
@@ -181,10 +175,6 @@ def process_occurrence(
 
     # Tumor FORMAT
     t_dp = record.format("DP")[tumor_index][0] if "DP" in record.FORMAT else 0
-
-    # FIXME `GQ` doesn't exist for somatics,
-    #        need to check with bioinformatics team on what the best quality metric for calls
-    t_gq = record.format("GQ")[tumor_index][0] if "GQ" in record.FORMAT else 0
     t_ad_ref = record.gt_ref_depths[tumor_index] if record.gt_ref_depths[tumor_index] > 0 else None
     t_ad_alt = record.gt_alt_depths[tumor_index] if record.gt_alt_depths[tumor_index] > 0 else None
     t_calls = calls_without_phased(record, tumor_index)
@@ -197,9 +187,6 @@ def process_occurrence(
 
     # Normal FORMAT
     n_dp = record.format("DP")[normal_index][0] if "DP" in record.FORMAT else 0
-
-    # FIXME same thing here for `GQ`
-    n_gq = record.format("GQ")[normal_index][0] if "GQ" in record.FORMAT else 0
     n_ad_ref = record.gt_ref_depths[normal_index] if record.gt_ref_depths[normal_index] > 0 else None
     n_ad_alt = record.gt_alt_depths[normal_index] if record.gt_alt_depths[normal_index] > 0 else None
     n_calls = calls_without_phased(record, normal_index)
@@ -250,7 +237,6 @@ def process_occurrence(
         "tumor_seq_id": tumor_exp.seq_id,
         "tumor_calls": t_calls,
         "tumor_dp": t_dp if t_dp > 0 else None,
-        "tumor_gq": t_gq if t_gq > 0 else None,
         "tumor_ad_ref": t_ad_ref,
         "tumor_ad_alt": t_ad_alt,
         "tumor_ad_total": t_ad_total,
@@ -264,7 +250,6 @@ def process_occurrence(
         "normal_seq_id": normal_exp.seq_id,
         "normal_calls": n_calls,
         "normal_dp": n_dp if n_dp > 0 else None,
-        "normal_gq": n_gq if n_gq > 0 else None,
         "normal_ad_ref": n_ad_ref,
         "normal_ad_alt": n_ad_alt,
         "normal_ad_total": n_ad_total,

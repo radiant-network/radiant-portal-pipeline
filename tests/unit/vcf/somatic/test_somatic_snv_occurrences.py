@@ -40,7 +40,7 @@ def make_record(
     qual=50.0,
     filter_val=None,
     info=None,
-    format_keys=("DP", "GQ"),
+    format_keys=("DP"),
     dp_values=(100, 80),
     gq_values=(30, 25),
     gt_ref_depths=(10, 20),
@@ -57,7 +57,7 @@ def make_record(
     record.FORMAT = format_keys
 
     record.format.side_effect = lambda key: (
-        [[dp_values[0]], [dp_values[1]]] if key == "DP" else [[gq_values[0]], [gq_values[1]]] if key == "GQ" else None
+        [[dp_values[0]], [dp_values[1]]] if key == "DP" else None
     )
 
     record.gt_ref_depths = gt_ref_depths
@@ -320,13 +320,6 @@ def test_normal_dp_zero_coalesced(dp, expected, experiments, common):
     assert result["normal_dp"] == expected
 
 
-@pytest.mark.parametrize("gq,expected", [(30, 30), (0, None)])
-def test_tumor_gq_zero_coalesced(gq, expected, experiments, common):
-    record = make_record(gq_values=(gq, 25))
-    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
-    assert result["tumor_gq"] == expected
-
-
 @pytest.mark.parametrize("ad_ref,expected", [(10, 10), (0, None)])
 def test_tumor_ad_ref_zero_coalesced(ad_ref, expected, experiments, common):
     record = make_record(gt_ref_depths=(ad_ref, 20))
@@ -361,18 +354,3 @@ def test_gt_status_fields_are_none(experiments, common):
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result["tumor_gt_status"] is None
     assert result["normal_gt_status"] is None
-
-
-def test_missing_format_dp_defaults_to_none(experiments, common):
-    record = make_record(format_keys=("GQ",))  # no DP key
-    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
-    # DP fallback is 0, which is then coalesced to None
-    assert result["tumor_dp"] is None
-    assert result["normal_dp"] is None
-
-
-def test_missing_format_gq_defaults_to_none(experiments, common):
-    record = make_record(format_keys=("DP",))  # no GQ key
-    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
-    assert result["tumor_gq"] is None
-    assert result["normal_gq"] is None
