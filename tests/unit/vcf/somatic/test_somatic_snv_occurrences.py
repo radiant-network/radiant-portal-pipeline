@@ -56,9 +56,7 @@ def make_record(
     record.INFO = info or {}
     record.FORMAT = format_keys
 
-    record.format.side_effect = lambda key: (
-        [[dp_values[0]], [dp_values[1]]] if key == "DP" else None
-    )
+    record.format.side_effect = lambda key: ([[dp_values[0]], [dp_values[1]]] if key == "DP" else None)
 
     record.gt_ref_depths = gt_ref_depths
     record.gt_alt_depths = gt_alt_depths
