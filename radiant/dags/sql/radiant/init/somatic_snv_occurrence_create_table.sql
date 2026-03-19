@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_occurrence }} (
     quality          FLOAT,
     filter           VARCHAR(255),
     -- INFO fields
-    info_hotspotallele              VARCHAR(255),
+    info_hotspotallele              INT,
     info_old_record                 VARCHAR(2000),
     info_baseq_rank_sum             FLOAT,
     info_excess_het                 FLOAT,

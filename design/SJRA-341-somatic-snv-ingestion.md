@@ -168,7 +168,7 @@ Key fields (extending germline `COMMON_SCHEMA` which provides `locus_hash`, `chr
 | `task_id`                         | `INT`       | Replaces `case_id` from pseudocode |
 | `quality`                         | `FLOAT`     | Record-level QUAL                  |
 | `filter`                          | `STRING`    | Record-level FILTER                |
-| `info_hotspotallele`              | `STRING`    | INFO/HotSpotAllele                 |
+| `info_hotspotallele`              | `INT`       | INFO/HotSpotAllele                 |
 | `info_old_record`                 | `STRING`    | INFO/OLD_RECORD                    |
 | `info_baseq_rank_sum`             | `FLOAT`     | INFO/BaseQRankSum                  |
 | `info_excess_het`                 | `FLOAT`     | INFO/ExcessHet                     |
@@ -363,7 +363,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_occurrence }} (
     quality          FLOAT,
     filter           VARCHAR(255),
     -- INFO fields
-    info_hotspotallele              VARCHAR(255),
+    info_hotspotallele              INT,
     info_old_record                 VARCHAR(2000),
     info_baseq_rank_sum             FLOAT,
     info_excess_het                 FLOAT,
