@@ -11,8 +11,8 @@ WITH patients_total_count AS (
             ANY_VALUE(pn_wxs_not_affected) AS pn_wxs_not_affected
         FROM {{ mapping.starrocks_germline_snv_staging_variant_frequency }}
         GROUP BY part
-    ) t       
-), 
+    ) t
+),
 freq AS (
    SELECT locus_id,
                  SUM(pc_wgs)                 AS pc_wgs,

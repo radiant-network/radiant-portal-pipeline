@@ -19,6 +19,7 @@ class Experiment(BaseModel):
     sex: str
     experimental_strategy: str
     request_priority: str | None = None
+    histology_type: str | None = None
 
 
 class BaseTask(BaseModel, ABC):
@@ -86,7 +87,7 @@ class RadiantSomaticAnnotationTask(BaseTask):
     @staticmethod
     def gather_additional_args(rows: list[dict]) -> dict:
         for r in rows:
-            if r["histology_type"] == "tumor":
+            if r["histology_type"] == "tumoral":
                 return {
                     "vcf_filepath": r["vcf_filepath"],
                     "index_vcf_filepath": r.get("index_vcf_filepath"),
@@ -113,6 +114,7 @@ def _build_experiments(rows: list[dict]) -> list[Experiment]:
             sex=row["sex"],
             experimental_strategy=row["experimental_strategy"],
             request_priority=row.get("request_priority"),
+            histology_type=row.get("histology_type"),
         )
         for row in rows
     ]
