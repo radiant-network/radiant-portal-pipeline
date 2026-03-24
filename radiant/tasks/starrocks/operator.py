@@ -4,12 +4,12 @@ import uuid
 from abc import abstractmethod
 from collections.abc import MutableMapping
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 from airflow.exceptions import AirflowException
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator, SQLExecuteQueryOperator
 
-from radiant.dags import DAGS_DIR
 from radiant.tasks.data.radiant_tables import get_radiant_mapping
 from radiant.tasks.starrocks.trigger import (
     StarRocksTaskCompleteTrigger,
@@ -44,6 +44,9 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
         self,
         *,
         submit_task_options: SubmitTaskOptions = None,
+        retries=3,
+        retry_delay=timedelta(seconds=15),
+        retry_exponential_backoff=True,
         **kwargs,
     ):
         conn_id = "starrocks_conn"
@@ -51,6 +54,9 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
 
         super().__init__(
             conn_id=conn_id,
+            retries=retries,
+            retry_delay=retry_delay,
+            retry_exponential_backoff=retry_exponential_backoff,
             **kwargs,
         )
 
@@ -165,8 +171,10 @@ class RadiantStarRocksOperator(RadiantStarRocksBaseOperator, SQLExecuteQueryOper
             context (dict): The execution context.
             event: The event indicating task success.
         """
-        if not event.get("status") == "success":
-            raise AirflowException("Submit task failed with error: %s", event.get("error_message", "Unknown error"))
+        if event.get("status") != "success":
+            err = event.get("error_message", "Unknown error")
+            raise AirflowException(f"Submit task failed with error: {err}")
+
         return
 
 
@@ -243,10 +251,10 @@ class RadiantStarRocksBasePartitionSwapOperator(RadiantStarRocksBaseOperator):
     def prepare_partition(self, context):
         hook = self.get_db_hook()
         self.log.info(
-            "Prepare partition for table: %s, partition: %s, temp_partition: %s",
-            self.table,
-            self.partition,
-            self.temp_partition,
+            f"Prepare partition for table: "
+            f"{self.table}, "
+            f"partition: {self.partition}, "
+            f"temp_partition: {self.temp_partition}"
         )
 
         # Check if partition exists
@@ -285,7 +293,7 @@ class RadiantStarRocksBasePartitionSwapOperator(RadiantStarRocksBaseOperator):
     def after_copy_partition_complete(self, context, event: dict[str, Any] | None = None):
         if not event.get("status") == "success":
             raise AirflowException(
-                "Copy to temp partition failed with error: %s", event.get("error_message", "Unknown error")
+                f"Copy to temp partition failed with error: {event.get('error_message', 'Unknown error')}",
             )
         self.run_insert(context, partition_exists=True)
 
@@ -303,10 +311,10 @@ class RadiantStarRocksBasePartitionSwapOperator(RadiantStarRocksBaseOperator):
         hook = self.get_db_hook()
         _full_partition_name = f"p{self.partition}"
         self.log.info(
-            "Swapping partitions for table: %s, partition: %s, temp_partition: %s",
-            self.table,
-            _full_partition_name,
-            self.temp_partition,
+            f"Swapping partitions for table: "
+            f"{self.table}, "
+            f"partition: {_full_partition_name}, "
+            f"temp_partition: {self.temp_partition}"
         )
         swap_partition_sql = f"""
                 ALTER TABLE {self.table}
@@ -365,7 +373,7 @@ class RadiantStarRocksPartitionSwapOperator(RadiantStarRocksBasePartitionSwapOpe
     def after_insert_sql_complete(self, context, event: dict[str, Any] | None = None):
         if not event.get("status") == "success":
             raise AirflowException(
-                "Copy to temp partition failed with error: %s", event.get("error_message", "Unknown error")
+                f"Copy to temp partition failed with error: {event.get('error_message', 'Unknown error')}",
             )
         self.log.info("User SQL execution complete")
 
@@ -538,7 +546,6 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
         with hook.get_conn().cursor() as cursor:
             for _params in _parameters:
                 self.log.info(f"Loading Exomiser file {_params['tsv_filepath']}...")
-                _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/staging_exomiser_load.sql")
                 _sql_context = {
                     "load_label": _params["load_label"],
                     "temporary_partition_clause": _temporary_partition_clause,

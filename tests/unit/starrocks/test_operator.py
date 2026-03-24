@@ -2,7 +2,12 @@ import re
 
 import pytest
 
-from radiant.tasks.starrocks.operator import RadiantStarRocksBaseOperator, SubmitTaskOptions
+from radiant.tasks.starrocks.operator import (
+    RadiantStarRocksBaseOperator,
+    RadiantStarRocksOperator,
+    RadiantStarRocksPartitionSwapOperator,
+    SubmitTaskOptions,
+)
 
 
 @pytest.mark.parametrize(
@@ -59,3 +64,20 @@ def test_prepare_sql_with_extra_args():
             SELECT * FROM table
         """.strip(),
     )
+
+
+@pytest.mark.parametrize(
+    "operator_cls, kwargs",
+    [
+        (RadiantStarRocksBaseOperator, {"task_id": "test_task"}),
+        (RadiantStarRocksOperator, {"task_id": "test_task", "sql": "SELECT 1"}),
+        (
+            RadiantStarRocksPartitionSwapOperator,
+            {"task_id": "test_task", "table": "foo", "insert_partition_sql": "bar"},
+        ),
+    ],
+)
+def test_operator_retry_configuration(operator_cls, kwargs):
+    op = operator_cls(**kwargs)
+    assert op.retries == 3
+    assert op.retry_delay.total_seconds() == 15
