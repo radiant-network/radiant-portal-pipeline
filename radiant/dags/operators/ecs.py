@@ -185,3 +185,29 @@ class ImportPart(BaseECSOperator):
                 ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
             )
         )
+
+    @staticmethod
+    def get_cleanup(ecs_env: ECSEnv):
+        return ecs.EcsRunTaskOperator.partial(
+            **dict(
+                task_id="cleanup_tasks_files",
+                task_display_name="[ECS] Cleanup tasks files",
+                overrides={
+                    "containerOverrides": [
+                        {
+                            "name": "radiant-operator-qa-etl-container",
+                            "command": ["python /opt/radiant/cleanup.py --path '{{ params.stored_tasks }}'"],
+                            "environment": [
+                                {"name": "PYTHONPATH", "value": "/opt/radiant"},
+                                {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
+                            ],
+                        }
+                    ]
+                },
+            )
+            | ImportGermlineSNVVCF._get_ecs_context(
+                ecs_cluster=ecs_env.ECS_CLUSTER,
+                ecs_subnets=ecs_env.ECS_SUBNETS,
+                ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
+            )
+        )

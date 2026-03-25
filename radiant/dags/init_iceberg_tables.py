@@ -69,12 +69,12 @@ with DAG(
             namespace_task
         )
 
-    (
-        namespace_task  # ensure namespace is resolved before downstream tasks
-        >> init_database()
-        >> create_germline_variant_table()
-        >> create_germline_consequence_table()
-        >> create_germline_snv_occurrence_table()
-        >> create_germline_cnv_occurrence_table()
-        >> create_somatic_snv_occurrence_table()
-    )
+        (
+            namespace_task  # ensure namespace is resolved before downstream tasks
+            >> init_database()
+            >> create_germline_variant_table()
+            >> create_germline_consequence_table()
+            >> create_germline_snv_occurrence_table()
+            >> create_germline_cnv_occurrence_table()
+            >> create_somatic_snv_occurrence_table()
+        )
