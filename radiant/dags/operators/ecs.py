@@ -196,10 +196,7 @@ class ImportPart(BaseECSOperator):
                     "containerOverrides": [
                         {
                             "name": "radiant-operator-qa-etl-container",
-                            "command": [
-                                "python /opt/radiant/cleanup.py "
-                                "--path '{{ params.stored_tasks }}'"
-                            ],
+                            "command": ["python /opt/radiant/cleanup.py --path '{{ params.stored_tasks }}'"],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
                                 {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
@@ -208,7 +205,7 @@ class ImportPart(BaseECSOperator):
                     ]
                 },
             )
-              | ImportGermlineSNVVCF._get_ecs_context(
+            | ImportGermlineSNVVCF._get_ecs_context(
                 ecs_cluster=ecs_env.ECS_CLUSTER,
                 ecs_subnets=ecs_env.ECS_SUBNETS,
                 ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,

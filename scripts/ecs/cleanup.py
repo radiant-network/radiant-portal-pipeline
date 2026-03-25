@@ -22,5 +22,5 @@ if __name__ == "__main__":
     try:
         delete_s3_object(args.path, logger)
     except Exception as e:
-        logger.exception(f"Error while cleanup path: {e}")
+        logger.exception(f"Error while cleaning up path: {e}")
         sys.exit(1)
