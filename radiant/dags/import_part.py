@@ -94,7 +94,7 @@ def import_part():
 
         # ECS limits the length of the command override, so we need to upload the tasks to S3
         # and pass the S3 path of the file in which the data is stored to the ECS operator instead of the data.
-        s3_path = s3_store_content(content=tasks, ecs_env=ecs_env, prefix="commit_partitions")
+        s3_path = s3_store_content(content=tasks, ecs_env=ecs_env, prefix="store_tasks")
         return [{"stored_tasks": s3_path}]
 
     tasks = check_tasks(fetch_sequencing_experiment_delta.output)
@@ -132,6 +132,9 @@ def import_part():
             radiant_namespace=namespace_task,
             ecs_env=ecs_env,
         )
+
+        cleanup = operators.ImportPart.get_cleanup(ecs_env=ecs_env)
+
     else:
         import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(namespace_task)
         import_somatic_snv_vcf = operators.ImportPart.get_import_somatic_snv_vcf(namespace_task)
@@ -477,8 +480,10 @@ def import_part():
     vcf_imports = [
         import_germline_snv_vcf,
         import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(tasks=tasks),
-        import_somatic_snv_vcf(tasks=stored_tasks) if IS_AWS else import_somatic_snv_vcf(tasks=tasks),
+        import_somatic_snv_vcf.expand(params=stored_tasks) if IS_AWS else import_somatic_snv_vcf(tasks=tasks),
     ]
+    if IS_AWS:
+        vcf_imports >> cleanup.expand(params=stored_tasks)
 
     # --- DAG Flow ---
 
