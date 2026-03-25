@@ -35,5 +35,3 @@ if __name__ == "__main__":
     except Exception as e:
         logger.exception(f"Error while processing tasks: {e}")
         sys.exit(1)
-    finally:
-        delete_s3_object(args.tasks, logger)
