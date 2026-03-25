@@ -1,5 +1,3 @@
-# Pull Request Title
-
 ## 📌 Context
 
 <!-- Briefly describe the purpose of this PR. Include any relevant context. -->
