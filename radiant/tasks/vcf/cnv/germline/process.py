@@ -65,7 +65,9 @@ def process_tasks(
                         if not record.ALT:
                             logger.warning(f"Skipping record with no ALT: {record.CHROM}:{record.POS}-{record.end}")
                             continue
-                        occurrence = process_occurrence(record, part, exp.seq_id, exp.aliquot, sample_idx)
+                        occurrence = process_occurrence(
+                            record, part, exp.seq_id, task.task_id, exp.aliquot, sample_idx
+                        )
                         occurrence_buffer.append(occurrence)
                     vcf.close()
         df = pa.Table.from_pylist(occurrence_buffer, schema=occurrence_table.schema().as_arrow())
