@@ -247,13 +247,18 @@ def import_part():
         parameters=task_ids,
     )
 
-    insert_exomiser = RadiantStarRocksOperator(
+    insert_exomiser = RadiantStarRocksPartitionSwapOperator(
         task_id="insert_exomiser",
-        sql="./sql/radiant/exomiser_insert.sql",
-        task_display_name="[StarRocks] Insert Exomiser",
+        table="{{ mapping.starrocks_exomiser }}",
+        task_display_name="[StarRocks] Insert Exomiser Part",
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/exomiser_copy_partition.sql",
+        ),
         submit_task_options=std_submit_task_opts,
-        parameters={"part": "{{ params.part }}"},
-        trigger_rule=TriggerRule.NONE_FAILED,
+        parameters=sequencing_ids,
+        insert_partition_sql="./sql/radiant/exomiser_insert_partition_delta.sql",
+        trigger_rule=TriggerRule.ALL_SUCCESS,
     )
 
     with TaskGroup(group_id="germline_snv_occurrence") as tg_germline_snv_occurrence:
