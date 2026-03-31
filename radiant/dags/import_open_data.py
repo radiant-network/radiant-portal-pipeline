@@ -24,6 +24,7 @@ gene_group_ids = [
     "cosmic_gene_panel",
     "mondo_term",
     "hpo_term",
+    "gencode_transcript",
 ]
 
 dag_params = {

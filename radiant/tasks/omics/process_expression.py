@@ -1,3 +1,18 @@
+"""
+Pseudo-code for the process_expression task following the proposed schema:
+https://docs.google.com/spreadsheets/d/18znLGx23qknUWXaqgMQ5cRNK3JZfUU9A7LwwdsGvfis/edit?usp=sharing
+
+Pulls from these files:
+- rsem.genes.results*
+- rsem.isoforms.results*
+- kallisto.abundance.tsv*
+- ReadsPerGene.out.tab*
+- RNASeQC.counts.tar.gz
+
+Docs also proposes a schema for transcript annotation table to be added to open data
+- gencode.v39.primary_assembly.annotation.gtf
+"""
+
 import pandas as pd
 import shutil
 import tarfile
