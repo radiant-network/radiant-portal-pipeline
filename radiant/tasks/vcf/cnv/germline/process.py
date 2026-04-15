@@ -69,7 +69,7 @@ def process_tasks(
                             record, part, exp.seq_id, task.task_id, exp.aliquot, sample_idx
                         )
                         occurrence_buffer.append(occurrence)
-                    vcf.close()
+            vcf.close()
         df = pa.Table.from_pylist(occurrence_buffer, schema=occurrence_table.schema().as_arrow())
         occurrence_table.overwrite(df)
         logger.info(f"✅ Table {occurrences_table_name} overwritten")
