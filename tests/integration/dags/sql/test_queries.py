@@ -55,8 +55,13 @@ def _execute_query(cursor, query, args=None):
 def _execute_file(cursor, sql_file, args=None):
     from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
+    context = {"mapping": get_radiant_mapping()}
+    if "udf" in sql_file:
+        context["params"] = {"udf_release_version": "v1.1.0"}
+
     with open(sql_file) as f:
-        rendered_sql = jinja2.Template(f.read()).render({"mapping": get_radiant_mapping()})
+        rendered_sql = jinja2.Template(f.read()).render(context)
+
     return _execute_query(cursor, rendered_sql, args=args)
 
 
