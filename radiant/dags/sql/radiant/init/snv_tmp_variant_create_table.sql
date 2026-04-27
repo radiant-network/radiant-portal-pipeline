@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_tmp_variant }}
     `symbol` varchar(100) NULL COMMENT "",
     `impact_score` tinyint NULL COMMENT "",
     `consequences` array< varchar (100)> NULL COMMENT "",
-    `vep_impact` varchar(100) NULL COMMENT "",
+    `vep_impact` varchar(20) NULL COMMENT "",
     `is_mane_select` boolean NULL COMMENT "",
     `is_mane_plus` boolean NULL COMMENT "",
     `is_canonical` boolean NULL COMMENT "",
