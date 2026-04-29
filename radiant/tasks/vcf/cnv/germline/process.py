@@ -59,17 +59,16 @@ def process_tasks(
             for exp in task.experiments:
                 logger.info(f"Process aliquot: {exp.aliquot} (seq_id: {exp.seq_id})")
                 sample_idx = vcf.samples.index(exp.aliquot)
-                part = 0
                 with tracer.start_as_current_span(f"vcf_task_{task.task_id}_{exp.seq_id}"):
                     for record in vcf:
                         if not record.ALT:
                             logger.warning(f"Skipping record with no ALT: {record.CHROM}:{record.POS}-{record.end}")
                             continue
                         occurrence = process_occurrence(
-                            record, part, exp.seq_id, task.task_id, exp.aliquot, sample_idx
+                            record, task.part, exp.seq_id, task.task_id, exp.aliquot, sample_idx
                         )
                         occurrence_buffer.append(occurrence)
-                    vcf.close()
+            vcf.close()
         df = pa.Table.from_pylist(occurrence_buffer, schema=occurrence_table.schema().as_arrow())
         occurrence_table.overwrite(df)
         logger.info(f"✅ Table {occurrences_table_name} overwritten")

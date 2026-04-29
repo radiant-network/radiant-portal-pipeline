@@ -47,7 +47,7 @@ sequencing_experiments AS (
 	    se.analysis_type,
 	    se.experimental_strategy_code AS experimental_strategy,
         COALESCE(se.priority_code, 'routine') AS request_priority,
-	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code='snv' THEN d.url ELSE NULL END) AS vcf_filepath,
+	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code IN ('snv', 'ssnv') THEN d.url ELSE NULL END) AS vcf_filepath,
 	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code='gcnv' THEN d.url ELSE NULL END) AS cnv_vcf_filepath,
 	    ANY_VALUE(CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END) AS exomiser_filepath,
         se.created_on AS created_at,

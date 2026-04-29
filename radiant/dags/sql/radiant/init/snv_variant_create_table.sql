@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_variant }} (
     clinvar_name VARCHAR(2000) NULL COMMENT '',
     variant_class VARCHAR(50) NULL COMMENT '',
     clinvar_interpretation ARRAY<VARCHAR(100)> NULL COMMENT '',
-    symbol VARCHAR(20) NULL COMMENT '',
+    symbol VARCHAR(100) NULL COMMENT '',
     impact_score tinyint NULL COMMENT "",
     consequences ARRAY<VARCHAR(50)> NULL COMMENT '',
     vep_impact VARCHAR(20) NULL COMMENT '',

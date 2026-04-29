@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_tmp_variant }}
     `chromosome` char(2),
     `start` bigint NULL COMMENT "",
     `variant_class` varchar(50) NULL COMMENT "",
-    `symbol` varchar(20) NULL COMMENT "",
+    `symbol` varchar(100) NULL COMMENT "",
     `impact_score` tinyint NULL COMMENT "",
     `consequences` array< varchar (100)> NULL COMMENT "",
     `vep_impact` varchar(20) NULL COMMENT "",

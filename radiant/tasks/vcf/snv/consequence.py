@@ -134,7 +134,7 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
                 "is_picked": picked,
                 "is_canonical": get_csq_field(csq_fields, fields, "CANONICAL") == "YES",
                 "aa_change": hgvsp.split(":")[-1] if hgvsp else None,
-                "dna_change": hgvsc.split(":")[-1] if hgvsp else None,
+                "dna_change": hgvsc.split(":")[-1] if hgvsc else None,
                 "impact_score": IMPACT_SCORE.get(vep_impact, 0),
             }
             if picked:

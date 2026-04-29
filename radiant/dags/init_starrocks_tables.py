@@ -1,4 +1,5 @@
 from airflow import DAG
+from airflow.models import Param
 from airflow.utils.helpers import chain
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE, SQL_DIR
@@ -9,11 +10,20 @@ _OPEN_DATA_SQL_INIT_DIR = SQL_DIR / "open_data" / "init"
 _CLINICAL_SQL_INIT_DIR = SQL_DIR / "clinical" / "init"
 
 
+dag_params = {
+    "udf_release_version": Param(
+        default="v1.2.0",
+        description="Release version of the radiant-starrocks-udf JAR (e.g. v1.2.0).",
+        type="string",
+    ),
+}
+
 with DAG(
     dag_id=f"{NAMESPACE}-init-starrocks-tables",
     schedule_interval=None,
     catchup=False,
     default_args=DEFAULT_ARGS,
+    params=dag_params,
     tags=["radiant", "starrocks", "manual"],
     dag_display_name="Radiant - Init StarRocks Tables",
 ) as dag:

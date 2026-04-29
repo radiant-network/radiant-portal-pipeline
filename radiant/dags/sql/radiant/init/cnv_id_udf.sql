@@ -13,5 +13,5 @@ CREATE OR REPLACE
     "type" =
     "StarrocksJar",
     "file" =
-    "https://github.com/radiant-network/radiant-starrocks-udf/releases/download/v1.1.0/radiant-starrocks-udf-1.1.0-jar-with-dependencies.jar"
+    "https://github.com/radiant-network/radiant-starrocks-udf/releases/download/{{ params.udf_release_version }}/radiant-starrocks-udf-{{ params.udf_release_version | replace('v', '') }}-jar-with-dependencies.jar"
 );
