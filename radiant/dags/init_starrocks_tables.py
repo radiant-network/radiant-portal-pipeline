@@ -1,6 +1,6 @@
 from airflow import DAG
 from airflow.models import Param
-from airflow.utils.helpers import chain
+from airflow.models.baseoperator import chain
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE, SQL_DIR
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator
@@ -20,7 +20,7 @@ dag_params = {
 
 with DAG(
     dag_id=f"{NAMESPACE}-init-starrocks-tables",
-    schedule_interval=None,
+    schedule=None,
     catchup=False,
     default_args=DEFAULT_ARGS,
     params=dag_params,
