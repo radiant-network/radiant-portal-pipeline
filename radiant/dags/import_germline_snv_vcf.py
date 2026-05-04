@@ -1,10 +1,10 @@
+import datetime
 import logging
 import os
 
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Param
-from airflow.utils.dates import days_ago
 
 from radiant.dags import IS_AWS, NAMESPACE, ECSEnv, get_namespace
 from radiant.dags.operators.utils import s3_store_content
@@ -35,8 +35,7 @@ dag_params = {
 with DAG(
     dag_id=f"{NAMESPACE}-import-germline-snv-vcf",
     default_args=default_args,
-    start_date=days_ago(1),
-    schedule_interval=None,
+    start_date=datetime.datetime(2021, 1, 1),
     tags=["radiant", "iceberg"],
     dag_display_name="Radiant - Import Germline SNV VCF",
     catchup=False,

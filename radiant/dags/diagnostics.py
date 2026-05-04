@@ -5,7 +5,6 @@ from radiant.dags import DEFAULT_ARGS, NAMESPACE
 
 with DAG(
     dag_id=f"{NAMESPACE}-diagnostic",
-    schedule_interval=None,
     catchup=False,
     default_args=DEFAULT_ARGS,
     tags=["radiant", "starrocks", "manual", "dns"],

@@ -1,8 +1,8 @@
+import datetime
 import logging
 import os
 
 from airflow import DAG
-from airflow.utils.dates import days_ago
 
 from radiant.dags import IS_AWS, NAMESPACE, ECSEnv, get_namespace
 
@@ -17,8 +17,7 @@ LOGGER = logging.getLogger(__name__)
 with DAG(
     dag_id=f"{NAMESPACE}-init-iceberg-tables",
     default_args=default_args,
-    start_date=days_ago(1),
-    schedule_interval=None,
+    start_date=datetime.datetime(2021, 1, 1),
     tags=["radiant", "iceberg", "manual"],
     dag_display_name="Radiant - Init Iceberg Tables",
     catchup=False,

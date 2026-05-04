@@ -2,8 +2,8 @@ import logging
 
 from airflow import DAG
 from airflow.models import Param
+from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
-from airflow.utils.helpers import chain
 
 from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import RadiantStarrocksLoadOperator, RadiantStarRocksOperator, SubmitTaskOptions
@@ -42,7 +42,6 @@ dag_params = {
 with DAG(
     dag_id=f"{NAMESPACE}-import-open-data",
     dag_display_name="Radiant - Import Open Data",
-    schedule_interval=None,
     catchup=False,
     default_args=default_args,
     params=dag_params,

@@ -14,12 +14,12 @@ dag_params = {
 
 with DAG(
     dag_id=f"{NAMESPACE}-init-simulated-clinical-data",
-    schedule_interval=None,
     catchup=False,
     default_args=DEFAULT_ARGS,
     tags=["radiant", "postgres", "manual", "qa"],
     dag_display_name="[QA] Radiant - Init Simulated Clinical Data",
     params=dag_params,
+    schedule=None # required in airflow 2 because of the presence of required param without default value
 ) as dag:
     _mapping = get_radiant_mapping()
     _mapping = {key: value.replace("radiant_jdbc", "radiant").replace("`", "") for key, value in _mapping.items()}
