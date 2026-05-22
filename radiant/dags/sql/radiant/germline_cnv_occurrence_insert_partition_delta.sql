@@ -9,11 +9,12 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
                     AND g.end >= o.start
                WHERE o.seq_id IN %(seq_ids)s
                GROUP BY o.name, o.seq_id),
-     snv AS (SELECT o.name, o.seq_id, COUNT(1) AS nb_snv
+     snv AS (SELECT o.name,
+                    o.seq_id,
+                    SUM(CASE WHEN s.has_alt = true AND s.chromosome = o.chromosome AND s.start <= o.end AND s.start >= o.start THEN 1 ELSE 0 END) AS nb_snv
              FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
-             JOIN {{ mapping.iceberg_germline_snv_occurrence }} s ON s.chromosome = o.chromosome AND s.start <= o.end
-                    AND s.start >= o.start AND o.seq_id = s.seq_id
-             WHERE s.has_alt = true AND s.seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s AND s.part={{ partition }}
+             JOIN {{ mapping.iceberg_germline_snv_occurrence }} s ON o.seq_id = s.seq_id
+             WHERE s.seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s AND s.part={{ partition }}
              GROUP BY o.name, o.seq_id),
     gnomad_overlaps AS (
         SELECT
