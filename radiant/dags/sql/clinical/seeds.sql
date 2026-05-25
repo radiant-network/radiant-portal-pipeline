@@ -113,7 +113,8 @@ INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, analysis_cat
     (19, 55, 2, 2, 'revoke', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO', 'unsolved', 'Ethan Reid', 3, '2:19'),
     (20, 58, 2, 2, 'revoke', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO', 'unsolved', 'Leonie Laplante', 3, '2:20'),
     (21, 60, 2, 2, 'incomplete', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO', 'unsolved', 'Henri Chabot', 3, '2:21'),
-    (22, 3, 1, 1, 'in_progress', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'somatic', 'postnatal', 'MONDO', 'unsolved', 'Felix Laflamme', 3, '1:22')
+    (22, 3, 1, 1, 'in_progress', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'somatic', 'postnatal', 'MONDO', 'unsolved', 'Felix Laflamme', 3, '1:22'),
+    (23, 3, 1, 1, 'in_progress', 'MONDO:0700092', 6, 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO', 'unsolved', 'Felix Laflamme', 3, '1:23')
 ;
 
 TRUNCATE {{ params.clinical_family }} CASCADE;
@@ -178,7 +179,8 @@ INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relatio
     (58, 19, 55, 'proband', 'affected'),
     (59, 20, 58, 'proband', 'affected'),
     (60, 21, 60, 'proband', 'affected'),
-    (61, 1, 3, 'proband', 'affected')
+    (61, 1, 3, 'proband', 'affected'),
+    (62, 23, 3, 'proband', 'affected')
 ;
 
 
@@ -657,7 +659,9 @@ INSERT INTO {{ params.clinical_obs_categorical }} (
       (460, 20, 58,'phenotype','HPO', 'HP:0001511', 'childhood', 'negative', 'Clinical comment'),
       (461, 20, 58,'phenotype','HPO', 'HP:0001520', 'childhood', 'negative', 'Clinical comment'),
       (462, 20, 58,'phenotype','HPO', 'HP:0001562', 'unknown', 'negative', 'Clinical comment'),
-      (463, 20, 58,'phenotype','HPO', 'HP:0001622', 'childhood', 'negative', 'Clinical comment')
+      (463, 20, 58,'phenotype','HPO', 'HP:0001622', 'childhood', 'negative', 'Clinical comment'),
+      (464, 23, 3,'phenotype','HPO', 'HP:0000717', 'childhood', 'negative', 'Clinical comment'),
+      (465, 23, 3,'phenotype','HPO', 'HP:0001263', 'childhood', 'negative', 'Clinical comment')
 ;
 
 
@@ -787,7 +791,8 @@ VALUES (1, 'dna', 62, NULL, 'normal', 'S13224', 3, 6),
        (121,  'blood', NULL, NULL, 'normal', 'B-990.2',61,6),
        (122,  'blood', NULL, NULL, 'normal', 'B-990.3',59,6),
        (123,  'blood', NULL, NULL, 'tumoral', 'B-990.3', 3,6),
-       (124,  'blood', NULL, NULL, 'normal', 'B-990.3', 3,6)
+       (124,  'blood', NULL, NULL, 'normal', 'B-990.3', 3,6),
+       (125,  'blood', NULL, NULL, 'normal', 'S13224v2', 3,6);
 ;
 
 -- Sequencing Experiment
@@ -855,7 +860,8 @@ INSERT INTO {{ params.clinical_sequencing_experiment }} (id, sample_id, status_c
     (60, 60, 'incomplete', 'S14858', 6, 1676, 'A00516_0228', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina'),
     (61, 61, 'incomplete', 'S14859', 6, 1677, 'A00516_0229', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina'),
     (62, 123, 'incomplete', 'TCR002361_SRX1091647-T', 6, 1677, 'TCR002361_SRX1091647-Tumor', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina'),
-	(63, 124, 'incomplete', 'TCR002361_SRX1091646-N', 6, 1677, 'TCR002361_SRX1091646-Normal', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina');
+	(63, 124, 'incomplete', 'TCR002361_SRX1091646-N', 6, 1677, 'TCR002361_SRX1091646-Normal', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina'),
+    (64, 125, 'completed', 'NA12878v2_NA12878v2', 6, 1678, 'A00516_0230', '2021-08-17', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina');
 
 
 TRUNCATE {{ params.clinical_case_has_sequencing_experiment }} CASCADE;
@@ -922,7 +928,8 @@ INSERT INTO {{ params.clinical_case_has_sequencing_experiment }} (case_id, seque
     (21, 60),
     (21, 61),
     (22, 62),
-    (22, 63);
+    (22, 63),
+    (23, 64);
 
 TRUNCATE {{ params.clinical_task }} CASCADE;
 INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipeline_version, genome_build, created_on) VALUES
@@ -992,7 +999,8 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (64, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00'),
     (65, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00'),
     (66, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00'),
-	(67, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00');
+	(67, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00'),
+    (68, 'alignment_germline_variant_calling', 'Dragen', '4.4.4', 'GRch38','2021-10-12 13:08:00');
 
 TRUNCATE {{ params.clinical_task_context }} CASCADE;
 INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_experiment_id) VALUES
@@ -1067,7 +1075,8 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     (65, 8, 22),
     (66, 8, 22),
     (67, 22, 62),
-    (67, 22, 63)
+    (67, 22, 63),
+    (68, null, 64)
 ;
 
 
@@ -1326,7 +1335,9 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (255, 'FI0005566.S14029.vcf.gz', 'genomic', 'snv', 'vcf', 307243253, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c836'),
     (256, 'FI0005566.S14029.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c837'),
     (257, 'variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz', 'genomic', 'snv', 'vcf', 34095067, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz', '103f65eeff69dae290c90d2a4ad3fea2-3'),
-    (258, 'variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 933443, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz.tbi', '5d7f43f74fd1ea4af83b87e727799ec2');
+    (258, 'variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 933443, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz.tbi', '5d7f43f74fd1ea4af83b87e727799ec2'),
+    (259, ' NA12878v2.reheader.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 304055582, '{{ params.vcf_bucket_prefix }}/NA12878v2.reheader.cnv.vcf.gz', '5d41402abc4b2a76b9719d911017c834'),
+    (260, ' NA12878v2.reheader.cnv.vcf.gz.tbi', 'genomic', 'gcnv', 'tbi', 2411724, '{{ params.vcf_bucket_prefix }}/NA12878v2.reheader.cnv.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c835');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1585,7 +1596,10 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (65, 236, 'output'),
     (66, 246, 'output'),
     (67, 257, 'output'),
-    (67, 258, 'output');
+    (67, 258, 'output'),
+    (68, 259, 'output'),
+    (68, 260, 'output')
+    ;
 
 -- Reset sequences
 ALTER TABLE {{ params.clinical_analysis_catalog }} ALTER COLUMN id RESTART WITH 1000;
