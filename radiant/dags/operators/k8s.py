@@ -12,6 +12,7 @@ class BaseK8SOperator:
         return dict(
             namespace=os.getenv("RADIANT_TASK_OPERATOR_KUBERNETES_NAMESPACE"),
             image=os.getenv("RADIANT_TASK_OPERATOR_IMAGE"),
+            service_account_name=os.getenv("RADIANT_TASK_OPERATOR_SERVICE_ACCOUNT_NAME"),
             image_pull_policy="IfNotPresent",
             get_logs=True,
             is_delete_operator_pod=True,
