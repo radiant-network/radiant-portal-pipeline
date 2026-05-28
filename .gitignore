@@ -182,3 +182,4 @@ logs
 
 # ECS related files
 *plugins.zip
+**/.DS_Store
