@@ -1,0 +1,12 @@
+radiant:
+  target: qa
+  outputs:
+    qa:
+      type: starrocks
+      connect_timeout: 10
+      host: "{{ env_var('SR_HOST') }}"
+      port: "{{ env_var('SR_PORT', '9030') | as_number }}"
+      username: "{{ env_var('SR_USER') }}"
+      password: "{{ env_var('SR_PASSWORD') }}"
+      catalog: default_catalog
+      schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"

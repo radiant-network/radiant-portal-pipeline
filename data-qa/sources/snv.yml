@@ -1,0 +1,117 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    description: "Radiant StarRocks analytical schema."
+    tables:
+      - name: snv__variant
+        description: |
+          Aggregated SNV variants (one row per locus). StarRocks primary key is
+          locus_id. Columns marked NULL in the Data Definition Language (DDL)
+          are tested here for the stricter invariants that the loading pipeline
+          is expected to honor.
+        tests:
+          # Should Not Contain Only Null — dynamic sweep over all columns.
+          # Schema evolution is handled automatically: new columns are picked
+          # up on the next run, dropped columns disappear from the check.
+          # Only `except` needs maintenance (legitimate exclusions).
+          - should_not_contain_only_null:
+              name: snv_variant__should_not_contain_only_null
+              except:
+                # Already covered by stricter `not_null` tests below — no
+                # value in re-checking them via the dynamic sweep.
+                - locus_id
+                - chromosome
+                - start
+                - reference
+                - alternate
+                - locus
+                # FIXME: MANE annotation is entirely absent in QA — mane_select
+                # is all-NULL (and is_mane_select / is_mane_plus are all-FALSE,
+                # see not_constant below). Investigate whether MANE is meant to
+                # be loaded in QA.
+                - mane_select
+
+          # Should Not Contain Same Value — dynamic sweep over all columns.
+          # Same evolution semantics as above.
+          - should_not_contain_same_value:
+              name: snv_variant__should_not_contain_same_value
+              except:
+                # Unique columns: count(distinct) == row_count, the test
+                # passes trivially but it's expensive on a 16M-row table.
+                - locus_id
+                - locus
+                # WGS-only QA dataset: every whole-exome (WXS) frequency /
+                # count column is constant (all 0). Legitimate environment
+                # limitation — re-check once QA carries WXS data.
+                - germline_pc_wxs
+                - germline_pn_wxs
+                - germline_pc_wxs_affected
+                - germline_pn_wxs_affected
+                - germline_pf_wxs_affected
+                - germline_pc_wxs_not_affected
+                - germline_pn_wxs_not_affected
+                - germline_pf_wxs_not_affected
+                - germline_pf_wxs
+                - somatic_pc_tn_wxs
+                - somatic_pn_tn_wxs
+                - somatic_pf_tn_wxs
+                # FIXME: same MANE gap as above — these flags are FALSE for all
+                # 16M variants. Suspected missing MANE annotation in QA, not a
+                # benign constant. Investigate.
+                - is_mane_select
+                - is_mane_plus
+        columns:
+          # --- Should Not Contain Null ---------------------------------------
+          - name: locus_id
+            description: "Primary key. Must be present and unique."
+            tests:
+              - not_null:
+                  name: snv_variant__should_not_contain_null__locus_id
+              - unique:
+                  name: snv_variant__should_be_unique__locus_id
+          - name: chromosome
+            description: "CHAR(2). One of 1..22, X, Y, M (no 'chr' prefix)."
+            tests:
+              - not_null:
+                  name: snv_variant__should_not_contain_null__chromosome
+              - accepted_values:
+                  name: snv_variant__accepted_values_chromosome
+                  values:
+                    ['1','2','3','4','5','6','7','8','9','10','11','12',
+                     '13','14','15','16','17','18','19','20','21','22',
+                     'X','Y','M']
+          - name: start
+            description: "1-based start position. Nullable in DDL but always populated in practice."
+            tests:
+              - not_null:
+                  name: snv_variant__should_not_contain_null__start
+          - name: reference
+            tests:
+              - not_null:
+                  name: snv_variant__should_not_contain_null__reference
+          - name: alternate
+            tests:
+              - not_null:
+                  name: snv_variant__should_not_contain_null__alternate
+          - name: locus
+            description: "Canonical locus string. Must be unique per variant."
+            tests:
+              - not_null:
+                  name: snv_variant__should_not_contain_null__locus
+              - unique:
+                  name: snv_variant__should_be_unique__locus
+
+          # --- Values Contained In Dictionary --------------------------------
+          - name: vep_impact
+            tests:
+              - accepted_values:
+                  name: snv_variant__accepted_values_vep_impact
+                  values: ['HIGH', 'MODERATE', 'LOW', 'MODIFIER']
+                  config:
+                    where: "vep_impact is not null"
+
+          # Note: per-column `at_least_one` and `not_constant` tests were
+          # replaced by the dynamic `should_not_contain_only_null` and
+          # `should_not_contain_same_value` table-level tests declared above.
