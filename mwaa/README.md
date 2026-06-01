@@ -112,12 +112,32 @@ docker push <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com/radiant/radiant-vcf
 
 ## Step 5 - Run terraform apply
 
-Trigger the **Deployment Airflow** workflow (via the Actions menu) in this repository:
-https://github.com/radiant-network/radiant-portal-deployment
+Only needed if you uploaded new plugins / requirements files (steps 1 and 2) and want MWAA to
+pick them up. Terraform pins each environment to a specific S3 object **version**, so you set the
+new version IDs in the target environment's tfvars through a PR.
 
-It creates a dedicated GitHub issue for approval — open it and approve as requested to let the apply proceed.
+Get the version ID of each uploaded artifact:
 
-Terraform will detect new S3 object versions and updates the relevant MWAA environment(s) accordingly (AWS then restarts them).
+```sh
+BUCKET=radiant-tst-airflow-qa
+aws s3api head-object --bucket $BUCKET --key plugins/plugins.zip       --query VersionId --output text  # plugins_s3_object_version
+aws s3api head-object --bucket $BUCKET --key requirements-mwaa.txt     --query VersionId --output text  # requirements_s3_object_version
+aws s3api head-object --bucket $BUCKET --key plugins/plugins-mwaa3.zip --query VersionId --output text  # plugins_v3_s3_object_version
+aws s3api head-object --bucket $BUCKET --key requirements-mwaa3.txt    --query VersionId --output text  # requirements_v3_s3_object_version
+```
+
+Open a PR setting the matching variable(s) in the target environment's tfvars (QA:
+[`.../qa/variables.tfvars`](https://github.com/radiant-network/radiant-portal-deployment/blob/main/deployment/terraform/airflow/radiant-tst/us-east-1/qa/variables.tfvars)):
+
+```hcl
+plugins_s3_object_version="3HL4kqtJlcpXroDTDmJ.rmSpXd3dIbrHY"
+```
+
+Merging the PR creates a GitHub issue — follow its instructions to approve the apply. Terraform
+updates only the environment(s) whose pinned version changed, and AWS restarts them.
+
+> Leaving a variable empty falls back to the latest uploaded version. We don't recommend this
+> unless for some reason there are no versions available (ex: clean-state bootstrap)
 
 
 ## What terraform handles for you (no manual action needed)
