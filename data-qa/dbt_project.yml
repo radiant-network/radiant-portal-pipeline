@@ -1,0 +1,20 @@
+name: 'radiant_data_qa'
+version: '0.1.0'
+config-version: 2
+
+profile: 'radiant'
+
+model-paths:    ["models", "sources"]
+seed-paths:     []
+test-paths:     ["tests"]
+analysis-paths: []
+macro-paths:    ["macros"]
+snapshot-paths: []
+
+target-path:  "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+  - "logs"
+
+models: {}
