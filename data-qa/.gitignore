@@ -1,0 +1,11 @@
+.venv/
+.env
+target/
+logs/
+dbt_packages/
+*.pyc
+__pycache__/
+
+# Generated reports (keep the folder, ignore the outputs)
+reports/*.xml
+reports/*.log
