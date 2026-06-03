@@ -65,8 +65,9 @@ Rule of thumb:
   on is busywork that will rot.
 
 Scalar columns use dbt's built-in `accepted_values`. Array columns use the
-custom `accepted_values_in_array` generic test (`macros/`), which unnests
-the array and flags any element not in `values`. Both are declared in the
+custom `accepted_values_in_array` generic test (`macros/`), which `array_filter`s
+each array down to the offending elements *before* unnesting (so valid rows
+emit nothing instead of exploding) and flags any element not in `values`. Both are declared in the
 source YAML with a `name:` (append the Jira id when a ticket tracks a known
 gap, e.g. `..._SJRA1552`) and a `values:` list.
 
@@ -123,8 +124,9 @@ dbt debug
 # Run all data tests
 dbt test
 
-# Just the snv__variant tests
-dbt test --select source:radiant.snv__variant
+# Scope to one table (list available tables with the command below)
+dbt test --select source:radiant.<table>
+dbt list --resource-type source     # shows every source:radiant.<table>
 ```
 
 dbt writes detailed results to `target/run_results.json`. Each failing test
@@ -135,27 +137,22 @@ investigate.
 
 ```
 data-qa/
-├── dbt_project.yml      # minimal — no models, just tests
-├── profiles.yml         # env-var driven, single target
-├── packages.yml         # dbt_utils
-├── requirements.txt
-├── macros/
-│   ├── test_should_not_contain_only_null.sql  # dynamic null-coverage sweep
-│   └── test_should_not_contain_same_value.sql # dynamic constant-value sweep
-├── sources/
-│   └── snv.yml          # snv__variant generic tests
-├── tests/
-│   └── snv_variant__validate_no_star_alternate.sql  # singular test example
-├── scripts/
-│   ├── run_results_to_junit.py  # run_results.json -> JUnit XML (stdlib)
-│   └── run_qa.sh                # reusable core: dbt test + convert (CI-ready)
-├── reports/             # generated JUnit XML (gitignored) for TestQuality
-└── models/              # empty by design
+├── macros/    # custom generic tests (dynamic sweeps, array accepted-values)
+├── sources/   # source + generic-test declarations, one YAML per table
+├── tests/     # singular tests (cross-field invariants), one SQL per check
+├── scripts/   # dbt test runner + JUnit conversion (CI-ready)
+├── reports/   # generated JUnit XML (gitignored) for TestQuality
+└── models/    # empty by design
 ```
+
+Root also holds the usual dbt config (`dbt_project.yml`, `profiles.yml`,
+`packages.yml`, `requirements.txt`).
 
 ## Adding tests for another table
 
-1. Add a `sources/<name>.yml` entry under `sources[0].tables`.
+1. Add a `sources/<table_name>.yml` file (one per table, named after it).
+   Each declares the shared `radiant` source with a single table — dbt merges
+   tables across files as long as no `(source, table)` pair is duplicated.
 2. List its columns with the relevant generic tests, and/or attach
    `should_not_contain_only_null` / `should_not_contain_same_value` at the
    table level with an appropriate `except` list.
