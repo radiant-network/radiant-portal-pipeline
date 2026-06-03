@@ -1,0 +1,4 @@
+--constraint /usr/local/airflow/plugins/constraints-3.12.txt
+
+# Radiant specific additional requirements for MWAA
+apache-airflow-providers-mysql==6.5.2
