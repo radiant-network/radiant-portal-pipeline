@@ -1,8 +1,6 @@
 {#
-  Singular test — Should Be Empty: the aggregated variant table must not
-  contain the spanning-deletion placeholder allele ('*'). Such rows are a
-  VCF artifact and are expected to be filtered out upstream. A singular
-  test passes when this query returns zero rows.
+  `*` in `alternate` is the spanning-deletion placeholder (VCF artifact),
+  expected to be filtered out upstream — this table should contain none.
 #}
 
 select

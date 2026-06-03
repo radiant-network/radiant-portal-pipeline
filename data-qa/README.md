@@ -13,19 +13,69 @@ invariants on tables.
 | Should Not Contain Only Null   | `should_not_contain_only_null` (dynamic, custom)              |
 | Should Not Contain Same Value  | `should_not_contain_same_value` (dynamic, custom)             |
 | Should Be Unique               | `tests: [unique]` (built-in, displayed via custom `name:`)    |
-| Values Contained In Dictionary | `tests: [accepted_values: {values: [...]}]`                   |
+| Values Contained In Dictionary | scalar: `accepted_values` (built-in); array: `accepted_values_in_array` (custom) |
+| Should Be Within Range         | `should_be_within_range` (dynamic, custom)                    |
 | Cross-Field / Custom Invariant | Singular tests in `tests/*.sql`                               |
 
-The two **dynamic** tests (`should_not_contain_only_null`,
-`should_not_contain_same_value`) introspect the target table's columns at
-compile time and emit one check per column, minus an explicit `except` list.
-New columns are picked up on the next run automatically; dropped columns
-disappear from the check. Only the `except` list needs maintenance.
+Three **dynamic** tests introspect the table's columns at compile time and
+emit one check per column: `should_not_contain_only_null` and
+`should_not_contain_same_value` sweep all columns minus an `except` list;
+`should_be_within_range` sweeps only columns matching a `like` substring
+(default `_pf_`). New matching columns are picked up automatically; only the
+`except` / `like` config needs maintenance.
 
 For the built-in dbt tests (`not_null`, `unique`), the YAML keeps standard
 dbt syntax — only the displayed name is overridden via `name:` so that
 TestQuality / JUnit reports show consistent vocabulary
 (`should_not_contain_null_<col>`, `should_be_unique_<col>`).
+
+### Purpose of `Values Contained In Dictionary` tests
+
+These tests exist to **detect new upstream values that the portal does not
+yet handle**. "The portal" hardcodes behaviour in two places:
+
+1. **Backend Go facets** — `backend/internal/repository/facets.go`
+   (`NewFacetsRepository`). The closed list of values the API surfaces
+   for a column when the frontend calls it with `withDictionary: true`.
+   A value not in this list **cannot be selected as a filter** even if
+   it appears in result rows.
+2. **Frontend i18n** — `frontend/translations/common/*.json`. The closed
+   list of values that have hardcoded translations, badge colours,
+   abbreviations, icons, sort order, etc. A value not in this list
+   **renders as raw text in the UI**.
+
+A new upstream value not present in **either** source is fully unhandled.
+A value present in only one is a portal-internal inconsistency (out of
+scope for data-qa, but worth flagging).
+
+Each test's accepted-values list mirrors the relevant source(s) — the
+**union** of backend facets and frontend i18n for scalar columns. Keep a
+`mirrors facets.go + i18n — keep in sync` comment next to the list so
+future maintainers know what to update.
+
+Rule of thumb:
+
+- **Keep the test** if the column drives portal behaviour through a
+  closed set of values in either backend facets or frontend i18n (e.g.
+  `consequences`, `vep_impact`, `variant_class`, `clinvar_interpretation`,
+  `chromosome` — all hardcoded somewhere).
+- **Drop the test** if the column is free-form / informational only and
+  the portal renders the raw value as-is everywhere (no backend facet,
+  no frontend i18n). Maintaining a dictionary the portal doesn't depend
+  on is busywork that will rot.
+
+Scalar columns use dbt's built-in `accepted_values`. Array columns use the
+custom `accepted_values_in_array` generic test (`macros/`), which unnests
+the array and flags any element not in `values`. Both are declared in the
+source YAML with a `name:` (append the Jira id when a ticket tracks a known
+gap, e.g. `..._SJRA1552`) and a `values:` list.
+
+Values are tested **raw / case-sensitive** — no normalization. For array
+columns the dictionary therefore mirrors backend `facets.go` in its data
+case (e.g. `mature_miRNA_variant`, `TFBS_ablation`); frontend i18n short
+forms are sanitized lookup keys that never appear in raw data, so they're
+out of scope. Singular tests under `tests/` are now reserved for cross-field
+invariants that don't fit a generic test (e.g. `no_star_alternate`).
 
 ## Prerequisites
 
@@ -46,7 +96,13 @@ dbt deps                     # installs dbt_utils
 ## Configuration
 
 Connection params come from env vars (no secrets in the repo). Copy
-`.env.example` to `.env` and fill in the values, or export them in your shell:
+`.env.example` to `.env` and fill in the values, then load it into your shell:
+
+```bash
+set -a && source .env && set +a   # export every var from .env
+```
+
+Or export them directly in your shell:
 
 ```bash
 export SR_HOST=localhost
