@@ -1,0 +1,119 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: germline__snv__occurrence
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              # SJRA-1559: info_culprit info_haplotype_score info_vqslod info_ds info_r2_5p_bias info_inbreed_coeff
+              name: germline_snv_occurrence__should_not_contain_only_null_SJRA-1559
+              except:
+                # Already covered by germline_snv_occurrence__should_not_contain_null__*
+                - part
+                - seq_id
+                - task_id
+                - locus_id
+                - phased
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: germline_snv_occurrence__should_not_contain_same_value
+              except:
+                # Constant by construction
+                - part
+
+          # --- Should Be Within Range ----------------------------------------
+          # allele-depth ratios must be in [0,1] (defaults: like 'ad_ratio', 0..1)
+          - should_be_within_range:
+              name: germline_snv_occurrence__should_be_within_range_ad_ratio
+              like: ad_ratio
+        columns:
+          - name: part
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_occurrence__should_not_contain_null__part
+          - name: seq_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_occurrence__should_not_contain_null__seq_id
+          - name: task_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_occurrence__should_not_contain_null__task_id
+          - name: locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_occurrence__should_not_contain_null__locus_id
+          - name: phased
+            description: "BOOLEAN."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_occurrence__should_not_contain_null__phased
+          - name: zygosity
+            description: "CHAR(3)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # Notion: https://app.notion.com/p/ferlab/b60cce4406dc460796882a8551454e27?v=30cfb82fd215434493c541a9b72d2dc0
+              # mirrors i18n — keep in sync
+              - accepted_values:
+                  name: germline_snv_occurrence__accepted_values_zygosity
+                  values: ['HET', 'HOM', 'HEM', 'WT', 'UNK']
+                  config:
+                    where: "zygosity is not null"
+          - name: father_zygosity
+            description: "CHAR(3)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # Notion: https://app.notion.com/p/ferlab/b60cce4406dc460796882a8551454e27?v=30cfb82fd215434493c541a9b72d2dc0
+              # mirrors i18n — keep in sync
+              - accepted_values:
+                  name: germline_snv_occurrence__accepted_values_father_zygosity
+                  values: ['HET', 'HOM', 'HEM', 'WT', 'UNK']
+                  config:
+                    where: "father_zygosity is not null"
+          - name: mother_zygosity
+            description: "CHAR(3)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # Notion: https://app.notion.com/p/ferlab/b60cce4406dc460796882a8551454e27?v=30cfb82fd215434493c541a9b72d2dc0
+              # mirrors i18n — keep in sync
+              - accepted_values:
+                  name: germline_snv_occurrence__accepted_values_mother_zygosity
+                  values: ['HET', 'HOM', 'HEM', 'WT', 'UNK']
+                  config:
+                    where: "mother_zygosity is not null"
+          - name: transmission_mode
+            description: "VARCHAR(50)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # Notion: https://app.notion.com/p/ferlab/2ef5a320b986493694e8a820d467d017?v=2808ef9b129c443e853d939a5524805d
+              # mirrors facets.go + transmission-mode-badge.tsx — keep in sync
+              - accepted_values:
+                  name: germline_snv_occurrence__accepted_values_transmission_mode
+                  values:
+                    ['autosomal_dominant_de_novo', 'autosomal_dominant', 'autosomal_recessive',
+                     'x_linked_dominant_de_novo', 'x_linked_recessive_de_novo', 'x_linked_dominant',
+                     'x_linked_recessive', 'non_carrier_proband', 'unknown_parents_genotype',
+                     'unknown_father_genotype', 'unknown_mother_genotype', 'unknown_proband_genotype']
+                  config:
+                    where: "transmission_mode is not null"
+          - name: exomiser_acmg_classification
+            description: "VARCHAR(300)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # Notion: https://app.notion.com/p/ferlab/1135448b7a5543e19c968fea72ea82e7?v=50ac6d7244744fc1a6b3c30347acd5e4
+              # mirrors classification-badge.tsx + i18n — keep in sync
+              - accepted_values:
+                  name: germline_snv_occurrence__accepted_values_exomiser_acmg_classification
+                  values:
+                    ['pathogenic', 'likely_pathogenic', 'uncertain_significance',
+                     'likely_benign', 'benign']
+                  config:
+                    where: "exomiser_acmg_classification is not null"
