@@ -1,0 +1,109 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: somatic__snv__occurrence
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: somatic_snv_occurrence__should_not_contain_only_null
+              except:
+                # Already covered by somatic_snv_occurrence__should_not_contain_null__*
+                - locus_id
+                - part
+                - task_id
+                - tumor_seq_id
+                # Constant by construction
+                - quality
+                # Not yet implemented
+                - normal_gt_status
+                - tumor_gt_status
+                # Probably same as SJRA-1559 (waiting for investigation)
+                - info_baseq_rank_sum
+                - info_culprit
+                - info_ds
+                - info_excess_het
+                - info_fraction_informative_reads
+                - info_fs
+                - info_haplotype_score
+                - info_hotspotallele
+                - info_inbreed_coeff
+                - info_old_record
+                - info_mapq
+                - info_mleac
+                - info_mleaf
+                - info_mq
+                - info_m_qrank_sum
+                - info_mq0
+                - info_qd
+                - info_read_pos_rank_sum
+                - info_r2_5p_bias
+                - info_sor
+                - info_vqslod
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: somatic_snv_occurrence__should_not_contain_same_value
+              except:
+                # Constant by construction
+                - normal_calls
+                - normal_has_alt
+                - normal_zygosity
+                - part
+                - tumor_has_alt
+                # Single tumor-normal task QA dataset
+                - normal_seq_id
+                - task_id
+                - tumor_seq_id
+                - tumor_zygosity
+
+          # --- Should Be Within Range ----------------------------------------
+          # allele-depth ratios must be in [0,1] (defaults: like 'ad_ratio', 0..1)
+          - should_be_within_range:
+              name: somatic_snv_occurrence__should_be_within_range_ad_ratio
+              like: ad_ratio
+        columns:
+          - name: part
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: somatic_snv_occurrence__should_not_contain_null__part
+          - name: task_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: somatic_snv_occurrence__should_not_contain_null__task_id
+          - name: tumor_seq_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: somatic_snv_occurrence__should_not_contain_null__tumor_seq_id
+          - name: locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: somatic_snv_occurrence__should_not_contain_null__locus_id
+          - name: tumor_zygosity
+            description: "CHAR(3)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # Notion: https://app.notion.com/p/ferlab/b60cce4406dc460796882a8551454e27?v=30cfb82fd215434493c541a9b72d2dc0
+              # mirrors i18n — keep in sync
+              - accepted_values:
+                  name: somatic_snv_occurrence__accepted_values_tumor_zygosity
+                  values: ['HET', 'HOM', 'HEM', 'WT', 'UNK']
+                  config:
+                    where: "tumor_zygosity is not null"
+          - name: normal_zygosity
+            description: "CHAR(3)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # Notion: https://app.notion.com/p/ferlab/b60cce4406dc460796882a8551454e27?v=30cfb82fd215434493c541a9b72d2dc0
+              # mirrors i18n — keep in sync
+              - accepted_values:
+                  name: somatic_snv_occurrence__accepted_values_normal_zygosity
+                  values: ['HET', 'HOM', 'HEM', 'WT', 'UNK']
+                  config:
+                    where: "normal_zygosity is not null"
