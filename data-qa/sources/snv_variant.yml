@@ -120,7 +120,7 @@ sources:
             tests:
               # --- Accepted Values (array) -----------------------------------
               # Notion: https://app.notion.com/p/ferlab/79b61815da5c4fbb898d65a6e88b5256?v=af0f09733b8345d3a68ee75dafabecfb
-              # mirrors facets.go + i18n — keep in sync
+              # mirrors facets.go + classification-badge.tsx + i18n — keep in sync
               - accepted_values_in_array:
                   name: snv_variant__accepted_values_clinvar_interpretation
                   values:
@@ -130,7 +130,7 @@ sources:
                      'Conflicting_interpretations_of_pathogenicity', 'drug_response',
                      'Established_risk_allele', 'Likely_benign',
                      'likely_pathogenic_low_penetrance', 'Likely_pathogenic',
-                     'Likely_risk_allele', 'low_penetrance',
+                     'Likely_risk_allele',
                      'no_classification_for_the_single_variant', 'not_provided', 'other',
                      'pathogenic_low_penetrance', 'Pathogenic', 'protective', 'risk_factor',
                      'Uncertain_risk_allele', 'Uncertain_significance', '_low_penetrance']
