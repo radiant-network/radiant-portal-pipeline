@@ -89,21 +89,19 @@ sources:
             description: "CHAR(3)."
             tests:
               # --- Accepted Values -------------------------------------------
-              # Notion: https://app.notion.com/p/ferlab/b60cce4406dc460796882a8551454e27?v=30cfb82fd215434493c541a9b72d2dc0
-              # mirrors i18n — keep in sync
+              # values: dict_zygosity() — see macros/dictionaries.sql
               - accepted_values:
                   name: somatic_snv_occurrence__accepted_values_tumor_zygosity
-                  values: ['HET', 'HOM', 'HEM', 'WT', 'UNK']
+                  values: "{{ dict_zygosity() }}"
                   config:
                     where: "tumor_zygosity is not null"
           - name: normal_zygosity
             description: "CHAR(3)."
             tests:
               # --- Accepted Values -------------------------------------------
-              # Notion: https://app.notion.com/p/ferlab/b60cce4406dc460796882a8551454e27?v=30cfb82fd215434493c541a9b72d2dc0
-              # mirrors i18n — keep in sync
+              # values: dict_zygosity() — see macros/dictionaries.sql
               - accepted_values:
                   name: somatic_snv_occurrence__accepted_values_normal_zygosity
-                  values: ['HET', 'HOM', 'HEM', 'WT', 'UNK']
+                  values: "{{ dict_zygosity() }}"
                   config:
                     where: "normal_zygosity is not null"

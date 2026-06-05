@@ -61,14 +61,10 @@ sources:
               - not_null:
                   name: snv_variant__should_not_contain_null__chromosome
               # --- Accepted Values -------------------------------------------
-              # Notion: https://app.notion.com/p/ferlab/550fc21aed7a4de7a3636e80c6b3978a?v=2490f606225d4f60afe5088cdc77049c
-              # mirrors facets.go — keep in sync
+              # values: dict_chromosome() — see macros/dictionaries.sql
               - accepted_values:
                   name: snv_variant__accepted_values_chromosome
-                  values:
-                    ['1','2','3','4','5','6','7','8','9','10','11','12',
-                     '13','14','15','16','17','18','19','20','21','22',
-                     'X','Y','M']
+                  values: "{{ dict_chromosome() }}"
           - name: start
             description: "1-based start position."
             tests:
@@ -96,65 +92,33 @@ sources:
           - name: vep_impact
             tests:
               # --- Accepted Values -------------------------------------------
-              # Notion: https://app.notion.com/p/ferlab/08b7fcfc5a25414badffb256709d6521?v=59e0ecb4229d4bc08ddc538f76ae870f
-              # mirrors impact-indicator.tsx + facets.go — keep in sync
+              # values: dict_vep_impact() — see macros/dictionaries.sql
               - accepted_values:
                   name: snv_variant__accepted_values_vep_impact
-                  values: ['HIGH', 'MODERATE', 'LOW', 'MODIFIER']
+                  values: "{{ dict_vep_impact() }}"
                   config:
                     where: "vep_impact is not null"
           - name: variant_class
             description: "Sequence Ontology variant class."
             tests:
               # --- Accepted Values -------------------------------------------
-              # Notion: https://app.notion.com/p/ferlab/8baeb6e84ee24f0788a8154f8bfecdd9?v=6a806497b9d246d1b98def1df974e7c2
-              # mirrors facets.go + i18n — keep in sync
+              # values: dict_variant_class() — see macros/dictionaries.sql
               - accepted_values:
                   name: snv_variant__accepted_values_variant_class
-                  values:
-                    ['insertion', 'deletion', 'SNV', 'indel',
-                     'substitution', 'sequence_alteration']
+                  values: "{{ dict_variant_class() }}"
                   config:
                     where: "variant_class is not null"
           - name: clinvar_interpretation
             tests:
               # --- Accepted Values (array) -----------------------------------
-              # Notion: https://app.notion.com/p/ferlab/79b61815da5c4fbb898d65a6e88b5256?v=af0f09733b8345d3a68ee75dafabecfb
-              # mirrors facets.go + classification-badge.tsx + i18n — keep in sync
+              # values: dict_clinvar_interpretation() — see macros/dictionaries.sql
               - accepted_values_in_array:
                   name: snv_variant__accepted_values_clinvar_interpretation
-                  values:
-                    ['Affects', 'association_not_found', 'association', 'Benign',
-                     'confers_sensitivity', 'Conflicting_classifications_of_pathogenicity',
-                     'conflicting_data_from_submitters',
-                     'Conflicting_interpretations_of_pathogenicity', 'drug_response',
-                     'Established_risk_allele', 'Likely_benign',
-                     'likely_pathogenic_low_penetrance', 'Likely_pathogenic',
-                     'Likely_risk_allele',
-                     'no_classification_for_the_single_variant', 'not_provided', 'other',
-                     'pathogenic_low_penetrance', 'Pathogenic', 'protective', 'risk_factor',
-                     'Uncertain_risk_allele', 'Uncertain_significance', '_low_penetrance']
+                  values: "{{ dict_clinvar_interpretation() }}"
           - name: consequences
             tests:
               # --- Accepted Values (array) -----------------------------------
-              # Notion: https://app.notion.com/p/ferlab/faa862446e4d4498a7238bd55e468b4f?v=2de0eadfa7d34ed49aa171c57e6e6c7e
-              # mirrors facets.go + i18n — keep in sync
+              # values: dict_consequences() — see macros/dictionaries.sql
               - accepted_values_in_array:
                   name: snv_variant__accepted_values_consequences
-                  values:
-                    ['3_prime_UTR_variant', '5_prime_UTR_variant',
-                     'coding_sequence_variant', 'downstream_gene_variant',
-                     'feature_elongation', 'feature_truncation', 'frameshift_variant',
-                     'incomplete_terminal_codon_variant', 'inframe_deletion',
-                     'inframe_insertion', 'intergenic_variant', 'intron_variant',
-                     'mature_miRNA_variant', 'missense_variant', 'NMD_transcript_variant',
-                     'non_coding_transcript_exon_variant', 'non_coding_transcript_variant',
-                     'protein_altering_variant', 'regulatory_region_ablation',
-                     'regulatory_region_amplification', 'regulatory_region_variant',
-                     'splice_acceptor_variant', 'splice_donor_5th_base_variant',
-                     'splice_donor_region_variant', 'splice_donor_variant',
-                     'splice_polypyrimidine_tract_variant', 'splice_region_variant',
-                     'start_lost', 'start_retained_variant', 'stop_gained', 'stop_lost',
-                     'stop_retained_variant', 'synonymous_variant', 'TF_binding_site_variant',
-                     'TFBS_ablation', 'TFBS_amplification', 'transcript_ablation',
-                     'transcript_amplification', 'upstream_gene_variant']
+                  values: "{{ dict_consequences() }}"

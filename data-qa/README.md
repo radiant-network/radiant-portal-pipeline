@@ -49,9 +49,15 @@ A value present in only one is a portal-internal inconsistency (out of
 scope for data-qa, but worth flagging).
 
 Each test's accepted-values list mirrors the relevant source(s) — the
-**union** of backend facets and frontend i18n for scalar columns. Keep a
-`mirrors facets.go + i18n — keep in sync` comment next to the list so
-future maintainers know what to update.
+**union** of backend facets and frontend i18n for scalar columns. The lists
+themselves live in a single place — `macros/dictionaries.sql` — one
+`dict_<name>()` macro per dictionary, so a value shared across tables (e.g.
+`consequences`, `vep_impact`, `chromosome`, `zygosity`) is declared once. A
+source YAML references it with `values: "{{ dict_<name>() }}"` (quoted for
+YAML validity; dbt renders the macro to the list at compile time — do **not**
+add `| tojson`, which breaks the `return()`-based macros). The
+`mirrors facets.go + i18n — keep in sync` comment lives next to each macro, so
+that file is the one place to update when an upstream value changes.
 
 Rule of thumb:
 
@@ -137,7 +143,7 @@ investigate.
 
 ```
 data-qa/
-├── macros/    # custom generic tests (dynamic sweeps, array accepted-values)
+├── macros/    # custom generic tests + dictionaries.sql
 ├── sources/   # source + generic-test declarations, one YAML per table
 ├── tests/     # singular tests (cross-field invariants), one SQL per check
 ├── scripts/   # dbt test runner + JUnit conversion (CI-ready)
@@ -155,7 +161,10 @@ Root also holds the usual dbt config (`dbt_project.yml`, `profiles.yml`,
    tables across files as long as no `(source, table)` pair is duplicated.
 2. List its columns with the relevant generic tests, and/or attach
    `should_not_contain_only_null` / `should_not_contain_same_value` at the
-   table level with an appropriate `except` list.
+   table level with an appropriate `except` list. For an `accepted_values` /
+   `accepted_values_in_array` test, reference the shared list via
+   `values: "{{ dict_<name>() }}"`; add a new macro to
+   `macros/dictionaries.sql` if the dictionary doesn't exist yet.
 3. For cross-field or query-shaped checks that don't fit a generic test,
    add a `.sql` file under `tests/` that returns the failing rows.
 

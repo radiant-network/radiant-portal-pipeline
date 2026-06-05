@@ -56,13 +56,9 @@ sources:
             description: "VARCHAR(20)."
             tests:
               # --- Accepted Values -------------------------------------------
-              # Notion: https://app.notion.com/p/ferlab/550fc21aed7a4de7a3636e80c6b3978a?v=2490f606225d4f60afe5088cdc77049c
-              # mirrors facets.go — keep in sync
+              # values: dict_chromosome() — see macros/dictionaries.sql
               - accepted_values:
                   name: germline_cnv_occurrence__accepted_values_chromosome
-                  values:
-                    ['1','2','3','4','5','6','7','8','9','10','11','12',
-                     '13','14','15','16','17','18','19','20','21','22',
-                     'X','Y','M']
+                  values: "{{ dict_chromosome() }}"
                   config:
                     where: "chromosome is not null"

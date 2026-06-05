@@ -1,0 +1,105 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: snv__consequence
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              # SJRA-1550 mane_select
+              name: snv_consequence__should_not_contain_only_null_SJRA-1550
+              except:
+                # Already covered by snv_consequence__should_not_contain_null__*
+                - locus_id
+                - symbol
+                - transcript_id
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              # SJRA-1550 is_mane_select is_mane_plus
+              name: snv_consequence__should_not_contain_same_value_SJRA-1550
+        columns:
+          - name: locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: snv_consequence__should_not_contain_null__locus_id
+          - name: symbol
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: snv_consequence__should_not_contain_null__symbol
+          - name: transcript_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: snv_consequence__should_not_contain_null__transcript_id
+          - name: consequences
+            tests:
+              # --- Accepted Values (array) -----------------------------------
+              # values: dict_consequences() — see macros/dictionaries.sql
+              - accepted_values_in_array:
+                  name: snv_consequence__accepted_values_consequences
+                  values: "{{ dict_consequences() }}"
+          - name: biotype
+            description: "VARCHAR(50)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_biotype() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: snv_consequence__accepted_values_biotype
+                  values: "{{ dict_biotype() }}"
+                  config:
+                    where: "biotype is not null"
+          - name: sift_pred
+            description: "VARCHAR(1)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_sift_pred() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: snv_consequence__accepted_values_sift_pred
+                  values: "{{ dict_sift_pred() }}"
+                  config:
+                    where: "sift_pred is not null"
+          - name: polyphen2_hvar_pred
+            description: "VARCHAR(1)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_polyphen2_hvar_pred() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: snv_consequence__accepted_values_polyphen2_hvar_pred
+                  values: "{{ dict_polyphen2_hvar_pred() }}"
+                  config:
+                    where: "polyphen2_hvar_pred is not null"
+          - name: fathmm_pred
+            description: "VARCHAR(1)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_fathmm_pred() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: snv_consequence__accepted_values_fathmm_pred
+                  values: "{{ dict_fathmm_pred() }}"
+                  config:
+                    where: "fathmm_pred is not null"
+          - name: lrt_pred
+            description: "VARCHAR(1)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_lrt_pred() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: snv_consequence__accepted_values_lrt_pred
+                  values: "{{ dict_lrt_pred() }}"
+                  config:
+                    where: "lrt_pred is not null"
+          - name: vep_impact
+            description: "VARCHAR(20)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_vep_impact() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: snv_consequence__accepted_values_vep_impact
+                  values: "{{ dict_vep_impact() }}"
+                  config:
+                    where: "vep_impact is not null"
