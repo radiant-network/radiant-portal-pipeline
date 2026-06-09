@@ -184,3 +184,4 @@ logs
 *plugins.zip
 
 *.DS_STORE
+.testquality
