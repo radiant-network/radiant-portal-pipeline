@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: snv__consequence_filter_partitioned
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: snv_consequence_filter_partitioned__should_not_contain_only_null
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: snv_consequence_filter_partitioned__should_not_contain_same_value
+              except:
+                # Constant by construction
+                - part
