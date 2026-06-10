@@ -45,7 +45,8 @@
              'Likely_risk_allele',
              'no_classification_for_the_single_variant', 'not_provided', 'other',
              'pathogenic_low_penetrance', 'Pathogenic', 'protective', 'risk_factor',
-             'Uncertain_risk_allele', 'Uncertain_significance', '_low_penetrance']) }}
+             'Uncertain_risk_allele', 'Uncertain_significance',
+             '_low_penetrance', 'low_penetrance']) }}
 {% endmacro %}
 
 {% macro dict_consequences() %}

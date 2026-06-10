@@ -1,0 +1,72 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: clinvar
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: clinvar__should_not_contain_only_null
+              except:
+                # Already covered by clinvar__should_not_contain_null__*
+                - locus_id
+                - chromosome
+                - start
+                - reference
+                - locus
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: clinvar__should_not_contain_same_value
+              except:
+                # Already covered by clinvar__should_be_unique__*
+                - locus_id
+                - locus
+
+          # --- Should Be Within Range ----------------------------------------
+          # allele frequencies must be in [0,1]
+          - should_be_within_range:
+              name: clinvar__should_be_within_range_af
+              like: af_
+        columns:
+          - name: locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: clinvar__should_not_contain_null__locus_id
+              # --- Should Be Unique ------------------------------------------
+              - unique:
+                  name: clinvar__should_be_unique__locus_id_SJRA-1581
+          - name: chromosome
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: clinvar__should_not_contain_null__chromosome
+          - name: start
+            description: "1-based start position."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: clinvar__should_not_contain_null__start
+          - name: reference
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: clinvar__should_not_contain_null__reference
+          - name: locus
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: clinvar__should_not_contain_null__locus
+              # --- Should Be Unique ------------------------------------------
+              - unique:
+                  name: clinvar__should_be_unique__locus
+          - name: interpretations
+            tests:
+              # --- Accepted Values (array) -----------------------------------
+              # values: dict_clinvar_interpretation() — see macros/dictionaries.sql
+              - accepted_values_in_array:
+                  name: clinvar__accepted_values_interpretations
+                  values: "{{ dict_clinvar_interpretation() }}"
