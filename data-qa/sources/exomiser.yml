@@ -1,0 +1,60 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: exomiser
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: exomiser__should_not_contain_only_null
+              except:
+                # Already covered by exomiser__should_not_contain_null__*
+                - part
+                - seq_id
+                - locus_id
+                - id
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: exomiser__should_not_contain_same_value
+              except:
+                # Single partition QA dataset
+                - part
+
+          # --- Should Be Within Range ----------------------------------------
+          # exomiser scores must be in [0,1]
+          - should_be_within_range:
+              name: exomiser__should_be_within_range_score
+              like: score
+        columns:
+          - name: part
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: exomiser__should_not_contain_null__part
+          - name: seq_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: exomiser__should_not_contain_null__seq_id
+          - name: locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: exomiser__should_not_contain_null__locus_id
+          - name: id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: exomiser__should_not_contain_null__id
+          - name: acmg_classification
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_exomiser_acmg_classification() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: exomiser__accepted_values_acmg_classification
+                  values: "{{ dict_exomiser_acmg_classification() }}"
+                  config:
+                    where: "acmg_classification is not null"
