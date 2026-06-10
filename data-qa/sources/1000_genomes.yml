@@ -1,0 +1,36 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: 1000_genomes
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: 1000_genomes__should_not_contain_only_null
+              except:
+                # Already covered by 1000_genomes__should_not_contain_null__*
+                - locus_id
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: 1000_genomes__should_not_contain_same_value
+              except:
+                # Already covered by 1000_genomes__should_be_unique__*
+                - locus_id
+
+          # --- Should Be Within Range ----------------------------------------
+          # allele frequency must be in [0,1]
+          - should_be_within_range:
+              name: 1000_genomes__should_be_within_range_af
+              like: af
+        columns:
+          - name: locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: 1000_genomes__should_not_contain_null__locus_id
+              # --- Should Be Unique ------------------------------------------
+              - unique:
+                  name: 1000_genomes__should_be_unique__locus_id_SJRA-1583

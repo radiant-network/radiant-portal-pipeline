@@ -1,0 +1,38 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: topmed_bravo
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: topmed_bravo__should_not_contain_only_null
+              except:
+                # Already covered by topmed_bravo__should_not_contain_null__*
+                - locus_id
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: topmed_bravo__should_not_contain_same_value
+              except:
+                # Already covered by topmed_bravo__should_be_unique__*
+                - locus_id
+                # Legitimately constant: TOPMed Bravo reports a fixed cohort
+                - an
+
+          # --- Should Be Within Range ----------------------------------------
+          # allele frequency must be in [0,1]
+          - should_be_within_range:
+              name: topmed_bravo__should_be_within_range_af
+              like: af
+        columns:
+          - name: locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: topmed_bravo__should_not_contain_null__locus_id
+              # --- Should Be Unique ------------------------------------------
+              - unique:
+                  name: topmed_bravo__should_be_unique__locus_id
