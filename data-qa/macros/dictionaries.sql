@@ -138,3 +138,14 @@
   {# mirrors facets.go + i18n — keep in sync #}
   {{ return(['D', 'N', 'U']) }}
 {% endmacro %}
+
+{% macro dict_omim_inheritance() %}
+  {# Notion: https://app.notion.com/p/ferlab/56bb564925294827989c1afde0b720e7?v=48bc6c4c68464c4fb45014f94bf527a2 #}
+  {# mirrors facets.go — keep in sync #}
+  {{ return(['?AD', '?AR', '?DD', '?DR', '?IC',
+             '?Mi', '?Mu', '?SMo', '?Smu', '?XL',
+             '?XLD', '?XLR', '?YL', 'AD', 'AR',
+             'DD', 'DR', 'IC', 'ICB', 'Mi', 'Mu',
+             'NA', 'NRP', 'NRT', 'PD', 'PR', 'SMo', 'Smu',
+             'XL', 'XLD', 'XLR', 'YL']) }}
+{% endmacro %}

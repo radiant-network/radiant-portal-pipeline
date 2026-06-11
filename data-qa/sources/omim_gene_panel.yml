@@ -1,0 +1,39 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: omim_gene_panel
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: omim_gene_panel__should_not_contain_only_null
+              except:
+                # Already covered by omim_gene_panel__should_not_contain_null__*
+                - panel
+                - symbol
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: omim_gene_panel__should_not_contain_same_value
+        columns:
+          - name: symbol
+            description: "VARCHAR(30)."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: omim_gene_panel__should_not_contain_null__symbol
+          - name: panel
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: omim_gene_panel__should_not_contain_null__panel
+          - name: inheritance_code
+            description: "ARRAY<VARCHAR(5)>."
+            tests:
+              # --- Accepted Values (array) -----------------------------------
+              # values: dict_omim_inheritance() — see macros/dictionaries.sql
+              - accepted_values_in_array:
+                  name: omim_gene_panel__accepted_values_inheritance_code
+                  values: "{{ dict_omim_inheritance() }}"

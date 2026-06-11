@@ -1,0 +1,31 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: orphanet_gene_panel
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: orphanet_gene_panel__should_not_contain_only_null
+              except:
+                # Already covered by orphanet_gene_panel__should_not_contain_null__*
+                - panel
+                - symbol
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: orphanet_gene_panel__should_not_contain_same_value
+        columns:
+          - name: symbol
+            description: "VARCHAR(30)."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: orphanet_gene_panel__should_not_contain_null__symbol
+          - name: panel
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: orphanet_gene_panel__should_not_contain_null__panel
