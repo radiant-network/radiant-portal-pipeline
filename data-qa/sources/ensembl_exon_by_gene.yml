@@ -1,0 +1,66 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: ensembl_exon_by_gene
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: ensembl_exon_by_gene__should_not_contain_only_null
+              except:
+                # Already covered by ensembl_exon_by_gene__should_not_contain_null__*
+                - chromosome
+                - end
+                - exon_id
+                - gene_id
+                - start
+                # Null by construction
+                - alias
+                - description
+                - external_name
+                - logic_name
+                - phase
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: ensembl_exon_by_gene__should_not_contain_same_value
+              except:
+                # Constant by construction
+                - type
+
+          # --- Should Be Unique ----------------------------------------------
+          - dbt_utils.unique_combination_of_columns:
+              name: ensembl_exon_by_gene__should_be_unique__gene_id_exon_id
+              combination_of_columns:
+                - gene_id
+                - exon_id
+        columns:
+          - name: gene_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: ensembl_exon_by_gene__should_not_contain_null__gene_id
+          - name: exon_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: ensembl_exon_by_gene__should_not_contain_null__exon_id
+          - name: chromosome
+            description: "VARCHAR(10)."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: ensembl_exon_by_gene__should_not_contain_null__chromosome
+          - name: start
+            description: "1-based start position."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: ensembl_exon_by_gene__should_not_contain_null__start
+          - name: end
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: ensembl_exon_by_gene__should_not_contain_null__end

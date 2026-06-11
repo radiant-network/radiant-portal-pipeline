@@ -1,0 +1,56 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: cytoband
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: cytoband__should_not_contain_only_null
+              except:
+                # Already covered by cytoband__should_not_contain_null__*
+                - chromosome
+                - cytoband
+                - end
+                - start
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: cytoband__should_not_contain_same_value
+
+          # --- Should Be Unique ----------------------------------------------
+          - dbt_utils.unique_combination_of_columns:
+              name: cytoband__should_be_unique__chromosome_cytoband
+              combination_of_columns:
+                - chromosome
+                - cytoband
+        columns:
+          - name: chromosome
+            description: "CHAR(2) — canonical UCSC cytoBand chromosomes only."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: cytoband__should_not_contain_null__chromosome
+              # --- Accepted Values -------------------------------------------
+              # values: dict_chromosome() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: cytoband__accepted_values_chromosome
+                  values: "{{ dict_chromosome() }}"
+          - name: cytoband
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: cytoband__should_not_contain_null__cytoband
+          - name: start
+            description: "1-based start position."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: cytoband__should_not_contain_null__start
+          - name: end
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: cytoband__should_not_contain_null__end
