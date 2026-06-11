@@ -1,0 +1,69 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: ensembl_gene
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: ensembl_gene__should_not_contain_only_null
+              except:
+                # Already covered by ensembl_gene__should_not_contain_null__*
+                - chromosome
+                - end
+                - gene_id
+                - start
+                # Null by construction
+                - alias
+                - ccdsid
+                - constitutive
+                - ensembl_end_phase
+                - ensembl_phase
+                - external_name
+                - phase
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: ensembl_gene__should_not_contain_same_value
+              except:
+                # Already covered by ensembl_gene__should_be_unique__*
+                - gene_id
+                # Constant by construction
+                - type
+        columns:
+          - name: gene_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: ensembl_gene__should_not_contain_null__gene_id
+              # --- Should Be Unique ------------------------------------------
+              - unique:
+                  name: ensembl_gene__should_be_unique__gene_id
+          - name: chromosome
+            description: "VARCHAR(10)."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: ensembl_gene__should_not_contain_null__chromosome
+          - name: start
+            description: "1-based start position."
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: ensembl_gene__should_not_contain_null__start
+          - name: end
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: ensembl_gene__should_not_contain_null__end
+          - name: biotype
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_biotype() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: ensembl_gene__accepted_values_biotype
+                  values: "{{ dict_biotype() }}"
+                  config:
+                    where: "biotype is not null"
