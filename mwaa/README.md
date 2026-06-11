@@ -91,8 +91,12 @@ serves Airflow 2 and Airflow 3. Run this from the repo root. MWAA picks up DAGs
 from this path automatically; no restart needed.
 
 ```sh
-aws s3 cp --recursive radiant s3://radiant-tst-airflow-qa/dags/radiant --exclude="__pycache__/*" --exclude="*.pyc"
+aws s3 sync radiant s3://radiant-tst-airflow-qa/dags/radiant --delete --exclude="*__pycache__*" --exclude="*.pyc"
 ```
+
+> `sync --delete` removes from the bucket any file that no longer exists locally —
+> without it, DAGs deleted from the repo would linger in S3 and keep being parsed
+> by MWAA.
 
 ## Step 4 — Build and push the Radiant operator image
 
