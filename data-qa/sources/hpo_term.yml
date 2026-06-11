@@ -1,0 +1,36 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: hpo_term
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: hpo_term__should_not_contain_only_null
+              except:
+                # Already covered by hpo_term__should_not_contain_null__*
+                - id
+                - name
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: hpo_term__should_not_contain_same_value
+              except:
+                # Already covered by hpo_term__should_be_unique__*
+                - id
+        columns:
+          - name: id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: hpo_term__should_not_contain_null__id
+              # --- Should Be Unique ------------------------------------------
+              - unique:
+                  name: hpo_term__should_be_unique__id
+          - name: name
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: hpo_term__should_not_contain_null__name
