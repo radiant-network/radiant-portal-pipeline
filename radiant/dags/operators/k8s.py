@@ -1,11 +1,12 @@
 import os
 
 from airflow.decorators import task
+from kubernetes.client import models as k8s
 
 
 class BaseK8SOperator:
     @staticmethod
-    def _get_k8s_context(radiant_namespace: str):
+    def _get_k8s_context(radiant_namespace: str, container_resources: k8s.V1ResourceRequirements | None = None):
         iceberg_env_vars = {
             key: value for key, value in os.environ.items() if key.startswith("PYICEBERG_CATALOG__DEFAULT__")
         }
@@ -16,6 +17,10 @@ class BaseK8SOperator:
             image_pull_policy="IfNotPresent",
             get_logs=True,
             is_delete_operator_pod=True,
+            # Required in deferrable mode
+            in_cluster=True,
+            # Per-task container resources. 
+            container_resources=container_resources,
             env_vars={
                 "AWS_REGION": os.getenv("AWS_REGION"),
                 "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
@@ -42,7 +47,13 @@ class ImportGermlineSNVVCF(BaseK8SOperator):
                 name="import-vcf-for-task",
                 do_xcom_push=True,
             )
-            | ImportGermlineSNVVCF._get_k8s_context(radiant_namespace)
+            | ImportGermlineSNVVCF._get_k8s_context(
+                radiant_namespace,
+                container_resources=k8s.V1ResourceRequirements(
+                    requests={"cpu": "1", "memory": "4Gi"},
+                    limits={"memory": "4Gi"},
+                ),
+            )
         )
         def k8s_create_parquet_files(
             radiant_task: dict,
