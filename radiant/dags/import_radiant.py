@@ -188,6 +188,14 @@ def import_radiant():
         map_index_template="Partition: {{ task.conf['part'] }}",
     ).expand(conf=priority)
 
+    run_data_integrity_checks = TriggerDagRunOperator(
+        task_id="data_integrity_checks",
+        task_display_name="[DAG] Data Integrity Checks (StarRocks)",
+        trigger_dag_id=f"{NAMESPACE}-data-integrity-starrocks",
+        reset_dag_run=True,
+        wait_for_completion=True,
+    )
+
     (
         start
         >> tg_partition_group
@@ -195,6 +203,7 @@ def import_radiant():
         >> fetch_sequencing_experiment
         >> prepare_tenants
         >> import_parts
+        >> run_data_integrity_checks
     )
 
 

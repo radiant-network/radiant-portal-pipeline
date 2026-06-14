@@ -1,9 +1,11 @@
 import os
 
 from airflow.decorators import task
+from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
+from airflow.providers.cncf.kubernetes.secret import Secret
 
 
-class BaseK8SOperator:
+class RadiantTaskK8SOperator:
     @staticmethod
     def _get_k8s_context(radiant_namespace: str):
         iceberg_env_vars = {
@@ -30,7 +32,7 @@ class BaseK8SOperator:
         )
 
 
-class ImportGermlineSNVVCF(BaseK8SOperator):
+class ImportGermlineSNVVCF(RadiantTaskK8SOperator):
     @staticmethod
     def get_create_parquet_files(radiant_namespace: str):
         @task.kubernetes(
@@ -75,7 +77,7 @@ class ImportGermlineSNVVCF(BaseK8SOperator):
         return k8s_commit_partitions
 
 
-class ImportPart(BaseK8SOperator):
+class ImportPart(RadiantTaskK8SOperator):
     @staticmethod
     def get_import_cnv_vcf(radiant_namespace: str):
         @task.kubernetes(
@@ -119,7 +121,7 @@ class ImportPart(BaseK8SOperator):
         return get_import_somatic_snv_vcf
 
 
-class InitIcebergTables(BaseK8SOperator):
+class InitIcebergTables(RadiantTaskK8SOperator):
     @staticmethod
     def get_init_database(radiant_namespace: str):
         @task.kubernetes(
@@ -224,3 +226,41 @@ class InitIcebergTables(BaseK8SOperator):
             initialization.create_somatic_snv_occurrence_table()
 
         return create_somatic_snv_occurrence_table
+
+
+class CheckDataIntegrity:
+    """dbt data-quality run. Reuses the shared Radiant K8s deployment settings
+    (namespace, service account) but overrides the image and launches it
+    directly via KubernetesPodOperator."""
+
+    @staticmethod
+    def get_run_dbt(run_results_s3_uri: str, junit_s3_uri: str) -> KubernetesPodOperator:
+        return KubernetesPodOperator(
+            task_id="run_dbt",
+            task_display_name="[K8s] Run dbt data tests",
+            name="data-integrity-dbt",
+            namespace=os.getenv("RADIANT_TASK_OPERATOR_KUBERNETES_NAMESPACE"),
+            service_account_name=os.getenv("RADIANT_TASK_OPERATOR_SERVICE_ACCOUNT_NAME"),
+            image=os.getenv("RADIANT_DBT_OPERATOR_IMAGE"),
+            image_pull_policy="IfNotPresent",
+            secrets=[
+                Secret("env", "AIRFLOW_CONN_STARROCKS_CONN", "starrocks-airflow-conn", "AIRFLOW_CONN_STARROCKS_CONN"),
+            ],
+            env_vars={
+                "RUN_RESULTS_S3_URI": run_results_s3_uri,
+                "JUNIT_S3_URI": junit_s3_uri,
+                # We inject these for the local sandbox (like the other k8s operators).
+                # In prod (EKS), boto3 uses Pod Identity instead, so these resolve to empty.
+                "AWS_REGION": os.getenv("AWS_REGION"),
+                "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
+                "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY"),
+                "AWS_ENDPOINT_URL": os.getenv("AWS_ENDPOINT_URL"),
+                "AWS_ALLOW_HTTP": os.getenv("AWS_ALLOW_HTTP"),
+            },
+            get_logs=True,
+            # We only use this operator with the KubernetesExecutor, which runs
+            # this task in its own ephemeral pod. Using non-deferrable does not
+            # block other tasks.
+            deferrable=False,
+            is_delete_operator_pod=True,
+        )

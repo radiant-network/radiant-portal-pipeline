@@ -16,6 +16,7 @@ def test_dag_has_expected_tasks(dag_bag):
         "assign_priority",
         "import_part",
         "update_sequencing_experiment_deleted",
+        "data_integrity_checks",
     }
     assert set(dag.task_ids) == expected_tasks
 
@@ -41,3 +42,4 @@ def test_dag_task_dependencies_are_correct(dag_bag):
     assert fetch_exp in update_deleted_exp.get_direct_relatives(upstream=False)
     assert assign_priority in fetch_exp.get_direct_relatives(upstream=False)
     assert import_part in assign_priority.get_direct_relatives(upstream=False)
+    assert "data_integrity_checks" in import_part.downstream_task_ids

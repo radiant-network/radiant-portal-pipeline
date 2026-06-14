@@ -6,6 +6,11 @@
 # Exit 0 when the JUnit report was produced (data-test failures are encoded
 # in the XML, not treated as a mechanism failure). Exit non-zero only when
 # the run itself could not execute (e.g. no connection).
+#
+# Note: the Airflow pipeline runs this same script automatically. It relies on
+# the two files created here (target/run_results.json and reports/junit.xml)
+# and on the script exit code. If you change any of those, the pipeline needs
+# to be updated too.
 set -uo pipefail
 
 DATA_QA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

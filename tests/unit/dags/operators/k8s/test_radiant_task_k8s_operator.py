@@ -1,7 +1,7 @@
 import os
 from unittest.mock import patch
 
-from radiant.dags.operators.k8s import BaseK8SOperator
+from radiant.dags.operators.k8s import RadiantTaskK8SOperator
 
 
 def test_get_k8s_context():
@@ -19,7 +19,7 @@ def test_get_k8s_context():
         "RADIANT_TASK_OPERATOR_LD_LIBRARY_PATH": "/lib",
     }
     with patch.dict(os.environ, fake_env, clear=True):
-        context = BaseK8SOperator._get_k8s_context("my-iceberg-namespace")
+        context = RadiantTaskK8SOperator._get_k8s_context("my-iceberg-namespace")
 
     assert context["namespace"] == "my-kubernetes-namespace"
     assert context["image"] == "test-image"

@@ -6,7 +6,7 @@ from airflow.providers.amazon.aws.operators import ecs
 from radiant.dags import ECSEnv
 
 
-class BaseECSOperator:
+class RadiantTaskECSOperator:
     @staticmethod
     def _get_ecs_context(ecs_cluster: str, ecs_subnets: list[str], ecs_security_groups: list[str]):
         return dict(
@@ -29,7 +29,7 @@ class BaseECSOperator:
         )
 
 
-class ImportGermlineSNVVCF(BaseECSOperator):
+class ImportGermlineSNVVCF(RadiantTaskECSOperator):
     @staticmethod
     def get_create_parquet_files(radiant_namespace: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator.partial(
@@ -96,7 +96,7 @@ class ImportGermlineSNVVCF(BaseECSOperator):
         )
 
 
-class InitIcebergTables(BaseECSOperator):
+class InitIcebergTables(RadiantTaskECSOperator):
     @staticmethod
     def get_init_iceberg(radiant_namespace: str, table_name: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator(
@@ -126,7 +126,7 @@ class InitIcebergTables(BaseECSOperator):
         )
 
 
-class ImportPart(BaseECSOperator):
+class ImportPart(RadiantTaskECSOperator):
     @staticmethod
     def get_import_cnv_vcf(radiant_namespace: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator.partial(
@@ -210,4 +210,42 @@ class ImportPart(BaseECSOperator):
                 ecs_subnets=ecs_env.ECS_SUBNETS,
                 ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
             )
+        )
+
+
+class CheckDataIntegrity:
+    """Runs dbt data-quality checks. Uses its own ECS task definition, as we use
+    a Docker image specific to dbt instead of the standard radiant-task image."""
+
+    @staticmethod
+    def get_run_dbt(run_results_s3_uri: str, junit_s3_uri: str, ecs_env: ECSEnv):
+        return ecs.EcsRunTaskOperator(
+            task_id="run_dbt",
+            task_display_name="[ECS] Run dbt data tests",
+            cluster=ecs_env.ECS_CLUSTER,
+            launch_type="FARGATE",
+            task_definition=os.getenv("RADIANT_DBT_TASK_DEFINITION"),
+            awslogs_group=os.getenv("RADIANT_DBT_LOG_GROUP"),
+            awslogs_region=os.getenv("RADIANT_DBT_LOG_REGION"),
+            awslogs_stream_prefix=os.getenv("RADIANT_DBT_LOG_PREFIX"),
+            awslogs_fetch_interval=timedelta(seconds=5),
+            overrides={
+                "containerOverrides": [
+                    {
+                        "name": "radiant-dbt-container",
+                        "environment": [
+                            {"name": "RUN_RESULTS_S3_URI", "value": run_results_s3_uri},
+                            {"name": "JUNIT_S3_URI", "value": junit_s3_uri},
+                        ],
+                    }
+                ]
+            },
+            network_configuration={
+                "awsvpcConfiguration": {
+                    "subnets": ecs_env.ECS_SUBNETS,
+                    "assignPublicIp": "DISABLED",
+                    "securityGroups": ecs_env.ECS_SECURITY_GROUPS,
+                }
+            },
+            aws_conn_id="aws_default",
         )
