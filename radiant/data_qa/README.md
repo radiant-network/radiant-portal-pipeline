@@ -46,7 +46,7 @@ yet handle**. "The portal" hardcodes behaviour in two places:
 
 A new upstream value not present in **either** source is fully unhandled.
 A value present in only one is a portal-internal inconsistency (out of
-scope for data-qa, but worth flagging).
+scope for data_qa, but worth flagging).
 
 Each test's accepted-values list mirrors the relevant source(s) — the
 **union** of backend facets and frontend i18n for scalar columns. The lists
@@ -75,7 +75,7 @@ custom `accepted_values_in_array` generic test (`macros/`), which `array_filter`
 each array down to the offending elements *before* unnesting (so valid rows
 emit nothing instead of exploding) and flags any element not in `values`. Both are declared in the
 source YAML with a `name:` (append the Jira id when a ticket tracks a known
-gap, e.g. `..._SJRA1552`) and a `values:` list.
+gap, e.g. `..._SJRA-1552`) and a `values:` list.
 
 Values are tested **raw / case-sensitive** — no normalization. For array
 columns the dictionary therefore mirrors backend `facets.go` in its data
@@ -93,7 +93,7 @@ invariants that don't fit a generic test (e.g. `no_star_alternate`).
 ## Setup
 
 ```bash
-cd data-qa
+cd data_qa
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -142,7 +142,7 @@ investigate.
 ## Layout
 
 ```
-data-qa/
+data_qa/
 ├── macros/    # custom generic tests + dictionaries.sql
 ├── sources/   # source + generic-test declarations, one YAML per table
 ├── tests/     # singular tests (cross-field invariants), one SQL per check

@@ -35,16 +35,13 @@ def _test_name(unique_id: str) -> str:
     return unique_id
 
 
-def convert(run_results_path: Path, junit_path: Path) -> int:
-    if not run_results_path.exists():
-        print(
-            f"ERROR: {run_results_path} not found — dbt likely failed before "
-            f"producing results (connection/setup error).",
-            file=sys.stderr,
-        )
-        return 1
+def to_junit_xml(data: dict) -> str:
+    """Render a parsed dbt run_results dict as a JUnit XML report string (no disk I/O).
 
-    data = json.loads(run_results_path.read_text())
+    NOTE: imported by the data-integrity-starrocks Airflow DAG (radiant/dags/).
+    Renaming this function or changing its signature/return type breaks that DAG —
+    see tests/unit/dags/test_data_integrity_starrocks.py::test_to_junit_xml_contract.
+    """
     results = data.get("results", [])
     project = data.get("metadata", {}).get("project_name") or "radiant_data_qa"
     elapsed = data.get("elapsed_time", 0.0)
@@ -102,15 +99,28 @@ def convert(run_results_path: Path, junit_path: Path) -> int:
         testsuites.set(k, v)
     testsuites.append(testsuite)
 
-    tree = ET.ElementTree(testsuites)
-    ET.indent(tree, space="  ")
-    junit_path.parent.mkdir(parents=True, exist_ok=True)
-    tree.write(junit_path, encoding="utf-8", xml_declaration=True)
+    ET.indent(testsuites, space="  ")
+    return ET.tostring(testsuites, encoding="utf-8", xml_declaration=True).decode("utf-8")
 
+
+def convert(run_results_path: Path, junit_path: Path) -> int:
+    if not run_results_path.exists():
+        print(
+            f"ERROR: {run_results_path} not found — dbt likely failed before "
+            f"producing results (connection/setup error).",
+            file=sys.stderr,
+        )
+        return 1
+
+    xml = to_junit_xml(json.loads(run_results_path.read_text()))
+    junit_path.parent.mkdir(parents=True, exist_ok=True)
+    junit_path.write_text(xml, encoding="utf-8")
+
+    root = ET.fromstring(xml)
     print(
-        f"Wrote {junit_path}: {total} tests, "
-        f"{counts['fail']} failures, {counts['error']} errors, "
-        f"{counts['skipped']} skipped, {counts['warn']} warnings."
+        f"Wrote {junit_path}: {root.get('tests')} tests, "
+        f"{root.get('failures')} failures, {root.get('errors')} errors, "
+        f"{root.get('skipped')} skipped."
     )
     return 0
 

@@ -9,7 +9,7 @@
   (`frontend/translations/common/*.json`). The `mirrors … — keep in sync`
   note lives here, once per dictionary, so there is a single place to update
   when an upstream value is added. Values are raw / case-sensitive (no
-  normalization) — see data-qa/README.md.
+  normalization) — see data_qa/README.md.
 #}
 
 {% macro dict_chromosome() %}
