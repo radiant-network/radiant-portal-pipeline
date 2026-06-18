@@ -49,7 +49,7 @@ def test_import_cnv_vcf_raises_when_all_downloads_fail():
         patch.object(cnv_process, "download_s3_file", side_effect=fake_download),
         patch.object(cnv_process.AlignmentGermlineVariantCallingTask, "model_validate", side_effect=lambda t: t),
         patch.object(cnv_process, "process_tasks") as mock_process,
-        pytest.raises(RuntimeError, match="aborting to avoid overwriting"),
+        pytest.raises(RuntimeError, match=r"download\(s\) failed"),
     ):
         cnv_process.import_cnv_vcf(tasks, namespace="radiant")
 

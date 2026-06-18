@@ -149,7 +149,7 @@ def test_import_somatic_snv_raises_when_all_downloads_fail():
         patch.object(somatic_process.RadiantSomaticAnnotationTask, "model_validate", side_effect=lambda d: d),
         patch.object(somatic_process, "process_task") as mock_proc,
         patch.object(somatic_process, "commit_partitions") as mock_commit,
-        pytest.raises(RuntimeError, match="aborting so the batch is retried"),
+        pytest.raises(RuntimeError, match=r"download\(s\) failed"),
     ):
         somatic_process.import_somatic_snv(tasks, namespace="radiant")
 

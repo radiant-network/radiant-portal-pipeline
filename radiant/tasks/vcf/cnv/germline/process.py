@@ -115,9 +115,7 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
 
         # If all files failed, we abort
         if attempted and not updated_tasks:
-            raise RuntimeError(
-                f"All {attempted} Germline CNV download(s) failed"
-            )
+            raise RuntimeError(f"All {attempted} Germline CNV download(s) failed")
 
         logger.info("Starting CNV VCF processing for all tasks")
         process_tasks(updated_tasks, namespace=namespace, vcf_threads=4)
