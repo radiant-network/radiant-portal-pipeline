@@ -113,13 +113,10 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
         if skipped:
             logger.warning(f"Skipped {skipped}/{attempted} CNV tasks due to download failures")
 
-        # Guard against wiping germline_cnv_occurrence: if every candidate task failed to
-        # download (e.g. an S3 outage), a full overwrite would replace the table with an
-        # empty result. Fail loudly instead so the run is retried, not silently emptied.
+        # If all files failed, we abort
         if attempted and not updated_tasks:
             raise RuntimeError(
-                f"All {attempted} CNV download(s) failed; aborting to avoid overwriting "
-                f"{namespace}.germline_cnv_occurrence with an empty table"
+                f"All {attempted} Germline CNV download(s) failed"
             )
 
         logger.info("Starting CNV VCF processing for all tasks")

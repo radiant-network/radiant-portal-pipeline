@@ -220,11 +220,9 @@ def import_somatic_snv(tasks: list[dict], namespace: str):
     if skipped:
         logger.warning(f"Skipped {skipped}/{attempted} somatic SNV tasks due to download failures")
 
-    # If every candidate task failed to download (e.g. an S3 outage), abort instead of
-    # silently committing nothing: a fully-failed batch should fail the run so it is retried,
-    # not reported as a success.
+    # If all files failed, we abort
     if attempted and skipped == attempted:
-        raise RuntimeError(f"All {attempted} somatic SNV download(s) failed; aborting so the batch is retried")
+        raise RuntimeError(f"All {attempted} somatic SNV download(s) failed")
 
     # Merge results from all tasks and convert PartitionCommit objects to dicts
     commit_partitions(merged_partitions)
