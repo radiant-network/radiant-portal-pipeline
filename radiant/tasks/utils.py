@@ -5,7 +5,13 @@ from functools import wraps
 from urllib import parse
 
 import boto3
+from boto3.exceptions import Boto3Error
+from botocore.exceptions import BotoCoreError, ClientError
 from wurlitzer import pipes
+
+
+class S3DownloadError(Exception):
+    """Raised when an S3 download fails; wraps the underlying boto3/botocore/OS error."""
 
 
 def _flush_pipes(stdout, stderr):
@@ -71,9 +77,8 @@ def download_s3_file(s3_path, dest_dir, randomize_filename=False):
     local_path = os.path.join(dest_dir, filename)
     try:
         s3_client.download_file(bucket_name, object_key, local_path)
-    except Exception as e:
-        print(f"Error downloading S3 file: {e}")
-        return None
+    except (BotoCoreError, ClientError, Boto3Error, OSError) as e:
+        raise S3DownloadError(f"Failed to download S3 file {s3_path}") from e
     return local_path
 
 

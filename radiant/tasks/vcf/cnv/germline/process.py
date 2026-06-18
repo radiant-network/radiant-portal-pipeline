@@ -7,7 +7,7 @@ from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
 
 from radiant.tasks.tracing.trace import get_tracer
-from radiant.tasks.utils import download_s3_file
+from radiant.tasks.utils import S3DownloadError, download_s3_file
 from radiant.tasks.vcf.cnv.germline.occurrence import process_occurrence
 from radiant.tasks.vcf.experiment import (
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
@@ -32,11 +32,16 @@ def process_tasks(
     with tracer.start_as_current_span("process_tasks"):
         occurrences_partition_commit = []
 
+        occurrences_table_name = f"{namespace}.germline_cnv_occurrence"
+        if not tasks:
+            # Overwriting with an empty buffer would wipe the table; refuse the no-op.
+            logger.warning(f"No CNV tasks to process; skipping overwrite of {occurrences_table_name}")
+            return {occurrences_table_name: occurrences_partition_commit}
+
         catalog = (
             load_catalog(catalog_name, **catalog_properties) if catalog_properties else load_catalog(catalog_name)
         )
 
-        occurrences_table_name = f"{namespace}.germline_cnv_occurrence"
         occurrence_table = catalog.load_table(occurrences_table_name)
         occurrence_buffer = []
         for task in tasks:
@@ -81,18 +86,41 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
     logger = logging.getLogger(__name__)
 
     updated_tasks = []
+    attempted = 0
+    skipped = 0
     with tempfile.TemporaryDirectory() as tmpdir:
         for task in tasks:
             if task.get("task_type") != ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK:
                 continue
 
+            attempted += 1
             logger.info(f"Downloading VCF and index files from {task['cnv_vcf_filepath']} to a temporary directory")
-            cnv_vcf_local = download_s3_file(task["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
+            try:
+                cnv_vcf_local = download_s3_file(task["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
+            except S3DownloadError as e:
+                skipped += 1
+                logger.warning(
+                    f"Failed to download CNV VCF for task [{task.get('task_id')}] "
+                    f"from {task['cnv_vcf_filepath']}, skipping: {e}"
+                )
+                continue
             logger.info(f"Downloaded CNV VCF to {cnv_vcf_local}")
             task["cnv_vcf_filepath"] = cnv_vcf_local
 
             task = AlignmentGermlineVariantCallingTask.model_validate(task)
             updated_tasks.append(task)
+
+        if skipped:
+            logger.warning(f"Skipped {skipped}/{attempted} CNV tasks due to download failures")
+
+        # Guard against wiping germline_cnv_occurrence: if every candidate task failed to
+        # download (e.g. an S3 outage), a full overwrite would replace the table with an
+        # empty result. Fail loudly instead so the run is retried, not silently emptied.
+        if attempted and not updated_tasks:
+            raise RuntimeError(
+                f"All {attempted} CNV download(s) failed; aborting to avoid overwriting "
+                f"{namespace}.germline_cnv_occurrence with an empty table"
+            )
 
         logger.info("Starting CNV VCF processing for all tasks")
         process_tasks(updated_tasks, namespace=namespace, vcf_threads=4)
