@@ -51,7 +51,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             LOGGER.info("Expected variable `result` is None, retrying...")
             self._missed_count += 1
             if self._missed_count >= self._MISSED_MAX_COUNT:
-                TriggerEvent({"status": "error", "error_message": f"task {self.task_name} not found"})
+                return TriggerEvent({"status": "error", "error_message": f"task {self.task_name} not found"})
             return None
 
         self._missed_count = 0

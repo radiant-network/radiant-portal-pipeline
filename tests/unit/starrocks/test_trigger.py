@@ -61,6 +61,9 @@ def test_get_task_completed_none(mock_connection):
     result = [trigger._get_task_completed(mock_connection) for _ in range(5)]
 
     assert result[:4] == [None, None, None, None]
+    assert isinstance(result[4], TriggerEvent)
+    assert result[4].payload.get("status") == "error"
+    assert result[4].payload.get("error_message") == "task test_task not found"
 
 
 def test_get_task_completed_unknown(mock_connection):
@@ -123,7 +126,8 @@ def test_run_trigger_until_unknown(mock_connection):
 
     assert len(result) == 1
     assert isinstance(result[0], TriggerEvent)
-    assert result[0].payload.get("error_message") == "Caught <class 'StopIteration'> caused test_task to fail"
+    assert result[0].payload.get("status") == "error"
+    assert result[0].payload.get("error_message") == "task test_task not found"
 
 
 def test_get_task_complete_programming_error(mock_connection):

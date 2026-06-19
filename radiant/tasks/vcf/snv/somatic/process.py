@@ -9,7 +9,7 @@ from pyiceberg.catalog import load_catalog
 from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
 from radiant.tasks.iceberg.utils import commit_files
-from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
+from radiant.tasks.utils import S3DownloadError, capture_libc_stderr_and_check_errors, download_s3_file
 from radiant.tasks.vcf.experiment import RADIANT_SOMATIC_ANNOTATION_TASK, Experiment, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import parse_csq_header, process_consequence
@@ -187,15 +187,26 @@ def import_somatic_snv(tasks: list[dict], namespace: str):
     logger = logging.getLogger(__name__)
 
     merged_partitions = defaultdict(list)
+    attempted = 0
+    skipped = 0
 
     logger.info("Downloading VCF and index files to a temporary directory")
     for task in tasks:
         if task["task_type"] != RADIANT_SOMATIC_ANNOTATION_TASK:
             continue
 
+        attempted += 1
         with tempfile.TemporaryDirectory() as tmpdir:
-            vcf_local = download_s3_file(task["vcf_filepath"], tmpdir)
-            index_local = download_s3_file(task["vcf_filepath"] + ".tbi", tmpdir)
+            try:
+                vcf_local = download_s3_file(task["vcf_filepath"], tmpdir)
+                index_local = download_s3_file(task["vcf_filepath"] + ".tbi", tmpdir)
+            except S3DownloadError as e:
+                skipped += 1
+                logger.warning(
+                    f"Failed to download somatic VCF for task [{task.get('task_id')}] "
+                    f"from {task['vcf_filepath']}, skipping: {e}"
+                )
+                continue
             task_data = {**task, "vcf_filepath": vcf_local, "index_vcf_filepath": index_local}
 
             task = RadiantSomaticAnnotationTask.model_validate(task_data)
@@ -205,6 +216,13 @@ def import_somatic_snv(tasks: list[dict], namespace: str):
             partitions = process_task(task, namespace=namespace, vcf_threads=4)
             logger.info(f"✅ Parquet files created: {task_data['task_id']}, file {task_data['vcf_filepath']}")
             merge_partitions_in_place(merged_partitions, partitions)
+
+    if skipped:
+        logger.warning(f"Skipped {skipped}/{attempted} somatic SNV tasks due to download failures")
+
+    # If all files failed, we abort
+    if attempted and skipped == attempted:
+        raise RuntimeError(f"All {attempted} somatic SNV download(s) failed")
 
     # Merge results from all tasks and convert PartitionCommit objects to dicts
     commit_partitions(merged_partitions)

@@ -1,8 +1,10 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from radiant.tasks.vcf.experiment import Experiment
+from radiant.tasks.utils import S3DownloadError
+from radiant.tasks.vcf.experiment import RADIANT_SOMATIC_ANNOTATION_TASK, Experiment
+from radiant.tasks.vcf.snv.somatic import process as somatic_process
 from radiant.tasks.vcf.snv.somatic.process import get_somatic_indexes
 
 
@@ -99,3 +101,58 @@ def test_returns_tuple_of_two_ints():
     assert isinstance(result, tuple)
     assert len(result) == 2
     assert all(isinstance(i, int) for i in result)
+
+
+def _somatic_task(task_id: int, filepath: str) -> dict:
+    return {
+        "task_id": task_id,
+        "task_type": RADIANT_SOMATIC_ANNOTATION_TASK,
+        "vcf_filepath": filepath,
+    }
+
+
+def test_import_somatic_snv_skips_task_when_download_fails():
+    """A single failed S3 download must not abort the whole somatic batch."""
+    tasks = [_somatic_task(1, "s3://bucket/bad.vcf.gz"), _somatic_task(2, "s3://bucket/good.vcf.gz")]
+
+    def fake_download(s3_path, _tmpdir, randomize_filename=False):
+        if s3_path.startswith("s3://bucket/bad"):
+            raise S3DownloadError("Failed to download S3 file s3://bucket/bad.vcf.gz")
+        return f"/tmp/{s3_path.rsplit('/', 1)[-1]}"
+
+    with (
+        patch.object(somatic_process, "download_s3_file", side_effect=fake_download),
+        patch.object(somatic_process.RadiantSomaticAnnotationTask, "model_validate", side_effect=lambda d: d),
+        patch.object(somatic_process, "process_task", return_value={"radiant.snv": [{"id": "x"}]}) as mock_proc,
+        patch.object(somatic_process, "commit_partitions") as mock_commit,
+    ):
+        somatic_process.import_somatic_snv(tasks, namespace="radiant")
+
+    # Only the good task is processed; the failed download is skipped, not fatal.
+    assert mock_proc.call_count == 1
+    processed_task = mock_proc.call_args.args[0]
+    assert processed_task["task_id"] == 2
+    # The batch still commits the good task's partitions exactly once.
+    mock_commit.assert_called_once()
+    assert dict(mock_commit.call_args.args[0]) == {"radiant.snv": [{"id": "x"}]}
+
+
+def test_import_somatic_snv_raises_when_all_downloads_fail():
+    """A total S3 outage must fail the batch (so Airflow retries), not report success."""
+    tasks = [_somatic_task(1, "s3://bucket/a.vcf.gz"), _somatic_task(2, "s3://bucket/b.vcf.gz")]
+
+    def fake_download(s3_path, _tmpdir, randomize_filename=False):
+        raise S3DownloadError(f"Failed to download S3 file {s3_path}")
+
+    with (
+        patch.object(somatic_process, "download_s3_file", side_effect=fake_download),
+        patch.object(somatic_process.RadiantSomaticAnnotationTask, "model_validate", side_effect=lambda d: d),
+        patch.object(somatic_process, "process_task") as mock_proc,
+        patch.object(somatic_process, "commit_partitions") as mock_commit,
+        pytest.raises(RuntimeError, match=r"download\(s\) failed"),
+    ):
+        somatic_process.import_somatic_snv(tasks, namespace="radiant")
+
+    # Nothing processed and nothing committed — the run fails instead of silently succeeding.
+    mock_proc.assert_not_called()
+    mock_commit.assert_not_called()
