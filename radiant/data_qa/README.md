@@ -207,3 +207,20 @@ later step.
 connectivity (dropped if the runner is in-cluster, or configured via CI
 secrets otherwise), the scheduler (CI `schedule:` trigger), and the report
 push (CI artifact / TestQuality API).
+
+
+## Development
+### Code formatting
+  
+  The Python files in this folder are subject to the repository's `ruff` formatting rules
+  (enforced in CI / unit tests).
+
+  The dbt virtualenv does **not** include `ruff`, so install it first — pinned to the same version
+  as `requirements-dev.txt` to avoid reformatting churn:
+
+  ```bash
+  pip install ruff==0.11.4
+
+  # format (from the root of the repo)
+  ruff format radiant/data_qa/ && ruff check --fix radiant/data_qa/
+  ```
