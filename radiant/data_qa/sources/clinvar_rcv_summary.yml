@@ -1,0 +1,54 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: clinvar_rcv_summary
+        tests:
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: clinvar_rcv_summary__should_not_contain_only_null
+              except:
+                # Already covered by clinvar_rcv_summary__should_not_contain_null__*
+                - accession
+                - clinvar_id
+                - locus_id
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: clinvar_rcv_summary__should_not_contain_same_value
+              except:
+                # count(distinct) unsupported on nested STRUCT/MAP types
+                - clinical_significance_count
+                - submissions
+
+          # --- Should Be Within Range ----------------------------------------
+          - should_be_within_range:
+              name: clinvar_rcv_summary__should_be_within_range_review_status_stars
+              like: review_status_stars
+              min_value: 0
+              max_value: 4
+        columns:
+          - name: locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: clinvar_rcv_summary__should_not_contain_null__locus_id
+          - name: clinvar_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: clinvar_rcv_summary__should_not_contain_null__clinvar_id
+          - name: accession
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: clinvar_rcv_summary__should_not_contain_null__accession
+          - name: clinical_significance
+            tests:
+              # --- Accepted Values (array) -----------------------------------
+              # values: dict_clinvar_interpretation() — see macros/dictionaries.sql
+              - accepted_values_in_array:
+                  name: clinvar_rcv_summary__accepted_values_clinical_significance_SJRA-1624
+                  values: "{{ dict_clinvar_interpretation() }}"
