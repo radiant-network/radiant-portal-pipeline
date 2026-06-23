@@ -12,6 +12,7 @@ SCHEMA = merge_schemas(
     COMMON_SCHEMA,
     Schema(
         NestedField(500, "part", IntegerType(), required=True),
+        NestedField(501, "tenant_code", StringType(), required=True),
         NestedField(508, "quality", FloatType(), required=False),
         NestedField(509, "filter", StringType(), required=False),
         NestedField(510, "info_hotspotallele", IntegerType(), required=False),
@@ -212,6 +213,7 @@ def process_occurrence(
     occurrences[tumor_exp.seq_id] = {
         # common
         "part": common.part,
+        "tenant_code": tumor_exp.tenant_code,
         "task_id": common.task_id,
         "locus": common.locus,
         "locus_hash": common.locus_hash,

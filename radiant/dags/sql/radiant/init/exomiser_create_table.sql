@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_exomiser }}
 (
     part                 INT,
+    tenant_code			 VARCHAR(50),
     seq_id               INT,
     locus_id             BIGINT,
     id                   VARCHAR(2000),
@@ -15,8 +16,8 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_exomiser }}
     acmg_evidence array< VARCHAR (10)>
 )
 ENGINE = OLAP
-DUPLICATE KEY(`part`, `seq_id`, `locus_id`,  `id`)
-PARTITION BY (`part`)
+DUPLICATE KEY(`part`, `tenant_code`, `seq_id`, `locus_id`,  `id`)
+PARTITION BY (`part`, `tenant_code`)
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10
 PROPERTIES (

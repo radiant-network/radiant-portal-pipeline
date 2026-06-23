@@ -16,6 +16,7 @@ LOAD LABEL {{ database_name }}.{{ load_label }}
     SET
     (
         part = %(part)s,
+        tenant_code = %(tenant_code)s,
         seq_id = %(seq_id)s,
         id = id,
         rank = rank,

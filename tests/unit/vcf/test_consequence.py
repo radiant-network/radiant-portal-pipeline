@@ -13,6 +13,7 @@ task = RadiantGermlineAnnotationTask(
             seq_id=1,
             patient_id=1,
             aliquot="SA0001",
+            tenant_code="tenant1",
             family_role="proband",
             affected_status="affected",
             sex="F",

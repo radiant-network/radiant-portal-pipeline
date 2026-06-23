@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_exomiser }}
 (
     part                 INT,
+    tenant_code				 VARCHAR(50),
     seq_id               INT,
     id                   VARCHAR(2000),
     rank                 INT,
@@ -20,6 +21,6 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_exomiser }}
     locus                VARCHAR(2000) AS (concat_ws('-', chromosome, start, reference, alternate)),
     locus_hash           VARCHAR(256) AS (sha2(concat_ws('-', chromosome, start, reference, alternate), 256))
 )
-ENGINE = OLAP DUPLICATE KEY(`part`, `seq_id`, `id`)
-PARTITION BY (`part`)
+ENGINE = OLAP DUPLICATE KEY(`part`, `tenant_code`, `seq_id`, `id`)
+PARTITION BY (`part`, `tenant_code`)
 DISTRIBUTED BY HASH(`locus_hash`) BUCKETS 10;

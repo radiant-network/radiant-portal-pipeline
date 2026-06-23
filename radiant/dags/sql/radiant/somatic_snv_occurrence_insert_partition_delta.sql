@@ -1,5 +1,6 @@
 SELECT
     o.part,
+    o.tenant_code,
     o.task_id,
     o.tumor_seq_id,
     v.locus_id,

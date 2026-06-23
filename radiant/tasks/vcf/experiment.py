@@ -14,6 +14,7 @@ class Experiment(BaseModel):
     seq_id: int
     patient_id: int
     aliquot: str
+    tenant_code: str
     family_role: str
     affected_status: str
     sex: str
@@ -109,6 +110,7 @@ def _build_experiments(rows: list[dict]) -> list[Experiment]:
             seq_id=row["seq_id"],
             patient_id=row["patient_id"],
             aliquot=row["aliquot"],
+            tenant_code=row["tenant_code"],
             family_role=row["family_role"],
             affected_status=row["affected_status"],
             sex=row["sex"],

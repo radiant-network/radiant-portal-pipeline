@@ -7,6 +7,7 @@ from radiant.tasks.vcf.vcf_utils import calls_without_phased
 SCHEMA: Schema = Schema(
     NestedField(100, "part", IntegerType(), required=True),
     NestedField(101, "seq_id", IntegerType(), required=True),
+    NestedField(124, "tenant_code", StringType(), required=True),
     NestedField(102, "task_id", IntegerType(), required=True),
     NestedField(103, "aliquot", StringType(), required=True),
     NestedField(104, "chromosome", StringType(), required=True),
@@ -32,7 +33,9 @@ SCHEMA: Schema = Schema(
 )
 
 
-def process_occurrence(record: Variant, part: int, seq_id: int, task_id: int, aliquot: str, sample_idx: int) -> dict:
+def process_occurrence(
+    record: Variant, part: int, seq_id: int, tenant_code: str, task_id: int, aliquot: str, sample_idx: int
+) -> dict:
     """
     Processes a cnv occurrence and extracts relevant information for each sample in the pedigree.
 
@@ -58,6 +61,7 @@ def process_occurrence(record: Variant, part: int, seq_id: int, task_id: int, al
     occurrence = {
         "part": part,
         "seq_id": seq_id,
+        "tenant_code": tenant_code,
         "task_id": task_id,
         "aliquot": aliquot,
         "chromosome": record.CHROM.replace("chr", ""),

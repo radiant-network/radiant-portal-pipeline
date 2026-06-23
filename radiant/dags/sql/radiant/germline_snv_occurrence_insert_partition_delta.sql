@@ -1,5 +1,6 @@
 SELECT
     o.part,
+    o.tenant_code,
     o.seq_id,
     o.task_id,
     v.locus_id,
