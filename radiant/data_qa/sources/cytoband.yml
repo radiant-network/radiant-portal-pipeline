@@ -28,7 +28,7 @@ sources:
                 - cytoband
         columns:
           - name: chromosome
-            description: "CHAR(2) — canonical UCSC cytoBand chromosomes only."
+            description: "CHAR(2)."
             tests:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
