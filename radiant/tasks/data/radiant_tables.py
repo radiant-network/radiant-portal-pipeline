@@ -8,7 +8,7 @@ class RadiantConfigKeys(Enum):
     ICEBERG_CATALOG = ("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog")
     ICEBERG_NAMESPACE = ("RADIANT_ICEBERG_NAMESPACE", "radiant")
     RADIANT_DATABASE = ("RADIANT_TABLES_DATABASE", "radiant")
-    RADIANT_TENANT_DB_PREFIX = ("RADIANT_TENANT_DB_PREFIX", "radiant_")
+    RADIANT_TENANT_DB_TEMPLATE = ("RADIANT_TENANT_DB_TEMPLATE", "{tenant}_db")
     CLINICAL_CATALOG = ("RADIANT_CLINICAL_CATALOG", "radiant_jdbc")
     CLINICAL_DATABASE = ("RADIANT_CLINICAL_DATABASE", "public")
 
@@ -83,9 +83,6 @@ ICEBERG_CATALOG_DATABASE = {
     "iceberg_database": os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant"),
 }
 
-# --- StarRocks tables
-# Shared radiant tables: cross-tenant orchestration (sequencing_experiment family) and the global
-# locus_hash -> variant_id lookup (shared with the open-data pipeline). One copy in RADIANT_DATABASE.
 STARROCKS_RADIANT_SHARED_MAPPING = {
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
@@ -100,9 +97,6 @@ STARROCKS_RADIANT_SHARED_MAPPING = {
     "starrocks_snv_staging_variant": "snv__staging_variant",
 }
 
-# Per-tenant analytical schema: each tenant gets its own database (`<prefix><tenant_code>`), so these
-# tables carry no tenant_code column — the database is the tenant boundary. Everything here is either
-# part-keyed or derived from the tenant's cohort (occurrences, frequencies, variants, consequences).
 STARROCKS_RADIANT_PER_TENANT_MAPPING = {
     "starrocks_staging_exomiser": "raw_exomiser",
     "starrocks_exomiser": "exomiser",
@@ -115,7 +109,6 @@ STARROCKS_RADIANT_PER_TENANT_MAPPING = {
     "starrocks_somatic_snv_staging_variant_frequency": "somatic__snv__staging_variant_frequency_part",
 }
 
-# Backwards-compatible union for callers that iterate over all radiant tables.
 STARROCKS_RADIANT_MAPPING = STARROCKS_RADIANT_SHARED_MAPPING | STARROCKS_RADIANT_PER_TENANT_MAPPING
 
 
@@ -167,10 +160,23 @@ def get_iceberg_tables(conf=None) -> dict:
     }
 
 
-def get_starrocks_mapping(conf=None) -> dict:
-    tables = STARROCKS_RADIANT_MAPPING | STARROCKS_OPEN_DATA_MAPPING | CLINICAL_TRANSFORM_LAYER_MAPPING
-    _database = get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE)
-    return {key: f"{_database}.{value}" for key, value in tables.items()}
+def _resolve_radiant_databases(conf=None, tenant_code=None) -> tuple[str, str]:
+    shared_db = get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE)
+    if not tenant_code:
+        return shared_db, shared_db
+
+    template = get_config_value(conf, RadiantConfigKeys.RADIANT_TENANT_DB_TEMPLATE)
+    return shared_db, template.format(tenant=tenant_code)
+
+
+def get_starrocks_mapping(conf=None, tenant_code=None) -> dict:
+    shared_db, tenant_db = _resolve_radiant_databases(conf, tenant_code)
+    shared_tables = STARROCKS_RADIANT_SHARED_MAPPING | STARROCKS_OPEN_DATA_MAPPING | CLINICAL_TRANSFORM_LAYER_MAPPING
+
+    mapping = {key: f"{shared_db}.{value}" for key, value in shared_tables.items()}
+    mapping.update({key: f"{tenant_db}.{value}" for key, value in STARROCKS_RADIANT_PER_TENANT_MAPPING.items()})
+
+    return mapping
 
 
 def get_clinical_mapping(conf=None) -> dict:
@@ -179,7 +185,7 @@ def get_clinical_mapping(conf=None) -> dict:
     return {key: f"{_catalog}.{_database}.{value}" for key, value in CLINICAL_MAPPING.items()}
 
 
-def get_radiant_mapping(conf=None) -> dict:
+def get_radiant_mapping(conf=None, tenant_code=None) -> dict:
     namespace = get_config_value(conf, RadiantConfigKeys.ICEBERG_NAMESPACE)
     namespace = f"{namespace}_" if namespace else "germline__snv__"
     mapping = {
@@ -188,7 +194,7 @@ def get_radiant_mapping(conf=None) -> dict:
             **STARROCKS_COLOCATE_GROUP_MAPPING,
         }.items()
     }
-    mapping.update(get_starrocks_mapping(conf=conf))
+    mapping.update(get_starrocks_mapping(conf=conf, tenant_code=tenant_code))
     mapping.update(get_iceberg_tables(conf))
     mapping.update(get_clinical_mapping(conf))
     return mapping

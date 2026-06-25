@@ -83,4 +83,5 @@ FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
          LEFT JOIN snv ON snv.seq_id = o.seq_id AND o.name = snv.name
          LEFT JOIN gnomad_ranked ON gnomad_ranked.seq_id = o.seq_id AND o.name = gnomad_ranked.name AND gnomad_ranked.rn = 1
 WHERE o.seq_id IN %(seq_ids)s
+  AND o.tenant_code = %(tenant_code)s
 ;

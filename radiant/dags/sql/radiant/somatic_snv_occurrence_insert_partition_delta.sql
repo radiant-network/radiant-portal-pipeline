@@ -57,4 +57,5 @@ JOIN [BROADCAST] {{ mapping.starrocks_snv_tmp_variant }} v
     ON o.locus_hash = v.locus_hash
 WHERE o.part = {{ partition }}
   AND o.task_id IN %(task_ids)s
+  AND o.tenant_code = %(tenant_code)s
   AND COALESCE(o.tumor_has_alt, FALSE);

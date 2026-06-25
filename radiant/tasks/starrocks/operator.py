@@ -44,6 +44,8 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
         self,
         *,
         submit_task_options: SubmitTaskOptions = None,
+        tenant_code: str | None = None,
+        tenants_task_id: str | None = None,
         retries=3,
         retry_delay=timedelta(seconds=15),
         retry_exponential_backoff=True,
@@ -51,6 +53,8 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
     ):
         conn_id = "starrocks_conn"
         self.submit_task_options = submit_task_options
+        self.tenant_code = tenant_code
+        self.tenants_task_id = tenants_task_id
 
         super().__init__(
             conn_id=conn_id,
@@ -61,10 +65,19 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
         )
 
     def prepare_template_context(self, context):
-        dag_conf_params = context.get("dag_run").conf or {}
-        dynamic_mapping = get_radiant_mapping(dag_conf_params)
+        dag_conf_params = dict(context.get("dag_run").conf or {})
+        tenant_code = self.tenant_code if self.tenant_code is not None else dag_conf_params.get("RADIANT_TENANT_CODE")
+        dynamic_mapping = get_radiant_mapping(dag_conf_params, tenant_code=tenant_code)
 
-        return {**context, "mapping": dynamic_mapping}
+        extra = {"mapping": dynamic_mapping}
+        if self.tenants_task_id:
+            tenants = context["ti"].xcom_pull(task_ids=self.tenants_task_id) or []
+            if tenants and isinstance(tenants[0], list):
+                tenants = [t for sub in tenants for t in sub]
+            extra["tenants"] = tenants
+            extra["per_tenant_mapping"] = lambda _tenant: get_radiant_mapping(dag_conf_params, tenant_code=_tenant)
+
+        return {**context, **extra}
 
     def render_template_fields(self, context, jinja_env=None):
         _context = self.prepare_template_context(context)
