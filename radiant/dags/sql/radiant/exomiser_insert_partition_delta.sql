@@ -1,5 +1,4 @@
 select e.part,
-	   e.tenant_code,
        seq_id,
        locus_id,
        id,

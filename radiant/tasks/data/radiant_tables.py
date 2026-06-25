@@ -8,6 +8,7 @@ class RadiantConfigKeys(Enum):
     ICEBERG_CATALOG = ("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog")
     ICEBERG_NAMESPACE = ("RADIANT_ICEBERG_NAMESPACE", "radiant")
     RADIANT_DATABASE = ("RADIANT_TABLES_DATABASE", "radiant")
+    RADIANT_TENANT_DB_PREFIX = ("RADIANT_TENANT_DB_PREFIX", "radiant_")
     CLINICAL_CATALOG = ("RADIANT_CLINICAL_CATALOG", "radiant_jdbc")
     CLINICAL_DATABASE = ("RADIANT_CLINICAL_DATABASE", "public")
 
@@ -83,17 +84,13 @@ ICEBERG_CATALOG_DATABASE = {
 }
 
 # --- StarRocks tables
-STARROCKS_RADIANT_MAPPING = {
+# Shared radiant tables: cross-tenant orchestration (sequencing_experiment family) and the global
+# locus_hash -> variant_id lookup (shared with the open-data pipeline). One copy in RADIANT_DATABASE.
+STARROCKS_RADIANT_SHARED_MAPPING = {
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
     "starrocks_variant_lookup": "variant_lookup",
-    "starrocks_staging_exomiser": "raw_exomiser",
-    "starrocks_exomiser": "exomiser",
-    "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
-    "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
-    "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
-    "starrocks_germline_snv_staging_variant_frequency": "germline__snv__staging_variant_frequency_part",
     "starrocks_snv_consequence": "snv__consequence",
     "starrocks_snv_consequence_filter": "snv__consequence_filter",
     "starrocks_snv_consequence_filter_partitioned": "snv__consequence_filter_partitioned",
@@ -101,10 +98,25 @@ STARROCKS_RADIANT_MAPPING = {
     "starrocks_snv_variant": "snv__variant",
     "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
     "starrocks_snv_staging_variant": "snv__staging_variant",
+}
+
+# Per-tenant analytical schema: each tenant gets its own database (`<prefix><tenant_code>`), so these
+# tables carry no tenant_code column — the database is the tenant boundary. Everything here is either
+# part-keyed or derived from the tenant's cohort (occurrences, frequencies, variants, consequences).
+STARROCKS_RADIANT_PER_TENANT_MAPPING = {
+    "starrocks_staging_exomiser": "raw_exomiser",
+    "starrocks_exomiser": "exomiser",
+    "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
+    "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
+    "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
+    "starrocks_germline_snv_staging_variant_frequency": "germline__snv__staging_variant_frequency_part",
     "starrocks_somatic_snv_occurrence": "somatic__snv__occurrence",
     "starrocks_somatic_snv_variant_frequency": "somatic__snv__variant_frequency",
     "starrocks_somatic_snv_staging_variant_frequency": "somatic__snv__staging_variant_frequency_part",
 }
+
+# Backwards-compatible union for callers that iterate over all radiant tables.
+STARROCKS_RADIANT_MAPPING = STARROCKS_RADIANT_SHARED_MAPPING | STARROCKS_RADIANT_PER_TENANT_MAPPING
 
 
 STARROCKS_OPEN_DATA_MAPPING = {

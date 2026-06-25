@@ -1,5 +1,4 @@
 SELECT part,
-	   tenant_code,
        seq_id,
        id,
        rank,

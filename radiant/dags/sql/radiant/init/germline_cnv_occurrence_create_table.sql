@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_cnv_occurrence }} (
      part int(11) NOT NULL COMMENT "",
-     tenant_code varchar(50) NOT NULL COMMENT "",
      seq_id int(11) NULL COMMENT "",
      task_id int(11) NOT NULL COMMENT "",
      cnv_id bigint(20) NOT NULL,
@@ -36,5 +35,5 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_cnv_occurrence }} (
      gnomad_sc_hom int(11) NULL COMMENT "",
      gnomad_sc_het int(11) NULL COMMENT ""
 ) ENGINE=OLAP
-DUPLICATE KEY(part, tenant_code, seq_id, task_id, cnv_id)
-PARTITION BY (part, tenant_code);
+DUPLICATE KEY(part, seq_id, task_id, cnv_id)
+PARTITION BY (part);

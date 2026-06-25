@@ -1,6 +1,5 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_occurrence }} (
     part INT NOT NULL,
-    tenant_code VARCHAR(50) NOT NULL,
     seq_id INT NOT NULL,
     task_id INT NOT NULL,
     locus_id bigint(20) NOT NULL,
@@ -60,8 +59,8 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_occurrence }} (
   INDEX locus_id_index (`locus_id`) USING BITMAP COMMENT ''
 )
 ENGINE=OLAP
-DUPLICATE KEY(`part`, `tenant_code`, `seq_id`, `task_id`, `locus_id`)
-PARTITION BY (`part`, `tenant_code`)
+DUPLICATE KEY(`part`, `seq_id`, `task_id`, `locus_id`)
+PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`) BUCKETS 10
 PROPERTIES (
     "colocate_with" = "{{ mapping.colocate_query_group }}"

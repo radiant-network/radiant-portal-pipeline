@@ -46,7 +46,6 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
         FROM gnomad_overlaps o
     )
 SELECT o.part,
-       o.tenant_code,
        o.seq_id,
        o.task_id,
        GET_CNV_ID(o.chromosome, o.start, o.length, o.alternate) as cnv_id,

@@ -531,7 +531,6 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
                 {
                     "part": self.partition,
                     "seq_id": _task.experiments[0].seq_id,
-                    "tenant_code": _task.experiments[0].tenant_code,
                     "tsv_filepath": _task.exomiser_filepath,
                     "load_label": f"load_exomiser_"
                     f"{_task.task_id}_{_task.experiments[0].seq_id}_{_task.task_id}_{str(uuid.uuid4().hex)}",
