@@ -2,8 +2,6 @@ import pytest
 
 from radiant.dags import NAMESPACE
 from radiant.dags.import_part import (
-    fan_out_by_tenant,
-    fan_out_exomiser_by_tenant,
     tasks_output_processor,
 )
 
@@ -20,35 +18,6 @@ _MULTI_TENANT_TASKS = [
 
 def _by_tenant(rows):
     return {r["tenant_code"]: r for r in rows}
-
-
-def test_fan_out_by_tenant_groups_ids_per_tenant():
-    rows = _by_tenant(fan_out_by_tenant(_MULTI_TENANT_TASKS, part=5))
-    assert set(rows) == {"chop", "chusj"}
-
-    chop = rows["chop"]["parameters"]
-    assert chop["tenant_code"] == "chop"
-    assert chop["part"] == 5
-    assert chop["task_ids"] == [1]
-    assert chop["deleted_task_ids"] == [3]
-    assert chop["seq_ids"] == [10, 11]
-    assert chop["deleted_seq_ids"] == [30]
-
-    chusj = rows["chusj"]["parameters"]
-    assert chusj["task_ids"] == [2]
-    assert chusj["seq_ids"] == [20]
-    # Sentinels keep `IN (...)` valid when a tenant has nothing in a bucket.
-    assert chusj["deleted_task_ids"] == [-1]
-    assert chusj["deleted_seq_ids"] == [-1]
-
-
-def test_fan_out_exomiser_carries_per_tenant_tasks():
-    rows = _by_tenant(fan_out_exomiser_by_tenant(_MULTI_TENANT_TASKS, part=5))
-    # chop owns tasks 1 (germline) and 3 (deleted); chusj owns task 2.
-    assert {t["task_id"] for t in rows["chop"]["tasks"]} == {1, 3}
-    assert {t["task_id"] for t in rows["chusj"]["tasks"]} == {2}
-    # still carries the same per-tenant parameters as fan_out_by_tenant
-    assert rows["chop"]["parameters"]["tenant_code"] == "chop"
 
 
 @pytest.fixture
@@ -171,11 +140,9 @@ def test_dag_contains_all_tasks(dag_bag):
         "get_iceberg_namespace",
         "get_tables_to_refresh",
         "fetch_sequencing_experiment_delta",
-        "fetch_all_tenants",
         "sanity_check_tasks",
         "prepare_config",
-        "fan_out_by_tenant",
-        "fan_out_exomiser_by_tenant",
+        "extract_seq_ids",
         "extract_task_ids",
         "checkpoint_after_setup",
         "import_cnv_vcf_k8s",
