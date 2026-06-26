@@ -20,6 +20,14 @@ sources:
           - should_not_contain_same_value:
               # SJRA-1550 is_mane_select is_mane_plus
               name: snv_consequence__should_not_contain_same_value_SJRA-1550
+
+          # --- Should Be Unique ----------------------------------------------
+          - dbt_utils.unique_combination_of_columns:
+              name: snv_consequence__should_be_unique__locus_id_symbol_transcript_id
+              combination_of_columns:
+                - locus_id
+                - symbol
+                - transcript_id
         columns:
           - name: locus_id
             tests:

@@ -64,6 +64,15 @@ sources:
           - should_be_within_range:
               name: somatic_snv_occurrence__should_be_within_range_ad_ratio
               like: ad_ratio
+
+          # --- Should Be Unique ----------------------------------------------
+          - dbt_utils.unique_combination_of_columns:
+              name: somatic_snv_occurrence__should_be_unique__part_task_id_tumor_seq_id_locus_id
+              combination_of_columns:
+                - part
+                - task_id
+                - tumor_seq_id
+                - locus_id
         columns:
           - name: part
             tests:

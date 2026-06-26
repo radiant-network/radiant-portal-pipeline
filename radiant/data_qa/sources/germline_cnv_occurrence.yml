@@ -36,6 +36,15 @@ sources:
           - should_be_within_range:
               name: germline_cnv_occurrence__should_be_within_range_gnomad_sf
               like: gnomad_sf
+
+          # --- Should Be Unique ----------------------------------------------
+          - dbt_utils.unique_combination_of_columns:
+              name: germline_cnv_occurrence__should_be_unique__part_seq_id_task_id_cnv_id
+              combination_of_columns:
+                - part
+                - seq_id
+                - task_id
+                - cnv_id
         columns:
           - name: part
             tests:
