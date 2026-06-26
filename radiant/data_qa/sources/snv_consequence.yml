@@ -26,6 +26,12 @@ sources:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
                   name: snv_consequence__should_not_contain_null__locus_id
+              # --- Relationships ---------------------------------------------
+              # consequence locus must exist in the snv__variant
+              - relationships:
+                  name: snv_consequence__relationships__locus_id__snv_variant
+                  to: source('radiant', 'snv__variant')
+                  field: locus_id
           - name: symbol
             tests:
               # --- Should Not Contain Null -----------------------------------
