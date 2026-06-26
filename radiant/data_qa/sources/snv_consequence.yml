@@ -6,6 +6,9 @@ sources:
     tables:
       - name: snv__consequence
         tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: snv_consequence__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
               # SJRA-1550 mane_select
