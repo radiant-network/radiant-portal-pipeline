@@ -74,6 +74,7 @@ def import_radiant():
             task_id="insert_sequencing_experiment",
             task_display_name="[PyOp] Insert New Sequencing Experiments",
             retries=2,
+            retry_delay=datetime.timedelta(seconds=30),
         )
         def insert_new_sequencing_experiment(sequencing_experiment: Any):
             import os
@@ -129,7 +130,10 @@ def import_radiant():
         return [{**dag_conf, **{"part": part}} for part in prioritized]
 
     @task.short_circuit(
-        task_id="prepare_tenants_tables", task_display_name="[PyOp/StarRocks] Prepare Tenants Tables", retries=2
+        task_id="prepare_tenants_tables",
+        task_display_name="[PyOp/StarRocks] Prepare Tenants Tables",
+        retries=2,
+        retry_delay=datetime.timedelta(seconds=30),
     )
     def prepare_tenants_tables(sequencing_experiment_to_process: Any) -> Any:
         import os
