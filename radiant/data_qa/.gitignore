@@ -6,6 +6,7 @@ logs/
 dbt_packages/
 *.pyc
 __pycache__/
+.testquality
 
 # Generated reports (keep the folder, ignore the outputs)
 reports/*.xml

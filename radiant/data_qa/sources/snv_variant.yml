@@ -92,6 +92,16 @@ sources:
               # --- Should Be Unique ------------------------------------------
               - unique:
                   name: snv_variant__should_be_unique__locus
+          - name: symbol
+            tests:
+              # --- Relationships ---------------------------------------------
+              # gene symbol must exist in the ensembl_gene.name
+              - relationships:
+                  name: snv_variant__relationships__symbol__ensembl_gene_SJRA-1667
+                  to: source('radiant', 'ensembl_gene')
+                  field: name
+                  config:
+                    where: "symbol is not null and symbol <> ''"
           - name: vep_impact
             tests:
               # --- Accepted Values -------------------------------------------
@@ -102,7 +112,6 @@ sources:
                   config:
                     where: "vep_impact is not null"
           - name: variant_class
-            description: "Sequence Ontology variant class."
             tests:
               # --- Accepted Values -------------------------------------------
               # values: dict_variant_class() — see macros/dictionaries.sql

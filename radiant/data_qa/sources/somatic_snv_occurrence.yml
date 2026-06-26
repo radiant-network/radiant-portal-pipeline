@@ -88,6 +88,12 @@ sources:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
                   name: somatic_snv_occurrence__should_not_contain_null__locus_id
+              # --- Relationships ---------------------------------------------
+              # occurrence locus must exist in the snv__variant
+              - relationships:
+                  name: somatic_snv_occurrence__relationships__locus_id__snv_variant
+                  to: source('radiant', 'snv__variant')
+                  field: locus_id
           - name: tumor_zygosity
             description: "CHAR(3)."
             tests:
