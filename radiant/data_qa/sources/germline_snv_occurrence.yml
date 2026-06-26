@@ -6,6 +6,9 @@ sources:
     tables:
       - name: germline__snv__occurrence
         tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: germline_snv_occurrence__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
               # SJRA-1559: info_culprit info_haplotype_score info_vqslod info_ds info_r2_5p_bias info_inbreed_coeff
@@ -59,6 +62,12 @@ sources:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
                   name: germline_snv_occurrence__should_not_contain_null__locus_id
+              # --- Relationships ---------------------------------------------
+              # occurrence locus must exist in the snv__variant
+              - relationships:
+                  name: germline_snv_occurrence__relationships__locus_id__snv_variant
+                  to: source('radiant', 'snv__variant')
+                  field: locus_id
           - name: phased
             description: "BOOLEAN."
             tests:

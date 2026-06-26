@@ -6,6 +6,9 @@ sources:
     tables:
       - name: germline__cnv__occurrence
         tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: germline_cnv_occurrence__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
               name: germline_cnv_occurrence__should_not_contain_only_null

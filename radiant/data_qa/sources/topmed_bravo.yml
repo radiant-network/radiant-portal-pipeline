@@ -6,6 +6,9 @@ sources:
     tables:
       - name: topmed_bravo
         tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: topmed_bravo__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
               name: topmed_bravo__should_not_contain_only_null

@@ -6,6 +6,9 @@ sources:
     tables:
       - name: omim_gene_panel
         tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: omim_gene_panel__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
               name: omim_gene_panel__should_not_contain_only_null
