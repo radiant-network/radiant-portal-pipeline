@@ -3,7 +3,7 @@ from radiant.dags import NAMESPACE
 _GLOBAL_DAG_ID = f"{NAMESPACE}-init-starrocks-tables"
 _TENANT_DAG_ID = f"{NAMESPACE}-init-tenant-starrocks-tables"
 
-_SHARED_TABLES = [
+_BASE_TABLES = [
     "snv_consequence",
     "snv_consequence_filter",
     "snv_consequence_filter_partitioned",
@@ -37,14 +37,14 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(_GLOBAL_DAG_ID)
-    # 11 shared radiant tables + 2 clinical tables + 20 open data tables + 2 UDFs
+    # 11 base radiant tables + 2 clinical tables + 20 open data tables + 2 UDFs
     assert len(dag.tasks) == 35
 
 
-def test_dag_has_all_shared_tasks(dag_bag):
+def test_dag_has_all_base_tasks(dag_bag):
     dag = dag_bag.get_dag(_GLOBAL_DAG_ID)
     task_ids = [task.task_id for task in dag.tasks]
-    for table in _SHARED_TABLES:
+    for table in _BASE_TABLES:
         assert f"create_table_{table}" in task_ids
 
     for table in ["table_patient_access", "table_brim"]:

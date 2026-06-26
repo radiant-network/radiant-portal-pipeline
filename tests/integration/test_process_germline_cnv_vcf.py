@@ -42,9 +42,6 @@ def test_process_task(
 
     assert not occ.empty, "No occurrences were written to the iceberg table"
     assert (
-        (occ["aliquot"] == "SA0001")
-        & (occ["seq_id"] == 1)
-        & (occ["task_id"] == 1)
-        & (occ["tenant_code"] == "tenant1")
+        (occ["aliquot"] == "SA0001") & (occ["seq_id"] == 1) & (occ["task_id"] == 1) & (occ["tenant_code"] == "tenant1")
     ).any(), "Expected sample/sequencingID/taskID/tenant not found in occurrences"
     assert occ["chromosome"].isin(["1", "X"]).all(), "Some chromosome values are invalid"

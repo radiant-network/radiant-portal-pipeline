@@ -95,11 +95,11 @@ def test_prepare_context_routes_per_tenant_mapping():
     op = RadiantStarRocksOperator(task_id="t", sql="SELECT 1", tenant_code="chop")
     mapping = op.prepare_template_context(_ctx(_SHARED_CONF))["mapping"]
     assert mapping["starrocks_germline_snv_occurrence"] == "chop_db.germline__snv__occurrence"
-    # Shared tables (incl. the global variant catalog) stay in the shared database.
+    # Base tables (incl. the global variant catalog) stay in the shared database.
     assert mapping["starrocks_snv_variant"] == "radiant.snv__variant"
 
 
-def test_prepare_context_without_tenant_uses_shared_db():
+def test_prepare_context_without_tenant_uses_base_db():
     op = RadiantStarRocksOperator(task_id="t", sql="SELECT 1")
     ctx = op.prepare_template_context(_ctx(_SHARED_CONF))
     assert ctx["mapping"]["starrocks_germline_snv_occurrence"] == "radiant.germline__snv__occurrence"

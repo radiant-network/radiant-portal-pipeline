@@ -83,7 +83,7 @@ ICEBERG_CATALOG_DATABASE = {
     "iceberg_database": os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant"),
 }
 
-STARROCKS_RADIANT_SHARED_MAPPING = {
+STARROCKS_RADIANT_BASE_MAPPING = {
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
@@ -109,7 +109,7 @@ STARROCKS_RADIANT_PER_TENANT_MAPPING = {
     "starrocks_somatic_snv_staging_variant_frequency": "somatic__snv__staging_variant_frequency_part",
 }
 
-STARROCKS_RADIANT_MAPPING = STARROCKS_RADIANT_SHARED_MAPPING | STARROCKS_RADIANT_PER_TENANT_MAPPING
+STARROCKS_RADIANT_MAPPING = STARROCKS_RADIANT_BASE_MAPPING | STARROCKS_RADIANT_PER_TENANT_MAPPING
 
 
 STARROCKS_OPEN_DATA_MAPPING = {
@@ -161,19 +161,19 @@ def get_iceberg_tables(conf=None) -> dict:
 
 
 def _resolve_radiant_databases(conf=None, tenant_code=None) -> tuple[str, str]:
-    shared_db = get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE)
+    base_db = get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE)
     if not tenant_code:
-        return shared_db, shared_db
+        return base_db, base_db
 
     template = get_config_value(conf, RadiantConfigKeys.RADIANT_TENANT_DB_TEMPLATE)
-    return shared_db, template.format(tenant=tenant_code)
+    return base_db, template.format(tenant=tenant_code)
 
 
 def get_starrocks_mapping(conf=None, tenant_code=None) -> dict:
-    shared_db, tenant_db = _resolve_radiant_databases(conf, tenant_code)
-    shared_tables = STARROCKS_RADIANT_SHARED_MAPPING | STARROCKS_OPEN_DATA_MAPPING | CLINICAL_TRANSFORM_LAYER_MAPPING
+    base_db, tenant_db = _resolve_radiant_databases(conf, tenant_code)
+    base_tables = STARROCKS_RADIANT_BASE_MAPPING | STARROCKS_OPEN_DATA_MAPPING | CLINICAL_TRANSFORM_LAYER_MAPPING
 
-    mapping = {key: f"{shared_db}.{value}" for key, value in shared_tables.items()}
+    mapping = {key: f"{base_db}.{value}" for key, value in base_tables.items()}
     mapping.update({key: f"{tenant_db}.{value}" for key, value in STARROCKS_RADIANT_PER_TENANT_MAPPING.items()})
 
     return mapping

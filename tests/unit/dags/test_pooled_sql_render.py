@@ -24,7 +24,7 @@ def test_snv_variant_part_unions_occurrences_across_tenant_dbs():
     assert "chop_db.germline__snv__occurrence" in sql
     assert "chusj_db.germline__snv__occurrence" in sql
     assert "UNION ALL" in sql
-    assert "radiant.snv__variant_partitioned" in sql  # shared target
+    assert "radiant.snv__variant_partitioned" in sql  # base target
 
 
 def test_consequence_filter_part_unions_occurrences_across_tenant_dbs():
@@ -32,7 +32,7 @@ def test_consequence_filter_part_unions_occurrences_across_tenant_dbs():
     assert "chop_db.germline__snv__occurrence" in sql
     assert "chusj_db.germline__snv__occurrence" in sql
     assert "UNION ALL" in sql
-    assert "radiant.snv__consequence_filter_partitioned" in sql  # shared target
+    assert "radiant.snv__consequence_filter_partitioned" in sql  # base target
 
 
 def test_snv_variant_pools_freqs_across_tenant_dbs():
@@ -42,4 +42,4 @@ def test_snv_variant_pools_freqs_across_tenant_dbs():
     assert "chop_db.somatic__snv__variant_frequency" in sql
     assert "chusj_db.somatic__snv__variant_frequency" in sql
     assert "UNION ALL" in sql
-    assert "radiant.snv__variant" in sql  # shared target + staging source
+    assert "radiant.snv__variant" in sql  # base target + staging source

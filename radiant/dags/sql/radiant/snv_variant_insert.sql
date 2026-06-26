@@ -1,7 +1,3 @@
--- Shared, pooled variant catalog. Frequencies are pooled across ALL tenant databases:
---   pooled pc  = SUM(pc) over tenants, per locus
---   pooled pn  = SUM(per-tenant pn) over tenants (pn is constant within a tenant)
---   pooled pf  = pooled pc / pooled pn
 INSERT OVERWRITE {{ mapping.starrocks_snv_variant }}
 WITH germline_freq AS (
     SELECT locus_id,

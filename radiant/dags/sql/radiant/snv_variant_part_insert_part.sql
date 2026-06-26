@@ -5,8 +5,7 @@ SELECT
 FROM
     {{ mapping.starrocks_snv_variant }} v
 LEFT SEMI JOIN (
-    -- Occurrences live in per-tenant databases; union them so the shared partitioned table reflects
-    -- every tenant whose occurrences fall in this variant_part range.
+    -- Loop through all tenants to get the data for this partition
     {% for t in tenants %}
     SELECT locus_id
     FROM {{ per_tenant_mapping(t).starrocks_germline_snv_occurrence }}
