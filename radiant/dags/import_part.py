@@ -197,6 +197,23 @@ def import_part():
 
     all_tenants = extract_all_tenants()
 
+    @task(task_id="render_pooled_sql", task_display_name="[PyOp] Render Pooled SQL")
+    def render_pooled_sql(sql_file: str, tenants: list[str]) -> str:
+        # Necessary to render SQL using tenant unions
+        import jinja2
+        from airflow.operators.python import get_current_context
+
+        from radiant.dags import DAGS_DIR
+        from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+        conf = get_current_context()["dag_run"].conf or {}
+        text = (DAGS_DIR / "sql" / sql_file).read_text()
+        return jinja2.Template(text).render(
+            mapping=get_radiant_mapping(conf),
+            tenants=tenants,
+            per_tenant_mapping=lambda t: get_radiant_mapping(conf, tenant_code=t),
+        )
+
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(tasks) -> dict[str, list[Any]]:
         # Global (all tenants) seq_ids — used by the single, shared load_exomiser staging step.
@@ -438,6 +455,13 @@ def import_part():
         )
 
     with TaskGroup(group_id="snv_variant") as tg_variants:
+        variant_sql = render_pooled_sql.override(task_id="render_snv_variant_sql")(
+            "radiant/snv_variant_insert.sql", all_tenants
+        )
+        variant_part_sql = render_pooled_sql.override(task_id="render_snv_variant_part_sql")(
+            "radiant/snv_variant_part_insert_part.sql", all_tenants
+        )
+
         insert_snv_staging_variants = RadiantStarRocksOperator(
             task_id="insert_snv_staging_variant",
             task_display_name="[StarRocks] Insert Staging SNV Variants",
@@ -449,9 +473,8 @@ def import_part():
         insert_snv_variants_with_freqs = RadiantStarRocksOperator(
             task_id="insert_snv_variant",
             task_display_name="[StarRocks] Insert SNV Variants",
-            sql="./sql/radiant/snv_variant_insert.sql",
+            sql=variant_sql,
             submit_task_options=std_submit_task_opts,
-            tenants_task_id="extract_all_tenants",
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -469,11 +492,10 @@ def import_part():
 
         insert_snv_variants_part = RadiantStarRocksOperator(
             task_id="insert_snv_variant_part",
-            sql="./sql/radiant/snv_variant_part_insert_part.sql",
+            sql=variant_part_sql,
             task_display_name="[StarRocks] Insert SNV Variants Part",
             submit_task_options=std_submit_task_opts,
             parameters=_compute_part,
-            tenants_task_id="extract_all_tenants",
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -485,6 +507,10 @@ def import_part():
         )
 
     with TaskGroup(group_id="snv_consequence") as tg_consequences:
+        cons_filter_sql = render_pooled_sql.override(task_id="render_snv_consequence_filter_part_sql")(
+            "radiant/snv_consequence_filter_insert_part.sql", all_tenants
+        )
+
         import_snv_consequences = RadiantStarRocksOperator(
             task_id="import_snv_consequence",
             sql="./sql/radiant/snv_consequence_insert.sql",
@@ -504,11 +530,10 @@ def import_part():
 
         insert_snv_consequences_filter_part = RadiantStarRocksOperator(
             task_id="insert_snv_consequence_filter_part",
-            sql="./sql/radiant/snv_consequence_filter_insert_part.sql",
+            sql=cons_filter_sql,
             task_display_name="[StarRocks] Insert SNV Consequences Filter Part",
             submit_task_options=std_submit_task_opts,
             parameters={"part": "{{ params.part }}"},
-            tenants_task_id="extract_all_tenants",
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -595,8 +620,8 @@ def import_part():
         >> tg_consequences
         >> checkpoint_variants
     )
-    # The shared variant/consequence tables pool across ALL tenants, so extract_all_tenants must run
-    # before them (they read its list via tenants_task_id).
+    # We re-compute variants frequencies across all tenants, therefore we need
+    # the list of all tenants in the system to be loaded before importing variants.
     checkpoint_after_exomiser >> all_tenants >> tg_variants
 
     # Final Phase: Update Sequencing Experiments (deletions and updates)

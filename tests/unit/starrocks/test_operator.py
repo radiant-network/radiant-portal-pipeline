@@ -107,16 +107,6 @@ def test_prepare_context_without_tenant_uses_base_db():
     assert "tenants" not in ctx
 
 
-def test_prepare_context_exposes_tenants_and_per_tenant_mapping():
-    # Upstream pushes a list-of-lists (output_processor convention); it should be flattened.
-    ti = SimpleNamespace(xcom_pull=lambda task_ids: [["chop"], ["chusj"]])
-    op = RadiantStarRocksOperator(task_id="t", sql="SELECT 1", tenants_task_id="fetch_all_tenants")
-    ctx = op.prepare_template_context(_ctx(_SHARED_CONF, ti=ti))
-    assert ctx["tenants"] == ["chop", "chusj"]
-    chusj = ctx["per_tenant_mapping"]("chusj")
-    assert chusj["starrocks_germline_snv_occurrence"] == "chusj_tenant.germline__snv__occurrence"
-
-
 def _native_env():
     from jinja2.nativetypes import NativeEnvironment
 
