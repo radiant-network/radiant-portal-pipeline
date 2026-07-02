@@ -170,7 +170,7 @@ def import_radiant():
                 for key, sql in sql_templates.items():
                     _sql = jinja2.Template(sql).render({"mapping": mapping})
                     cursor.execute(_sql)
-                    logger.info(f"Prepared [{tenant}_db.{key}] table.")
+                    logger.info(f"Prepared [{tenant}_tenant.{key}] table.")
 
         return sorted(tenants)
 

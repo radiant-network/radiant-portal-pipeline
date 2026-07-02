@@ -21,25 +21,25 @@ def _render(filename: str) -> str:
 
 def test_snv_variant_part_unions_occurrences_across_tenant_dbs():
     sql = _render("snv_variant_part_insert_part.sql")
-    assert "chop_db.germline__snv__occurrence" in sql
-    assert "chusj_db.germline__snv__occurrence" in sql
+    assert "chop_tenant.germline__snv__occurrence" in sql
+    assert "chusj_tenant.germline__snv__occurrence" in sql
     assert "UNION ALL" in sql
     assert "radiant.snv__variant_partitioned" in sql  # base target
 
 
 def test_consequence_filter_part_unions_occurrences_across_tenant_dbs():
     sql = _render("snv_consequence_filter_insert_part.sql")
-    assert "chop_db.germline__snv__occurrence" in sql
-    assert "chusj_db.germline__snv__occurrence" in sql
+    assert "chop_tenant.germline__snv__occurrence" in sql
+    assert "chusj_tenant.germline__snv__occurrence" in sql
     assert "UNION ALL" in sql
     assert "radiant.snv__consequence_filter_partitioned" in sql  # base target
 
 
 def test_snv_variant_pools_freqs_across_tenant_dbs():
     sql = _render("snv_variant_insert.sql")
-    assert "chop_db.germline__snv__variant_frequency" in sql
-    assert "chusj_db.germline__snv__variant_frequency" in sql
-    assert "chop_db.somatic__snv__variant_frequency" in sql
-    assert "chusj_db.somatic__snv__variant_frequency" in sql
+    assert "chop_tenant.germline__snv__variant_frequency" in sql
+    assert "chusj_tenant.germline__snv__variant_frequency" in sql
+    assert "chop_tenant.somatic__snv__variant_frequency" in sql
+    assert "chusj_tenant.somatic__snv__variant_frequency" in sql
     assert "UNION ALL" in sql
     assert "radiant.snv__variant" in sql  # base target + staging source
