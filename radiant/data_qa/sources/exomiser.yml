@@ -6,6 +6,9 @@ sources:
     tables:
       - name: exomiser
         tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: exomiser__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
               name: exomiser__should_not_contain_only_null
@@ -44,6 +47,12 @@ sources:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
                   name: exomiser__should_not_contain_null__locus_id
+              # --- Relationships ---------------------------------------------
+              # exomiser locus must exist in the snv__variant
+              - relationships:
+                  name: exomiser__relationships__locus_id__snv_variant
+                  to: source('radiant', 'snv__variant')
+                  field: locus_id
           - name: id
             tests:
               # --- Should Not Contain Null -----------------------------------

@@ -6,6 +6,9 @@ sources:
     tables:
       - name: cytoband
         tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: cytoband__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
               name: cytoband__should_not_contain_only_null
@@ -28,7 +31,7 @@ sources:
                 - cytoband
         columns:
           - name: chromosome
-            description: "CHAR(2) — canonical UCSC cytoBand chromosomes only."
+            description: "CHAR(2)."
             tests:
               # --- Should Not Contain Null -----------------------------------
               - not_null:

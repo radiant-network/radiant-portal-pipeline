@@ -16,12 +16,13 @@ Exit codes:
     1  run_results.json missing/unreadable (dbt likely failed before
        producing results, e.g. a connection error)
 """
+
 from __future__ import annotations
 
 import json
 import sys
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -52,7 +53,7 @@ def convert(run_results_path: Path, junit_path: Path) -> int:
 
     testsuite = ET.Element("testsuite")
     testsuite.set("name", project)
-    testsuite.set("timestamp", datetime.now(timezone.utc).isoformat())
+    testsuite.set("timestamp", datetime.now(UTC).isoformat())
 
     for r in results:
         status = (r.get("status") or "").lower()

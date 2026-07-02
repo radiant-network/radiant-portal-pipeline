@@ -13,6 +13,7 @@ invariants on tables.
 | Should Not Contain Only Null   | `should_not_contain_only_null` (dynamic, custom)              |
 | Should Not Contain Same Value  | `should_not_contain_same_value` (dynamic, custom)             |
 | Should Be Unique               | `tests: [unique]` (built-in, displayed via custom `name:`)    |
+| Should Not Be Empty            | `should_not_be_empty` (custom generic, table-level)           |
 | Values Contained In Dictionary | scalar: `accepted_values` (built-in); array: `accepted_values_in_array` (custom) |
 | Should Be Within Range         | `should_be_within_range` (dynamic, custom)                    |
 | Cross-Field / Custom Invariant | Singular tests in `tests/*.sql`                               |
@@ -207,3 +208,20 @@ later step.
 connectivity (dropped if the runner is in-cluster, or configured via CI
 secrets otherwise), the scheduler (CI `schedule:` trigger), and the report
 push (CI artifact / TestQuality API).
+
+
+## Development
+### Code formatting
+  
+  The Python files in this folder are subject to the repository's `ruff` formatting rules
+  (enforced in CI / unit tests).
+
+  The dbt virtualenv does **not** include `ruff`, so install it first — pinned to the same version
+  as `requirements-dev.txt` to avoid reformatting churn:
+
+  ```bash
+  pip install ruff==0.11.4
+
+  # format (from the root of the repo)
+  ruff format radiant/data_qa/ && ruff check --fix radiant/data_qa/
+  ```

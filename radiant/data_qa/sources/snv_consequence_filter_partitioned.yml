@@ -6,6 +6,9 @@ sources:
     tables:
       - name: snv__consequence_filter_partitioned
         tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: snv_consequence_filter_partitioned__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
               name: snv_consequence_filter_partitioned__should_not_contain_only_null
