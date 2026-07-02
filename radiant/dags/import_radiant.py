@@ -147,7 +147,7 @@ def import_radiant():
 
         tenants = {s["tenant_code"] for s in sequencing_experiment_to_process}
         if not tenants:
-            logger.info("No tenants to prepare stopping the execution.")
+            logger.info("No tenants to prepare, stopping the execution.")
             return []
 
         context = get_current_context()
