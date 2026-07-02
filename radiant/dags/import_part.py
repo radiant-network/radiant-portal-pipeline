@@ -455,12 +455,14 @@ def import_part():
         )
 
     with TaskGroup(group_id="snv_variant") as tg_variants:
-        variant_sql = render_pooled_sql.override(task_id="render_snv_variant_sql")(
-            "radiant/snv_variant_insert.sql", all_tenants
-        )
-        variant_part_sql = render_pooled_sql.override(task_id="render_snv_variant_part_sql")(
-            "radiant/snv_variant_part_insert_part.sql", all_tenants
-        )
+        variant_sql = render_pooled_sql.override(
+            task_id="render_snv_variant_sql",
+            task_display_name="[PyOp] Render Pooled SNV Variant SQL",
+        )("radiant/snv_variant_insert.sql", all_tenants)
+        variant_part_sql = render_pooled_sql.override(
+            task_id="render_snv_variant_part_sql",
+            task_display_name="[PyOp] Render Pooled SNV Variant Part SQL",
+        )("radiant/snv_variant_part_insert_part.sql", all_tenants)
 
         insert_snv_staging_variants = RadiantStarRocksOperator(
             task_id="insert_snv_staging_variant",
@@ -507,9 +509,10 @@ def import_part():
         )
 
     with TaskGroup(group_id="snv_consequence") as tg_consequences:
-        cons_filter_sql = render_pooled_sql.override(task_id="render_snv_consequence_filter_part_sql")(
-            "radiant/snv_consequence_filter_insert_part.sql", all_tenants
-        )
+        cons_filter_sql = render_pooled_sql.override(
+            task_id="render_snv_consequence_filter_part_sql",
+            task_display_name="[PyOp] Render Pooled SNV Consequence Filter Part SQL",
+        )("radiant/snv_consequence_filter_insert_part.sql", all_tenants)
 
         import_snv_consequences = RadiantStarRocksOperator(
             task_id="import_snv_consequence",
