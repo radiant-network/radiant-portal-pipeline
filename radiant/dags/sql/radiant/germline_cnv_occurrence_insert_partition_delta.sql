@@ -16,7 +16,8 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
              JOIN {{ mapping.iceberg_germline_snv_occurrence }} s ON s.chromosome = o.chromosome AND s.start <= o.end
                     AND s.start >= o.start AND o.seq_id = s.seq_id
              WHERE s.has_alt = true AND s.seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s AND s.part={{ partition }}
-               AND o.tenant_code = %(tenant_code)s AND s.tenant_code = %(tenant_code)s
+               AND o.tenant_code = %(tenant_code)s -- CNV
+               AND s.tenant_code = %(tenant_code)s -- SNV
              GROUP BY o.name, o.seq_id),
     gnomad_overlaps AS (
         SELECT
