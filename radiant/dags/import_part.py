@@ -55,12 +55,12 @@ def build_tenant_scoped_params(tasks) -> list[dict[str, Any]]:
     keys = ("seq_ids", "deleted_seq_ids", "task_ids", "deleted_task_ids")
     ids = defaultdict(lambda: {key: set() for key in keys})
     for t in tasks:
-        suffix = "deleted_" if t["deleted"] else ""
+        prefix = "deleted_" if t["deleted"] else ""
         for experiment in t.get("experiments") or []:
             if experiment:
                 bucket = ids[experiment["tenant_code"]]
-                bucket[f"{suffix}seq_ids"].add(experiment["seq_id"])
-                bucket[f"{suffix}task_ids"].add(t["task_id"])
+                bucket[f"{prefix}seq_ids"].add(experiment["seq_id"])
+                bucket[f"{prefix}task_ids"].add(t["task_id"])
 
     return [
         {
