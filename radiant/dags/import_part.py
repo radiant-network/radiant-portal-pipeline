@@ -139,22 +139,57 @@ def import_part():
         import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(namespace_task)
         import_somatic_snv_vcf = operators.ImportPart.get_import_somatic_snv_vcf(namespace_task)
 
+    @task(task_id="build_tenant_params", task_display_name="[PyOp] Per-tenant Params")
+    def prepare_tenant_scoped_params(tasks) -> list[dict[str, Any]]:
+        # One payload per tenant carrying both seq_ids and task_ids (active + deleted). Each fanned-out
+        # operator binds only the %()s it needs; unused keys are ignored by the driver.
+        from collections import defaultdict
+
+        keys = ("seq_ids", "deleted_seq_ids", "task_ids", "deleted_task_ids")
+        ids = defaultdict(lambda: {key: set() for key in keys})
+        for t in tasks:
+            suffix = "deleted_" if t["deleted"] else ""
+            for experiment in t.get("experiments") or []:
+                if experiment:
+                    bucket = ids[experiment["tenant_code"]]
+                    bucket[f"{suffix}seq_ids"].add(experiment["seq_id"])
+                    bucket[f"{suffix}task_ids"].add(t["task_id"])
+
+        return [
+            {
+                "tenant_code": tenant_code,
+                "parameters": {
+                    "tenant_code": tenant_code,
+                    **{key: sorted(values) or [-1] for key, values in bucket.items()},
+                },
+            }
+            for tenant_code, bucket in sorted(ids.items())
+        ]
+
+    tenant_params = prepare_tenant_scoped_params(tasks)
+
+    @task(task_id="extract_tenants", task_display_name="[PyOp] Extract Tenants")
+    def extract_tenants(tasks) -> list[str]:
+        return sorted(
+            {experiment["tenant_code"] for t in tasks for experiment in t.get("experiments") or [] if experiment}
+        )
+
+    tenants = extract_tenants(tasks)
+
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(tasks) -> dict[str, list[Any]]:
-        seq_ids = []
-        deleted_seq_ids = []
+        # Global (all tenants) seq_ids — used by the single, shared load_exomiser staging step.
+        seq_ids, deleted_seq_ids = set(), set()
         for t in tasks:
-            for experiment in t.get("experiments"):
+            target = deleted_seq_ids if t["deleted"] else seq_ids
+            for experiment in t.get("experiments") or []:
                 if experiment:
-                    if not t["deleted"]:
-                        seq_ids.append(experiment["seq_id"])
-                    else:
-                        deleted_seq_ids.append(experiment["seq_id"])
-        return {"seq_ids": list(set(seq_ids)) or [-1], "deleted_seq_ids": list(set(deleted_seq_ids)) or [-1]}
+                    target.add(experiment["seq_id"])
+        return {"seq_ids": sorted(seq_ids) or [-1], "deleted_seq_ids": sorted(deleted_seq_ids) or [-1]}
 
     sequencing_ids = extract_sequencing_ids(tasks)
 
-    with TaskGroup(group_id="germline_cnv_occurrence") as tg_germline_cnv_occurrence:
+    with TaskGroup(group_id="germline_cnv_occurrence") as tg_germline_cnv_occurrence_per_tenant:
 
         @task.short_circuit(
             task_id="sanity_check_cnvs",
@@ -165,21 +200,24 @@ def import_part():
             has_cnv = any(t.get("task_type") == ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK for t in tasks)
             return has_cnv
 
-        insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator(
+        insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator.partial(
             task_id="insert_germline_cnv_occurrences",
             table="{{ mapping.starrocks_germline_cnv_occurrence }}",
             task_display_name="[StarRocks] Insert CNV Occurrences Part",
+            map_index_template="{{ task.tenant_code }}",
             swap_partition=SwapPartition(
                 partition="{{ params.part }}",
                 copy_partition_sql="./sql/radiant/germline_cnv_occurrence_copy_partition.sql",
             ),
             submit_task_options=std_submit_task_opts,
-            parameters=sequencing_ids,
             insert_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
-        )
+            max_active_tis_per_dagrun=1,
+        ).expand_kwargs(tenant_params)
 
         sanity_check_cnvs(tasks) >> insert_germline_cnv_occurrences
 
+    # Single, shared load: all tenants' exomiser files land in one staging table, each row tagged with
+    # tenant_code (set during the broker load) so the per-tenant insert_exomiser can route them later.
     load_exomiser = RadiantLoadExomiserOperator(
         task_id="load_exomiser_files",
         task_display_name="[StarRocks] Load Exomiser Files",
@@ -247,21 +285,22 @@ def import_part():
         parameters=task_ids,
     )
 
-    insert_exomiser = RadiantStarRocksPartitionSwapOperator(
+    insert_exomiser_per_tenant = RadiantStarRocksPartitionSwapOperator.partial(
         task_id="insert_exomiser",
         table="{{ mapping.starrocks_exomiser }}",
         task_display_name="[StarRocks] Insert Exomiser Part",
+        map_index_template="{{ task.tenant_code }}",
         swap_partition=SwapPartition(
             partition="{{ params.part }}",
             copy_partition_sql="./sql/radiant/exomiser_copy_partition.sql",
         ),
         submit_task_options=std_submit_task_opts,
-        parameters=sequencing_ids,
         insert_partition_sql="./sql/radiant/exomiser_insert_partition_delta.sql",
         trigger_rule=TriggerRule.ALL_SUCCESS,
-    )
+        max_active_tis_per_dagrun=1,
+    ).expand_kwargs(tenant_params)
 
-    with TaskGroup(group_id="germline_snv_occurrence") as tg_germline_snv_occurrence:
+    with TaskGroup(group_id="germline_snv_occurrence") as tg_germline_snv_occurrence_per_tenant:
 
         @task.short_circuit(
             task_id="sanity_check_delta_germline_snv",
@@ -274,36 +313,41 @@ def import_part():
             )
             return has_delta_snv
 
-        insert_germline_snv_occurrences = RadiantStarRocksPartitionSwapOperator(
+        insert_germline_snv_occurrences = RadiantStarRocksPartitionSwapOperator.partial(
             task_id="insert_germline_snv_occurrence",
             table="{{ mapping.starrocks_germline_snv_occurrence }}",
             task_display_name="[StarRocks] Insert Germline SNV Occurrences Part",
+            map_index_template="{{ task.tenant_code }}",
             swap_partition=SwapPartition(
                 partition="{{ params.part }}",
                 copy_partition_sql="./sql/radiant/germline_snv_occurrence_copy_partition.sql",
             ),
             submit_task_options=std_submit_task_opts,
-            parameters=task_ids,
             insert_partition_sql="./sql/radiant/germline_snv_occurrence_insert_partition_delta.sql",
             trigger_rule=TriggerRule.ALL_SUCCESS,
-        )
+            max_active_tis_per_dagrun=1,
+        ).expand_kwargs(tenant_params)
 
-        insert_stg_germline_snv_variants_freq = RadiantStarRocksOperator(
+        insert_stg_germline_snv_variants_freq = RadiantStarRocksOperator.partial(
             task_id="insert_stg_germline_snv_variant_freq",
             sql="./sql/radiant/germline_snv_staging_variant_freq_insert.sql",
             task_display_name="[StarRocks] Insert Stg Germline SNV Variants Freq Part",
+            map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             parameters={"part": "{{ params.part }}"},
             trigger_rule=TriggerRule.ALL_SUCCESS,
-        )
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
 
-        aggregate_germline_snv_variants_frequencies = RadiantStarRocksOperator(
+        aggregate_germline_snv_variants_frequencies = RadiantStarRocksOperator.partial(
             task_id="aggregate_germline_snv_variant_freq",
             task_display_name="[StarRocks] Aggregate all Germline SNV variants frequencies",
             sql="./sql/radiant/germline_snv_variant_frequency_insert.sql",
+            map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
-        )
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
 
         (
             sanity_check_delta_germline_snv(tasks)
@@ -312,7 +356,7 @@ def import_part():
             >> aggregate_germline_snv_variants_frequencies
         )
 
-    with TaskGroup(group_id="somatic_snv_occurrence") as tg_somatic_snv_occurrence:
+    with TaskGroup(group_id="somatic_snv_occurrence") as tg_somatic_snv_occurrence_per_tenant:
 
         @task.short_circuit(
             task_id="sanity_check_delta_somatic_snv",
@@ -326,36 +370,41 @@ def import_part():
             )
             return has_delta_snv
 
-        insert_somatic_snv_occurrences = RadiantStarRocksPartitionSwapOperator(
+        insert_somatic_snv_occurrences = RadiantStarRocksPartitionSwapOperator.partial(
             task_id="insert_somatic_snv_occurrences",
             table="{{ mapping.starrocks_somatic_snv_occurrence }}",
             task_display_name="[StarRocks] Insert Somatic SNV Occurrences Part",
+            map_index_template="{{ task.tenant_code }}",
             swap_partition=SwapPartition(
                 partition="{{ params.part }}",
                 copy_partition_sql="./sql/radiant/somatic_snv_occurrence_copy_partition.sql",
             ),
             submit_task_options=std_submit_task_opts,
-            parameters=task_ids,
             insert_partition_sql="./sql/radiant/somatic_snv_occurrence_insert_partition_delta.sql",
             trigger_rule=TriggerRule.ALL_SUCCESS,
-        )
+            max_active_tis_per_dagrun=1,
+        ).expand_kwargs(tenant_params)
 
-        insert_stg_somatic_snv_variants_freq = RadiantStarRocksOperator(
+        insert_stg_somatic_snv_variants_freq = RadiantStarRocksOperator.partial(
             task_id="insert_stg_somatic_snv_variant_freq",
             sql="./sql/radiant/somatic_snv_staging_variant_freq_insert.sql",
             task_display_name="[StarRocks] Insert Stg Somatic SNV Variants Freq Part",
+            map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             parameters={"part": "{{ params.part }}"},
             trigger_rule=TriggerRule.ALL_SUCCESS,
-        )
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
 
-        aggregate_somatic_snv_variants_frequencies = RadiantStarRocksOperator(
+        aggregate_somatic_snv_variants_frequencies = RadiantStarRocksOperator.partial(
             task_id="aggregate_somatic_snv_variant_freq",
             task_display_name="[StarRocks] Aggregate all Somatic SNV variants frequencies",
             sql="./sql/radiant/somatic_snv_variant_frequency_insert.sql",
+            map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
-        )
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
 
         (
             sanity_check_delta_somatic_snv(tasks)
@@ -378,6 +427,7 @@ def import_part():
             task_display_name="[StarRocks] Insert SNV Variants",
             sql="./sql/radiant/snv_variant_insert.sql",
             submit_task_options=std_submit_task_opts,
+            tenants_task_id="extract_tenants",
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -399,6 +449,7 @@ def import_part():
             task_display_name="[StarRocks] Insert SNV Variants Part",
             submit_task_options=std_submit_task_opts,
             parameters=_compute_part,
+            tenants_task_id="extract_tenants",
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -433,6 +484,7 @@ def import_part():
             task_display_name="[StarRocks] Insert SNV Consequences Filter Part",
             submit_task_options=std_submit_task_opts,
             parameters={"part": "{{ params.part }}"},
+            tenants_task_id="extract_tenants",
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -503,18 +555,18 @@ def import_part():
         checkpoint_imports
         >> load_exomiser
         >> refresh_iceberg_tables
-        >> tg_germline_cnv_occurrence
+        >> tg_germline_cnv_occurrence_per_tenant
         >> insert_hashes
         >> overwrite_snv_tmp_variants
-        >> insert_exomiser
+        >> insert_exomiser_per_tenant
         >> checkpoint_after_exomiser
     )
 
     # Phase 4: Occurrence, Variants, Consequences, and Frequencies Insertions
     (
         checkpoint_after_exomiser
-        >> tg_germline_snv_occurrence
-        >> tg_somatic_snv_occurrence
+        >> tg_germline_snv_occurrence_per_tenant
+        >> tg_somatic_snv_occurrence_per_tenant
         >> tg_variants
         >> tg_consequences
         >> checkpoint_variants

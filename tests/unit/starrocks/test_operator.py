@@ -8,6 +8,7 @@ from radiant.tasks.starrocks.operator import (
     RadiantStarRocksOperator,
     RadiantStarRocksPartitionSwapOperator,
     SubmitTaskOptions,
+    SwapPartition,
 )
 
 # Pin the shared database so mapping assertions don't depend on the process environment.
@@ -114,3 +115,39 @@ def test_prepare_context_exposes_tenants_and_per_tenant_mapping():
     assert ctx["tenants"] == ["chop", "chusj"]
     chusj = ctx["per_tenant_mapping"]("chusj")
     assert chusj["starrocks_germline_snv_occurrence"] == "chusj_db.germline__snv__occurrence"
+
+
+def _native_env():
+    from jinja2.nativetypes import NativeEnvironment
+
+    return NativeEnvironment()
+
+
+# Regression: mapped operators (.expand / .expand_kwargs) bypass render_template_fields and call
+# _do_render_template_fields directly, so the Radiant context (mapping/tenant_code) must be injected
+# there too — otherwise '{{ mapping.* }}' is undefined when a mapped task renders.
+def test_mapped_render_injects_mapping_and_tenant_code():
+    op = RadiantStarRocksOperator(
+        task_id="t",
+        sql="INSERT INTO {{ mapping.starrocks_germline_snv_occurrence }} "
+        "SELECT '{{ tenant_code }}' FROM {{ mapping.starrocks_snv_variant }}",
+        tenant_code="chop",
+    )
+    op._do_render_template_fields(op, op.template_fields, _ctx(_SHARED_CONF), _native_env(), set())
+    # Per-tenant table routes to <tenant>_db; base table stays in the shared database; tenant_code resolves.
+    assert "chop_db.germline__snv__occurrence" in op.sql
+    assert "radiant.snv__variant" in op.sql
+    assert "'chop'" in op.sql
+
+
+def test_mapped_render_partition_swap_resolves_table_per_tenant():
+    op = RadiantStarRocksPartitionSwapOperator(
+        task_id="t",
+        table="{{ mapping.starrocks_germline_cnv_occurrence }}",
+        tenant_code="chusj",
+        parameters={"tenant_code": "chusj", "seq_ids": [1]},
+        insert_partition_sql="SELECT 1",
+        swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+    )
+    op._do_render_template_fields(op, op.template_fields, _ctx(_SHARED_CONF), _native_env(), set())
+    assert op.table == "chusj_db.germline__cnv__occurrence"

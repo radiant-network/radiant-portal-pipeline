@@ -22,6 +22,7 @@ _BASE_TABLES = [
     "snv_variant",
     "snv_variant_partitioned",
     "variant_lookup",
+    "staging_exomiser",
 ]
 
 

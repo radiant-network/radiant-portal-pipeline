@@ -5,7 +5,6 @@ SELECT
 FROM
     {{ mapping.starrocks_snv_variant }} v
 LEFT SEMI JOIN (
-    -- Loop through all tenants to get the data for this partition
     {% for t in tenants %}
     SELECT locus_id
     FROM {{ per_tenant_mapping(t).starrocks_germline_snv_occurrence }}

@@ -95,10 +95,12 @@ STARROCKS_RADIANT_BASE_MAPPING = {
     "starrocks_snv_variant": "snv__variant",
     "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
     "starrocks_snv_staging_variant": "snv__staging_variant",
+    # Shared staging: a single load fills it for all tenants (tagged by tenant_code); per-tenant
+    # insert_exomiser routes rows into each tenant's exomiser table.
+    "starrocks_staging_exomiser": "raw_exomiser",
 }
 
 STARROCKS_RADIANT_PER_TENANT_MAPPING = {
-    "starrocks_staging_exomiser": "raw_exomiser",
     "starrocks_exomiser": "exomiser",
     "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
     "starrocks_germline_snv_occurrence": "germline__snv__occurrence",

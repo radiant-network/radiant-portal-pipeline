@@ -13,4 +13,5 @@ select e.part,
        acmg_evidence
 FROM {{ mapping.starrocks_staging_exomiser }} e
 JOIN {{ mapping.starrocks_snv_tmp_variant }} v ON e.locus_hash = v.locus_hash
-WHERE part = {{ partition }} AND seq_id IN %(seq_ids)s AND seq_id NOT IN %(deleted_seq_ids)s;
+WHERE part = {{ partition }} AND seq_id IN %(seq_ids)s AND seq_id NOT IN %(deleted_seq_ids)s
+{% if tenant_code %}AND e.tenant_code = '{{ tenant_code }}'{% endif %};
