@@ -43,7 +43,8 @@ WITH germline_sequencings AS (
              AND o.gq >= 20 AND o.filter='PASS' AND o.ad_alt > 3
            GROUP BY locus_id, o.part
 )
-SELECT part,
+SELECT '{{ tenant_code }}' AS tenant_code,
+       part,
        locus_id,
        pc_wgs,
        (SELECT cnt_wgs FROM patients_total_count)                 AS pn_wgs,

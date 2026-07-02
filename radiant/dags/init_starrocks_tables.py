@@ -23,6 +23,8 @@ _BASE_TABLES = [
     "snv_variant_partitioned",
     "variant_lookup",
     "staging_exomiser",
+    "germline_snv_staging_variant_frequency",
+    "somatic_snv_staging_variant_frequency",
 ]
 
 

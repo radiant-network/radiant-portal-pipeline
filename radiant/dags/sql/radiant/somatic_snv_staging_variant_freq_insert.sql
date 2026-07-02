@@ -45,6 +45,7 @@ freqs_tumor AS (
     GROUP BY o.locus_id, o.part
 )
 SELECT
+    '{{ tenant_code }}' AS tenant_code,
     part,
     locus_id,
     pc_wgs                                                          		  AS pc_tn_wgs,

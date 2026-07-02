@@ -57,7 +57,7 @@ def test_staging_variant_frequencies_calculation(starrocks_session, resources_di
     load_tsv(starrocks_session, seq_exp_table, resources_dir / "radiant/staging_sequencing_experiment.tsv")
 
     with open(os.path.join(_SQL_DIR, "radiant/germline_snv_staging_variant_freq_insert.sql")) as f_in:
-        variant_freq_insert = jinja2.Template(f_in.read()).render({"mapping": radiant_mapping})
+        variant_freq_insert = jinja2.Template(f_in.read()).render({"mapping": radiant_mapping, "tenant_code": "tenant1"})
 
     _select_sql = "SELECT * FROM {{ mapping.starrocks_germline_snv_staging_variant_frequency }}"
     _select_sql = jinja2.Template(_select_sql).render({"mapping": radiant_mapping})
@@ -71,4 +71,4 @@ def test_staging_variant_frequencies_calculation(starrocks_session, resources_di
 
         results = cursor.fetchall()
         # Values vetted with the content of test resource staging_sequencing_experiment.tsv
-        assert results == ((0, -8935141392267608062, 5, 10, 3, 7, 2, 3, 0, 0, 0, 0, 0, 0),)
+        assert results == (("tenant1", 0, -8935141392267608062, 5, 10, 3, 7, 2, 3, 0, 0, 0, 0, 0, 0),)

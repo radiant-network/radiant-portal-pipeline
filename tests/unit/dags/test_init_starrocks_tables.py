@@ -15,6 +15,8 @@ _BASE_TABLES = [
     "snv_variant_partitioned",
     "variant_lookup",
     "staging_exomiser",
+    "germline_snv_staging_variant_frequency",
+    "somatic_snv_staging_variant_frequency",
 ]
 
 
@@ -25,8 +27,8 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(_BASE_DAG_ID)
-    # 12 base radiant tables + 2 clinical tables + 20 open data tables + 2 UDFs
-    assert len(dag.tasks) == 36
+    # 14 base radiant tables + 2 clinical tables + 20 open data tables + 2 UDFs
+    assert len(dag.tasks) == 38
 
 
 def test_dag_has_all_base_tasks(dag_bag):
