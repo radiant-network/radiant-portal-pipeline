@@ -176,6 +176,25 @@ def import_part():
 
     tenants = extract_tenants(tasks)
 
+    @task(task_id="extract_all_tenants", task_display_name="[PyOp] Extract All Tenants")
+    def extract_all_tenants() -> list[str]:
+        # Every tenant known to the platform (not just this batch). The shared variant catalog pools
+        # frequencies across all of these, so it reflects the current state of all tenants.
+        from airflow.hooks.base import BaseHook
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+        context = get_current_context()
+        dag_conf = context["dag_run"].conf or {}
+        table = get_radiant_mapping(dag_conf)["starrocks_staging_sequencing_experiment"]
+        conn = BaseHook.get_connection("starrocks_conn")
+        with conn.get_hook().get_conn().cursor() as cursor:
+            cursor.execute(f"SELECT DISTINCT tenant_code FROM {table}")
+            return sorted({row[0] for row in cursor.fetchall() if row[0]})
+
+    all_tenants = extract_all_tenants()
+
     @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
     def extract_sequencing_ids(tasks) -> dict[str, list[Any]]:
         # Global (all tenants) seq_ids — used by the single, shared load_exomiser staging step.
@@ -427,7 +446,7 @@ def import_part():
             task_display_name="[StarRocks] Insert SNV Variants",
             sql="./sql/radiant/snv_variant_insert.sql",
             submit_task_options=std_submit_task_opts,
-            tenants_task_id="extract_tenants",
+            tenants_task_id="extract_all_tenants",
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -449,7 +468,7 @@ def import_part():
             task_display_name="[StarRocks] Insert SNV Variants Part",
             submit_task_options=std_submit_task_opts,
             parameters=_compute_part,
-            tenants_task_id="extract_tenants",
+            tenants_task_id="extract_all_tenants",
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -484,7 +503,7 @@ def import_part():
             task_display_name="[StarRocks] Insert SNV Consequences Filter Part",
             submit_task_options=std_submit_task_opts,
             parameters={"part": "{{ params.part }}"},
-            tenants_task_id="extract_tenants",
+            tenants_task_id="extract_all_tenants",
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -571,6 +590,9 @@ def import_part():
         >> tg_consequences
         >> checkpoint_variants
     )
+    # The shared variant/consequence tables pool across ALL tenants, so extract_all_tenants must run
+    # before them (they read its list via tenants_task_id).
+    checkpoint_after_exomiser >> all_tenants >> tg_variants
 
     # Final Phase: Update Sequencing Experiments (deletions and updates)
     checkpoint_variants >> [delete_sequencing_experiments, update_sequencing_experiments]

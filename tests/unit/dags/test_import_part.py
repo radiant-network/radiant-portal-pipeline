@@ -144,6 +144,7 @@ def test_dag_contains_all_tasks(dag_bag):
         "prepare_config",
         "build_tenant_params",
         "extract_tenants",
+        "extract_all_tenants",
         "extract_seq_ids",
         "extract_task_ids",
         "checkpoint_after_setup",
