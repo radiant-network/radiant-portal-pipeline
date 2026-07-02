@@ -49,6 +49,31 @@ def tasks_output_processor(results: list[Any], descriptions: list[Sequence[Seque
     return [_tasks]
 
 
+def build_tenant_scoped_params(tasks) -> list[dict[str, Any]]:
+    from collections import defaultdict
+
+    keys = ("seq_ids", "deleted_seq_ids", "task_ids", "deleted_task_ids")
+    ids = defaultdict(lambda: {key: set() for key in keys})
+    for t in tasks:
+        suffix = "deleted_" if t["deleted"] else ""
+        for experiment in t.get("experiments") or []:
+            if experiment:
+                bucket = ids[experiment["tenant_code"]]
+                bucket[f"{suffix}seq_ids"].add(experiment["seq_id"])
+                bucket[f"{suffix}task_ids"].add(t["task_id"])
+
+    return [
+        {
+            "tenant_code": tenant_code,
+            "parameters": {
+                "tenant_code": tenant_code,
+                **{key: sorted(values) or [-1] for key, values in bucket.items()},
+            },
+        }
+        for tenant_code, bucket in sorted(ids.items())
+    ]
+
+
 dag_params = {
     "part": Param(
         default=None,
@@ -141,30 +166,7 @@ def import_part():
 
     @task(task_id="build_tenant_params", task_display_name="[PyOp] Per-tenant Params")
     def prepare_tenant_scoped_params(tasks) -> list[dict[str, Any]]:
-        # One payload per tenant carrying both seq_ids and task_ids (active + deleted). Each fanned-out
-        # operator binds only the %()s it needs; unused keys are ignored by the driver.
-        from collections import defaultdict
-
-        keys = ("seq_ids", "deleted_seq_ids", "task_ids", "deleted_task_ids")
-        ids = defaultdict(lambda: {key: set() for key in keys})
-        for t in tasks:
-            suffix = "deleted_" if t["deleted"] else ""
-            for experiment in t.get("experiments") or []:
-                if experiment:
-                    bucket = ids[experiment["tenant_code"]]
-                    bucket[f"{suffix}seq_ids"].add(experiment["seq_id"])
-                    bucket[f"{suffix}task_ids"].add(t["task_id"])
-
-        return [
-            {
-                "tenant_code": tenant_code,
-                "parameters": {
-                    "tenant_code": tenant_code,
-                    **{key: sorted(values) or [-1] for key, values in bucket.items()},
-                },
-            }
-            for tenant_code, bucket in sorted(ids.items())
-        ]
+        return build_tenant_scoped_params(tasks)
 
     tenant_params = prepare_tenant_scoped_params(tasks)
 
@@ -176,7 +178,7 @@ def import_part():
 
     tenants = extract_tenants(tasks)
 
-    @task(task_id="extract_all_tenants", task_display_name="[PyOp] Extract All Tenants")
+    @task.short_circuit(task_id="extract_all_tenants", task_display_name="[PyOp] Extract All Tenants")
     def extract_all_tenants() -> list[str]:
         # Every tenant known to the platform (not just this batch). The shared variant catalog pools
         # frequencies across all of these, so it reflects the current state of all tenants.
@@ -219,6 +221,7 @@ def import_part():
             has_cnv = any(t.get("task_type") == ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK for t in tasks)
             return has_cnv
 
+        # max_active_tis_per_dagrun=1: process tenants one at a time within a dagrun
         insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator.partial(
             task_id="insert_germline_cnv_occurrences",
             table="{{ mapping.starrocks_germline_cnv_occurrence }}",
@@ -353,7 +356,7 @@ def import_part():
             task_display_name="[StarRocks] Insert Stg Germline SNV Variants Freq Part",
             map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
-            parameters={"part": "{{ params.part }}"},
+            parameters={"part": "{{ params.part }}", "tenant_code": "{{ tenant_code }}"},
             trigger_rule=TriggerRule.ALL_SUCCESS,
             max_active_tis_per_dagrun=1,
         ).expand(tenant_code=tenants)
@@ -364,6 +367,7 @@ def import_part():
             sql="./sql/radiant/germline_snv_variant_frequency_insert.sql",
             map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
+            parameters={"tenant_code": "{{ tenant_code }}"},
             trigger_rule=TriggerRule.ALL_SUCCESS,
             max_active_tis_per_dagrun=1,
         ).expand(tenant_code=tenants)
@@ -410,7 +414,7 @@ def import_part():
             task_display_name="[StarRocks] Insert Stg Somatic SNV Variants Freq Part",
             map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
-            parameters={"part": "{{ params.part }}"},
+            parameters={"part": "{{ params.part }}", "tenant_code": "{{ tenant_code }}"},
             trigger_rule=TriggerRule.ALL_SUCCESS,
             max_active_tis_per_dagrun=1,
         ).expand(tenant_code=tenants)
@@ -421,6 +425,7 @@ def import_part():
             sql="./sql/radiant/somatic_snv_variant_frequency_insert.sql",
             map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
+            parameters={"tenant_code": "{{ tenant_code }}"},
             trigger_rule=TriggerRule.ALL_SUCCESS,
             max_active_tis_per_dagrun=1,
         ).expand(tenant_code=tenants)

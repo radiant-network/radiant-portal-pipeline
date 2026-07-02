@@ -2,6 +2,7 @@ import pytest
 
 from radiant.dags import NAMESPACE
 from radiant.dags.import_part import (
+    build_tenant_scoped_params,
     tasks_output_processor,
 )
 
@@ -18,6 +19,46 @@ _MULTI_TENANT_TASKS = [
 
 def _by_tenant(rows):
     return {r["tenant_code"]: r for r in rows}
+
+
+def test_build_tenant_scoped_params_buckets_ids_per_tenant():
+    by_tenant = _by_tenant(build_tenant_scoped_params(_MULTI_TENANT_TASKS))
+
+    # Sorted by tenant_code, one payload each.
+    assert list(by_tenant) == ["chop", "chusj"]
+
+    chop = by_tenant["chop"]["parameters"]
+    assert chop["tenant_code"] == "chop"
+    assert chop["seq_ids"] == [10, 11]  # active seq_ids from task 1
+    assert chop["task_ids"] == [1]
+    assert chop["deleted_seq_ids"] == [30]  # from deleted task 3
+    assert chop["deleted_task_ids"] == [3]
+
+    chusj = by_tenant["chusj"]["parameters"]
+    assert chusj["seq_ids"] == [20]
+    assert chusj["task_ids"] == [2]
+    # No deleted rows for chusj -> [-1] fallback keeps `IN (...)` valid.
+    assert chusj["deleted_seq_ids"] == [-1]
+    assert chusj["deleted_task_ids"] == [-1]
+
+
+def test_build_tenant_scoped_params_exposes_tenant_code_as_kwarg():
+    # Each payload doubles as .expand_kwargs kwargs: top-level tenant_code drives DB routing.
+    for row in build_tenant_scoped_params(_MULTI_TENANT_TASKS):
+        assert row["tenant_code"] == row["parameters"]["tenant_code"]
+
+
+@pytest.mark.parametrize(
+    "tasks",
+    [
+        [],
+        [{"task_id": 1, "deleted": False, "experiments": []}],
+        [{"task_id": 1, "deleted": False, "experiments": None}],
+        [{"task_id": 1, "deleted": False, "experiments": [None]}],
+    ],
+)
+def test_build_tenant_scoped_params_no_experiments(tasks):
+    assert build_tenant_scoped_params(tasks) == []
 
 
 @pytest.fixture
