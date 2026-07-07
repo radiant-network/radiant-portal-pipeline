@@ -13,8 +13,9 @@ WITH patients_total_count AS (
         	ANY_VALUE(pn_to_wgs) AS pn_to_wgs,
         	ANY_VALUE(pn_to_wxs) AS pn_to_wxs
         FROM {{ mapping.starrocks_somatic_snv_staging_variant_frequency }}
+        WHERE tenant_code = %(tenant_code)s
         GROUP BY part
-    ) t       
+    ) t
 ), 
 freq AS (
    SELECT locus_id,
@@ -23,6 +24,7 @@ freq AS (
      SUM(pc_to_wgs) AS pc_to_wgs,
      SUM(pc_to_wxs) AS pc_to_wxs
   FROM {{ mapping.starrocks_somatic_snv_staging_variant_frequency }}
+  WHERE tenant_code = %(tenant_code)s
   GROUP BY locus_id
 )
 SELECT locus_id,

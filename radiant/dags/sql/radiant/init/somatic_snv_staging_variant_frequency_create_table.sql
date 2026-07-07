@@ -1,4 +1,5 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_staging_variant_frequency }} (
+    `tenant_code` VARCHAR(50) NOT NULL,
     `part` INT NOT NULL,
     `locus_id` BIGINT NOT NULL,
 	`pc_tn_wgs` BIGINT,
@@ -14,7 +15,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_staging_variant_freq
 	`pn_to_wxs` BIGINT,
 	`pf_to_wxs` DOUBLE
 )
-PARTITION BY (`part`)
+PARTITION BY (`tenant_code`, `part`)
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10
 PROPERTIES (

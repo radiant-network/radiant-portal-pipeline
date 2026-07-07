@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_exomiser }}
     part                 INT,
     seq_id               INT,
     id                   VARCHAR(2000),
+    tenant_code          VARCHAR(50),
     rank                 INT,
     symbol               VARCHAR(200),
     entrez_gene_id       VARCHAR(200),

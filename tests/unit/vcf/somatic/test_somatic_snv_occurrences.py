@@ -31,11 +31,12 @@ def make_common(
     return common
 
 
-def make_experiment(seq_id, aliquot="ALIQUOT", histology_type="tumoral"):
+def make_experiment(seq_id, aliquot="ALIQUOT", histology_type="tumoral", tenant_code="tenant1"):
     exp = MagicMock()
     exp.seq_id = seq_id
     exp.aliquot = aliquot
     exp.histology_type = histology_type
+    exp.tenant_code = tenant_code
     return exp
 
 
@@ -227,6 +228,12 @@ def test_seq_ids_are_set(experiments, common):
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result["tumor_seq_id"] == TUMOR_SEQ_ID
     assert result["normal_seq_id"] == NORMAL_SEQ_ID
+
+
+def test_tenant_code_is_set_from_tumor_experiment(experiments, common):
+    record = make_record()
+    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
+    assert result["tenant_code"] == "tenant1"
 
 
 @pytest.mark.parametrize(

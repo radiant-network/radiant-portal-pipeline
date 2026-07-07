@@ -84,7 +84,7 @@ def init_iceberg_tables(radiant_airflow_container, iceberg_namespace, random_tes
 
 @pytest.fixture(scope="session")
 def init_starrocks_tables(radiant_airflow_container, starrocks_database, starrocks_jdbc_catalog, random_test_id):
-    dag_id = f"{NAMESPACE}-init-starrocks-tables"
+    dag_id = f"{NAMESPACE}-init-starrocks-base-tables"
     unpause_dag(radiant_airflow_container, dag_id)
     dag_conf = {
         RadiantConfigKeys.RADIANT_DATABASE.value[0]: starrocks_database.database,

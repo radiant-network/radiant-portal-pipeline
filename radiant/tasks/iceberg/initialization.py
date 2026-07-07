@@ -13,6 +13,8 @@ def create_germline_cnv_occurrence_table():
     import os
 
     from pyiceberg.catalog import load_catalog
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
 
     from radiant.tasks.vcf.cnv.germline.occurrence import SCHEMA as OCCURRENCE_SCHEMA
 
@@ -22,7 +24,18 @@ def create_germline_cnv_occurrence_table():
     if catalog.table_exists(table_name):
         catalog.drop_table(table_name)
 
-    catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA)
+    tenant_code_field = OCCURRENCE_SCHEMA.find_field("tenant_code")
+    partition_spec = PartitionSpec(
+        fields=[
+            PartitionField(
+                field_id=1001,
+                source_id=tenant_code_field.field_id,
+                name=tenant_code_field.name,
+                transform=IdentityTransform(),
+            ),
+        ]
+    )
+    catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec)
 
 
 def create_consequences_table():

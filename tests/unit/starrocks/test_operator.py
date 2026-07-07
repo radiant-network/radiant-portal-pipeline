@@ -1,4 +1,5 @@
 import re
+from types import SimpleNamespace
 
 import pytest
 
@@ -7,7 +8,15 @@ from radiant.tasks.starrocks.operator import (
     RadiantStarRocksOperator,
     RadiantStarRocksPartitionSwapOperator,
     SubmitTaskOptions,
+    SwapPartition,
 )
+
+# Pin the shared database so mapping assertions don't depend on the process environment.
+_SHARED_CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
+
+
+def _ctx(conf, ti=None):
+    return {"dag_run": SimpleNamespace(conf=conf), "ti": ti}
 
 
 @pytest.mark.parametrize(
@@ -81,3 +90,54 @@ def test_operator_retry_configuration(operator_cls, kwargs):
     op = operator_cls(**kwargs)
     assert op.retries == 3
     assert op.retry_delay.total_seconds() == 15
+
+
+def test_prepare_context_routes_per_tenant_mapping():
+    op = RadiantStarRocksOperator(task_id="t", sql="SELECT 1", tenant_code="chop")
+    mapping = op.prepare_template_context(_ctx(_SHARED_CONF))["mapping"]
+    assert mapping["starrocks_germline_snv_occurrence"] == "chop_tenant.germline__snv__occurrence"
+    # Base tables (incl. the global variant catalog) stay in the shared database.
+    assert mapping["starrocks_snv_variant"] == "radiant.snv__variant"
+
+
+def test_prepare_context_without_tenant_uses_base_db():
+    op = RadiantStarRocksOperator(task_id="t", sql="SELECT 1")
+    ctx = op.prepare_template_context(_ctx(_SHARED_CONF))
+    assert ctx["mapping"]["starrocks_germline_snv_occurrence"] == "radiant.germline__snv__occurrence"
+    assert "tenants" not in ctx
+
+
+def _native_env():
+    from jinja2.nativetypes import NativeEnvironment
+
+    return NativeEnvironment()
+
+
+# Regression: mapped operators (.expand / .expand_kwargs) bypass render_template_fields and call
+# _do_render_template_fields directly, so the Radiant context (mapping/tenant_code) must be injected
+# there too — otherwise '{{ mapping.* }}' is undefined when a mapped task renders.
+def test_mapped_render_injects_mapping_and_tenant_code():
+    op = RadiantStarRocksOperator(
+        task_id="t",
+        sql="INSERT INTO {{ mapping.starrocks_germline_snv_occurrence }} "
+        "SELECT '{{ tenant_code }}' FROM {{ mapping.starrocks_snv_variant }}",
+        tenant_code="chop",
+    )
+    op._do_render_template_fields(op, op.template_fields, _ctx(_SHARED_CONF), _native_env(), set())
+    # Per-tenant table routes to <tenant>_db; base table stays in the shared database; tenant_code resolves.
+    assert "chop_tenant.germline__snv__occurrence" in op.sql
+    assert "radiant.snv__variant" in op.sql
+    assert "'chop'" in op.sql
+
+
+def test_mapped_render_partition_swap_resolves_table_per_tenant():
+    op = RadiantStarRocksPartitionSwapOperator(
+        task_id="t",
+        table="{{ mapping.starrocks_germline_cnv_occurrence }}",
+        tenant_code="chusj",
+        parameters={"tenant_code": "chusj", "seq_ids": [1]},
+        insert_partition_sql="SELECT 1",
+        swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+    )
+    op._do_render_template_fields(op, op.template_fields, _ctx(_SHARED_CONF), _native_env(), set())
+    assert op.table == "chusj_tenant.germline__cnv__occurrence"

@@ -61,9 +61,7 @@ def test_download_s3_file_returns_local_path_on_success():
         result = download_s3_file("s3://my-bucket/path/to/file.vcf.gz", "/tmp/dest")
 
     assert result == "/tmp/dest/file.vcf.gz"
-    mock_client.download_file.assert_called_once_with(
-        "my-bucket", "path/to/file.vcf.gz", "/tmp/dest/file.vcf.gz"
-    )
+    mock_client.download_file.assert_called_once_with("my-bucket", "path/to/file.vcf.gz", "/tmp/dest/file.vcf.gz")
 
 
 def test_download_s3_file_propagates_error_with_s3_path():

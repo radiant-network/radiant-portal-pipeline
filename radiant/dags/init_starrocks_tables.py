@@ -10,6 +10,24 @@ _OPEN_DATA_SQL_INIT_DIR = SQL_DIR / "open_data" / "init"
 _CLINICAL_SQL_INIT_DIR = SQL_DIR / "clinical" / "init"
 
 
+_BASE_TABLES = [
+    "snv_consequence",
+    "snv_consequence_filter",
+    "snv_consequence_filter_partitioned",
+    "staging_external_sequencing_experiment",
+    "staging_sequencing_experiment",
+    "staging_sequencing_experiment_delta",
+    "snv_tmp_variant",
+    "snv_staging_variant",
+    "snv_variant",
+    "snv_variant_partitioned",
+    "variant_lookup",
+    "staging_exomiser",
+    "germline_snv_staging_variant_frequency",
+    "somatic_snv_staging_variant_frequency",
+]
+
+
 dag_params = {
     "udf_release_version": Param(
         default="v1.2.0",
@@ -19,39 +37,17 @@ dag_params = {
 }
 
 with DAG(
-    dag_id=f"{NAMESPACE}-init-starrocks-tables",
+    dag_id=f"{NAMESPACE}-init-starrocks-base-tables",
     schedule=None,
     catchup=False,
     default_args=DEFAULT_ARGS,
     params=dag_params,
     tags=["radiant", "starrocks", "manual"],
-    dag_display_name="Radiant - Init StarRocks Tables",
+    dag_display_name="Radiant - Init StarRocks Base Tables",
 ) as dag:
     tasks = []
 
-    tables = [
-        "snv_consequence",
-        "snv_consequence_filter",
-        "snv_consequence_filter_partitioned",
-        "germline_snv_occurrence",
-        "germline_cnv_occurrence",
-        "germline_snv_staging_variant_frequency",
-        "germline_snv_variant_frequency",
-        "staging_exomiser",
-        "exomiser",
-        "staging_external_sequencing_experiment",
-        "staging_sequencing_experiment",
-        "staging_sequencing_experiment_delta",
-        "snv_tmp_variant",
-        "snv_staging_variant",
-        "snv_variant",
-        "snv_variant_partitioned",
-        "somatic_snv_occurrence",
-        "somatic_snv_staging_variant_frequency",
-        "somatic_snv_variant_frequency",
-        "variant_lookup",
-    ]
-    for table in tables:
+    for table in _BASE_TABLES:
         tasks.append(
             RadiantStarRocksOperator(
                 task_id=f"create_table_{table}",

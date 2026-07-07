@@ -8,6 +8,7 @@ class RadiantConfigKeys(Enum):
     ICEBERG_CATALOG = ("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog")
     ICEBERG_NAMESPACE = ("RADIANT_ICEBERG_NAMESPACE", "radiant")
     RADIANT_DATABASE = ("RADIANT_TABLES_DATABASE", "radiant")
+    RADIANT_TENANT_DB_TEMPLATE = ("RADIANT_TENANT_DB_TEMPLATE", "{tenant}_tenant")
     CLINICAL_CATALOG = ("RADIANT_CLINICAL_CATALOG", "radiant_jdbc")
     CLINICAL_DATABASE = ("RADIANT_CLINICAL_DATABASE", "public")
 
@@ -82,18 +83,11 @@ ICEBERG_CATALOG_DATABASE = {
     "iceberg_database": os.getenv("RADIANT_ICEBERG_NAMESPACE", "radiant"),
 }
 
-# --- StarRocks tables
-STARROCKS_RADIANT_MAPPING = {
+STARROCKS_RADIANT_BASE_MAPPING = {
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
     "starrocks_variant_lookup": "variant_lookup",
-    "starrocks_staging_exomiser": "raw_exomiser",
-    "starrocks_exomiser": "exomiser",
-    "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
-    "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
-    "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
-    "starrocks_germline_snv_staging_variant_frequency": "germline__snv__staging_variant_frequency_part",
     "starrocks_snv_consequence": "snv__consequence",
     "starrocks_snv_consequence_filter": "snv__consequence_filter",
     "starrocks_snv_consequence_filter_partitioned": "snv__consequence_filter_partitioned",
@@ -101,10 +95,22 @@ STARROCKS_RADIANT_MAPPING = {
     "starrocks_snv_variant": "snv__variant",
     "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
     "starrocks_snv_staging_variant": "snv__staging_variant",
-    "starrocks_somatic_snv_occurrence": "somatic__snv__occurrence",
-    "starrocks_somatic_snv_variant_frequency": "somatic__snv__variant_frequency",
+    # Tenant partitioned staging tables
+    "starrocks_staging_exomiser": "raw_exomiser",
+    "starrocks_germline_snv_staging_variant_frequency": "germline__snv__staging_variant_frequency_part",
     "starrocks_somatic_snv_staging_variant_frequency": "somatic__snv__staging_variant_frequency_part",
 }
+
+STARROCKS_RADIANT_PER_TENANT_MAPPING = {
+    "starrocks_exomiser": "exomiser",
+    "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
+    "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
+    "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
+    "starrocks_somatic_snv_occurrence": "somatic__snv__occurrence",
+    "starrocks_somatic_snv_variant_frequency": "somatic__snv__variant_frequency",
+}
+
+STARROCKS_RADIANT_MAPPING = STARROCKS_RADIANT_BASE_MAPPING | STARROCKS_RADIANT_PER_TENANT_MAPPING
 
 
 STARROCKS_OPEN_DATA_MAPPING = {
@@ -155,10 +161,23 @@ def get_iceberg_tables(conf=None) -> dict:
     }
 
 
-def get_starrocks_mapping(conf=None) -> dict:
-    tables = STARROCKS_RADIANT_MAPPING | STARROCKS_OPEN_DATA_MAPPING | CLINICAL_TRANSFORM_LAYER_MAPPING
-    _database = get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE)
-    return {key: f"{_database}.{value}" for key, value in tables.items()}
+def _resolve_radiant_databases(conf=None, tenant_code=None) -> tuple[str, str]:
+    base_db = get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE)
+    if not tenant_code:
+        return base_db, base_db
+
+    template = get_config_value(conf, RadiantConfigKeys.RADIANT_TENANT_DB_TEMPLATE)
+    return base_db, template.format(tenant=tenant_code)
+
+
+def get_starrocks_mapping(conf=None, tenant_code=None) -> dict:
+    base_db, tenant_db = _resolve_radiant_databases(conf, tenant_code)
+    base_tables = STARROCKS_RADIANT_BASE_MAPPING | STARROCKS_OPEN_DATA_MAPPING | CLINICAL_TRANSFORM_LAYER_MAPPING
+
+    mapping = {key: f"{base_db}.{value}" for key, value in base_tables.items()}
+    mapping.update({key: f"{tenant_db}.{value}" for key, value in STARROCKS_RADIANT_PER_TENANT_MAPPING.items()})
+
+    return mapping
 
 
 def get_clinical_mapping(conf=None) -> dict:
@@ -167,7 +186,7 @@ def get_clinical_mapping(conf=None) -> dict:
     return {key: f"{_catalog}.{_database}.{value}" for key, value in CLINICAL_MAPPING.items()}
 
 
-def get_radiant_mapping(conf=None) -> dict:
+def get_radiant_mapping(conf=None, tenant_code=None) -> dict:
     namespace = get_config_value(conf, RadiantConfigKeys.ICEBERG_NAMESPACE)
     namespace = f"{namespace}_" if namespace else "germline__snv__"
     mapping = {
@@ -176,7 +195,7 @@ def get_radiant_mapping(conf=None) -> dict:
             **STARROCKS_COLOCATE_GROUP_MAPPING,
         }.items()
     }
-    mapping.update(get_starrocks_mapping(conf=conf))
+    mapping.update(get_starrocks_mapping(conf=conf, tenant_code=tenant_code))
     mapping.update(get_iceberg_tables(conf))
     mapping.update(get_clinical_mapping(conf))
     return mapping

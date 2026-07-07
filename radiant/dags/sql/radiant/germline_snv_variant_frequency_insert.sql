@@ -10,6 +10,7 @@ WITH patients_total_count AS (
             ANY_VALUE(pn_wxs_affected) AS pn_wxs_affected,
             ANY_VALUE(pn_wxs_not_affected) AS pn_wxs_not_affected
         FROM {{ mapping.starrocks_germline_snv_staging_variant_frequency }}
+        WHERE tenant_code = %(tenant_code)s
         GROUP BY part
     ) t
 ),
@@ -22,6 +23,7 @@ freq AS (
                  SUM(pc_wxs_affected)     AS pc_wxs_affected,
                  SUM(pc_wxs_not_affected) AS pc_wxs_not_affected
           FROM {{ mapping.starrocks_germline_snv_staging_variant_frequency }}
+          WHERE tenant_code = %(tenant_code)s
           GROUP BY locus_id
 )
 SELECT locus_id,

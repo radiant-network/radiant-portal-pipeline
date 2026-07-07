@@ -2,6 +2,7 @@ INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_ger
 WITH germline_sequencings AS (
     SELECT * FROM {{ mapping.starrocks_staging_sequencing_experiment }} s
     WHERE s.analysis_type = 'germline'
+      AND s.tenant_code = %(tenant_code)s
       AND s.seq_id in (select seq_id from  {{ mapping.starrocks_germline_snv_occurrence }} where part = %(part)s)
 ), patients_total_count
      AS (SELECT COUNT(DISTINCT CASE WHEN s.experimental_strategy = 'wgs' then s.patient_id end)                   AS cnt_wgs,
@@ -38,10 +39,12 @@ WITH germline_sequencings AS (
 			FROM  {{ mapping.starrocks_germline_snv_occurrence }} o
 			JOIN {{ mapping.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.seq_id
            WHERE o.part = %(part)s
+             AND s.tenant_code = %(tenant_code)s
              AND o.gq >= 20 AND o.filter='PASS' AND o.ad_alt > 3
            GROUP BY locus_id, o.part
 )
-SELECT part,
+SELECT %(tenant_code)s AS tenant_code,
+       part,
        locus_id,
        pc_wgs,
        (SELECT cnt_wgs FROM patients_total_count)                 AS pn_wgs,
