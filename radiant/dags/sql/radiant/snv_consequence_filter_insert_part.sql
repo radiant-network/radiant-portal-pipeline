@@ -8,6 +8,10 @@ LEFT SEMI JOIN (
     SELECT locus_id
     FROM {{ per_tenant_mapping(t).starrocks_germline_snv_occurrence }}
     WHERE part in (%(part)s)
+    UNION ALL
+    SELECT locus_id
+    FROM {{ per_tenant_mapping(t).starrocks_somatic_snv_occurrence }}
+    WHERE part in (%(part)s)
     {% if not loop.last %}UNION ALL{% endif %}
     {% endfor %}
 ) o ON o.locus_id = c.locus_id;
