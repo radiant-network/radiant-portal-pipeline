@@ -1,0 +1,23 @@
+# This file exists solely to build an installable `radiant` wheel for the MWAA
+# (AWS) deployment.
+#
+# The Airflow 3 triggerer is the only component that needs radiant packaged this
+# way. Unlike the scheduler and workers, it has no access to the code in the
+# dags folder (it does not load DAG bundles).
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "radiant"
+
+# Keeping the version static for simplicity, as radiant will always be installed
+# from a locally-built wheel (with the --no-index option in requirements.txt) and
+# never published to a PyPI repository.
+version = "0.0.0"
+
+requires-python = ">=3.12"
+
+[tool.setuptools.packages.find]
+include = ["radiant*"]
