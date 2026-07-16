@@ -49,7 +49,9 @@ You should now have `plugins-af2.zip` in the current directory.
 **Airflow 3:**
 
 ```sh
-docker build -f airflow3/Dockerfile-mwaa-deps-builder -t radiant-mwaa-deps-af3 airflow3
+# Context is the repo root (`..`) so the image can bundle the radiant wheel
+# (it needs pyproject.toml and radiant/). Run this from the mwaa/ directory.
+docker build -f airflow3/Dockerfile-mwaa-deps-builder -t radiant-mwaa-deps-af3 ..
 docker run --rm -v $(pwd):/mwaa radiant-mwaa-deps-af3 \
   cp /home/airflow/.venv/radiant/plugins.zip /mwaa/plugins-af3.zip
 ```

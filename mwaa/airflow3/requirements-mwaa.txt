@@ -4,3 +4,7 @@
 
 # Radiant specific additional requirements for MWAA
 apache-airflow-providers-mysql==6.5.2
+
+# Radiant itself, from the locally-built wheel in plugins.zip (for the triggerer).
+# Intentionally unpinned: rebuilt from source on every deploy.
+radiant
