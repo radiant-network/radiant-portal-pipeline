@@ -21,6 +21,12 @@ The connection should contain:
 project_id and run_name are required; other fields optional. In run_name, {date} is replaced
 with the run date (DD/MM/YYYY). Full field list:
 https://github.com/BitModern/testQualityCli/blob/master/src/UploadTestRunCommand.ts
+
+
+StarRocks connection secret
+---------------------------
+The StarRocks connection must be stored as JSON (not a connection URI): the dbt
+container parses it with json.loads (see scripts/dbt/entrypoint.py).
 """
 
 import logging
