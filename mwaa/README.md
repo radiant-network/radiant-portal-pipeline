@@ -50,7 +50,7 @@ You should now have `plugins-af2.zip` in the current directory.
 **Airflow 3:**
 
 ```sh
-docker build -f airflow3/Dockerfile-mwaa-deps-builder -t radiant-mwaa-deps-af3 airflow3
+docker build -f airflow3/Dockerfile-mwaa-deps-builder -t radiant-mwaa-deps-af3 ..
 docker run --rm -v $(pwd):/mwaa radiant-mwaa-deps-af3 \
   cp /home/airflow/.venv/radiant/plugins.zip /mwaa/plugins-af3.zip
 ```
@@ -92,7 +92,7 @@ serves Airflow 2 and Airflow 3. Run this from the repo root. MWAA picks up DAGs
 from this path automatically; no restart needed.
 
 ```sh
-aws s3 cp --recursive radiant s3://radiant-tst-airflow-qa/dags/radiant --exclude="__pycache__/*" --exclude="*.pyc"
+aws s3 sync radiant s3://radiant-tst-airflow-qa/dags/radiant --delete --exclude="*__pycache__*" --exclude="*.pyc"
 ```
 
 ## Step 4 — Build and push the Radiant operator image
