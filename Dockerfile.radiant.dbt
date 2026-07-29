@@ -1,0 +1,23 @@
+FROM --platform=linux/amd64 python:3.12-slim
+
+RUN useradd --create-home --uid 1000 dbt
+
+RUN pip install --no-cache-dir --upgrade pip
+
+ENV DBT_PROFILES_DIR=/opt/dbt/data_qa \
+    DBT_SEND_ANONYMOUS_USAGE_STATS=false
+
+# Install python requirements; boto3 is to upload reports to S3
+COPY radiant/data_qa/requirements.txt /opt/dbt/data_qa/requirements.txt
+RUN pip install --no-cache-dir -r /opt/dbt/data_qa/requirements.txt "boto3~=1.43.36"
+
+COPY --chown=dbt:dbt radiant/data_qa/ /opt/dbt/data_qa/
+COPY --chown=dbt:dbt scripts/dbt/entrypoint.py /opt/dbt/entrypoint.py
+
+RUN chown -R dbt:dbt /opt/dbt                                                                                                                                    
+USER dbt
+
+# Install dbt packages
+RUN dbt deps --project-dir /opt/dbt/data_qa
+
+ENTRYPOINT ["python", "/opt/dbt/entrypoint.py"]

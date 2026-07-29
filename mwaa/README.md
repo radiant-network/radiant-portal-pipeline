@@ -9,6 +9,7 @@ Radiant runs on two MWAA environments — Airflow 2 (Python 3.11) and Airflow 3 
 - [ ] Upload artifacts to S3 (step 2)
 - [ ] Upload dags to S3 (step 3)
 - [ ] Build and push the radiant operator image (step 4).
+- [ ] Build and push the dbt data-quality image (step 4b).
 - [ ] Run terraform apply (step 5)
 
 
@@ -49,9 +50,7 @@ You should now have `plugins-af2.zip` in the current directory.
 **Airflow 3:**
 
 ```sh
-# Context is the repo root (`..`) so the image can bundle the radiant wheel
-# (it needs pyproject.toml and radiant/). Run this from the mwaa/ directory.
-docker build -f airflow3/Dockerfile-mwaa-deps-builder -t radiant-mwaa-deps-af3 ..
+docker build -f airflow3/Dockerfile-mwaa-deps-builder -t radiant-mwaa-deps-af3 airflow3
 docker run --rm -v $(pwd):/mwaa radiant-mwaa-deps-af3 \
   cp /home/airflow/.venv/radiant/plugins.zip /mwaa/plugins-af3.zip
 ```
@@ -110,6 +109,23 @@ To push the radiant operator image to ECR, use the following commands (replace `
 ```
 aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com
 docker push <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com/radiant/radiant-vcf-operator:latest
+```
+
+## Step 4b — Build and push the dbt data-quality image
+
+This is the image referenced by the `radiant-dbt` ECS task definition (used by the
+`data-integrity-starrocks` DAG). Build and push it once. Terraform reads the tag from the
+dbt image version variable.
+
+To build the dbt image, run:
+```
+docker build --platform linux/amd64 -t <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com/radiant/radiant-dbt:latest -f Dockerfile.radiant.dbt .
+```
+
+To push it to ECR (replace `<aws_account_id>` with your AWS account ID):
+```
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com
+docker push <aws_account_id>.dkr.ecr.us-east-1.amazonaws.com/radiant/radiant-dbt:latest
 ```
 
 ## Step 5 - Run terraform apply
