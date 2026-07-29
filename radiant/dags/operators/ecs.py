@@ -98,16 +98,19 @@ class ImportGermlineSNVVCF(RadiantTaskECSOperator):
 
 class InitIcebergTables(RadiantTaskECSOperator):
     @staticmethod
-    def get_init_iceberg(radiant_namespace: str, table_name: str, ecs_env: ECSEnv):
+    def get_init_iceberg(radiant_namespace: str, table_name: str, ecs_env: ECSEnv, mode: str = "create"):
         return ecs.EcsRunTaskOperator(
             **dict(
-                task_id=f"init_iceberg_{table_name}",
-                task_display_name=f"[ECS] Init Iceberg Database: {table_name}",
+                task_id=f"init_iceberg_{table_name}" if mode == "create" else f"evolve_iceberg_{table_name}",
+                task_display_name=f"[ECS] {mode.capitalize()} Iceberg Database: {table_name}",
                 overrides={
                     "containerOverrides": [
                         {
                             "name": "radiant-operator-qa-etl-container",
-                            "command": [f"python /opt/radiant/init_iceberg_table.py --table_name '{table_name}'"],
+                            "command": [
+                                f"python /opt/radiant/init_iceberg_table.py "
+                                f"--table_name '{table_name}' --mode '{mode}'"
+                            ],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
                                 {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},

@@ -47,6 +47,7 @@ def make_record(
     format_keys=("DP"),
     dp_values=(100, 80),
     gq_values=(30, 25),
+    sq_values=(22.5, 3.5),
     gt_ref_depths=(10, 20),
     gt_alt_depths=(90, 5),
     gt_depths=(100, 25),
@@ -60,7 +61,10 @@ def make_record(
     record.INFO = info or {}
     record.FORMAT = format_keys
 
-    record.format.side_effect = lambda key: ([[dp_values[0]], [dp_values[1]]] if key == "DP" else None)
+    per_sample = {"DP": dp_values, "SQ": sq_values}
+    record.format.side_effect = lambda key: (
+        [[per_sample[key][0]], [per_sample[key][1]]] if key in per_sample else None
+    )
 
     record.gt_ref_depths = gt_ref_depths
     record.gt_alt_depths = gt_alt_depths
@@ -288,6 +292,7 @@ def test_filter_parsing(filter_val, expected, experiments, common):
         ("DP", "info_dp", 150),
         ("HaplotypeScore", "info_haplotype_score", 3.2),
         ("HotspotAllele", "info_hotspotallele", 1),
+        ("AQ", "info_aq", 12.5),
         ("CAL", "info_cal", "COSMIC"),
     ],
 )
@@ -308,6 +313,8 @@ def test_info_fields_are_mapped(info_key, result_key, value, experiments, common
         "info_mq",
         "info_culprit",
         "info_hotspotallele",
+        "info_hotspot",
+        "info_aq",
         "info_cal",
     ],
 )
@@ -315,6 +322,38 @@ def test_missing_info_fields_are_none(result_key, experiments, common):
     record = make_record(info={})
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result[result_key] is None
+
+
+@pytest.mark.parametrize(
+    "info,expected",
+    [
+        ({"hotspot": True}, True),  # DRAGEN lowercase Flag
+        ({"HotspotAllele": 1}, True),  # GATK-era allele index, alt allele
+        ({"HotspotAllele": 0}, False),  # allele index pointing at the reference
+        ({"HotspotAllele": 2}, False),  # not the (single) alt allele
+        ({"hotspot": True, "HotspotAllele": 0}, True),  # `hotspot` wins
+    ],
+)
+def test_info_hotspot_resolution(info, expected, experiments, common):
+    record = make_record(info=info)
+    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
+    assert result["info_hotspot"] is expected
+    # the raw allele index column keeps reading `HotspotAllele` untouched
+    assert result["info_hotspotallele"] == info.get("HotspotAllele")
+
+
+@pytest.mark.parametrize("sq_values,expected", [((22.5, 3.5), (22.5, 3.5)), ((0.0, 0.0), (0.0, 0.0))])
+def test_sq_is_read_per_sample(sq_values, expected, experiments, common):
+    record = make_record(format_keys=("DP", "SQ"), sq_values=sq_values)
+    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
+    assert (result["tumor_sq"], result["normal_sq"]) == expected
+
+
+def test_sq_absent_from_format_is_none(experiments, common):
+    record = make_record(format_keys=("DP",))
+    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
+    assert result["tumor_sq"] is None
+    assert result["normal_sq"] is None
 
 
 @pytest.mark.parametrize("dp,expected", [(100, 100), (0, None)])

@@ -9,6 +9,56 @@ def init_database():
     catalog.create_namespace_if_not_exists(namespace)
 
 
+def evolve_table(table_name: str):
+    """
+    Add any column missing from an existing Iceberg table, in place.
+
+    This is the non-destructive counterpart to the `create_*_table` functions below, which
+    drop and recreate. Iceberg records the change as metadata only: existing Parquet files
+    are left untouched and read NULL for the added columns, so no data is lost and nothing
+    is rewritten.
+
+    Only additive changes are applied. Dropping a column, narrowing a type or making a
+    column required is out of reach here and still needs a recreate.
+
+    Note that the catalog assigns its own field ids to the added columns, so they will not
+    match the literal ids declared in the Python schema. That is harmless: writers resolve
+    field ids from the table metadata through the name mapping, never from the literals.
+
+    Parameters:
+        table_name (str): The table to evolve, without the namespace prefix.
+
+    Raises:
+        ValueError: If the table name is unknown.
+    """
+    import os
+
+    from pyiceberg.catalog import load_catalog
+
+    if table_name == "germline_cnv_occurrence":
+        from radiant.tasks.vcf.cnv.germline.occurrence import SCHEMA
+    elif table_name == "germline_snv_occurrence":
+        from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA
+    elif table_name == "snv_consequence":
+        from radiant.tasks.vcf.snv.consequence import SCHEMA
+    elif table_name == "snv_variant":
+        from radiant.tasks.vcf.snv.variant import SCHEMA
+    elif table_name == "somatic_snv_occurrence":
+        from radiant.tasks.vcf.snv.somatic.occurrence import SCHEMA
+    else:
+        raise ValueError(
+            f"Unknown table name: {table_name}, possible values are: 'germline_snv_occurrence', "
+            "'snv_variant', 'snv_consequence', 'germline_cnv_occurrence', 'somatic_snv_occurrence'"
+        )
+
+    namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
+    catalog = load_catalog("default")
+    table = catalog.load_table(f"{namespace}.{table_name}")
+
+    with table.update_schema() as update:
+        update.union_by_name(SCHEMA)
+
+
 def create_germline_cnv_occurrence_table():
     import os
 
