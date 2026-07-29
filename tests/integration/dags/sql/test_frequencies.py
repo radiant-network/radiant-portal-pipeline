@@ -62,7 +62,7 @@ def test_staging_variant_frequencies_calculation(starrocks_session, resources_di
     _select_sql = "SELECT * FROM {{ mapping.starrocks_germline_snv_staging_variant_frequency }}"
     _select_sql = jinja2.Template(_select_sql).render({"mapping": radiant_mapping})
 
-    _params = {"part": 0, "tenant_code": "tenant1"}
+    _params = {"part": 0}
 
     # Insert the data into the occurrence table
     with starrocks_session.cursor() as cursor:
@@ -71,4 +71,4 @@ def test_staging_variant_frequencies_calculation(starrocks_session, resources_di
 
         results = cursor.fetchall()
         # Values vetted with the content of test resource staging_sequencing_experiment.tsv
-        assert results == (("tenant1", 0, -8935141392267608062, 5, 10, 3, 7, 2, 3, 0, 0, 0, 0, 0, 0),)
+        assert results == ((0, -8935141392267608062, 5, 10, 3, 7, 2, 3, 0, 0, 0, 0, 0, 0),)

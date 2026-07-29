@@ -17,7 +17,6 @@ LOAD LABEL {{ database_name }}.{{ load_label }}
     (
         part = %(part)s,
         seq_id = %(seq_id)s,
-        tenant_code = %(tenant_code)s,
         id = id,
         rank = rank,
         symbol = gene_symbol,

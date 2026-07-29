@@ -7,7 +7,6 @@ SELECT DISTINCT
     aliquot,
     patient_id,
     experimental_strategy,
-    tenant_code,
     request_priority,
     vcf_filepath,
     exomiser_filepath,

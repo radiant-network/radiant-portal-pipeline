@@ -1,7 +1,6 @@
 SELECT part,
        seq_id,
        id,
-       tenant_code,
        rank,
        symbol,
        entrez_gene_id,

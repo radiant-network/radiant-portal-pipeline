@@ -44,7 +44,6 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
         self,
         *,
         submit_task_options: SubmitTaskOptions = None,
-        tenant_code: str | None = None,
         retries=3,
         retry_delay=timedelta(seconds=15),
         retry_exponential_backoff=True,
@@ -52,7 +51,6 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
     ):
         conn_id = "starrocks_conn"
         self.submit_task_options = submit_task_options
-        self.tenant_code = tenant_code
 
         super().__init__(
             conn_id=conn_id,
@@ -63,23 +61,14 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
         )
 
     def prepare_template_context(self, context):
-        dag_conf_params = dict(context.get("dag_run").conf or {})
-        tenant_code = self.tenant_code if self.tenant_code is not None else dag_conf_params.get("RADIANT_TENANT_CODE")
-        dynamic_mapping = get_radiant_mapping(dag_conf_params, tenant_code=tenant_code)
+        dag_conf_params = context.get("dag_run").conf or {}
+        dynamic_mapping = get_radiant_mapping(dag_conf_params)
 
-        extra = {"mapping": dynamic_mapping, "tenant_code": tenant_code}
-        return {**context, **extra}
+        return {**context, "mapping": dynamic_mapping}
 
     def render_template_fields(self, context, jinja_env=None):
         _context = self.prepare_template_context(context)
         super().render_template_fields(_context, jinja_env)
-
-    def _do_render_template_fields(self, parent, template_fields, context, jinja_env=None, *args, **kwargs):
-        # Mapped operators (.expand / .expand_kwargs) bypass render_template_fields and call this directly
-        # (see MappedOperator.render_template_fields), so the Radiant context (mapping/tenant_code/...) must
-        # be injected here too, otherwise '{{ mapping.* }}' is undefined when rendering a mapped task.
-        context = self.prepare_template_context(context)
-        super()._do_render_template_fields(parent, template_fields, context, jinja_env, *args, **kwargs)
 
     @staticmethod
     def _prepare_sql(
@@ -249,12 +238,6 @@ class RadiantStarRocksBasePartitionSwapOperator(RadiantStarRocksBaseOperator):
             "temp_partition": self.temp_partition,
         }
         return {**context, **local_vars}
-
-    def _do_render_template_fields(self, parent, template_fields, context, jinja_env=None, *args, **kwargs):
-        # Mapped path entrypoint: run the operator's staged rendering (resolves mapping, table, then the
-        # partition-scoped SQL from the rendered table) instead of the generic per-field loop, which can't
-        # honour the ordering. Safe: render_template_fields renders fields explicitly, never re-enters here.
-        self.render_template_fields(context, jinja_env)
 
     def render_template_fields(self, context, jinja_env=None):
         _context = super().prepare_template_context(context)
@@ -548,8 +531,6 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
                 {
                     "part": self.partition,
                     "seq_id": _task.experiments[0].seq_id,
-                    # Tag rows with the tenant in the shared staging table; insert_exomiser routes by it later.
-                    "tenant_code": _task.experiments[0].tenant_code,
                     "tsv_filepath": _task.exomiser_filepath,
                     "load_label": f"load_exomiser_"
                     f"{_task.task_id}_{_task.experiments[0].seq_id}_{_task.task_id}_{str(uuid.uuid4().hex)}",

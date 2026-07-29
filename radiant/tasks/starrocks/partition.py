@@ -16,7 +16,6 @@ class SequencingDeltaCommon(BaseModel):
     aliquot: str
     patient_id: int
     experimental_strategy: str
-    tenant_code: str
     request_priority: str | None = None
     vcf_filepath: str | None = None
     cnv_vcf_filepath: str | None = None

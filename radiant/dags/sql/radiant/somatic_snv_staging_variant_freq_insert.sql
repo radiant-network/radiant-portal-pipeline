@@ -13,7 +13,6 @@ somatic_sequencings AS (
 		COUNT(DISTINCT CASE WHEN histology_type = 'normal'  THEN seq_id END) > 0 AS is_tumor_normal
 	FROM {{ mapping.starrocks_staging_sequencing_experiment }}
 	WHERE analysis_type = 'somatic'
-	  AND tenant_code = %(tenant_code)s
 	  AND part=%(part)s
 	GROUP BY
 		case_id,
@@ -39,13 +38,11 @@ freqs_tumor AS (
     FROM {{ mapping.starrocks_somatic_snv_occurrence }} o
     JOIN {{ mapping.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.tumor_seq_id
     WHERE o.part = %(part)s
-      AND s.tenant_code = %(tenant_code)s
       AND o.filter = 'PASS'
       AND o.tumor_ad_alt > 2
     GROUP BY o.locus_id, o.part
 )
 SELECT
-    %(tenant_code)s AS tenant_code,
     part,
     locus_id,
     pc_wgs                                                          		  AS pc_tn_wgs,

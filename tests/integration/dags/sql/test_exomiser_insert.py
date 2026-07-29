@@ -43,7 +43,6 @@ def test_raw_exomiser_load(starrocks_session, radiant_mapping, minio_instance, s
     params = {
         "part": 1,
         "seq_id": 1,
-        "tenant_code": "tenant1",
         "tsv_filepath": f"s3://{sample_exomiser_tsv}",
     }
 

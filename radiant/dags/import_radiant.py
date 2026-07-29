@@ -73,8 +73,6 @@ def import_radiant():
         @task(
             task_id="insert_sequencing_experiment",
             task_display_name="[PyOp] Insert New Sequencing Experiments",
-            retries=2,
-            retry_delay=datetime.timedelta(seconds=30),
         )
         def insert_new_sequencing_experiment(sequencing_experiment: Any):
             import os
@@ -129,53 +127,7 @@ def import_radiant():
         dag_conf = context["dag_run"].conf or {}
         return [{**dag_conf, **{"part": part}} for part in prioritized]
 
-    @task.short_circuit(
-        task_id="prepare_tenants_tables",
-        task_display_name="[PyOp/StarRocks] Prepare Tenants Tables",
-        retries=2,
-        retry_delay=datetime.timedelta(seconds=30),
-    )
-    def prepare_tenants_tables(sequencing_experiment_to_process: Any) -> Any:
-        import os
-
-        import jinja2
-        from airflow.hooks.base import BaseHook
-        from airflow.operators.python import get_current_context
-
-        from radiant.dags import DAGS_DIR
-        from radiant.tasks.data.radiant_tables import STARROCKS_RADIANT_PER_TENANT_MAPPING, get_radiant_mapping
-
-        tenants = {s["tenant_code"] for s in sequencing_experiment_to_process}
-        if not tenants:
-            logger.info("No tenants to prepare, stopping the execution.")
-            return []
-
-        context = get_current_context()
-        dag_conf = context["dag_run"].conf or {}
-        _init_dir = os.path.join(DAGS_DIR.resolve(), "sql", "radiant", "init")
-
-        per_tenant_tables = [key.removeprefix("starrocks_") for key in STARROCKS_RADIANT_PER_TENANT_MAPPING]
-        sql_templates = {}
-        for table in per_tenant_tables:
-            with open(os.path.join(_init_dir, f"{table}_create_table.sql")) as f_in:
-                sql_templates[table] = f_in.read()
-
-        # Database creation is handled by the portal API, we assume the DBs exist.
-        # Any error causes task failure, we want to fail-fast here to avoid starting the ETL with a broken
-        # set of tables.
-        conn = BaseHook.get_connection("starrocks_conn")
-        with conn.get_hook().get_conn().cursor() as cursor:
-            for tenant in sorted(tenants):
-                mapping = get_radiant_mapping(dag_conf, tenant_code=tenant)
-                for key, sql in sql_templates.items():
-                    _sql = jinja2.Template(sql).render({"mapping": mapping})
-                    cursor.execute(_sql)
-                    logger.info(f"Prepared [{tenant}_tenant.{key}] table.")
-
-        return sorted(tenants)
-
     priority = assign_priority(fetch_sequencing_experiment.output)
-    prepare_tenants = prepare_tenants_tables(fetch_sequencing_experiment.output)
 
     import_parts = TriggerDagRunOperator.partial(
         task_id="import_part",
@@ -201,7 +153,6 @@ def import_radiant():
         >> tg_partition_group
         >> updated_deleted_sequencing_experiment
         >> fetch_sequencing_experiment
-        >> prepare_tenants
         >> import_parts
         >> run_data_integrity_checks
     )

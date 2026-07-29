@@ -69,5 +69,4 @@ LEFT JOIN (
     ON o.seq_id = e.seq_id
    AND v.locus_id = e.locus_id
 WHERE o.part = {{ partition }} and o.task_id in %(task_ids)s
-AND o.tenant_code = %(tenant_code)s
 AND has_alt;

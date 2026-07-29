@@ -70,7 +70,7 @@ def process_tasks(
                             logger.warning(f"Skipping record with no ALT: {record.CHROM}:{record.POS}-{record.end}")
                             continue
                         occurrence = process_occurrence(
-                            record, task.part, exp.seq_id, exp.tenant_code, task.task_id, exp.aliquot, sample_idx
+                            record, task.part, exp.seq_id, task.task_id, exp.aliquot, sample_idx
                         )
                         occurrence_buffer.append(occurrence)
             vcf.close()

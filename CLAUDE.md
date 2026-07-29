@@ -7,96 +7,87 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```sh
 # Setup
 python -m venv .venv && source .venv/bin/activate
-make install-dev        # installs all deps (single pip resolve) + `airflow db init`
+make install-dev        # installs all deps + initializes Airflow DB
 
 # Testing
-make test               # static + unit + integration (non-slow); does NOT run docker tests
-make test-static        # ruff check radiant/
+make test               # static checks + unit + integration (non-slow)
+make test-static        # ruff check only
 make test-unit          # unit tests only: pytest tests/unit/
 make test-integration   # fast integration: pytest -m "not slow" tests/integration
 make test-integration-slow  # pytest -m slow tests/integration
-make test-docker        # build-docker, then pytest tests/docker/ (drives the compose stack)
+make test-docker        # builds docker images then runs pytest tests/docker/
 
 # Run a single test file or test
 pytest tests/unit/path/to/test_file.py
 pytest tests/unit/path/to/test_file.py::test_function_name
 
 # Linting & formatting
-make test-static        # ruff check radiant/ only
-make format             # ruff format + ruff check --fix over radiant/ tests/ scripts/ecs/
+make test-static        # ruff check radiant/
+make format             # ruff format + ruff check --fix
 ```
 
-Integration tests select their fixtures via an env var (not a make flag):
+Integration tests use Docker fixtures by default:
 ```sh
-USE_DOCKER_FIXTURES=true  make test-integration   # spins up local Docker (testcontainers): MinIO + Iceberg REST catalog. CI default.
-USE_DOCKER_FIXTURES=false make test-integration   # runs against the external radiant-portal-sandbox environment
+USE_DOCKER_FIXTURES=true make test-integration    # local Docker (default in CI)
+USE_DOCKER_FIXTURES=false make test-integration   # against sandbox environment
 ```
-CI (`.github/workflows/test.yml`) runs on every PR with `USE_DOCKER_FIXTURES=true`: static → unit → integration → docker. Tagged `v*` pushes build/push the two images (`build_and_push*.yml`).
 
 ## Architecture
 
-Apache Airflow ETL pipeline importing genomic data into a clinical data model. Two storage backends: **Iceberg** (data lake, via PyIceberg + Glue/REST catalog on S3) and **StarRocks** (OLAP analytics, queried over a MySQL-protocol connection `starrocks_conn`).
+This is an Apache Airflow ETL pipeline for importing genomic data into a clinical data model. The two main storage backends are **Iceberg** (data lake) and **StarRocks** (OLAP analytics).
 
 ### Source layout
 
-- `radiant/dags/` — Airflow DAG definitions (orchestration only). `radiant/dags/__init__.py` is the config module (see below).
+- `radiant/dags/` — Airflow DAG definitions (orchestration only)
 - `radiant/tasks/` — Reusable processing logic called by DAGs
-  - `vcf/snv/germline/`, `vcf/snv/somatic/`, `vcf/cnv/germline/` — VCF variant extraction (cyvcf2)
-  - `iceberg/` — table init, `table_accumulator.py`, partition commit
-  - `starrocks/` — custom operators, partition assignment, deferrable trigger
-  - `data/radiant_tables.py` — the table-name mapping resolved into SQL templates (see multi-tenancy)
-  - `tracing/` — OpenTelemetry spans (exported per `otel-collector-config.yaml`)
-- `radiant/dags/sql/{clinical,open_data,radiant}/` — Jinja SQL templates (each has an `init/` subdir for one-time DDL)
-- `radiant/dags/operators/` — `k8s.py` and `ecs.py` task operators (selected at runtime, see deployment)
-- `radiant/data_qa/` — standalone dbt project for data-quality assertions (see below); **not** part of pytest
-- `tests/{unit,integration,docker}/`, `tests/resources/` — test suites + sample VCF/TSV data
-- `mwaa/` — AWS MWAA + ECS deployment artifacts (separate dep builders for `airflow2/` and `airflow3/`)
+  - `vcf/snv/germline/`, `vcf/snv/somatic/`, `vcf/cnv/germline/` — VCF variant extraction
+  - `iceberg/` — Iceberg table initialization, accumulation, and partition commit
+  - `starrocks/` — StarRocks operator, partition logic, and triggers
+  - `data/` — Table schema definitions shared across tasks
+- `radiant/dags/sql/` — SQL templates (clinical, open_data, radiant subdirs)
+- `radiant/dags/operators/` — Custom Kubernetes and ECS task operators
+- `scripts/ecs/` — ECS-specific entrypoint scripts
+- `tests/unit/`, `tests/integration/`, `tests/docker/` — Test suites
+- `tests/resources/` — Test data: sample VCF files, TSV partitions
 
 ### Data flow
 
 ```
-VCF file → cyvcf2 parse
+VCF file
+  → parse with cyvcf2
   → extract occurrences / variants / consequences (radiant/tasks/vcf/)
   → accumulate into Iceberg tables (radiant/tasks/iceberg/table_accumulator.py)
-  → commit partition (radiant/tasks/iceberg/partition_commit.py)
+  → commit partition (radiant/tasks/iceberg/)
   → load into StarRocks (radiant/tasks/starrocks/)
   → aggregate variant frequencies
 ```
 
-### DAGs and the delta/incremental flow
-
-- `import_radiant.py` — main scheduled import. Fetches the **sequencing-experiment delta** from StarRocks (`RadiantStarRocksOperator` + an `output_processor` that maps SQL rows → pydantic models), assigns each experiment to a partition (`SequencingExperimentPartitionAssigner`), inserts new experiments, then fires one `import_part` run per partition via `TriggerDagRunOperator`. Only new/changed experiments are processed — this is the incremental-loading mechanism (design: `design/SJRA-1187-*.md`).
-- `import_part.py` — processes one partition: VCF extraction → Iceberg → StarRocks.
-- `import_germline_snv_vcf.py`, `import_open_data.py`, `import_brim.py` — additional sources.
-- `init_iceberg_tables.py`, `init_starrocks_tables.py`, `init-qa-clinical-data.py` — one-time setup.
-- `diagnostics.py` — manual ops DAG (e.g. StarRocks DNS TTL checks).
-- Design rationale for major features lives in `design/SJRA-*.md`.
-
 ### Partitioning
 
-Partitioned by `experimental_strategy` so all experiments of the same patient/family/case/sequencing-id land together. First-partition masks: WGS `0x00000000` (100 experiments/partition), WXS `0x00010000` (1000). Assignment logic in `radiant/tasks/starrocks/partition.py`. Full strategy: `docs/RADIANT.md`.
+Genomic data is partitioned by `experimental_strategy` to keep partition sizes manageable. Partitions are assigned so that all experiments belonging to the same patient, family, case, or sequencing ID land in the same partition. See [docs/RADIANT.md](docs/RADIANT.md) for the full strategy.
 
-### Deployment modes and config
+| Strategy | First partition mask | Experiments per partition |
+|----------|---------------------|--------------------------|
+| WGS | `0x00000000` | 100 |
+| WXS | `0x00010000` | 1000 |
 
-`radiant/dags/__init__.py` centralizes config: `NAMESPACE`, `ICEBERG_NAMESPACE` (env-overridable), `DEFAULT_ARGS`, `load_docs_md`, `get_namespace`, and the `IS_AWS` flag. **`IS_AWS` (env var) is a load-time toggle**: `import_part.py` does `if IS_AWS: from radiant.dags.operators import ecs as operators else k8s`. On AWS, `ECSEnv` pulls `AWS_ECS_*` from Airflow Variables. Three execution contexts:
-- **KubernetesPodOperator** — K8s deployments (`IS_AWS=false`)
-- **ECS task** — AWS ECS via custom operator (`IS_AWS=true`)
-- **Local Docker Compose** — dev stack (`docker-compose.yml`): Airflow + PostgreSQL + Redis + MinIO + Polaris
+### DAGs
 
-`Dockerfile` = Airflow webserver/scheduler image; `Dockerfile.radiant.operator` = task-execution image with all Radiant deps.
+- `import_radiant.py` — Main scheduled import; assigns partitions then triggers `import_part` per partition
+- `import_part.py` — Processes one partition: VCF extraction → Iceberg → StarRocks
+- `import_germline_snv_vcf.py` — Germline SNV VCF import
+- `import_open_data.py`, `import_brim.py` — Additional data sources
+- `init_iceberg_tables.py`, `init_starrocks_tables.py` — One-time table setup
 
-### Multi-tenancy + SQL templating
+### Deployment modes
 
-Tables are **not** hard-coded in SQL. DAGs set `template_searchpath` to `radiant/dags/sql` and `render_template_as_native_obj=True`; the StarRocks operators inject a `mapping` dict and `tenant_code` into the Jinja context, so templates reference tables as `{{ mapping.some_table }}`. `radiant/tasks/data/radiant_tables.py` resolves that mapping from DAG-run conf + `tenant_code`: per-tenant tables route to a `{tenant}_tenant` database (`RADIANT_TENANT_DB_TEMPLATE`), shared/open-data tables stay in the base DB. `tenant_code` comes from the operator arg or `RADIANT_TENANT_CODE` in the DAG-run conf. Frequency math across tenants: `docs/frequency-calculation-multi-tenant.md`.
+Tasks can run in three execution contexts (selected per deployment):
+- **KubernetesPodOperator** — K8s-based deployments
+- **ECS task** — AWS ECS via custom operator (`radiant/dags/operators/`)
+- **Local Docker Compose** — Development stack (`docker-compose.yml`): Airflow + PostgreSQL + Redis + MinIO + Polaris
 
-### StarRocks operator patterns
+The `Dockerfile` is the Airflow webserver/scheduler image; `Dockerfile.radiant.operator` is the task execution image with all Radiant dependencies.
 
-`radiant/tasks/starrocks/operator.py` — long-running loads run as StarRocks **async tasks** (`SUBMIT TASK`), then a **deferrable** `StarRocksTaskCompleteTrigger` (`trigger.py`) polls for completion without holding a worker slot. `SubmitTaskOptions` controls timeout/poll/spill. Key operators: `RadiantStarRocksOperator` (query + optional async submit + `output_processor`), `RadiantStarRocksPartitionSwapOperator` / `SwapPartition` (atomic partition replace for idempotent reloads), `RadiantLoadExomiserOperator`. Inserts serialize through the `starrocks_insert_pool` Airflow pool.
+### Linting conventions
 
-### Data QA (dbt) — separate from pytest
-
-`radiant/data_qa/` is a dbt project (no models) asserting data quality against StarRocks. Run via `radiant/data_qa/scripts/run_qa.sh`: `dbt test` → `run_results_to_junit.py` → JUnit XML (test failures encoded in XML, exit non-zero only on connection/mechanism failure). Custom generic/singular tests live in `tests/*.sql`, reusable macros in `macros/`. The **"Values Contained In Dictionary"** tests exist to catch new upstream enum values the portal can't yet handle; their accepted-value lists (in `macros/dictionaries.sql`) mirror the portal's `backend/internal/repository/facets.go` **and** frontend i18n — keep them in sync when adding values. See `radiant/data_qa/README.md`.
-
-## Linting conventions
-
-Ruff (`.ruff.toml`): line length 119, Python 3.12, double quotes, Google-style docstrings. Rules: E, F, UP, B, SIM, I. `make test-static` only checks `radiant/`; `make format` also fixes `tests/` and `scripts/ecs/`.
+Ruff is configured in `.ruff.toml`: line length 119, Python 3.12, double quotes, Google-style docstrings. Rules: E, F, UP, B, SIM, I (isort).

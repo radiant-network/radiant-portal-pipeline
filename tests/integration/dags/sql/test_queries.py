@@ -40,8 +40,6 @@ _MOCK_PARAMS = {
     "created_at": "2025-10-01 00:00",
     "updated_at": "2025-10-01 00:00",
     "ingested_at": None,
-    "tenants": ["chusj", "radiant"],
-    "tenant_code": "chusj",
 }
 
 
@@ -103,16 +101,7 @@ def _explain_insert(starrocks_session, sql_dir):
                 # "EXPLAIN" not supported with "LOAD"
                 continue
             with open(sql_file) as f:
-                rendered_sql = jinja2.Template(f.read()).render(
-                    {
-                        "mapping": get_radiant_mapping(),
-                        # Tenant-pooling SQL loops `{% for t in tenants %}` and resolves each via
-                        # per_tenant_mapping; point both at the same test DB so EXPLAIN can validate the
-                        # rendered per-tenant UNION branches against the tables created above.
-                        "tenants": _MOCK_PARAMS["tenants"],
-                        "per_tenant_mapping": lambda _t: get_radiant_mapping(),
-                    }
-                )
+                rendered_sql = jinja2.Template(f.read()).render({"mapping": get_radiant_mapping()})
             _execute_query(cursor, f"EXPLAIN {rendered_sql}", args=_MOCK_PARAMS)
 
 

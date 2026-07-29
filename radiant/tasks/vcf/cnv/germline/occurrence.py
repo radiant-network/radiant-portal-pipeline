@@ -7,35 +7,32 @@ from radiant.tasks.vcf.vcf_utils import calls_without_phased
 SCHEMA: Schema = Schema(
     NestedField(100, "part", IntegerType(), required=True),
     NestedField(101, "seq_id", IntegerType(), required=True),
-    NestedField(102, "tenant_code", StringType(), required=True),
-    NestedField(103, "task_id", IntegerType(), required=True),
-    NestedField(104, "aliquot", StringType(), required=True),
-    NestedField(105, "chromosome", StringType(), required=True),
-    NestedField(106, "alternate", StringType(), required=True),
-    NestedField(107, "start", IntegerType(), required=True),
-    NestedField(108, "end", IntegerType(), required=True),
-    NestedField(109, "type", StringType(), required=True),
-    NestedField(110, "length", IntegerType(), required=True),
-    NestedField(111, "name", StringType(), required=True),
-    NestedField(112, "quality", FloatType(), required=False),
-    NestedField(113, "calls", ListType(200, IntegerType()), required=False),
-    NestedField(114, "filter", StringType(), required=False),
-    NestedField(115, "bc", IntegerType(), required=False),
-    NestedField(116, "cn", IntegerType(), required=False),
-    NestedField(117, "pe", ListType(201, IntegerType()), required=False),
-    NestedField(118, "sm", FloatType(), required=False),
-    NestedField(119, "svtype", StringType(), required=False),
-    NestedField(120, "svlen", IntegerType(), required=False),
-    NestedField(121, "reflen", IntegerType(), required=False),
-    NestedField(122, "ciend", ListType(202, IntegerType()), required=False),
-    NestedField(123, "cipos", ListType(203, IntegerType()), required=False),
-    NestedField(124, "phased", BooleanType(), required=False),
+    NestedField(102, "task_id", IntegerType(), required=True),
+    NestedField(103, "aliquot", StringType(), required=True),
+    NestedField(104, "chromosome", StringType(), required=True),
+    NestedField(105, "alternate", StringType(), required=True),
+    NestedField(106, "start", IntegerType(), required=True),
+    NestedField(107, "end", IntegerType(), required=True),
+    NestedField(108, "type", StringType(), required=True),
+    NestedField(109, "length", IntegerType(), required=True),
+    NestedField(110, "name", StringType(), required=True),
+    NestedField(111, "quality", FloatType(), required=False),
+    NestedField(112, "calls", ListType(200, IntegerType()), required=False),
+    NestedField(113, "filter", StringType(), required=False),
+    NestedField(114, "bc", IntegerType(), required=False),
+    NestedField(115, "cn", IntegerType(), required=False),
+    NestedField(116, "pe", ListType(201, IntegerType()), required=False),
+    NestedField(117, "sm", FloatType(), required=False),
+    NestedField(118, "svtype", StringType(), required=False),
+    NestedField(119, "svlen", IntegerType(), required=False),
+    NestedField(120, "reflen", IntegerType(), required=False),
+    NestedField(121, "ciend", ListType(202, IntegerType()), required=False),
+    NestedField(122, "cipos", ListType(203, IntegerType()), required=False),
+    NestedField(123, "phased", BooleanType(), required=False),
 )
 
 
-def process_occurrence(
-    record: Variant, part: int, seq_id: int, tenant_code: str, task_id: int, aliquot: str, sample_idx: int
-) -> dict:
+def process_occurrence(record: Variant, part: int, seq_id: int, task_id: int, aliquot: str, sample_idx: int) -> dict:
     """
     Processes a cnv occurrence and extracts relevant information for each sample in the pedigree.
 
@@ -61,7 +58,6 @@ def process_occurrence(
     occurrence = {
         "part": part,
         "seq_id": seq_id,
-        "tenant_code": tenant_code,
         "task_id": task_id,
         "aliquot": aliquot,
         "chromosome": record.CHROM.replace("chr", ""),

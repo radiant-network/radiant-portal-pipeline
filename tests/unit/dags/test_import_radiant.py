@@ -12,7 +12,6 @@ def test_dag_has_expected_tasks(dag_bag):
         "partitioner_group.assign_partitions",
         "partitioner_group.insert_sequencing_experiment",
         "fetch_sequencing_experiment",
-        "prepare_tenants_tables",
         "assign_priority",
         "import_part",
         "update_sequencing_experiment_deleted",

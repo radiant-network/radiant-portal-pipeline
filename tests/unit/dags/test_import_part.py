@@ -1,64 +1,7 @@
 import pytest
 
 from radiant.dags import NAMESPACE
-from radiant.dags.import_part import (
-    build_tenant_scoped_params,
-    tasks_output_processor,
-)
-
-_MULTI_TENANT_TASKS = [
-    {
-        "task_id": 1,
-        "deleted": False,
-        "experiments": [{"seq_id": 10, "tenant_code": "chop"}, {"seq_id": 11, "tenant_code": "chop"}],
-    },
-    {"task_id": 2, "deleted": False, "experiments": [{"seq_id": 20, "tenant_code": "chusj"}]},
-    {"task_id": 3, "deleted": True, "experiments": [{"seq_id": 30, "tenant_code": "chop"}]},
-]
-
-
-def _by_tenant(rows):
-    return {r["tenant_code"]: r for r in rows}
-
-
-def test_build_tenant_scoped_params_buckets_ids_per_tenant():
-    by_tenant = _by_tenant(build_tenant_scoped_params(_MULTI_TENANT_TASKS))
-
-    # Sorted by tenant_code, one payload each.
-    assert list(by_tenant) == ["chop", "chusj"]
-
-    chop = by_tenant["chop"]["parameters"]
-    assert chop["tenant_code"] == "chop"
-    assert chop["seq_ids"] == [10, 11]  # active seq_ids from task 1
-    assert chop["task_ids"] == [1]
-    assert chop["deleted_seq_ids"] == [30]  # from deleted task 3
-    assert chop["deleted_task_ids"] == [3]
-
-    chusj = by_tenant["chusj"]["parameters"]
-    assert chusj["seq_ids"] == [20]
-    assert chusj["task_ids"] == [2]
-    # No deleted rows for chusj -> [-1] fallback keeps `IN (...)` valid.
-    assert chusj["deleted_seq_ids"] == [-1]
-    assert chusj["deleted_task_ids"] == [-1]
-
-
-def test_build_tenant_scoped_params_exposes_tenant_code_as_kwarg():
-    # Each payload doubles as .expand_kwargs kwargs: top-level tenant_code drives DB routing.
-    for row in build_tenant_scoped_params(_MULTI_TENANT_TASKS):
-        assert row["tenant_code"] == row["parameters"]["tenant_code"]
-
-
-@pytest.mark.parametrize(
-    "tasks",
-    [
-        [],
-        [{"task_id": 1, "deleted": False, "experiments": []}],
-        [{"task_id": 1, "deleted": False, "experiments": None}],
-        [{"task_id": 1, "deleted": False, "experiments": [None]}],
-    ],
-)
-def test_build_tenant_scoped_params_no_experiments(tasks):
-    assert build_tenant_scoped_params(tasks) == []
+from radiant.dags.import_part import tasks_output_processor
 
 
 @pytest.fixture
@@ -78,7 +21,6 @@ def mock_results():
                 "wgs",
                 "routine",
                 "sample_1",
-                "tenant1",
                 "proband",
                 "M",
                 "affected",
@@ -97,7 +39,6 @@ def mock_results():
                 "wgs",
                 "routine",
                 "sample_2",
-                "tenant1",
                 "role_2",
                 "F",
                 "not_affected",
@@ -116,7 +57,6 @@ def mock_results():
                 "wgs",
                 "routine",
                 "sample_3",
-                "tenant1",
                 "role_3",
                 "M",
                 "affected",
@@ -142,7 +82,6 @@ def mock_descriptions():
             ("experimental_strategy",),
             ("request_priority",),
             ("aliquot",),
-            ("tenant_code",),
             ("family_role",),
             ("sex",),
             ("affected_status",),
@@ -183,9 +122,6 @@ def test_dag_contains_all_tasks(dag_bag):
         "fetch_sequencing_experiment_delta",
         "sanity_check_tasks",
         "prepare_config",
-        "build_tenant_params",
-        "extract_tenants",
-        "extract_all_tenants",
         "extract_seq_ids",
         "extract_task_ids",
         "checkpoint_after_setup",
@@ -210,14 +146,11 @@ def test_dag_contains_all_tasks(dag_bag):
         "somatic_snv_occurrence.aggregate_somatic_snv_variant_freq",
         "somatic_snv_occurrence.sanity_check_delta_somatic_snv",
         "snv_variant.sanity_check_any_snv",
-        "snv_variant.render_snv_variant_sql",
-        "snv_variant.render_snv_variant_part_sql",
         "snv_variant.insert_snv_staging_variant",
         "snv_variant.insert_snv_variant",
         "snv_variant.compute_parts",
         "snv_variant.insert_snv_variant_part",
         "snv_consequence.sanity_check_any_snv",
-        "snv_consequence.render_snv_consequence_filter_part_sql",
         "snv_consequence.import_snv_consequence",
         "snv_consequence.import_snv_consequence_filter",
         "snv_consequence.insert_snv_consequence_filter_part",
