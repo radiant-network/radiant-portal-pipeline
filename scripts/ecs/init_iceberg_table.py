@@ -8,10 +8,8 @@ logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdo
 logger = logging.getLogger(__name__)
 
 
-def main(table_name: str, mode: str = "create"):
-    if mode == "evolve":
-        initialization.evolve_table(table_name)
-    elif table_name == "database":
+def main(table_name: str):
+    if table_name == "database":
         initialization.init_database()
     elif table_name == "germline_snv_occurrence":
         initialization.create_germline_snv_occurrence_table()
@@ -40,18 +38,11 @@ if __name__ == "__main__":
         "'database', 'germline_snv_occurrence', 'snv_variant', "
         "'snv_consequence', 'germline_cnv_occurrence', 'somatic_snv_occurrence'",
     )
-    parser.add_argument(
-        "--mode",
-        choices=("create", "evolve"),
-        default="create",
-        help="'create' drops and recreates the table (destructive, the default). "
-        "'evolve' adds any column missing from the existing table and keeps its data.",
-    )
     args = parser.parse_args()
     logger.info(f"Command line arguments: {args}")
 
     try:
-        main(table_name=args.table_name, mode=args.mode)
+        main(table_name=args.table_name)
     except Exception as e:
         logger.exception(f"Error while initializing Iceberg table: {e}")
         sys.exit(1)

@@ -138,26 +138,6 @@ class InitIcebergTables(RadiantTaskK8SOperator):
         return init_database
 
     @staticmethod
-    def get_evolve_iceberg_table(radiant_namespace: str, table_name: str):
-        @task.kubernetes(
-            **dict(
-                task_id=f"evolve_{table_name}_table_k8s",
-                task_display_name=f"[K8s] Evolve {table_name} Table",
-                name=f"evolve-{table_name.replace('_', '-')}-table",
-                do_xcom_push=True,
-            )
-            | InitIcebergTables._get_k8s_context(radiant_namespace)
-        )
-        # `table_name` is passed as an argument rather than closed over: the decorated body is
-        # shipped to the pod on its own, so enclosing-scope variables are not available there.
-        def evolve_iceberg_table(table_name: str):
-            from radiant.tasks.iceberg import initialization
-
-            initialization.evolve_table(table_name)
-
-        return evolve_iceberg_table
-
-    @staticmethod
     def get_create_germline_snv_occurrence_table(radiant_namespace: str):
         @task.kubernetes(
             **dict(
