@@ -16,6 +16,7 @@ SCHEMA = merge_schemas(
         NestedField(502, "quality", FloatType(), required=False),
         NestedField(503, "filter", StringType(), required=False),
         NestedField(504, "info_hotspotallele", IntegerType(), required=False),
+        NestedField(552, "info_hotspot", BooleanType(), required=False),
         NestedField(505, "info_old_record", StringType(), required=False),
         NestedField(506, "info_baseq_rank_sum", FloatType(), required=False),
         NestedField(507, "info_excess_het", FloatType(), required=False),
@@ -39,6 +40,7 @@ SCHEMA = merge_schemas(
         NestedField(525, "info_germq", FloatType(), required=False),
         NestedField(526, "info_tlod", FloatType(), required=False),
         NestedField(527, "info_mapq", FloatType(), required=False),
+        NestedField(553, "info_aq", FloatType(), required=False),
         NestedField(528, "tumor_seq_id", IntegerType(), required=True),
         NestedField(529, "tumor_calls", ListType(241, IntegerType()), required=False),
         NestedField(530, "tumor_dp", IntegerType(), required=False),
@@ -51,6 +53,7 @@ SCHEMA = merge_schemas(
         NestedField(537, "tumor_ad_ratio", FloatType(), required=False),
         NestedField(538, "tumor_phased", BooleanType(), required=False),
         NestedField(539, "tumor_gt_status", StringType(), required=False),
+        NestedField(554, "tumor_sq", FloatType(), required=False),
         NestedField(540, "normal_seq_id", IntegerType(), required=False),
         NestedField(541, "normal_calls", ListType(261, IntegerType()), required=False),
         NestedField(542, "normal_dp", IntegerType(), required=False),
@@ -63,6 +66,7 @@ SCHEMA = merge_schemas(
         NestedField(549, "normal_ad_ratio", FloatType(), required=False),
         NestedField(550, "normal_phased", BooleanType(), required=False),
         NestedField(551, "normal_gt_status", StringType(), required=False),
+        NestedField(555, "normal_sq", FloatType(), required=False),
     ),
 )
 
@@ -116,10 +120,12 @@ def process_occurrence(
                 "info_dp": ...,
                 "info_haplotype_score": ...,
                 "info_hotspotallele": ...,
+                "info_hotspot": ...,
                 "info_cal": ...,
                 "info_germq": ...,
                 "info_tlod": ...,
                 "info_mapq": ...,
+                "info_aq": ...,
                 "tumor_seq_id": ...,
                 "tumor_calls": ...,
                 "tumor_dp": ...,
@@ -132,6 +138,7 @@ def process_occurrence(
                 "tumor_phased": ...,
                 "tumor_has_alt": ...,
                 "tumor_gt_status": ...,
+                "tumor_sq": ...,
                 "normal_seq_id": ...,
                 "normal_calls": ...,
                 "normal_dp": ...,
@@ -144,6 +151,7 @@ def process_occurrence(
                 "normal_phased": ...,
                 "normal_has_alt": ...,
                 "normal_gt_status": ...,
+                "normal_sq": ...,
             }
             ```
 
@@ -177,11 +185,13 @@ def process_occurrence(
     info_dp = info_fields.get("DP", None)
     info_haplotype_score = info_fields.get("HaplotypeScore", None)
     info_hotspotallele = info_fields.get("HotspotAllele", None)
+    info_hotspot = read_hotspot(info_fields)
     info_cal = info_fields.get("CAL", None)
     info_excess_het = info_fields.get("ExcessHet", None)
     info_germq = info_fields.get("GERMQ", None)
     info_tlod = info_fields.get("TLOD", None)
     info_mapq = info_fields.get("MAPQ", None)
+    info_aq = info_fields.get("AQ", None)
 
     tumor_exp = experiments[tumor_index]
     normal_exp = experiments[normal_index]
@@ -197,6 +207,7 @@ def process_occurrence(
     t_ad_ratio = record.gt_alt_freqs[tumor_index] if record.gt_alt_freqs[tumor_index] > 0 else None
     t_af = t_ad_ratio
     t_phased = record.gt_phases[tumor_index]
+    t_sq = record.format("SQ")[tumor_index][0] if "SQ" in record.FORMAT else None
 
     # Normal FORMAT
     n_dp = record.format("DP")[normal_index][0] if "DP" in record.FORMAT else 0
@@ -209,6 +220,7 @@ def process_occurrence(
     n_ad_ratio = record.gt_alt_freqs[normal_index] if record.gt_alt_freqs[normal_index] > 0 else None
     n_af = n_ad_ratio
     n_phased = record.gt_phases[normal_index]
+    n_sq = record.format("SQ")[normal_index][0] if "SQ" in record.FORMAT else None
 
     occurrences[tumor_exp.seq_id] = {
         # common
@@ -246,10 +258,12 @@ def process_occurrence(
         "info_dp": info_dp,
         "info_haplotype_score": info_haplotype_score,
         "info_hotspotallele": info_hotspotallele,
+        "info_hotspot": info_hotspot,
         "info_cal": info_cal,
         "info_germq": info_germq,
         "info_tlod": info_tlod,
         "info_mapq": info_mapq,
+        "info_aq": info_aq,
         # tumor FORMAT
         "tumor_seq_id": tumor_exp.seq_id,
         "tumor_calls": t_calls,
@@ -263,6 +277,7 @@ def process_occurrence(
         "tumor_phased": t_phased,
         "tumor_has_alt": t_has_alt,
         "tumor_gt_status": None,
+        "tumor_sq": t_sq,
         # normal FORMAT
         "normal_seq_id": normal_exp.seq_id,
         "normal_calls": n_calls,
@@ -276,9 +291,36 @@ def process_occurrence(
         "normal_phased": n_phased,
         "normal_has_alt": n_has_alt,
         "normal_gt_status": None,
+        "normal_sq": n_sq,
     }
 
     return occurrences
+
+
+def read_hotspot(info_fields) -> bool | None:
+    """
+    Resolve the hotspot indicator from whichever INFO key the caller emits.
+
+    DRAGEN declares `hotspot` as a lowercase Flag, so cyvcf2 yields `True` when the site is a
+    known somatic hotspot and nothing at all otherwise. GATK-era callers instead emit
+    `HotspotAllele` as an allele index, where `1` designates the (single) alternate allele.
+
+    Parameters:
+        info_fields: The `record.INFO` mapping of the variant being processed.
+
+    Returns:
+        Optional[bool]: True/False when either key is present — `hotspot` wins over
+        `HotspotAllele` — and None when neither is.
+    """
+    hotspot = info_fields.get("hotspot", None)
+    if hotspot is not None:
+        return bool(hotspot)
+
+    hotspot_allele = info_fields.get("HotspotAllele", None)
+    if hotspot_allele is not None:
+        return hotspot_allele == 1
+
+    return None
 
 
 def adjust_somatic_calls_and_zygosity(calls: list[int], zygosity: int, ad_alt: int | None) -> tuple[list[int], str]:

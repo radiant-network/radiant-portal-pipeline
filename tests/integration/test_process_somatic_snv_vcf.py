@@ -1,5 +1,7 @@
 from collections import defaultdict
 
+import pytest
+
 from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.somatic.process import commit_partitions, merge_partitions_in_place, process_task
 
@@ -71,3 +73,15 @@ def test_import_somatic_snv_vcf(
     assert variants.chromosome.unique().tolist() == ["1", "4", "12"], (
         "Unexpected chromosome values in consequences table"
     )
+
+    # FORMAT/SQ is carried per sample — the fixture seeds it on 3 records (normal is VCF column 0)
+    assert occ.tumor_sq.dropna().tolist() == pytest.approx([14.7, 9.3, 31.2]), "Unexpected tumor_sq values"
+    assert occ.normal_sq.dropna().tolist() == pytest.approx([2.1, 1.0, 0.8]), "Unexpected normal_sq values"
+
+    # INFO/AQ is seeded on 2 records
+    assert occ.info_aq.dropna().tolist() == pytest.approx([1.75, 0.5]), "Unexpected info_aq values"
+
+    # info_hotspot resolves from the DRAGEN `hotspot` Flag on one record and from
+    # `HotspotAllele=1` on another; every other record leaves it NULL
+    assert occ.info_hotspot.dropna().tolist() == [True, True], "Unexpected info_hotspot values"
+    assert occ.info_hotspotallele.dropna().tolist() == [1], "Unexpected info_hotspotallele values"
