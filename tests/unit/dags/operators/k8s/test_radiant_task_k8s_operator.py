@@ -5,6 +5,7 @@ from radiant.dags.operators.k8s import (
     RadiantTaskK8SOperator,
     _cnv_container_resources,
     _container_resources,
+    _metadata_container_resources,
     _snv_container_resources,
 )
 
@@ -57,11 +58,14 @@ def test_get_k8s_context_with_container_resources():
     assert context["container_resources"] is resources
 
 
-def test_snv_and_cnv_are_sized_separately():
-    """SNV holds three accumulator buffers at once; CNV needs a fraction of that."""
+def test_profiles_are_sized_separately():
+    """SNV holds three accumulator buffers at once; CNV needs a fraction of that; and
+    committing partitions is metadata-only, so it scales with file count, not VCF size.
+    """
     with patch.dict(os.environ, {}, clear=True):
         snv = _snv_container_resources()
         cnv = _cnv_container_resources()
+        metadata = _metadata_container_resources()
 
     assert snv.requests == {"cpu": "1", "memory": "4Gi"}
     # A CPU limit would throttle cyvcf2 and the parallel parquet writes.
@@ -69,6 +73,10 @@ def test_snv_and_cnv_are_sized_separately():
 
     assert cnv.requests == {"cpu": "1", "memory": "500Mi"}
     assert cnv.limits == {"memory": "1Gi"}
+
+    # Footer reads are sequential and network-bound, so half a core is enough.
+    assert metadata.requests == {"cpu": "500m", "memory": "1Gi"}
+    assert metadata.limits == {"memory": "2Gi"}
 
 
 def test_container_resources_profile_is_env_overridable():

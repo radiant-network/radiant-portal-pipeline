@@ -48,6 +48,19 @@ def _cnv_container_resources() -> k8s.V1ResourceRequirements:
     return _container_resources("CNV", cpu="1", memory="500Mi", memory_limit="1Gi")
 
 
+def _metadata_container_resources() -> k8s.V1ResourceRequirements:
+    """Committing partitions never touches row data: the partition filters align with the
+    tables' partition specs, so the Iceberg delete drops whole files as metadata rather
+    than rewriting them, and `add_files` reads one parquet footer at a time.
+
+    Peak therefore scales with the number of files, not the size of the VCFs -- and the
+    fan-in is what makes it non-trivial: this task is not mapped, so a single container
+    commits every file produced by every mapped extraction task in the part. Half a core
+    is enough because the footer reads are sequential and network-bound.
+    """
+    return _container_resources("METADATA", cpu="500m", memory="1Gi", memory_limit="2Gi")
+
+
 class RadiantTaskK8SOperator:
     @staticmethod
     def _get_k8s_context(radiant_namespace: str, container_resources: k8s.V1ResourceRequirements | None = None):
@@ -115,7 +128,9 @@ class ImportGermlineSNVVCF(RadiantTaskK8SOperator):
                 name="commit-partitions",
                 do_xcom_push=True,
             )
-            | ImportGermlineSNVVCF._get_k8s_context(radiant_namespace),
+            | ImportGermlineSNVVCF._get_k8s_context(
+                radiant_namespace, container_resources=_metadata_container_resources()
+            ),
         )
         def k8s_commit_partitions(table_partitions: dict[str, list[dict]]):
             from radiant.tasks.vcf.snv.germline.process import commit_partitions
