@@ -72,7 +72,7 @@ SCHEMA = merge_schemas(
 
 
 def process_occurrence(
-    record: Variant, experiments: list[Experiment], common: Common, tumor_index: int, normal_index: int
+    record: Variant, experiments: list[Experiment], common: Common, tumor_index: int, normal_index: int | None
 ) -> dict:
     """
     Processes a somatic variant occurrence and extracts relevant information.
@@ -82,7 +82,7 @@ def process_occurrence(
         experiments (list[Experiment]): A list of experiments corresponding to the samples in the VCF, where the tumor sample is at `tumor_index` and the normal sample is at `normal_index`.
         common (Common): A `Common` object containing shared attributes for the variant, such as locus and chromosome.
         tumor_index (int): The index of the tumor sample in the VCF record's samples.
-        normal_index (int): The index of the normal sample in the VCF record's samples
+        normal_index (int | None): The index of the normal sample in the VCF record's samples, or `None` for a tumor-only analysis, in which case every `normal_*` value is `None`.
 
     Returns:
         dict: A dictionary containing the processed occurrence information for the somatic variant, structured as follows:
@@ -194,7 +194,7 @@ def process_occurrence(
     info_aq = info_fields.get("AQ", None)
 
     tumor_exp = experiments[tumor_index]
-    normal_exp = experiments[normal_index]
+    normal_exp = experiments[normal_index] if normal_index is not None else None
 
     # Tumor FORMAT
     t_dp = record.format("DP")[tumor_index][0] if "DP" in record.FORMAT else 0
@@ -209,18 +209,23 @@ def process_occurrence(
     t_phased = record.gt_phases[tumor_index]
     t_sq = record.format("SQ")[tumor_index][0] if "SQ" in record.FORMAT else None
 
-    # Normal FORMAT
-    n_dp = record.format("DP")[normal_index][0] if "DP" in record.FORMAT else 0
-    n_ad_ref = record.gt_ref_depths[normal_index] if record.gt_ref_depths[normal_index] > 0 else None
-    n_ad_alt = record.gt_alt_depths[normal_index] if record.gt_alt_depths[normal_index] > 0 else None
-    n_calls = calls_without_phased(record, normal_index)
-    n_calls, n_zygosity = adjust_somatic_calls_and_zygosity(n_calls, record.gt_types[normal_index], n_ad_alt)
-    n_has_alt = 1 in n_calls if n_calls is not None else None
-    n_ad_total = record.gt_depths[normal_index] if record.gt_depths[normal_index] > 0 else None
-    n_ad_ratio = record.gt_alt_freqs[normal_index] if record.gt_alt_freqs[normal_index] > 0 else None
-    n_af = n_ad_ratio
-    n_phased = record.gt_phases[normal_index]
-    n_sq = record.format("SQ")[normal_index][0] if "SQ" in record.FORMAT else None
+    # Normal FORMAT — absent for a tumor-only analysis
+    if normal_index is None:
+        n_dp = n_ad_ref = n_ad_alt = n_calls = n_has_alt = None
+        n_ad_total = n_ad_ratio = n_af = n_zygosity = n_phased = n_sq = None
+    else:
+        n_dp = record.format("DP")[normal_index][0] if "DP" in record.FORMAT else 0
+        n_dp = n_dp if n_dp > 0 else None
+        n_ad_ref = record.gt_ref_depths[normal_index] if record.gt_ref_depths[normal_index] > 0 else None
+        n_ad_alt = record.gt_alt_depths[normal_index] if record.gt_alt_depths[normal_index] > 0 else None
+        n_calls = calls_without_phased(record, normal_index)
+        n_calls, n_zygosity = adjust_somatic_calls_and_zygosity(n_calls, record.gt_types[normal_index], n_ad_alt)
+        n_has_alt = 1 in n_calls if n_calls is not None else None
+        n_ad_total = record.gt_depths[normal_index] if record.gt_depths[normal_index] > 0 else None
+        n_ad_ratio = record.gt_alt_freqs[normal_index] if record.gt_alt_freqs[normal_index] > 0 else None
+        n_af = n_ad_ratio
+        n_phased = record.gt_phases[normal_index]
+        n_sq = record.format("SQ")[normal_index][0] if "SQ" in record.FORMAT else None
 
     occurrences[tumor_exp.seq_id] = {
         # common
@@ -279,9 +284,9 @@ def process_occurrence(
         "tumor_gt_status": None,
         "tumor_sq": t_sq,
         # normal FORMAT
-        "normal_seq_id": normal_exp.seq_id,
+        "normal_seq_id": normal_exp.seq_id if normal_exp is not None else None,
         "normal_calls": n_calls,
-        "normal_dp": n_dp if n_dp > 0 else None,
+        "normal_dp": n_dp,
         "normal_ad_ref": n_ad_ref,
         "normal_ad_alt": n_ad_alt,
         "normal_ad_total": n_ad_total,
