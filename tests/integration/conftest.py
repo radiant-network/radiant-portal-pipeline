@@ -36,6 +36,10 @@ RESOURCES_DIR = CURRENT_DIR.parent / "resources" / "integration"
 
 RADIANT_DIR = CURRENT_DIR.parent.parent / "radiant"
 
+# Tenants used by the fixtures that need real per-tenant databases.
+TENANT_CODES = ("chusj", "chop")
+TENANT_CODE = TENANT_CODES[0]
+
 
 class StarRocksDatabase:
     def __init__(self, host, query_port, user, password, database):
@@ -69,6 +73,33 @@ def starrocks_database(starrocks_instance, random_test_id):
             database=test_db_name,
         )
         cursor.execute(f"DROP DATABASE IF EXISTS {test_db_name};")
+        connection.commit()
+        return
+
+
+@pytest.fixture(scope="session")
+def starrocks_tenant_database(starrocks_instance, random_test_id):
+    """Real databases for TENANT_CODES, so per-tenant SQL is exercised across database boundaries.
+
+    Yields the RADIANT_TENANT_DB_TEMPLATE value.
+    """
+    template = f"{STARROCKS_DATABASE_PREFIX}_{random_test_id}_{{tenant}}"
+
+    with (
+        pymysql.connect(
+            host=starrocks_instance.host,
+            port=int(starrocks_instance.query_port),
+            user=starrocks_instance.user,
+            password=starrocks_instance.password,
+        ) as connection,
+        connection.cursor() as cursor,
+    ):
+        for tenant in TENANT_CODES:
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS {template.format(tenant=tenant)};")
+        connection.commit()
+        yield template
+        for tenant in TENANT_CODES:
+            cursor.execute(f"DROP DATABASE IF EXISTS {template.format(tenant=tenant)};")
         connection.commit()
         return
 

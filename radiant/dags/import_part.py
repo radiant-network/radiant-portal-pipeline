@@ -180,8 +180,8 @@ def import_part():
 
     @task.short_circuit(task_id="extract_all_tenants", task_display_name="[PyOp] Extract All Tenants")
     def extract_all_tenants() -> list[str]:
-        # Every tenant known to the platform (not just this batch). The shared variant catalog pools
-        # frequencies across all of these, so it reflects the current state of all tenants.
+        # Every tenant known to the platform (not just this batch). The shared consequence filter
+        # pools loci across all of these, so it reflects the current state of all tenants.
         from airflow.hooks.base import BaseHook
         from airflow.operators.python import get_current_context
 
@@ -455,15 +455,6 @@ def import_part():
         )
 
     with TaskGroup(group_id="snv_variant") as tg_variants:
-        variant_sql = render_pooled_sql.override(
-            task_id="render_snv_variant_sql",
-            task_display_name="[PyOp] Render Pooled SNV Variant SQL",
-        )("radiant/snv_variant_insert.sql", all_tenants)
-        variant_part_sql = render_pooled_sql.override(
-            task_id="render_snv_variant_part_sql",
-            task_display_name="[PyOp] Render Pooled SNV Variant Part SQL",
-        )("radiant/snv_variant_part_insert_part.sql", all_tenants)
-
         insert_snv_staging_variants = RadiantStarRocksOperator(
             task_id="insert_snv_staging_variant",
             task_display_name="[StarRocks] Insert Staging SNV Variants",
@@ -472,13 +463,15 @@ def import_part():
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
-        insert_snv_variants_with_freqs = RadiantStarRocksOperator(
+        insert_snv_variants_with_freqs = RadiantStarRocksOperator.partial(
             task_id="insert_snv_variant",
             task_display_name="[StarRocks] Insert SNV Variants",
-            sql=variant_sql,
+            sql="./sql/radiant/snv_variant_insert.sql",
+            map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
-        )
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
 
         @task(task_id="compute_parts", trigger_rule=TriggerRule.NONE_FAILED)
         def compute_part(params):
@@ -492,14 +485,16 @@ def import_part():
 
         _compute_part = compute_part()
 
-        insert_snv_variants_part = RadiantStarRocksOperator(
+        insert_snv_variants_part = RadiantStarRocksOperator.partial(
             task_id="insert_snv_variant_part",
-            sql=variant_part_sql,
+            sql="./sql/radiant/snv_variant_part_insert_part.sql",
             task_display_name="[StarRocks] Insert SNV Variants Part",
+            map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             parameters=_compute_part,
             trigger_rule=TriggerRule.ALL_SUCCESS,
-        )
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
 
         (
             sanity_check_any_snv(tasks=tasks)
@@ -623,9 +618,9 @@ def import_part():
         >> tg_consequences
         >> checkpoint_variants
     )
-    # We re-compute variants frequencies across all tenants, therefore we need
-    # the list of all tenants in the system to be loaded before importing variants.
-    checkpoint_after_exomiser >> all_tenants >> tg_variants
+    # The consequence filter is still pooled across every tenant, therefore we need the list of all
+    # tenants in the system to be loaded before importing consequences.
+    checkpoint_after_exomiser >> all_tenants >> tg_consequences
 
     # Final Phase: Update Sequencing Experiments (deletions and updates)
     checkpoint_variants >> [delete_sequencing_experiments, update_sequencing_experiments]

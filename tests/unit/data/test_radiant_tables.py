@@ -14,6 +14,7 @@ def test_no_tenant_routes_everything_to_shared_database():
     # Legacy single-database behaviour: per-tenant tables fall back to the shared database.
     assert mapping["starrocks_germline_snv_occurrence"] == "radiant.germline__snv__occurrence"
     assert mapping["starrocks_snv_variant"] == "radiant.snv__variant"
+    assert mapping["starrocks_snv_staging_variant"] == "radiant.snv__staging_variant"
 
 
 def test_tenant_routes_per_tenant_tables_to_tenant_database():
@@ -22,9 +23,10 @@ def test_tenant_routes_per_tenant_tables_to_tenant_database():
     assert mapping["starrocks_germline_snv_occurrence"] == "chop_tenant.germline__snv__occurrence"
     assert mapping["starrocks_somatic_snv_occurrence"] == "chop_tenant.somatic__snv__occurrence"
     assert mapping["starrocks_exomiser"] == "chop_tenant.exomiser"
-    # ... while base tables (including the global variant catalog) stay in RADIANT_DATABASE.
-    assert mapping["starrocks_snv_variant"] == "radiant.snv__variant"
-    assert mapping["starrocks_snv_variant_partitioned"] == "radiant.snv__variant_partitioned"
+    assert mapping["starrocks_snv_variant"] == "chop_tenant.snv__variant"
+    assert mapping["starrocks_snv_variant_partitioned"] == "chop_tenant.snv__variant_partitioned"
+    # ... while base tables stay in RADIANT_DATABASE.
+    assert mapping["starrocks_snv_staging_variant"] == "radiant.snv__staging_variant"
     assert mapping["starrocks_staging_sequencing_experiment"] == "radiant.staging_sequencing_experiment"
 
 

@@ -19,8 +19,6 @@ _BASE_TABLES = [
     "staging_sequencing_experiment_delta",
     "snv_tmp_variant",
     "snv_staging_variant",
-    "snv_variant",
-    "snv_variant_partitioned",
     "variant_lookup",
     "staging_exomiser",
     "germline_snv_staging_variant_frequency",
