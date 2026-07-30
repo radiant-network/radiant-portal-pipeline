@@ -53,15 +53,34 @@ def test_experiment_list_order_does_not_affect_result():
 
 
 def test_missing_tumor_raises():
+    """A lone normal aliquot is rejected, never read as tumor-only."""
     experiments = [make_experiment("SAMPLE_N", "normal")]
-    with pytest.raises(ValueError, match="tumor"):
+    with pytest.raises(ValueError, match="expected 'tumoral'"):
         get_somatic_indexes(experiments, ["SAMPLE_N"])
 
 
-def test_missing_normal_raises():
+def test_single_tumoral_aliquot_returns_none_normal():
+    """A task with exactly one tumoral aliquot is tumor-only."""
     experiments = [make_experiment("SAMPLE_T", "tumoral")]
-    with pytest.raises(ValueError, match="normal"):
-        get_somatic_indexes(experiments, ["SAMPLE_T"])
+    assert get_somatic_indexes(experiments, ["SAMPLE_T"]) == (0, None)
+
+
+@pytest.mark.parametrize("histology", ["normal", "metastasis", "", None])
+def test_single_non_tumoral_aliquot_raises(histology):
+    """Only `tumoral` qualifies as tumor-only — anything else is malformed input."""
+    experiments = [make_experiment("SAMPLE_X", histology)]
+    with pytest.raises(ValueError, match="expected 'tumoral'"):
+        get_somatic_indexes(experiments, ["SAMPLE_X"])
+
+
+def test_two_aliquots_missing_normal_still_raises():
+    """Two aliquots with no normal is a malformed pair, not a tumor-only task."""
+    experiments = [
+        make_experiment("SAMPLE_T1", "tumoral"),
+        make_experiment("SAMPLE_T2", "tumoral"),
+    ]
+    with pytest.raises(ValueError, match="Could not find both tumor and normal"):
+        get_somatic_indexes(experiments, ["SAMPLE_T1", "SAMPLE_T2"])
 
 
 def test_empty_experiments_raises():
@@ -101,6 +120,14 @@ def test_returns_tuple_of_two_ints():
     assert isinstance(result, tuple)
     assert len(result) == 2
     assert all(isinstance(i, int) for i in result)
+
+
+def test_tumor_only_returns_int_and_none():
+    result = get_somatic_indexes([make_experiment("SAMPLE_T", "tumoral")], ["SAMPLE_T"])
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+    assert isinstance(result[0], int)
+    assert result[1] is None
 
 
 def _somatic_task(task_id: int, filepath: str) -> dict:
