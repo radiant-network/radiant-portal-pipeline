@@ -57,6 +57,17 @@ def process_task(
     if not vcf.samples:
         raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
 
+    # `set_samples` narrows to the intersection and only warns about the rest, so an aliquot the
+    # VCF does not carry would otherwise be dropped silently — turning a tumor-normal task handed
+    # a tumor-only VCF into a tumor-only analysis.
+    missing_aliquots = [exp.aliquot for exp in task.experiments if exp.aliquot not in vcf.samples]
+    if missing_aliquots:
+        raise ValueError(
+            f"Task {task.task_id} declares aliquots {missing_aliquots} that are absent from "
+            f"{task.vcf_filepath}, whose samples are {vcf_file_samples} — the task and the VCF "
+            f"disagree on the analysis."
+        )
+
     # Here we need to sort the experiments in the same order as the samples appears
     # in the VCF file. This is required because each row contains both the tumor and normal information.
     # Therefore, we need to make sure the index match the order in which the samples appear in the file.

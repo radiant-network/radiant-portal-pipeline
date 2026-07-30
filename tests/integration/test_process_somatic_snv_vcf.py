@@ -174,3 +174,50 @@ def test_import_somatic_snv_tumor_only_task_on_tumor_normal_vcf_raises(
 
     with pytest.raises(ValueError, match="likely a tumor-normal task with a missing or mismatched normal"):
         process_task(task=task, namespace=setup_iceberg_namespace, catalog_properties=iceberg_catalog_properties)
+
+
+def test_import_somatic_snv_tumor_normal_task_on_tumor_only_vcf_raises(
+    setup_iceberg_namespace,
+    iceberg_catalog_properties,
+):
+    """The mirror case: a tumor-normal task pointed at a tumor-only VCF.
+
+    `set_samples` narrows to the intersection and only warns about the rest, so without an explicit
+    check the normal experiment is dropped and the task is silently ingested as tumor-only.
+    """
+    task = RadiantSomaticAnnotationTask(
+        task_id=4,
+        part=1,
+        analysis_type="somatic",
+        deleted=False,
+        experiments=[
+            Experiment(
+                seq_id=1,
+                patient_id=1,
+                aliquot="TCR002361_SRX1091647-T",
+                tenant_code="tenant1",
+                family_role="proband",
+                affected_status="affected",
+                sex="female",
+                experimental_strategy="wgs",
+                request_priority="routine",
+                histology_type="tumoral",
+            ),
+            Experiment(
+                seq_id=2,
+                patient_id=1,
+                aliquot="TCR002361_SRX1091646-N",
+                tenant_code="tenant1",
+                family_role="proband",
+                affected_status="affected",
+                sex="female",
+                experimental_strategy="wgs",
+                request_priority="routine",
+                histology_type="normal",
+            ),
+        ],
+        vcf_filepath="tests/resources/test_somatic_snv_tumor_only.vcf",
+    )
+
+    with pytest.raises(ValueError, match="the task and the VCF disagree on the analysis"):
+        process_task(task=task, namespace=setup_iceberg_namespace, catalog_properties=iceberg_catalog_properties)
