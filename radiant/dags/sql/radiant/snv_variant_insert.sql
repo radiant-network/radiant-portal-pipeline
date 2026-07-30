@@ -1,58 +1,21 @@
 INSERT OVERWRITE {{ mapping.starrocks_snv_variant }}
-WITH germline_freq AS (
-    SELECT locus_id,
-           SUM(pc_wgs)              AS pc_wgs,
-           SUM(pc_wgs_affected)     AS pc_wgs_affected,
-           SUM(pc_wgs_not_affected) AS pc_wgs_not_affected,
-           SUM(pc_wxs)              AS pc_wxs,
-           SUM(pc_wxs_affected)     AS pc_wxs_affected,
-           SUM(pc_wxs_not_affected) AS pc_wxs_not_affected
-    FROM (
-        {% for t in tenants %}
-        SELECT locus_id, pc_wgs, pc_wgs_affected, pc_wgs_not_affected, pc_wxs, pc_wxs_affected, pc_wxs_not_affected
-        FROM {{ per_tenant_mapping(t).starrocks_germline_snv_variant_frequency }}
-        {% if not loop.last %}UNION ALL{% endif %}
-        {% endfor %}
-    ) g
-    GROUP BY locus_id
-),
-germline_pn AS (
-    SELECT SUM(pn_wgs)              AS pn_wgs,
-           SUM(pn_wgs_affected)     AS pn_wgs_affected,
-           SUM(pn_wgs_not_affected) AS pn_wgs_not_affected,
-           SUM(pn_wxs)              AS pn_wxs,
-           SUM(pn_wxs_affected)     AS pn_wxs_affected,
-           SUM(pn_wxs_not_affected) AS pn_wxs_not_affected
-    FROM (
-        {% for t in tenants %}
-        SELECT ANY_VALUE(pn_wgs) AS pn_wgs, ANY_VALUE(pn_wgs_affected) AS pn_wgs_affected,
-               ANY_VALUE(pn_wgs_not_affected) AS pn_wgs_not_affected, ANY_VALUE(pn_wxs) AS pn_wxs,
-               ANY_VALUE(pn_wxs_affected) AS pn_wxs_affected, ANY_VALUE(pn_wxs_not_affected) AS pn_wxs_not_affected
-        FROM {{ per_tenant_mapping(t).starrocks_germline_snv_variant_frequency }}
-        {% if not loop.last %}UNION ALL{% endif %}
-        {% endfor %}
-    ) g
-),
-somatic_freq AS (
-    SELECT locus_id, SUM(pc_tn_wgs) AS pc_tn_wgs, SUM(pc_tn_wxs) AS pc_tn_wxs
-    FROM (
-        {% for t in tenants %}
-        SELECT locus_id, pc_tn_wgs, pc_tn_wxs
-        FROM {{ per_tenant_mapping(t).starrocks_somatic_snv_variant_frequency }}
-        {% if not loop.last %}UNION ALL{% endif %}
-        {% endfor %}
-    ) s
-    GROUP BY locus_id
+WITH germline_pn AS (
+    SELECT ANY_VALUE(pn_wgs)              AS pn_wgs,
+           ANY_VALUE(pn_wgs_affected)     AS pn_wgs_affected,
+           ANY_VALUE(pn_wgs_not_affected) AS pn_wgs_not_affected,
+           ANY_VALUE(pn_wxs)              AS pn_wxs,
+           ANY_VALUE(pn_wxs_affected)     AS pn_wxs_affected,
+           ANY_VALUE(pn_wxs_not_affected) AS pn_wxs_not_affected
+    FROM {{ mapping.starrocks_germline_snv_variant_frequency }}
 ),
 somatic_pn AS (
-    SELECT SUM(pn_tn_wgs) AS pn_tn_wgs, SUM(pn_tn_wxs) AS pn_tn_wxs
-    FROM (
-        {% for t in tenants %}
-        SELECT ANY_VALUE(pn_tn_wgs) AS pn_tn_wgs, ANY_VALUE(pn_tn_wxs) AS pn_tn_wxs
-        FROM {{ per_tenant_mapping(t).starrocks_somatic_snv_variant_frequency }}
-        {% if not loop.last %}UNION ALL{% endif %}
-        {% endfor %}
-    ) s
+    SELECT ANY_VALUE(pn_tn_wgs) AS pn_tn_wgs, ANY_VALUE(pn_tn_wxs) AS pn_tn_wxs
+    FROM {{ mapping.starrocks_somatic_snv_variant_frequency }}
+),
+tenant_loci AS (
+    SELECT locus_id FROM {{ mapping.starrocks_germline_snv_variant_frequency }}
+    UNION
+    SELECT locus_id FROM {{ mapping.starrocks_somatic_snv_variant_frequency }}
 )
 SELECT
     v.locus_id,
@@ -109,5 +72,6 @@ SELECT
     v.transcript_id,
     v.omim_inheritance_code
 FROM {{ mapping.starrocks_snv_staging_variant }} v
-LEFT JOIN germline_freq gf ON gf.locus_id = v.locus_id
-LEFT JOIN somatic_freq sf ON sf.locus_id = v.locus_id
+LEFT SEMI JOIN tenant_loci tl ON tl.locus_id = v.locus_id
+LEFT JOIN {{ mapping.starrocks_germline_snv_variant_frequency }} gf ON gf.locus_id = v.locus_id
+LEFT JOIN {{ mapping.starrocks_somatic_snv_variant_frequency }} sf ON sf.locus_id = v.locus_id

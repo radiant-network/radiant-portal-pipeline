@@ -92,8 +92,6 @@ STARROCKS_RADIANT_BASE_MAPPING = {
     "starrocks_snv_consequence_filter": "snv__consequence_filter",
     "starrocks_snv_consequence_filter_partitioned": "snv__consequence_filter_partitioned",
     "starrocks_snv_tmp_variant": "snv__tmp_variant",
-    "starrocks_snv_variant": "snv__variant",
-    "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
     "starrocks_snv_staging_variant": "snv__staging_variant",
     # Tenant partitioned staging tables
     "starrocks_staging_exomiser": "raw_exomiser",
@@ -106,6 +104,8 @@ STARROCKS_RADIANT_PER_TENANT_MAPPING = {
     "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
     "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
     "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
+    "starrocks_snv_variant": "snv__variant",
+    "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
     "starrocks_somatic_snv_occurrence": "somatic__snv__occurrence",
     "starrocks_somatic_snv_variant_frequency": "somatic__snv__variant_frequency",
 }
