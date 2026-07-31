@@ -67,7 +67,8 @@ VCF file → cyvcf2 parse
 
 - `import_radiant.py` — main scheduled import. Fetches the **sequencing-experiment delta** from StarRocks (`RadiantStarRocksOperator` + an `output_processor` that maps SQL rows → pydantic models), assigns each experiment to a partition (`SequencingExperimentPartitionAssigner`), inserts new experiments, then fires one `import_part` run per partition via `TriggerDagRunOperator`. Only new/changed experiments are processed — this is the incremental-loading mechanism (design: `design/SJRA-1187-*.md`).
 - `import_part.py` — processes one partition: VCF extraction → Iceberg → StarRocks.
-- `import_germline_snv_vcf.py`, `import_open_data.py`, `import_brim.py` — additional sources.
+- `import_snv_vcf.py` — sub-DAG triggered by `import_part`, doing all SNV → Iceberg extraction. **Germline and somatic both live here on purpose**: each fans out one mapped writer per annotation task (pool `import_vcf`), and both fan into a *single* `merge_commits` → `commit_partitions`. `snv_variant` and `snv_consequence` are written by both flows, so one committer per part is what keeps their Iceberg commits from racing (design: `design/SJRA-1751-snv-vcf-ingestion-fan-out.md`).
+- `import_open_data.py`, `import_brim.py` — additional sources.
 - `init_iceberg_tables.py`, `init_starrocks_tables.py`, `init-qa-clinical-data.py` — one-time setup.
 - `diagnostics.py` — manual ops DAG (e.g. StarRocks DNS TTL checks).
 - Design rationale for major features lives in `design/SJRA-*.md`.
@@ -91,7 +92,7 @@ Tables are **not** hard-coded in SQL. DAGs set `template_searchpath` to `radiant
 
 ### StarRocks operator patterns
 
-`radiant/tasks/starrocks/operator.py` — long-running loads run as StarRocks **async tasks** (`SUBMIT TASK`), then a **deferrable** `StarRocksTaskCompleteTrigger` (`trigger.py`) polls for completion without holding a worker slot. `SubmitTaskOptions` controls timeout/poll/spill. Key operators: `RadiantStarRocksOperator` (query + optional async submit + `output_processor`), `RadiantStarRocksPartitionSwapOperator` / `SwapPartition` (atomic partition replace for idempotent reloads), `RadiantLoadExomiserOperator`. Inserts serialize through the `starrocks_insert_pool` Airflow pool.
+`radiant/tasks/starrocks/operator.py` — long-running loads run as StarRocks **async tasks** (`SUBMIT TASK`), then a **deferrable** `StarRocksTaskCompleteTrigger` (`trigger.py`) polls for completion without holding a worker slot. `SubmitTaskOptions` controls timeout/poll/spill. Key operators: `RadiantStarRocksOperator` (query + optional async submit + `output_processor`), `RadiantStarRocksPartitionSwapOperator` / `SwapPartition` (atomic partition replace for idempotent reloads), `RadiantLoadExomiserOperator`. Inserts serialize via `max_active_tis_per_dagrun=1` on the mapped operators plus the serial `>>` chains in `import_part.py` — note `STARROCKS_INSERT_POOL` is declared in `operator.py` but never referenced, so no pool is actually involved.
 
 ### Data QA (dbt) — separate from pytest
 

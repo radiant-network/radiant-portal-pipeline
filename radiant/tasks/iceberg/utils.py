@@ -1,12 +1,13 @@
 import itertools
 import logging
+import random
 import time
 import uuid
 from collections.abc import Iterable, Iterator
 
 import pyarrow as pa
 import pyarrow.parquet as pq
-from pyiceberg.catalog import Table
+from pyiceberg.catalog import Table, load_catalog
 from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import And, EqualTo
 from pyiceberg.io import FileIO
@@ -42,7 +43,22 @@ def merge_schemas(schema1: Schema, schema2: Schema):
     return Schema(*appended_fields)
 
 
-def commit_files(table: Table, partition_to_commit: list[PartitionCommit]):
+def _partition_filter_expr(partition: PartitionCommit):
+    """Build the `AND`-ed equality predicate selecting a single partition.
+
+    Raises:
+        ValueError: If the partition filter is empty.
+    """
+    filter_expr = None
+    for col, val in partition.partition_filter.items():
+        expr = EqualTo(col, val)
+        filter_expr = expr if filter_expr is None else And(filter_expr, expr)
+    if filter_expr is None:
+        raise ValueError(f"Partition filter {partition.partition_filter} must contain at least one key-value pair.")
+    return filter_expr
+
+
+def commit_files(table: Table, partition_to_commit: list[PartitionCommit], max_retries: int = 20):
     """
     Commit all written Parquet files to the Iceberg table using overwrite mode.
 
@@ -54,35 +70,48 @@ def commit_files(table: Table, partition_to_commit: list[PartitionCommit]):
         logger.info(f"No partitions to commit for table {table.name()} partition filter")
         return
 
-    # Create filter expression for multi-column partition
-    table.refresh()
-    tx = table.transaction()
-    for partition in partition_to_commit:
-        filter_expr = None
-        for col, val in partition.partition_filter.items():
-            expr = EqualTo(col, val)
-            filter_expr = expr if filter_expr is None else And(filter_expr, expr)
-        if filter_expr is None:
-            raise ValueError(
-                f"Partition filter {partition.partition_filter} must contain at least one key-value pair."
-            )
-        tx.delete(filter_expr)
-        if partition.parquet_files:
-            tx.add_files(partition.parquet_files)
-
-    max_retries = 20
-    while max_retries > 0:
+    for attempt in range(max_retries):
+        # The transaction has to be rebuilt on every attempt. Staging the updates captures an
+        # `AssertRefSnapshotId` requirement against the snapshot current at that moment, so
+        # re-committing the same transaction resends a stale assertion and fails identically
+        # every time -- a conflict can only be absorbed by re-staging against a fresh snapshot.
+        table.refresh()
+        tx = table.transaction()
+        for partition in partition_to_commit:
+            tx.delete(_partition_filter_expr(partition))
+            if partition.parquet_files:
+                tx.add_files(partition.parquet_files)
         try:
             tx.commit_transaction()
             logger.info("Successfully overwrite partitions")
-            break
+            return
         except CommitFailedException as e:
-            max_retries -= 1
-            logger.info(f"Commit failed: {e}. Retries left: {max_retries}")
-            time.sleep(1)
-            if max_retries <= 0:
-                logger.error("Failed after 10 retries. Giving up.")
-                raise e
+            # Retrying is safe because the commit is idempotent: the filters align with the
+            # tables' partition specs, so the delete drops whole files as metadata and
+            # `add_files` re-attaches the same fixed file list.
+            logger.info(f"Commit failed: {e}. Attempt {attempt + 1}/{max_retries}")
+            if attempt + 1 >= max_retries:
+                logger.error(f"Failed after {max_retries} attempts. Giving up.")
+                raise
+            time.sleep(min(2**attempt, 30) + random.uniform(0, 1))
+
+
+def commit_partitions(table_partitions: dict[str, list[dict]], iceberg_catalog_properties: dict | None = None):
+    """Commit every table's accumulated partitions, one Iceberg transaction per table.
+
+    Shared by the germline and somatic SNV flows so that a single task can commit the files
+    produced by both: `snv_variant` and `snv_consequence` are written by each flow, and one
+    committer per part is what keeps their commits from racing each other.
+    """
+    catalog = load_catalog(**(iceberg_catalog_properties or {}))
+    for table_name, partitions in table_partitions.items():
+        if not partitions:
+            continue
+        table = catalog.load_table(table_name)
+        parts = [PartitionCommit.model_validate(pc) for pc in partitions]
+        logger.info(f"🔁 Starting commit for table {table_name}")
+        commit_files(table, parts)
+        logger.info(f"✅ Changes committed to table {table_name}")
 
 
 def dataframe_to_data_files(

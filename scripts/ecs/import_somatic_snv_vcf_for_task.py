@@ -1,37 +1,32 @@
 import argparse
+import json
 import logging
 import os
 import sys
 
-from radiant.tasks.utils import download_json_from_s3
-from radiant.tasks.vcf.snv.somatic.process import import_somatic_snv
+from radiant.tasks.vcf.snv.somatic.process import create_parquet_files
 
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
 
 
-def main(tasks: list[dict]):
+def main(task: dict):
     namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
-    import_somatic_snv(tasks, namespace)
+    print(json.dumps(create_parquet_files(task, namespace)))
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Tasks from an S3 JSON file")
-
-    parser.add_argument(
-        "--tasks",
-        required=True,
-        help="S3 path to a JSON file containing the Somatic SNV files",
-    )
+    parser = argparse.ArgumentParser(description="Import Somatic SNV VCF for task")
+    parser.add_argument("--task", required=True, help="Task JSON string")
     args = parser.parse_args()
-    logger.info(f"Received argument --tasks={args.tasks}")
+    logger.info(f"Command line arguments: {args}")
 
-    local_tmp_path = "/tmp/tasks.json"
+    task = json.loads(args.task)
 
     try:
-        tasks = download_json_from_s3(args.tasks, local_tmp_path, logger)
-        logger.info(f"Downloaded tasks: {tasks}")
-        main(tasks)
+        main(task)
     except Exception as e:
-        logger.exception(f"Error while processing tasks: {e}")
+        # Exiting non-zero is what makes the ECS task fail: without it a failed extraction is
+        # marked successful and its partitions are silently missing from the commit.
+        logger.exception(f"Error while processing task: {e}")
         sys.exit(1)
