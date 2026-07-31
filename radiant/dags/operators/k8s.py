@@ -35,6 +35,9 @@ def _snv_container_resources() -> k8s.V1ResourceRequirements:
     """SNV extraction keeps three TableAccumulator buffers alive at once (occurrence,
     variant, consequence), each growing to PARQUET_FILE_SIZE_MB before it flushes, plus
     a transient copy of the buffer on every flush -- so a trio WGS VCF needs several GB.
+
+    That floor holds however small the VCF is, so a constrained environment can lower it
+    with ``RADIANT_PARQUET_FILE_SIZE_MB`` instead of raising the memory here.
     """
     return _container_resources("SNV", cpu="1", memory="4Gi", memory_limit="6Gi")
 
@@ -88,6 +91,7 @@ class RadiantTaskK8SOperator:
                 "RADIANT_ICEBERG_NAMESPACE": radiant_namespace,
                 "PYTHONPATH": os.getenv("RADIANT_TASK_OPERATOR_PYTHONPATH"),
                 "LD_LIBRARY_PATH": os.getenv("RADIANT_TASK_OPERATOR_LD_LIBRARY_PATH"),
+                "RADIANT_PARQUET_FILE_SIZE_MB": os.getenv("RADIANT_PARQUET_FILE_SIZE_MB"),
             }
             | iceberg_env_vars,
             **resources,

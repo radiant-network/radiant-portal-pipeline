@@ -1,5 +1,6 @@
 import itertools
 import logging
+import os
 import uuid
 
 import pyarrow as pa
@@ -16,6 +17,26 @@ PARQUET_FILE_SIZE_MB = 500  # Keep this value slightly lower than size of
 # TableProperties.WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT,
 # otherwise there is a risk to write small parquet files.
 MAX_BUFFERED_ROWS = 10000
+
+
+def resolve_parquet_file_size_mb() -> int:
+    """Resolve the buffer flush threshold, overridable via ``RADIANT_PARQUET_FILE_SIZE_MB``.
+
+    The threshold sets the memory floor for an extraction task, independently of how small the
+    VCF is: a buffer flushes only once it reaches this size, ``merge_table`` briefly holds both
+    the old and the concatenated copy, and three buffers are live at once (occurrence, variant,
+    consequence). At the 500MB default that is several GB, which is more than a local
+    single-node cluster can give each of several mapped writers.
+
+    Lower it *only* for local/dev runs. The default is deliberately just under Iceberg's
+    ``WRITE_TARGET_FILE_SIZE_BYTES_DEFAULT`` (see above), so reducing it in a real deployment
+    trades memory for a lot of small parquet files.
+
+    An empty value counts as unset: the KubernetesPodOperator propagates env vars it was given
+    as ``None``, and the container then sees an empty string rather than nothing at all.
+    """
+    raw = os.getenv("RADIANT_PARQUET_FILE_SIZE_MB")
+    return int(raw) if raw else PARQUET_FILE_SIZE_MB
 
 
 class TableAccumulator:
@@ -40,7 +61,7 @@ class TableAccumulator:
         table: Table,
         partition_filter: dict = None,
         max_buffered_rows: int = MAX_BUFFERED_ROWS,
-        parquet_file_size_mb: int = PARQUET_FILE_SIZE_MB,
+        parquet_file_size_mb: int | None = None,
     ):
         """
         Initialize the TableAccumulator.
@@ -49,7 +70,10 @@ class TableAccumulator:
             table (Table): The target Iceberg table instance.
             partition_filter (dict, optional): Partition key-value pairs to overwrite.
             max_buffered_rows (int): Maximum number of rows to buffer before merging.
-            parquet_file_size_mb (int): Parquet file size threshold in MB for writing.
+            parquet_file_size_mb (int, optional): Parquet file size threshold in MB for writing.
+                Defaults to :func:`resolve_parquet_file_size_mb`, i.e. ``RADIANT_PARQUET_FILE_SIZE_MB``
+                if set, otherwise ``PARQUET_FILE_SIZE_MB``. Resolved here rather than as a default
+                argument so the env var is read per instance instead of once at import.
         """
         self.table = table
         self.schema = self.remove_field_ids(table.schema().as_arrow())
@@ -58,7 +82,9 @@ class TableAccumulator:
         self.rows = []
         self.accumulated_pa_table = None
         self.max_buffered_rows = max_buffered_rows
-        self.parquet_file_size_mb = parquet_file_size_mb
+        self.parquet_file_size_mb = (
+            parquet_file_size_mb if parquet_file_size_mb is not None else resolve_parquet_file_size_mb()
+        )
 
     @staticmethod
     def remove_field_ids(schema: pa.Schema) -> pa.Schema:
