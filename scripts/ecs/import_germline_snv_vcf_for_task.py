@@ -26,4 +26,7 @@ if __name__ == "__main__":
     try:
         main(task)
     except Exception as e:
+        # Exiting non-zero is what makes the ECS task fail: without it a failed extraction is
+        # marked successful and its partitions are silently missing from the commit.
         logger.exception(f"Error while processing task: {e}")
+        sys.exit(1)

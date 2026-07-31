@@ -29,14 +29,14 @@ class RadiantTaskECSOperator:
         )
 
 
-class ImportGermlineSNVVCF(RadiantTaskECSOperator):
+class ImportSNVVCF(RadiantTaskECSOperator):
     @staticmethod
-    def get_create_parquet_files(radiant_namespace: str, ecs_env: ECSEnv):
+    def get_create_germline_parquet_files(radiant_namespace: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator.partial(
             **dict(
                 pool="import_vcf",
-                task_id="create_parquet_files_ecs",
-                task_display_name="[ECS] Create Parquet Files",
+                task_id="create_germline_parquet_files_ecs",
+                task_display_name="[ECS] Create Germline Parquet Files",
                 overrides={
                     "containerOverrides": [
                         {
@@ -56,7 +56,40 @@ class ImportGermlineSNVVCF(RadiantTaskECSOperator):
                     ]
                 },
             )
-            | ImportGermlineSNVVCF._get_ecs_context(
+            | ImportSNVVCF._get_ecs_context(
+                ecs_cluster=ecs_env.ECS_CLUSTER,
+                ecs_subnets=ecs_env.ECS_SUBNETS,
+                ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
+            )
+        )
+
+    @staticmethod
+    def get_create_somatic_parquet_files(radiant_namespace: str, ecs_env: ECSEnv):
+        return ecs.EcsRunTaskOperator.partial(
+            **dict(
+                pool="import_vcf",
+                task_id="create_somatic_parquet_files_ecs",
+                task_display_name="[ECS] Create Somatic Parquet Files",
+                overrides={
+                    "containerOverrides": [
+                        {
+                            "name": "radiant-operator-qa-etl-container",
+                            "command": [
+                                "python /opt/radiant/import_somatic_snv_vcf_for_task.py "
+                                "--task '{{ params.radiant_task | tojson }}'"
+                            ],
+                            "environment": [
+                                {"name": "PYTHONPATH", "value": "/opt/radiant"},
+                                {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
+                                {"name": "RADIANT_ICEBERG_NAMESPACE", "value": radiant_namespace},
+                                {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
+                                {"name": "STARROCKS_BROKER_USE_INSTANCE_PROFILE", "value": "true"},
+                            ],
+                        }
+                    ]
+                },
+            )
+            | ImportSNVVCF._get_ecs_context(
                 ecs_cluster=ecs_env.ECS_CLUSTER,
                 ecs_subnets=ecs_env.ECS_SUBNETS,
                 ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
@@ -88,7 +121,7 @@ class ImportGermlineSNVVCF(RadiantTaskECSOperator):
                     ]
                 },
             )
-            | ImportGermlineSNVVCF._get_ecs_context(
+            | ImportSNVVCF._get_ecs_context(
                 ecs_cluster=ecs_env.ECS_CLUSTER,
                 ecs_subnets=ecs_env.ECS_SUBNETS,
                 ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
@@ -118,7 +151,7 @@ class InitIcebergTables(RadiantTaskECSOperator):
                     ]
                 },
             )
-            | ImportGermlineSNVVCF._get_ecs_context(
+            | ImportSNVVCF._get_ecs_context(
                 ecs_cluster=ecs_env.ECS_CLUSTER,
                 ecs_subnets=ecs_env.ECS_SUBNETS,
                 ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
@@ -148,38 +181,7 @@ class ImportPart(RadiantTaskECSOperator):
                     ]
                 },
             )
-            | ImportGermlineSNVVCF._get_ecs_context(
-                ecs_cluster=ecs_env.ECS_CLUSTER,
-                ecs_subnets=ecs_env.ECS_SUBNETS,
-                ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
-            )
-        )
-
-    @staticmethod
-    def get_import_somatic_snv_vcf(radiant_namespace: str, ecs_env: ECSEnv):
-        return ecs.EcsRunTaskOperator.partial(
-            **dict(
-                task_id="import_somatic_snv_vcf",
-                task_display_name="[ECS] Import Somatic SNV VCF",
-                overrides={
-                    "containerOverrides": [
-                        {
-                            "name": "radiant-operator-qa-etl-container",
-                            "command": [
-                                "python /opt/radiant/import_somatic_snv_vcf_for_task.py "
-                                "--tasks '{{ params.stored_tasks }}'"
-                            ],
-                            "environment": [
-                                {"name": "PYTHONPATH", "value": "/opt/radiant"},
-                                {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
-                                {"name": "RADIANT_ICEBERG_NAMESPACE", "value": radiant_namespace},
-                                {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
-                            ],
-                        }
-                    ]
-                },
-            )
-            | ImportGermlineSNVVCF._get_ecs_context(
+            | ImportSNVVCF._get_ecs_context(
                 ecs_cluster=ecs_env.ECS_CLUSTER,
                 ecs_subnets=ecs_env.ECS_SUBNETS,
                 ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
@@ -205,7 +207,7 @@ class ImportPart(RadiantTaskECSOperator):
                     ]
                 },
             )
-            | ImportGermlineSNVVCF._get_ecs_context(
+            | ImportSNVVCF._get_ecs_context(
                 ecs_cluster=ecs_env.ECS_CLUSTER,
                 ecs_subnets=ecs_env.ECS_SUBNETS,
                 ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,

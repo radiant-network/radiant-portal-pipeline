@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.utils import S3DownloadError
 from radiant.tasks.vcf.experiment import RADIANT_SOMATIC_ANNOTATION_TASK, Experiment
 from radiant.tasks.vcf.snv.somatic import process as somatic_process
@@ -138,48 +139,44 @@ def _somatic_task(task_id: int, filepath: str) -> dict:
     }
 
 
-def test_import_somatic_snv_skips_task_when_download_fails():
-    """A single failed S3 download must not abort the whole somatic batch."""
-    tasks = [_somatic_task(1, "s3://bucket/bad.vcf.gz"), _somatic_task(2, "s3://bucket/good.vcf.gz")]
+def test_create_parquet_files_raises_when_download_fails():
+    """A failed download must fail this task's mapped instance rather than succeed with nothing.
 
-    def fake_download(s3_path, _tmpdir, randomize_filename=False):
-        if s3_path.startswith("s3://bucket/bad"):
-            raise S3DownloadError("Failed to download S3 file s3://bucket/bad.vcf.gz")
-        return f"/tmp/{s3_path.rsplit('/', 1)[-1]}"
-
-    with (
-        patch.object(somatic_process, "download_s3_file", side_effect=fake_download),
-        patch.object(somatic_process.RadiantSomaticAnnotationTask, "model_validate", side_effect=lambda d: d),
-        patch.object(somatic_process, "process_task", return_value={"radiant.snv": [{"id": "x"}]}) as mock_proc,
-        patch.object(somatic_process, "commit_partitions") as mock_commit,
-    ):
-        somatic_process.import_somatic_snv(tasks, namespace="radiant")
-
-    # Only the good task is processed; the failed download is skipped, not fatal.
-    assert mock_proc.call_count == 1
-    processed_task = mock_proc.call_args.args[0]
-    assert processed_task["task_id"] == 2
-    # The batch still commits the good task's partitions exactly once.
-    mock_commit.assert_called_once()
-    assert dict(mock_commit.call_args.args[0]) == {"radiant.snv": [{"id": "x"}]}
-
-
-def test_import_somatic_snv_raises_when_all_downloads_fail():
-    """A total S3 outage must fail the batch (so Airflow retries), not report success."""
-    tasks = [_somatic_task(1, "s3://bucket/a.vcf.gz"), _somatic_task(2, "s3://bucket/b.vcf.gz")]
+    Succeeding would leave the experiment marked ingested by `update_sequencing_experiments`,
+    so the incremental delta would never offer it again.
+    """
+    task = _somatic_task(1, "s3://bucket/bad.vcf.gz")
 
     def fake_download(s3_path, _tmpdir, randomize_filename=False):
         raise S3DownloadError(f"Failed to download S3 file {s3_path}")
 
     with (
         patch.object(somatic_process, "download_s3_file", side_effect=fake_download),
-        patch.object(somatic_process.RadiantSomaticAnnotationTask, "model_validate", side_effect=lambda d: d),
         patch.object(somatic_process, "process_task") as mock_proc,
-        patch.object(somatic_process, "commit_partitions") as mock_commit,
-        pytest.raises(RuntimeError, match=r"download\(s\) failed"),
+        pytest.raises(S3DownloadError),
     ):
-        somatic_process.import_somatic_snv(tasks, namespace="radiant")
+        somatic_process.create_parquet_files(task, namespace="radiant")
 
-    # Nothing processed and nothing committed — the run fails instead of silently succeeding.
     mock_proc.assert_not_called()
-    mock_commit.assert_not_called()
+
+
+def test_create_parquet_files_returns_serialized_partition_commits():
+    """The mapped task's return value crosses XCom, so PartitionCommits must be plain dicts."""
+    task = _somatic_task(2, "s3://bucket/good.vcf.gz")
+    commit = PartitionCommit(parquet_files=["s3://bucket/data/f.parquet"], partition_filter={"task_id": 2})
+
+    with (
+        patch.object(
+            somatic_process,
+            "download_s3_file",
+            side_effect=lambda s3_path, _tmpdir, randomize_filename=False: f"/tmp/{s3_path.rsplit('/', 1)[-1]}",
+        ),
+        patch.object(somatic_process.RadiantSomaticAnnotationTask, "model_validate", return_value=MagicMock()),
+        patch.object(somatic_process, "process_task", return_value={"radiant.snv_variant": [commit]}) as mock_proc,
+    ):
+        result = somatic_process.create_parquet_files(task, namespace="radiant")
+
+    mock_proc.assert_called_once()
+    assert result == {
+        "radiant.snv_variant": [{"parquet_files": ["s3://bucket/data/f.parquet"], "partition_filter": {"task_id": 2}}]
+    }

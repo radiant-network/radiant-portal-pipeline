@@ -1,16 +1,16 @@
+import json
 import logging
 import sys
 import tempfile
-from collections import defaultdict, namedtuple
+from collections import namedtuple
 
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
 
 from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
-from radiant.tasks.iceberg.utils import commit_files
-from radiant.tasks.utils import S3DownloadError, capture_libc_stderr_and_check_errors, download_s3_file
-from radiant.tasks.vcf.experiment import RADIANT_SOMATIC_ANNOTATION_TASK, Experiment, RadiantSomaticAnnotationTask
+from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
+from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence
@@ -208,67 +208,32 @@ def get_sorted_task_experiments(experiments: list[Experiment], samples: list[str
     return FilteredExperiment(tumor_index=tumor_index, normal_index=normal_index, experiments=sorted_task_experiments)
 
 
-def commit_partitions(table_partitions: dict[str, list[dict]], iceberg_catalog_properties: dict | None = None):
+def create_parquet_files(task: dict, namespace: str) -> dict[str, list[dict]]:
+    """Extract one somatic VCF into parquet files, returning the partitions left to commit.
+
+    Mirrors the germline entrypoint: one call per annotation task, so the DAG can map this
+    over every somatic task in the part instead of walking them in a single container.
+
+    A failed download propagates. Skipping it used to be the lesser evil, because one bad VCF
+    would otherwise abort the single container that processed the whole part -- but a skip is
+    invisible downstream: the task still succeeds, so `update_sequencing_experiments` marks the
+    experiment ingested and the incremental delta never offers it again. Now that each task has
+    its own mapped instance, failing costs only that instance and the part gets retried.
+    """
     logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
     logger = logging.getLogger(__name__)
-
-    catalog = load_catalog(**(iceberg_catalog_properties or {}))
-    for table_name, partitions in table_partitions.items():
-        if not partitions:
-            continue
-        table = catalog.load_table(table_name)
-        parts = [PartitionCommit.model_validate(pc) for pc in partitions]
-        logger.info(f"🔁 Starting commit for table {table_name}")
-        commit_files(table, parts)
-        logger.info(f"✅ Changes committed to table {table_name}")
-
-
-def merge_partitions_in_place(merged_partitions: defaultdict, partitions_list: dict[str, list[dict]]):
-    for table_name, partition_commits in partitions_list.items():
-        merged_partitions[table_name].extend(partition_commits)
-
-
-def import_somatic_snv(tasks: list[dict], namespace: str):
-    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
-    logger = logging.getLogger(__name__)
-
-    merged_partitions = defaultdict(list)
-    attempted = 0
-    skipped = 0
 
     logger.info("Downloading VCF and index files to a temporary directory")
-    for task in tasks:
-        if task["task_type"] != RADIANT_SOMATIC_ANNOTATION_TASK:
-            continue
+    with tempfile.TemporaryDirectory() as tmpdir:
+        vcf_local = download_s3_file(task["vcf_filepath"], tmpdir)
+        index_local = download_s3_file(task["vcf_filepath"] + ".tbi", tmpdir)
 
-        attempted += 1
-        with tempfile.TemporaryDirectory() as tmpdir:
-            try:
-                vcf_local = download_s3_file(task["vcf_filepath"], tmpdir)
-                index_local = download_s3_file(task["vcf_filepath"] + ".tbi", tmpdir)
-            except S3DownloadError as e:
-                skipped += 1
-                logger.warning(
-                    f"Failed to download somatic VCF for task [{task.get('task_id')}] "
-                    f"from {task['vcf_filepath']}, skipping: {e}"
-                )
-                continue
-            task_data = {**task, "vcf_filepath": vcf_local, "index_vcf_filepath": index_local}
+        task_data = {**task, "vcf_filepath": vcf_local, "index_vcf_filepath": index_local}
+        radiant_task = RadiantSomaticAnnotationTask.model_validate(task_data)
+        logger.info(f"🔁 STARTING IMPORT Somatic SNV for Task: {radiant_task.task_id}")
+        logger.info("=" * 80)
 
-            task = RadiantSomaticAnnotationTask.model_validate(task_data)
-            logger.info(f"🔁 STARTING IMPORT Somatic SNV for Task: {task_data['task_id']}")
-            logger.info("=" * 80)
+        res = process_task(radiant_task, namespace=namespace, vcf_threads=4)
+        logger.info(f"✅ Parquet files created: {radiant_task.task_id}, file {radiant_task.vcf_filepath}")
 
-            partitions = process_task(task, namespace=namespace, vcf_threads=4)
-            logger.info(f"✅ Parquet files created: {task_data['task_id']}, file {task_data['vcf_filepath']}")
-            merge_partitions_in_place(merged_partitions, partitions)
-
-    if skipped:
-        logger.warning(f"Skipped {skipped}/{attempted} somatic SNV tasks due to download failures")
-
-    # If all files failed, we abort
-    if attempted and skipped == attempted:
-        raise RuntimeError(f"All {attempted} somatic SNV download(s) failed")
-
-    # Merge results from all tasks and convert PartitionCommit objects to dicts
-    commit_partitions(merged_partitions)
+    return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}

@@ -1,9 +1,11 @@
-from collections import defaultdict
+import threading
 
 import pytest
 
+from radiant.tasks.iceberg.partition_commit import merge_partition_commits
+from radiant.tasks.iceberg.utils import commit_partitions
 from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask
-from radiant.tasks.vcf.snv.somatic.process import commit_partitions, merge_partitions_in_place, process_task
+from radiant.tasks.vcf.snv.somatic.process import process_task
 
 
 def test_import_somatic_snv_vcf(
@@ -48,13 +50,10 @@ def test_import_somatic_snv_vcf(
     table_names = iceberg_client.list_tables(setup_iceberg_namespace)
     assert (setup_iceberg_namespace, "somatic_snv_occurrence") in table_names
 
-    merged_partitions = defaultdict(list)
-
     partitions = process_task(
         task=task, namespace=setup_iceberg_namespace, catalog_properties=iceberg_catalog_properties
     )
-    merge_partitions_in_place(merged_partitions, partitions)
-    commit_partitions(merged_partitions, iceberg_catalog_properties=iceberg_catalog_properties)
+    commit_partitions(merge_partition_commits([partitions]), iceberg_catalog_properties=iceberg_catalog_properties)
 
     # Check that the expected tables were created and contain data
     occ = iceberg_client.load_table(f"{setup_iceberg_namespace}.somatic_snv_occurrence").scan().to_arrow().to_pandas()
@@ -124,12 +123,10 @@ def test_import_somatic_snv_tumor_only_vcf(
     """
     task = _tumor_only_task(task_id=2, vcf_filepath="tests/resources/test_somatic_snv_tumor_only.vcf")
 
-    merged_partitions = defaultdict(list)
     partitions = process_task(
         task=task, namespace=setup_iceberg_namespace, catalog_properties=iceberg_catalog_properties
     )
-    merge_partitions_in_place(merged_partitions, partitions)
-    commit_partitions(merged_partitions, iceberg_catalog_properties=iceberg_catalog_properties)
+    commit_partitions(merge_partition_commits([partitions]), iceberg_catalog_properties=iceberg_catalog_properties)
 
     def load(table: str):
         df = iceberg_client.load_table(f"{setup_iceberg_namespace}.{table}").scan().to_arrow().to_pandas()
@@ -221,3 +218,55 @@ def test_import_somatic_snv_tumor_normal_task_on_tumor_only_vcf_raises(
 
     with pytest.raises(ValueError, match="the task and the VCF disagree on the analysis"):
         process_task(task=task, namespace=setup_iceberg_namespace, catalog_properties=iceberg_catalog_properties)
+
+
+def test_concurrent_commits_to_the_shared_variant_table_both_land(
+    setup_iceberg_namespace,
+    iceberg_catalog_properties,
+    iceberg_client,
+):
+    """Two writers committing disjoint task_id partitions to `snv_variant` must both survive.
+
+    `snv_variant` and `snv_consequence` are written by the germline and somatic flows alike, so
+    their commits can collide on Iceberg's snapshot assertion even though the rows are disjoint.
+    Absorbing that needs the commit to be re-staged against a refreshed snapshot; re-committing
+    the transaction that already failed resends a stale assertion and can never succeed.
+
+    The barrier maximises the chance of a genuine conflict. The assertions hold whether or not
+    one occurs, so the test cannot flake -- it just does not always exercise the retry.
+    """
+    task_ids = (901, 902)
+    partitions = [
+        process_task(
+            task=_tumor_only_task(task_id=task_id, vcf_filepath="tests/resources/test_somatic_snv_tumor_only.vcf"),
+            namespace=setup_iceberg_namespace,
+            catalog_properties=iceberg_catalog_properties,
+        )
+        for task_id in task_ids
+    ]
+
+    barrier = threading.Barrier(len(partitions))
+    errors: list[Exception] = []
+
+    def commit(task_partitions):
+        try:
+            barrier.wait(timeout=30)
+            commit_partitions(
+                merge_partition_commits([task_partitions]),
+                iceberg_catalog_properties=iceberg_catalog_properties,
+            )
+        except Exception as e:  # noqa: BLE001 - surfaced by the assertion below
+            errors.append(e)
+
+    threads = [threading.Thread(target=commit, args=(p,)) for p in partitions]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    assert not errors, f"concurrent commits failed: {errors}"
+
+    for table in ("snv_variant", "snv_consequence", "somatic_snv_occurrence"):
+        df = iceberg_client.load_table(f"{setup_iceberg_namespace}.{table}").scan().to_arrow().to_pandas()
+        # Neither writer may have dropped the other's rows.
+        assert set(task_ids) <= set(df.task_id), f"{table} lost rows from a concurrent commit"

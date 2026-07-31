@@ -8,7 +8,6 @@ from pyiceberg.catalog import load_catalog
 
 from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator
-from radiant.tasks.iceberg.utils import commit_files
 from radiant.tasks.tracing.trace import get_tracer
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
 from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
@@ -147,18 +146,3 @@ def create_parquet_files(task: dict, namespace: str) -> dict[str, list[dict]]:
         logger.info(f"✅ Parquet files created: {task.task_id}, file {task.vcf_filepath}")
 
     return {k: [json.loads(pc.model_dump_json()) for pc in v] for k, v in res.items()}
-
-
-def commit_partitions(table_partitions: dict[str, list[dict]]):
-    logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
-    logger = logging.getLogger(__name__)
-
-    catalog = load_catalog()
-    for table_name, partitions in table_partitions.items():
-        if not partitions:
-            continue
-        table = catalog.load_table(table_name)
-        parts = [PartitionCommit.model_validate(pc) for pc in partitions]
-        logger.info(f"🔁 Starting commit for table {table_name}")
-        commit_files(table, parts)
-        logger.info(f"✅ Changes committed to table {table_name}")

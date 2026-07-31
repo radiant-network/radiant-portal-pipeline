@@ -55,8 +55,9 @@ def _metadata_container_resources() -> k8s.V1ResourceRequirements:
 
     Peak therefore scales with the number of files, not the size of the VCFs -- and the
     fan-in is what makes it non-trivial: this task is not mapped, so a single container
-    commits every file produced by every mapped extraction task in the part. Half a core
-    is enough because the footer reads are sequential and network-bound.
+    commits every file produced by every mapped germline *and* somatic extraction task in
+    the part. Half a core is enough because the footer reads are sequential and
+    network-bound.
     """
     return _container_resources("METADATA", cpu="500m", memory="1Gi", memory_limit="2Gi")
 
@@ -93,21 +94,21 @@ class RadiantTaskK8SOperator:
         )
 
 
-class ImportGermlineSNVVCF(RadiantTaskK8SOperator):
+class ImportSNVVCF(RadiantTaskK8SOperator):
     @staticmethod
-    def get_create_parquet_files(radiant_namespace: str):
+    def get_create_germline_parquet_files(radiant_namespace: str):
         @task.kubernetes(
             **dict(
                 pool="import_vcf",
-                task_id="create_parquet_files_k8s",
-                task_display_name="[K8s] Create Parquet Files",
+                task_id="create_germline_parquet_files_k8s",
+                task_display_name="[K8s] Create Germline Parquet Files",
                 map_index_template="Task: {{ task.op_kwargs['radiant_task']['task_id'] }}",
-                name="import-vcf-for-task",
+                name="import-germline-vcf-for-task",
                 do_xcom_push=True,
             )
-            | ImportGermlineSNVVCF._get_k8s_context(radiant_namespace, container_resources=_snv_container_resources())
+            | ImportSNVVCF._get_k8s_context(radiant_namespace, container_resources=_snv_container_resources())
         )
-        def k8s_create_parquet_files(
+        def k8s_create_germline_parquet_files(
             radiant_task: dict,
         ):  # `task` is a reserved Airflow keyword, so we use `radiant_task`
             import os
@@ -117,7 +118,32 @@ class ImportGermlineSNVVCF(RadiantTaskK8SOperator):
             namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
             return create_parquet_files(task=radiant_task, namespace=namespace)
 
-        return k8s_create_parquet_files
+        return k8s_create_germline_parquet_files
+
+    @staticmethod
+    def get_create_somatic_parquet_files(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                pool="import_vcf",
+                task_id="create_somatic_parquet_files_k8s",
+                task_display_name="[K8s] Create Somatic Parquet Files",
+                map_index_template="Task: {{ task.op_kwargs['radiant_task']['task_id'] }}",
+                name="import-somatic-vcf-for-task",
+                do_xcom_push=True,
+            )
+            | ImportSNVVCF._get_k8s_context(radiant_namespace, container_resources=_snv_container_resources())
+        )
+        def k8s_create_somatic_parquet_files(
+            radiant_task: dict,
+        ):  # `task` is a reserved Airflow keyword, so we use `radiant_task`
+            import os
+
+            from radiant.tasks.vcf.snv.somatic.process import create_parquet_files
+
+            namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
+            return create_parquet_files(task=radiant_task, namespace=namespace)
+
+        return k8s_create_somatic_parquet_files
 
     @staticmethod
     def get_commit_partitions(radiant_namespace: str):
@@ -128,12 +154,10 @@ class ImportGermlineSNVVCF(RadiantTaskK8SOperator):
                 name="commit-partitions",
                 do_xcom_push=True,
             )
-            | ImportGermlineSNVVCF._get_k8s_context(
-                radiant_namespace, container_resources=_metadata_container_resources()
-            ),
+            | ImportSNVVCF._get_k8s_context(radiant_namespace, container_resources=_metadata_container_resources()),
         )
         def k8s_commit_partitions(table_partitions: dict[str, list[dict]]):
-            from radiant.tasks.vcf.snv.germline.process import commit_partitions
+            from radiant.tasks.iceberg.utils import commit_partitions
 
             commit_partitions(table_partitions)
 
@@ -161,27 +185,6 @@ class ImportPart(RadiantTaskK8SOperator):
             _import_cnv_vcf(tasks=tasks, namespace=namespace)
 
         return import_cnv_vcf
-
-    @staticmethod
-    def get_import_somatic_snv_vcf(radiant_namespace: str):
-        @task.kubernetes(
-            **dict(
-                task_id="import_somatic_snv_vcf",
-                task_display_name="[K8s] Import Somatic SNV VCF",
-                name="import-somatic-snv-vcf",
-                do_xcom_push=True,
-            )
-            | ImportPart._get_k8s_context(radiant_namespace, container_resources=_snv_container_resources())
-        )
-        def get_import_somatic_snv_vcf(tasks: list[dict]) -> None:
-            import os
-
-            from radiant.tasks.vcf.snv.somatic.process import import_somatic_snv
-
-            namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
-            import_somatic_snv(tasks=tasks, namespace=namespace)
-
-        return get_import_somatic_snv_vcf
 
 
 class InitIcebergTables(RadiantTaskK8SOperator):

@@ -135,10 +135,13 @@ def import_part():
         return conf
 
     _prepare_config = prepare_config(tasks)
-    import_germline_snv_vcf = TriggerDagRunOperator(
-        task_id="import_germline_snv_vcf",
-        task_display_name="[DAG] Import Germline SNV VCF into Iceberg",
-        trigger_dag_id=f"{NAMESPACE}-import-germline-snv-vcf",
+    # Germline and somatic SNV extraction both live in this sub-DAG so that they fan out per task
+    # and fan into a single Iceberg commit — `snv_variant` and `snv_consequence` are written by
+    # both flows, so one committer per part is what keeps their commits from racing.
+    import_snv_vcf = TriggerDagRunOperator(
+        task_id="import_snv_vcf",
+        task_display_name="[DAG] Import SNV VCF into Iceberg",
+        trigger_dag_id=f"{NAMESPACE}-import-snv-vcf",
         conf=_prepare_config,
         reset_dag_run=True,
         wait_for_completion=True,
@@ -153,16 +156,10 @@ def import_part():
             ecs_env=ecs_env,
         )
 
-        import_somatic_snv_vcf = operators.ImportPart.get_import_somatic_snv_vcf(
-            radiant_namespace=namespace_task,
-            ecs_env=ecs_env,
-        )
-
         cleanup = operators.ImportPart.get_cleanup(ecs_env=ecs_env)
 
     else:
         import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(namespace_task)
-        import_somatic_snv_vcf = operators.ImportPart.get_import_somatic_snv_vcf(namespace_task)
 
     @task(task_id="build_tenant_params", task_display_name="[PyOp] Per-tenant Params")
     def prepare_tenant_scoped_params(tasks) -> list[dict[str, Any]]:
@@ -582,9 +579,8 @@ def import_part():
 
     # Parallel VCF Imports
     vcf_imports = [
-        import_germline_snv_vcf,
+        import_snv_vcf,
         import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(tasks=tasks),
-        import_somatic_snv_vcf.expand(params=stored_tasks) if IS_AWS else import_somatic_snv_vcf(tasks=tasks),
     ]
     if IS_AWS:
         vcf_imports >> cleanup.expand(params=stored_tasks)
