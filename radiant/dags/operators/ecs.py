@@ -5,6 +5,16 @@ from airflow.providers.amazon.aws.operators import ecs
 
 from radiant.dags import ECSEnv
 
+# Propagated to the SNV extraction tasks so a memory-constrained environment can shrink the
+# TableAccumulator flush threshold, which is what sets an extraction task's memory floor. An
+# empty value means "use the default" (see `resolve_parquet_file_size_mb`); the literal default
+# is deliberately not repeated here, since importing it would pull pyarrow/pyiceberg into the
+# Airflow interpreter, which does not have them.
+_PARQUET_FILE_SIZE_ENV = {
+    "name": "RADIANT_PARQUET_FILE_SIZE_MB",
+    "value": os.getenv("RADIANT_PARQUET_FILE_SIZE_MB", ""),
+}
+
 
 class RadiantTaskECSOperator:
     @staticmethod
@@ -51,6 +61,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                                 {"name": "RADIANT_ICEBERG_NAMESPACE", "value": radiant_namespace},
                                 {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
                                 {"name": "STARROCKS_BROKER_USE_INSTANCE_PROFILE", "value": "true"},
+                                _PARQUET_FILE_SIZE_ENV,
                             ],
                         }
                     ]
@@ -84,6 +95,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                                 {"name": "RADIANT_ICEBERG_NAMESPACE", "value": radiant_namespace},
                                 {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
                                 {"name": "STARROCKS_BROKER_USE_INSTANCE_PROFILE", "value": "true"},
+                                _PARQUET_FILE_SIZE_ENV,
                             ],
                         }
                     ]

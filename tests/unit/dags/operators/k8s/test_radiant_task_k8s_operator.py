@@ -101,3 +101,19 @@ def test_container_resources_uses_defaults_when_env_absent():
 
     assert resources.requests == {"cpu": "2", "memory": "8Gi"}
     assert resources.limits == {"memory": "8Gi"}
+
+
+def test_parquet_file_size_override_reaches_the_pod():
+    """The override only helps if it is propagated; it is read inside the pod, not here."""
+    with patch.dict(os.environ, {"RADIANT_PARQUET_FILE_SIZE_MB": "64"}, clear=True):
+        context = RadiantTaskK8SOperator._get_k8s_context("my-iceberg-namespace")
+
+    assert context["env_vars"]["RADIANT_PARQUET_FILE_SIZE_MB"] == "64"
+
+
+def test_parquet_file_size_is_absent_when_not_overridden():
+    """Unset reaches the container as an empty string, which resolves back to the default."""
+    with patch.dict(os.environ, {}, clear=True):
+        context = RadiantTaskK8SOperator._get_k8s_context("my-iceberg-namespace")
+
+    assert context["env_vars"]["RADIANT_PARQUET_FILE_SIZE_MB"] is None
