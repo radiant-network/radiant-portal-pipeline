@@ -47,6 +47,7 @@ def make_record(
     format_keys=("DP"),
     dp_values=(100, 80),
     gq_values=(30, 25),
+    sq_values=(22.5, 3.5),
     gt_ref_depths=(10, 20),
     gt_alt_depths=(90, 5),
     gt_depths=(100, 25),
@@ -60,7 +61,8 @@ def make_record(
     record.INFO = info or {}
     record.FORMAT = format_keys
 
-    record.format.side_effect = lambda key: ([[dp_values[0]], [dp_values[1]]] if key == "DP" else None)
+    per_sample = {"DP": dp_values, "SQ": sq_values}
+    record.format.side_effect = lambda key: ([[value] for value in per_sample[key]] if key in per_sample else None)
 
     record.gt_ref_depths = gt_ref_depths
     record.gt_alt_depths = gt_alt_depths
@@ -70,6 +72,22 @@ def make_record(
     record.gt_phases = gt_phases
 
     return record
+
+
+def make_tumor_only_record(**overrides):
+    """A single-sample record: every per-sample array holds exactly one entry."""
+    single_sample = {
+        "dp_values": (100,),
+        "gq_values": (30,),
+        "sq_values": (22.5,),
+        "gt_ref_depths": (10,),
+        "gt_alt_depths": (90,),
+        "gt_depths": (100,),
+        "gt_alt_freqs": (0.9,),
+        "gt_types": (1,),
+        "gt_phases": (False,),
+    }
+    return make_record(**{**single_sample, **overrides})
 
 
 TUMOR_SEQ_ID = 10
@@ -288,6 +306,7 @@ def test_filter_parsing(filter_val, expected, experiments, common):
         ("DP", "info_dp", 150),
         ("HaplotypeScore", "info_haplotype_score", 3.2),
         ("HotspotAllele", "info_hotspotallele", 1),
+        ("AQ", "info_aq", 12.5),
         ("CAL", "info_cal", "COSMIC"),
     ],
 )
@@ -308,6 +327,8 @@ def test_info_fields_are_mapped(info_key, result_key, value, experiments, common
         "info_mq",
         "info_culprit",
         "info_hotspotallele",
+        "info_hotspot",
+        "info_aq",
         "info_cal",
     ],
 )
@@ -315,6 +336,38 @@ def test_missing_info_fields_are_none(result_key, experiments, common):
     record = make_record(info={})
     result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
     assert result[result_key] is None
+
+
+@pytest.mark.parametrize(
+    "info,expected",
+    [
+        ({"hotspot": True}, True),  # DRAGEN lowercase Flag
+        ({"HotspotAllele": 1}, True),  # GATK-era allele index, alt allele
+        ({"HotspotAllele": 0}, False),  # allele index pointing at the reference
+        ({"HotspotAllele": 2}, False),  # not the (single) alt allele
+        ({"hotspot": True, "HotspotAllele": 0}, True),  # `hotspot` wins
+    ],
+)
+def test_info_hotspot_resolution(info, expected, experiments, common):
+    record = make_record(info=info)
+    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
+    assert result["info_hotspot"] is expected
+    # the raw allele index column keeps reading `HotspotAllele` untouched
+    assert result["info_hotspotallele"] == info.get("HotspotAllele")
+
+
+@pytest.mark.parametrize("sq_values,expected", [((22.5, 3.5), (22.5, 3.5)), ((0.0, 0.0), (0.0, 0.0))])
+def test_sq_is_read_per_sample(sq_values, expected, experiments, common):
+    record = make_record(format_keys=("DP", "SQ"), sq_values=sq_values)
+    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
+    assert (result["tumor_sq"], result["normal_sq"]) == expected
+
+
+def test_sq_absent_from_format_is_none(experiments, common):
+    record = make_record(format_keys=("DP",))
+    result = run_process(record, experiments, common)[TUMOR_SEQ_ID]
+    assert result["tumor_sq"] is None
+    assert result["normal_sq"] is None
 
 
 @pytest.mark.parametrize("dp,expected", [(100, 100), (0, None)])
@@ -367,6 +420,48 @@ def test_gt_status_fields_are_none(experiments, common):
     assert result["normal_gt_status"] is None
 
 
+@pytest.fixture
+def tumor_only_experiments():
+    return [make_experiment(TUMOR_SEQ_ID)]
+
+
+def test_tumor_only__every_normal_field_is_none(tumor_only_experiments, common):
+    """With no matched normal there is nothing to read, so the whole normal block stays NULL."""
+    record = make_tumor_only_record()
+    result = run_process(record, tumor_only_experiments, common, normal_index=None)[TUMOR_SEQ_ID]
+
+    normal_fields = {key: value for key, value in result.items() if key.startswith("normal_")}
+    assert normal_fields, "expected the occurrence row to carry normal_* columns"
+    assert all(value is None for value in normal_fields.values()), (
+        f"expected every normal_* field to be None, got { ({k: v for k, v in normal_fields.items() if v is not None}) }"
+    )
+
+
+def test_tumor_only__tumor_fields_are_populated(tumor_only_experiments, common):
+    record = make_tumor_only_record()
+    result = run_process(record, tumor_only_experiments, common, normal_index=None)[TUMOR_SEQ_ID]
+
+    assert result["tumor_seq_id"] == TUMOR_SEQ_ID
+    assert result["tenant_code"] == "tenant1"
+    assert result["tumor_dp"] == 100
+    assert result["tumor_ad_ref"] == 10
+    assert result["tumor_ad_alt"] == 90
+    assert result["tumor_ad_total"] == 100
+    assert result["tumor_ad_ratio"] == pytest.approx(0.9)
+    assert result["tumor_af"] == pytest.approx(0.9)
+    assert result["tumor_sq"] is None  # format_keys defaults to "DP" only
+    assert result["tumor_calls"] == [0, 1]
+    assert result["tumor_has_alt"] is True
+    assert result["tumor_zygosity"] == "HET"
+
+
+def test_tumor_only__zero_tumor_dp_still_coalesces(tumor_only_experiments, common):
+    """The normal-block guard must not disturb the tumor-side zero coalescing."""
+    record = make_tumor_only_record(dp_values=(0,))
+    result = run_process(record, tumor_only_experiments, common, normal_index=None)[TUMOR_SEQ_ID]
+    assert result["tumor_dp"] is None
+
+
 @pytest.mark.parametrize(
     "samples, expected_tumor_index, expected_normal_index, expected_order",
     [
@@ -401,28 +496,49 @@ def test_get_sorted_task_experiments__experiments_not_in_samples_are_filtered_ou
 @pytest.mark.parametrize(
     "experiments, samples, match",
     [
-        # Only tumor provided
-        (
-            [TUMOR],
-            ["tumor_sample"],
-            "Could not find both tumor and normal",
-        ),
-        # Only normal provided
+        # Only normal provided — never reinterpreted as tumor-only
         (
             [NORMAL],
             ["normal_sample"],
-            "Could not find both tumor and normal",
+            "expected 'tumoral'",
         ),
-        # Both aliquots present in VCF but normal experiment missing from task
+        # Two aliquots, neither of them a normal
         (
-            [TUMOR],
-            ["tumor_sample", "normal_sample"],
+            [TUMOR, make_experiment(30, "other_tumor_sample", "tumoral")],
+            ["tumor_sample", "other_tumor_sample"],
             "Could not find both tumor and normal",
         ),
     ],
 )
 def test_get_sorted_task_experiments__missing_tumor_or_normal_raises(experiments, samples, match):
     with pytest.raises(ValueError, match=match):
+        get_sorted_task_experiments(experiments, samples)
+
+
+@pytest.mark.parametrize(
+    "samples",
+    [
+        # A genuine tumor-only task
+        ["tumor_sample"],
+        # Both aliquots in the VCF but only the tumor registered as an experiment. This resolves
+        # to tumor-only here; `process_task` is what rejects it, using the pre-subset sample list.
+        ["tumor_sample", "normal_sample"],
+    ],
+)
+def test_get_sorted_task_experiments__single_tumoral_aliquot_is_tumor_only(samples):
+    result = get_sorted_task_experiments([TUMOR], samples)
+
+    assert result.tumor_index == 0
+    assert result.normal_index is None
+    assert result.experiments == [TUMOR]
+
+
+def test_get_sorted_task_experiments__more_than_two_aliquots_raises():
+    """A somatic task carries 1 aliquot (tumor-only) or 2 (tumor-normal), never more."""
+    experiments = [TUMOR, NORMAL, make_experiment(30, "second_tumor_sample", "tumoral")]
+    samples = ["tumor_sample", "normal_sample", "second_tumor_sample"]
+
+    with pytest.raises(ValueError, match="somatic tasks support 1"):
         get_sorted_task_experiments(experiments, samples)
 
 

@@ -45,6 +45,11 @@ sources:
                 - info_r2_5p_bias
                 - info_sor
                 - info_vqslod
+                # DRAGEN-only fields; NULL for the current Mutect2 TN QA dataset (SJRA-1751)
+                - info_aq
+                - info_hotspot
+                - normal_sq
+                - tumor_sq
 
           # --- Should Not Contain Same Value ---------------------------------
           - should_not_contain_same_value:

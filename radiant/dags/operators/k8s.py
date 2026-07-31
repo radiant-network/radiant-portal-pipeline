@@ -3,14 +3,74 @@ import os
 from airflow.decorators import task
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
 from airflow.providers.cncf.kubernetes.secret import Secret
+from kubernetes.client import models as k8s
+
+
+def _container_resources(profile: str, cpu: str, memory: str, memory_limit: str) -> k8s.V1ResourceRequirements:
+    """Build the pod resources for a Radiant task.
+
+    Sizing a task at all is what makes it visible to the scheduler: with no request,
+    Karpenter sizes the node as if the pod were empty and lands it on the smallest
+    instance in the pool (a 3Gi-allocatable c6a.large in QA), where a heavy task is
+    OOMKilled with no memory limit to attribute the kill to.
+
+    Only memory is limited. A memory limit makes an over-budget task fail fast and
+    attributably instead of taking down whatever else shares the node, while a CPU
+    limit would merely throttle work we want to run at full speed (cyvcf2 reads with
+    ``vcf_threads=4`` and pyiceberg writes its parquet files in parallel).
+
+    Each profile is overridable without a deploy via
+    ``RADIANT_TASK_OPERATOR_<PROFILE>_{CPU,MEMORY,MEMORY_LIMIT}``.
+    """
+    return k8s.V1ResourceRequirements(
+        requests={
+            "cpu": os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_CPU", cpu),
+            "memory": os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_MEMORY", memory),
+        },
+        limits={"memory": os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_MEMORY_LIMIT", memory_limit)},
+    )
+
+
+def _snv_container_resources() -> k8s.V1ResourceRequirements:
+    """SNV extraction keeps three TableAccumulator buffers alive at once (occurrence,
+    variant, consequence), each growing to PARQUET_FILE_SIZE_MB before it flushes, plus
+    a transient copy of the buffer on every flush -- so a trio WGS VCF needs several GB.
+    """
+    return _container_resources("SNV", cpu="1", memory="4Gi", memory_limit="6Gi")
+
+
+def _cnv_container_resources() -> k8s.V1ResourceRequirements:
+    """CNV emits far fewer records per sample than SNV, so it needs a fraction of the
+    memory. The limit leaves headroom because the CNV occurrence buffer is a plain list
+    with no flush threshold, materialised in one `pa.Table.from_pylist` at the end
+    (`radiant/tasks/vcf/cnv/germline/process.py`).
+    """
+    return _container_resources("CNV", cpu="1", memory="500Mi", memory_limit="1Gi")
+
+
+def _metadata_container_resources() -> k8s.V1ResourceRequirements:
+    """Committing partitions never touches row data: the partition filters align with the
+    tables' partition specs, so the Iceberg delete drops whole files as metadata rather
+    than rewriting them, and `add_files` reads one parquet footer at a time.
+
+    Peak therefore scales with the number of files, not the size of the VCFs -- and the
+    fan-in is what makes it non-trivial: this task is not mapped, so a single container
+    commits every file produced by every mapped extraction task in the part. Half a core
+    is enough because the footer reads are sequential and network-bound.
+    """
+    return _container_resources("METADATA", cpu="500m", memory="1Gi", memory_limit="2Gi")
 
 
 class RadiantTaskK8SOperator:
     @staticmethod
-    def _get_k8s_context(radiant_namespace: str):
+    def _get_k8s_context(radiant_namespace: str, container_resources: k8s.V1ResourceRequirements | None = None):
         iceberg_env_vars = {
             key: value for key, value in os.environ.items() if key.startswith("PYICEBERG_CATALOG__DEFAULT__")
         }
+        # Sizing is passed in rather than set by the caller alongside `task_id` and
+        # friends: callers merge as `dict(...) | _get_k8s_context(...)`, so this context
+        # wins on key collisions and would silently override a per-task value.
+        resources = {"container_resources": container_resources} if container_resources else {}
         return dict(
             namespace=os.getenv("RADIANT_TASK_OPERATOR_KUBERNETES_NAMESPACE"),
             image=os.getenv("RADIANT_TASK_OPERATOR_IMAGE"),
@@ -29,6 +89,7 @@ class RadiantTaskK8SOperator:
                 "LD_LIBRARY_PATH": os.getenv("RADIANT_TASK_OPERATOR_LD_LIBRARY_PATH"),
             }
             | iceberg_env_vars,
+            **resources,
         )
 
 
@@ -44,7 +105,7 @@ class ImportGermlineSNVVCF(RadiantTaskK8SOperator):
                 name="import-vcf-for-task",
                 do_xcom_push=True,
             )
-            | ImportGermlineSNVVCF._get_k8s_context(radiant_namespace)
+            | ImportGermlineSNVVCF._get_k8s_context(radiant_namespace, container_resources=_snv_container_resources())
         )
         def k8s_create_parquet_files(
             radiant_task: dict,
@@ -67,7 +128,9 @@ class ImportGermlineSNVVCF(RadiantTaskK8SOperator):
                 name="commit-partitions",
                 do_xcom_push=True,
             )
-            | ImportGermlineSNVVCF._get_k8s_context(radiant_namespace),
+            | ImportGermlineSNVVCF._get_k8s_context(
+                radiant_namespace, container_resources=_metadata_container_resources()
+            ),
         )
         def k8s_commit_partitions(table_partitions: dict[str, list[dict]]):
             from radiant.tasks.vcf.snv.germline.process import commit_partitions
@@ -87,7 +150,7 @@ class ImportPart(RadiantTaskK8SOperator):
                 name="import-cnv-vcf",
                 do_xcom_push=True,
             )
-            | ImportPart._get_k8s_context(radiant_namespace)
+            | ImportPart._get_k8s_context(radiant_namespace, container_resources=_cnv_container_resources())
         )
         def import_cnv_vcf(tasks: list[dict]) -> None:
             import os
@@ -108,7 +171,7 @@ class ImportPart(RadiantTaskK8SOperator):
                 name="import-somatic-snv-vcf",
                 do_xcom_push=True,
             )
-            | ImportPart._get_k8s_context(radiant_namespace)
+            | ImportPart._get_k8s_context(radiant_namespace, container_resources=_snv_container_resources())
         )
         def get_import_somatic_snv_vcf(tasks: list[dict]) -> None:
             import os

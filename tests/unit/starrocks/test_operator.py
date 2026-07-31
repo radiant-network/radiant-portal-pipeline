@@ -96,8 +96,9 @@ def test_prepare_context_routes_per_tenant_mapping():
     op = RadiantStarRocksOperator(task_id="t", sql="SELECT 1", tenant_code="chop")
     mapping = op.prepare_template_context(_ctx(_SHARED_CONF))["mapping"]
     assert mapping["starrocks_germline_snv_occurrence"] == "chop_tenant.germline__snv__occurrence"
-    # Base tables (incl. the global variant catalog) stay in the shared database.
-    assert mapping["starrocks_snv_variant"] == "radiant.snv__variant"
+    assert mapping["starrocks_snv_variant"] == "chop_tenant.snv__variant"
+    # Base tables stay in the shared database.
+    assert mapping["starrocks_snv_staging_variant"] == "radiant.snv__staging_variant"
 
 
 def test_prepare_context_without_tenant_uses_base_db():
@@ -120,13 +121,13 @@ def test_mapped_render_injects_mapping_and_tenant_code():
     op = RadiantStarRocksOperator(
         task_id="t",
         sql="INSERT INTO {{ mapping.starrocks_germline_snv_occurrence }} "
-        "SELECT '{{ tenant_code }}' FROM {{ mapping.starrocks_snv_variant }}",
+        "SELECT '{{ tenant_code }}' FROM {{ mapping.starrocks_snv_staging_variant }}",
         tenant_code="chop",
     )
     op._do_render_template_fields(op, op.template_fields, _ctx(_SHARED_CONF), _native_env(), set())
     # Per-tenant table routes to <tenant>_db; base table stays in the shared database; tenant_code resolves.
     assert "chop_tenant.germline__snv__occurrence" in op.sql
-    assert "radiant.snv__variant" in op.sql
+    assert "radiant.snv__staging_variant" in op.sql
     assert "'chop'" in op.sql
 
 

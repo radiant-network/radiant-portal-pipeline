@@ -7,6 +7,7 @@ SELECT
     o.quality,
     o.filter,
     o.info_hotspotallele,
+    o.info_hotspot,
     o.info_old_record,
     o.info_baseq_rank_sum,
     o.info_excess_het,
@@ -30,6 +31,7 @@ SELECT
     o.info_germq,
     o.info_tlod,
     o.info_mapq,
+    o.info_aq,
     o.tumor_calls,
     o.tumor_dp,
     o.tumor_has_alt,
@@ -41,6 +43,7 @@ SELECT
     o.tumor_ad_ratio,
     o.tumor_phased,
     o.tumor_gt_status,
+    o.tumor_sq,
     o.normal_calls,
     o.normal_dp,
     o.normal_has_alt,
@@ -51,7 +54,8 @@ SELECT
     o.normal_ad_total,
     o.normal_ad_ratio,
     o.normal_phased,
-    o.normal_gt_status
+    o.normal_gt_status,
+    o.normal_sq
 FROM {{ mapping.iceberg_somatic_snv_occurrence }} o
 JOIN [BROADCAST] {{ mapping.starrocks_snv_tmp_variant }} v
     ON o.locus_hash = v.locus_hash

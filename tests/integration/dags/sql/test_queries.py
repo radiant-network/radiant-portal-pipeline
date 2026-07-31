@@ -4,6 +4,8 @@ import os
 import jinja2
 
 from radiant.dags import DAGS_DIR
+from radiant.tasks.data.radiant_tables import RadiantConfigKeys
+from tests.integration.conftest import TENANT_CODE
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
@@ -54,10 +56,10 @@ def _execute_query(cursor, query, args=None):
         raise Exception(f"Query failed: {query}, with exception: {e}") from e
 
 
-def _execute_file(cursor, sql_file, args=None):
+def _execute_file(cursor, sql_file, args=None, tenant_code=None):
     from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
-    context = {"mapping": get_radiant_mapping()}
+    context = {"mapping": get_radiant_mapping(tenant_code=tenant_code)}
     if "udf" in sql_file:
         context["params"] = {"udf_release_version": "v1.1.0"}
 
@@ -67,14 +69,14 @@ def _execute_file(cursor, sql_file, args=None):
     return _execute_query(cursor, rendered_sql, args=args)
 
 
-def _validate_init(starrocks_session, sql_dir, tables=None, views=None, udfs=None):
+def _validate_init(starrocks_session, sql_dir, tables=None, views=None, udfs=None, tenant_code=None):
     with starrocks_session.cursor() as cursor:
         # Create UDFs first because some queries may depend on them
         for udf in udfs or []:
-            _execute_file(cursor, os.path.join(sql_dir, udf + "_udf.sql"))
+            _execute_file(cursor, os.path.join(sql_dir, udf + "_udf.sql"), tenant_code=tenant_code)
 
         for filename in itertools.chain(tables or [], views or []):
-            _execute_file(cursor, os.path.join(sql_dir, filename + "_create_table.sql"))
+            _execute_file(cursor, os.path.join(sql_dir, filename + "_create_table.sql"), tenant_code=tenant_code)
 
 
 def _explain_insert(starrocks_session, sql_dir):
@@ -116,11 +118,35 @@ def _explain_insert(starrocks_session, sql_dir):
             _execute_query(cursor, f"EXPLAIN {rendered_sql}", args=_MOCK_PARAMS)
 
 
+def _explain_tenant_scoped_insert(starrocks_session, sql_files, tenant_code):
+    """EXPLAIN the per-tenant variant catalog SQL against a real second database.
+
+    `_explain_insert` renders without a tenant, so every table collapses onto the base test DB and
+    cross-database name resolution is never exercised. These files write to `<tenant>_db` while
+    still reading `snv__staging_variant` from the base DB, so they need both.
+    """
+    from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+    mapping = get_radiant_mapping(tenant_code=tenant_code)
+    with starrocks_session.cursor() as cursor:
+        for filename in sql_files:
+            with open(os.path.join(_RADIANT_INSERT_DIR, filename)) as f:
+                rendered_sql = jinja2.Template(f.read()).render({"mapping": mapping})
+            _execute_query(cursor, f"EXPLAIN {rendered_sql}", args=_MOCK_PARAMS)
+
+
 def test_queries_are_valid(
-    monkeypatch, iceberg_client, starrocks_session, setup_iceberg_namespace, open_data_iceberg_tables, mapping_conf
+    monkeypatch,
+    iceberg_client,
+    starrocks_session,
+    setup_iceberg_namespace,
+    open_data_iceberg_tables,
+    mapping_conf,
+    starrocks_tenant_database,
 ):
     for k, v in mapping_conf.items():
         monkeypatch.setenv(k.upper(), v)
+    monkeypatch.setenv(RadiantConfigKeys.RADIANT_TENANT_DB_TEMPLATE.env_key, starrocks_tenant_database)
     # Validate table creation for Open Data & Radiant
     _validate_init(
         starrocks_session,
@@ -176,3 +202,23 @@ def test_queries_are_valid(
     # Validate table insertion using SQL `EXPLAIN` for Open Data & Radiant (Requires existing tables)
     _explain_insert(starrocks_session, sql_dir=_OPEN_DATA_INSERT_DIR)
     _explain_insert(starrocks_session, sql_dir=_RADIANT_INSERT_DIR)
+
+    # Same again for the variant catalog, but against a real tenant database.
+    _validate_init(
+        starrocks_session,
+        sql_dir=_RADIANT_INIT_DIR,
+        tables=[
+            "germline_snv_occurrence",
+            "germline_snv_variant_frequency",
+            "snv_variant",
+            "snv_variant_partitioned",
+            "somatic_snv_occurrence",
+            "somatic_snv_variant_frequency",
+        ],
+        tenant_code=TENANT_CODE,
+    )
+    _explain_tenant_scoped_insert(
+        starrocks_session,
+        sql_files=["snv_variant_insert.sql", "snv_variant_part_insert_part.sql"],
+        tenant_code=TENANT_CODE,
+    )

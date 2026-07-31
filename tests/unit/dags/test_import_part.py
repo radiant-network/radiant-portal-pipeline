@@ -210,8 +210,6 @@ def test_dag_contains_all_tasks(dag_bag):
         "somatic_snv_occurrence.aggregate_somatic_snv_variant_freq",
         "somatic_snv_occurrence.sanity_check_delta_somatic_snv",
         "snv_variant.sanity_check_any_snv",
-        "snv_variant.render_snv_variant_sql",
-        "snv_variant.render_snv_variant_part_sql",
         "snv_variant.insert_snv_staging_variant",
         "snv_variant.insert_snv_variant",
         "snv_variant.compute_parts",
@@ -235,3 +233,12 @@ def test_dag_task_dependencies_are_valid(dag_bag):
     namespace_task = dag.get_task("get_iceberg_namespace")
     import_cnv_vcf_k8s_task = dag.get_task("import_cnv_vcf_k8s")
     assert namespace_task in import_cnv_vcf_k8s_task.get_flat_relatives(upstream=True)
+
+    # `compute_parts` is only referenced through `.partial(parameters=...)`; the edge exists because
+    # `parameters` is a template field, so `MappedOperator` applies the XComArg relationship.
+    assert "snv_variant.insert_snv_variant_part" in dag.get_task("snv_variant.compute_parts").downstream_task_ids
+
+    # Only the consequence filter is still pooled across every tenant.
+    all_tenants_downstream = dag.get_task("extract_all_tenants").downstream_task_ids
+    assert "snv_consequence.render_snv_consequence_filter_part_sql" in all_tenants_downstream
+    assert not any(task_id.startswith("snv_variant.") for task_id in all_tenants_downstream)
