@@ -43,6 +43,15 @@ sources:
                 - somatic_pc_tn_wxs
                 - somatic_pn_tn_wxs
                 - somatic_pf_tn_wxs
+                # No tumor-only cohort in the QA dataset (SJRA-1751); all six are constant 0.
+                # They are deliberately NOT excluded from should_not_contain_only_null: the level-3
+                # projections COALESCE them to 0, so an all-NULL column means a missing COALESCE.
+                - somatic_pc_to_wgs
+                - somatic_pn_to_wgs
+                - somatic_pf_to_wgs
+                - somatic_pc_to_wxs
+                - somatic_pn_to_wxs
+                - somatic_pf_to_wxs
 
           # --- Should Be Within Range ----------------------------------------
           # pf frequency ratios must be in [0,1] (defaults: like '_pf_', 0..1)
