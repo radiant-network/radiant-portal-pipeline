@@ -9,7 +9,8 @@ WITH germline_pn AS (
     FROM {{ mapping.starrocks_germline_snv_variant_frequency }}
 ),
 somatic_pn AS (
-    SELECT ANY_VALUE(pn_tn_wgs) AS pn_tn_wgs, ANY_VALUE(pn_tn_wxs) AS pn_tn_wxs
+    SELECT ANY_VALUE(pn_tn_wgs) AS pn_tn_wgs, ANY_VALUE(pn_tn_wxs) AS pn_tn_wxs,
+           ANY_VALUE(pn_to_wgs) AS pn_to_wgs, ANY_VALUE(pn_to_wxs) AS pn_to_wxs
     FROM {{ mapping.starrocks_somatic_snv_variant_frequency }}
 ),
 tenant_loci AS (
@@ -23,6 +24,8 @@ SELECT
     COALESCE(COALESCE(gf.pc_wxs, 0) / NULLIF((SELECT pn_wxs FROM germline_pn), 0), 0)       AS germline_pf_wxs,
     COALESCE(COALESCE(sf.pc_tn_wgs, 0) / NULLIF((SELECT pn_tn_wgs FROM somatic_pn), 0), 0)  AS somatic_pf_tn_wgs,
     COALESCE(COALESCE(sf.pc_tn_wxs, 0) / NULLIF((SELECT pn_tn_wxs FROM somatic_pn), 0), 0)  AS somatic_pf_tn_wxs,
+    COALESCE(COALESCE(sf.pc_to_wgs, 0) / NULLIF((SELECT pn_to_wgs FROM somatic_pn), 0), 0)  AS somatic_pf_to_wgs,
+    COALESCE(COALESCE(sf.pc_to_wxs, 0) / NULLIF((SELECT pn_to_wxs FROM somatic_pn), 0), 0)  AS somatic_pf_to_wxs,
     v.gnomad_v3_af,
     v.topmed_af,
     v.tg_af,
@@ -46,6 +49,10 @@ SELECT
     COALESCE((SELECT pn_tn_wgs FROM somatic_pn), 0)                                         AS somatic_pn_tn_wgs,
     COALESCE(sf.pc_tn_wxs, 0)                                                               AS somatic_pc_tn_wxs,
     COALESCE((SELECT pn_tn_wxs FROM somatic_pn), 0)                                         AS somatic_pn_tn_wxs,
+    COALESCE(sf.pc_to_wgs, 0)                                                               AS somatic_pc_to_wgs,
+    COALESCE((SELECT pn_to_wgs FROM somatic_pn), 0)                                         AS somatic_pn_to_wgs,
+    COALESCE(sf.pc_to_wxs, 0)                                                               AS somatic_pc_to_wxs,
+    COALESCE((SELECT pn_to_wxs FROM somatic_pn), 0)                                         AS somatic_pn_to_wxs,
     v.chromosome,
     v.start,
     v.end,
