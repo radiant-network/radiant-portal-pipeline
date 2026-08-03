@@ -64,8 +64,10 @@ def test_snv_variant_reads_only_the_tenant_frequencies():
     assert "INSERT OVERWRITE chop_tenant.snv__variant\n" in sql
     assert "chop_tenant.germline__snv__variant_frequency" in sql
     assert "chop_tenant.somatic__snv__variant_frequency" in sql
-    # A cross-tenant UNION ALL is what made every frequency a pooled number.
-    assert "UNION ALL" not in sql
+    # A cross-tenant union is what made every frequency a pooled number. The one union left combines
+    # this tenant's own germline and somatic loci, so it must stay at exactly two selects — and
+    # `UNION ALL` rather than `UNION`, which StarRocks mis-plans on the right of a LEFT SEMI JOIN.
+    _assert_balanced_unions(sql, n_selects=2)
     # The catalog only holds the loci this tenant carries.
     assert "LEFT SEMI JOIN tenant_loci" in sql
     # The annotation source is open data, so it stays shared.

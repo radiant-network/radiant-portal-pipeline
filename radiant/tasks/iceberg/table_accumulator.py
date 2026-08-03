@@ -36,7 +36,9 @@ def resolve_parquet_file_size_mb() -> int:
     as ``None``, and the container then sees an empty string rather than nothing at all.
     """
     raw = os.getenv("RADIANT_PARQUET_FILE_SIZE_MB")
-    return int(raw) if raw else PARQUET_FILE_SIZE_MB
+    if not raw:
+        return PARQUET_FILE_SIZE_MB
+    return int(raw.strip().strip("\"'"))
 
 
 class TableAccumulator:

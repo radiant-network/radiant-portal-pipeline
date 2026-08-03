@@ -14,9 +14,11 @@ somatic_pn AS (
     FROM {{ mapping.starrocks_somatic_snv_variant_frequency }}
 ),
 tenant_loci AS (
-    SELECT locus_id FROM {{ mapping.starrocks_germline_snv_variant_frequency }}
-    UNION
-    SELECT locus_id FROM {{ mapping.starrocks_somatic_snv_variant_frequency }}
+    SELECT DISTINCT locus_id FROM (
+        SELECT locus_id FROM {{ mapping.starrocks_germline_snv_variant_frequency }}
+        UNION ALL
+        SELECT locus_id FROM {{ mapping.starrocks_somatic_snv_variant_frequency }}
+    ) u
 )
 SELECT
     v.locus_id,
