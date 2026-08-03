@@ -70,7 +70,8 @@ INSERT INTO {{ params.clinical_patient }} (id, submitter_patient_id, submitter_p
     (58, 'MRN-283830', 'mrn', 'UCSF', 'female', '1994-06-26', 'alive', 'Simon', 'Côté', 'CÔT9406263607', 'radiant'),
     (59, 'MRN-283831', 'mrn', 'UCSF', 'male', '1984-02-09', 'alive', 'Camille', 'Bélanger', 'BÉL8402099104', 'radiant'),
     (60, 'MRN-283832', 'mrn', 'UCSF', 'female', '1979-07-01', 'alive', 'Gabriel', 'Fortin', 'FOR7907010876', 'radiant'),
-    (61, 'MRN-283833', 'mrn', 'UCSF', 'female', '1971-07-25', 'alive', 'Camille', 'Bergeron', 'BER7107256143', 'radiant');
+    (61, 'MRN-283833', 'mrn', 'UCSF', 'female', '1971-07-25', 'alive', 'Camille', 'Bergeron', 'BER7107256143', 'radiant'),
+    (62, 'MRN-283834', 'mrn', 'CQGC', 'male', '1968-11-14', 'alive', 'Olivier', 'Tremblay', 'TRE6811149217', 'radiant');
 
 -- Cases
 TRUNCATE {{ params.clinical_project }} CASCADE;
@@ -108,7 +109,8 @@ INSERT INTO {{ params.clinical_case }} (id, proband_id, project_id, analysis_cat
     (19, 55, 2, 2, 'revoke', 'MONDO:0700092', 'CQGC', 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO', 'unsolved', 'Ethan Reid', 'CHUSJ', '2:19', 'radiant'),
     (20, 58, 2, 2, 'revoke', 'MONDO:0700092', 'CQGC', 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO', 'unsolved', 'Leonie Laplante', 'CHUSJ', '2:20', 'radiant'),
     (21, 60, 2, 2, 'incomplete', 'MONDO:0700092', 'CQGC', 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'germline', 'postnatal', 'MONDO', 'unsolved', 'Henri Chabot', 'CHUSJ', '2:21', 'radiant'),
-    (22, 3, 1, 1, 'in_progress', 'MONDO:0700092', 'CQGC', 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'somatic', 'postnatal', 'MONDO', 'unsolved', 'Felix Laflamme', 'CHUSJ', '1:22', 'radiant');
+    (22, 3, 1, 1, 'in_progress', 'MONDO:0700092', 'CQGC', 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'somatic', 'postnatal', 'MONDO', 'unsolved', 'Felix Laflamme', 'CHUSJ', '1:22', 'radiant'),
+    (23, 62, 1, 1, 'in_progress', 'MONDO:0700092', 'CQGC', 'Administrative comment', '2021-09-12 13:08:00', '2021-09-12 13:08:00', 'routine', 'somatic', 'postnatal', 'MONDO', 'unsolved', 'Felix Laflamme', 'CHUSJ', '1:23', 'radiant');
 
 TRUNCATE {{ params.clinical_family }} CASCADE;
 INSERT INTO {{ params.clinical_family }} (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code, tenant_code) VALUES
@@ -769,7 +771,9 @@ INSERT INTO {{ params.clinical_sample }} (id, type_code, parent_sample_id, tissu
     (121, 'blood', NULL, NULL, 'normal', 'B-990.2', 61, 'CQGC', 'radiant'),
     (122, 'blood', NULL, NULL, 'normal', 'B-990.3', 59, 'CQGC', 'radiant'),
     (123, 'blood', NULL, NULL, 'tumoral', 'B-990.3', 3, 'CQGC', 'radiant'),
-    (124, 'blood', NULL, NULL, 'normal', 'B-990.3', 3, 'CQGC', 'radiant');
+    (124, 'blood', NULL, NULL, 'normal', 'B-990.3', 3, 'CQGC', 'radiant'),
+    -- Tumor sample with no matched normal: the case below is analysed tumor-only.
+    (125, 'blood', NULL, NULL, 'tumoral', 'B-990.4', 62, 'CQGC', 'radiant');
 
 -- Sequencing Experiment
 TRUNCATE {{ params.clinical_sequencing_experiment }} CASCADE;
@@ -836,7 +840,8 @@ INSERT INTO {{ params.clinical_sequencing_experiment }} (id, sample_id, status_c
     (60, 60, 'incomplete', 'S14858', 'CQGC', 1676, 'A00516_0228', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
     (61, 61, 'incomplete', 'S14859', 'CQGC', 1677, 'A00516_0229', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
     (62, 123, 'incomplete', 'TCR002361_SRX1091647-T', 'CQGC', 1677, 'TCR002361_SRX1091647-Tumor', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
-    (63, 124, 'incomplete', 'TCR002361_SRX1091646-N', 'CQGC', 1677, 'TCR002361_SRX1091646-Normal', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant');
+    (63, 124, 'incomplete', 'TCR002361_SRX1091646-N', 'CQGC', 1677, 'TCR002361_SRX1091646-Normal', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
+    (64, 125, 'incomplete', 'TCRBOA6_SRX1166091-T', 'CQGC', 1677, 'TCRBOA6_SRX1166091-Tumor', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant');
 
 
 TRUNCATE {{ params.clinical_case_has_sequencing_experiment }} CASCADE;
@@ -903,7 +908,8 @@ INSERT INTO {{ params.clinical_case_has_sequencing_experiment }} (case_id, seque
     (21, 60),
     (21, 61),
     (22, 62),
-    (22, 63);
+    (22, 63),
+    (23, 64);
 
 TRUNCATE {{ params.clinical_task }} CASCADE;
 INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipeline_version, genome_build, created_on, tenant_code) VALUES
@@ -973,7 +979,13 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (64, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (65, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (66, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
-    (67, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant');
+    (67, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    -- Tumor-only analysis of the SAME tumor sample as task 67, which is tumor-normal. A task is
+    -- tumor-only iff it has exactly one 'tumoral' aliquot and no 'normal' one, so the distinction
+    -- is per-task, not per-case: case 22 carries both.
+    (68, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    -- Tumor-only analysis of case 23, whose tumor sample has no matched normal at all.
+    (69, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant');
 
 TRUNCATE {{ params.clinical_task_context }} CASCADE;
 INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_experiment_id) VALUES
@@ -1048,7 +1060,10 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     (65, 8, 22),
     (66, 8, 22),
     (67, 22, 62),
-    (67, 22, 63)
+    (67, 22, 63),
+    -- Task 68 spans only the tumoral experiment 62 -> tumor-only.
+    (68, 22, 62),
+    (69, 23, 64)
 ;
 
 
@@ -1307,7 +1322,11 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (255, 'FI0005566.S14029.vcf.gz', 'genomic', 'snv', 'vcf', 307243253, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c836', 'radiant'),
     (256, 'FI0005566.S14029.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 2422210, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c837', 'radiant'),
     (257, 'variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz', 'genomic', 'snv', 'vcf', 34095067, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz', '103f65eeff69dae290c90d2a4ad3fea2-3', 'radiant'),
-    (258, 'variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 933443, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz.tbi', '5d7f43f74fd1ea4af83b87e727799ec2', 'radiant');
+    (258, 'variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 933443, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz.tbi', '5d7f43f74fd1ea4af83b87e727799ec2', 'radiant'),
+    (259, 'variants.SRX1091647-T.snv.vep.vcf.gz', 'genomic', 'snv', 'vcf', 21903112, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T.snv.vep.vcf.gz', '39056b126bc06b21446c9f6912bc259e', 'radiant'),
+    (260, 'variants.SRX1091647-T.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 612884, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T.snv.vep.vcf.gz.tbi', '97cfc0224aa7e916bfddd070c7522dc7', 'radiant'),
+    (261, 'variants.SRX1166091-T.snv.vep.vcf.gz', 'genomic', 'snv', 'vcf', 23417650, '{{ params.vcf_bucket_prefix }}/variants.SRX1166091-T.snv.vep.vcf.gz', 'adc19953d1b08acdf57f20be42dbcdf3', 'radiant'),
+    (262, 'variants.SRX1166091-T.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 641327, '{{ params.vcf_bucket_prefix }}/variants.SRX1166091-T.snv.vep.vcf.gz.tbi', 'ce6da3c5c64ee1debb468acac4999080', 'radiant');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1566,7 +1585,11 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (65, 236, 'output'),
     (66, 246, 'output'),
     (67, 257, 'output'),
-    (67, 258, 'output');
+    (67, 258, 'output'),
+    (68, 259, 'output'),
+    (68, 260, 'output'),
+    (69, 261, 'output'),
+    (69, 262, 'output');
 
 -- Reset sequences
 ALTER TABLE {{ params.clinical_analysis_catalog }} ALTER COLUMN id RESTART WITH 1000;

@@ -91,7 +91,55 @@ def test_sequencing_experiment_empty(
 
     assert results is not None, "Results should not be None"
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 12
+    assert len(result_df) == 14
+
+
+def test_sequencing_experiment_delta_carries_tumor_only_tasks(
+    postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """Somatic tasks with a single tumoral aliquot reach the delta, in both shapes that exist.
+
+    Nothing upstream flags which analysis is which — a task is tumor-only iff it has exactly one
+    'tumoral' aliquot and no 'normal' one. So the view must emit one row per (case, seq, task) and
+    leave the aliquot count to say it. The seeds cover all three shapes:
+
+    - task 67: tumor-normal, case 22, experiments 62 (tumoral) + 63 (normal)
+    - task 68: tumor-only on the SAME tumor sample as 67 (experiment 62) — so case 22 is
+      simultaneously both, which a per-case discriminator could not express
+    - task 69: tumor-only on its own case 23 / experiment 64, a tumor sample with no normal at all
+
+    Tasks 68 and 69 belong to different patients, so the tumor-only cohort has two members and its
+    frequency denominators are not degenerate.
+    """
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
+        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        results = cursor.fetchall()
+
+    somatic = pd.DataFrame(results, columns=sequencing_delta_columns).query("analysis_type == 'somatic'")
+
+    assert {int(task_id): sorted(rows["histology_type"]) for task_id, rows in somatic.groupby("task_id")} == {
+        67: ["normal", "tumoral"],
+        68: ["tumoral"],
+        69: ["tumoral"],
+    }
+
+    # Each tumor-only task points at its own single-sample VCF, never the paired one.
+    tumor_only = {
+        int(row["task_id"]): (int(row["seq_id"]), row["aliquot"], row["patient_id"], row["vcf_filepath"])
+        for _, row in somatic.query("task_id in [68, 69]").iterrows()
+    }
+    assert tumor_only[68][:2] == (62, "TCR002361_SRX1091647-T")
+    assert tumor_only[68][3].endswith("variants.SRX1091647-T.snv.vep.vcf.gz")
+    assert tumor_only[69][:2] == (64, "TCRBOA6_SRX1166091-T")
+    assert tumor_only[69][3].endswith("variants.SRX1166091-T.snv.vep.vcf.gz")
+
+    # Task 68 shares experiment 62 with the tumor-normal task; task 69 is a distinct patient.
+    assert 62 in set(somatic.query("task_id == 67")["seq_id"])
+    assert tumor_only[68][2] != tumor_only[69][2]
+
+    # Every somatic experiment here is wgs, so the tumor-only cohort lands in the wgs buckets.
+    assert set(somatic["experimental_strategy"]) == {"wgs"}
 
 
 def test_sequencing_experiment_no_delta(
@@ -206,7 +254,7 @@ def test_sequencing_experiment_existing_wgs_task_partition(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 11
+    assert len(result_df) == 13
 
 
 def test_sequencing_experiment_with_recently_updated_task(
@@ -250,7 +298,7 @@ def test_sequencing_experiment_with_recently_updated_task(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 11
+    assert len(result_df) == 13
 
     with (
         psycopg2.connect(
@@ -276,4 +324,4 @@ def test_sequencing_experiment_with_recently_updated_task(
 
     # Should capture the updated experiment
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 12
+    assert len(result_df) == 14
