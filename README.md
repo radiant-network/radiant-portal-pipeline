@@ -49,6 +49,25 @@ The following are examples and should be adjusted to your environment:
 - `Login`: `root`
 - `Password`: (leave empty)
 
+#### Socket timeouts (recommended for deployed environments)
+
+Add socket timeouts to the connection's `Extra` field:
+
+```json
+{"connect_timeout": 10, "read_timeout": 60, "write_timeout": 60}
+```
+
+`StarRocksTaskCompleteTrigger` polls long-running StarRocks tasks from the triggerer. It already bounds each
+poll with `asyncio.wait_for`, so a dead socket can neither block the triggerer's event loop nor stall the
+poll loop. But the worker thread behind a timed-out poll stays blocked in `recv()` until the socket itself
+errors out, holding a slot in the default thread pool — only a driver-level `read_timeout` releases it. This
+matters when the FE's IP changes or a pod is rescheduled, leaving half-open connections behind.
+
+Verify the extras against the `apache-airflow-providers-mysql` version in your image (`6.5.2` for the
+K8s/MWAA builds) before relying on them: the hook forwards only whitelisted extras to the driver, so an
+unsupported key can break `get_conn()` outright. A `Test` on the connection in the Airflow UI is enough to
+confirm.
+
 
 ## Artifacts
 

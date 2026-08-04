@@ -26,17 +26,29 @@ class SubmitTaskOptions:
     Data class to hold options for submitting a task.
 
     Attributes:
-        max_query_timeout (int): Maximum query timeout in milliseconds.
+        max_query_timeout (int): StarRocks `query_timeout`, in seconds.
         poll_interval (int): Interval in seconds to poll for task completion.
         enable_spill (bool): Flag to enable or disable spilling.
         spill_mode (str): Mode of spilling, e.g., 'auto'.
+        defer_timeout (int): Deadline in seconds for the whole deferral, enforced by the scheduler rather
+            than the triggerer, so a wedged triggerer fails the task instead of leaving it deferred forever.
+            Defaults to `max_query_timeout` plus `DEFER_TIMEOUT_MARGIN` — StarRocks aborts the query at
+            `query_timeout`, so the task cannot legitimately outlive that.
     """
+
+    DEFER_TIMEOUT_MARGIN = 600
 
     max_query_timeout: int = 10000
     poll_interval: int = 30
     enable_spill: bool = True
     spill_mode: str = "auto"
     extra_args: dict[str, Any] = None
+    defer_timeout: int | None = None
+
+    def get_defer_timeout(self) -> int:
+        if self.defer_timeout is not None:
+            return self.defer_timeout
+        return self.max_query_timeout + self.DEFER_TIMEOUT_MARGIN
 
 
 class RadiantStarRocksBaseOperator(BaseSQLOperator):
@@ -130,14 +142,16 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
         )
         self.get_db_hook().run(sql=submit_sql, autocommit=True, parameters=parameters)
         if self.submit_task_options:
-            # Defer until StarRocks task completes
+            # Defer until StarRocks task completes. `timeout` is the scheduler-side backstop: without it a
+            # triggerer that dies or wedges leaves the task deferred indefinitely.
             self.defer(
                 trigger=StarRocksTaskCompleteTrigger(
                     conn_id=self.conn_id,
                     task_name=task_name,
-                    sleep_time=30,
+                    sleep_time=self.submit_task_options.poll_interval,
                 ),
                 method_name=method_name,
+                timeout=timedelta(seconds=self.submit_task_options.get_defer_timeout()),
             )
 
 
