@@ -1,7 +1,9 @@
 import re
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
+from airflow.exceptions import TaskDeferred
 
 from radiant.tasks.starrocks.operator import (
     RadiantStarRocksBaseOperator,
@@ -10,6 +12,7 @@ from radiant.tasks.starrocks.operator import (
     SubmitTaskOptions,
     SwapPartition,
 )
+from radiant.tasks.starrocks.trigger import StarRocksTaskCompleteTrigger
 
 # Pin the shared database so mapping assertions don't depend on the process environment.
 _SHARED_CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
@@ -129,6 +132,34 @@ def test_mapped_render_injects_mapping_and_tenant_code():
     assert "chop_tenant.germline__snv__occurrence" in op.sql
     assert "radiant.snv__staging_variant" in op.sql
     assert "'chop'" in op.sql
+
+
+def _deferred(submit_task_options):
+    op = RadiantStarRocksOperator(task_id="t", sql="SELECT 1", submit_task_options=submit_task_options)
+    with patch.object(op, "get_db_hook", return_value=MagicMock()), pytest.raises(TaskDeferred) as exc:
+        op.submit_query(sql="SELECT 1", method_name="_is_complete")
+    return exc.value
+
+
+# Regression: poll_interval used to be dropped on the floor — submit_query hardcoded sleep_time=30.
+def test_submit_query_uses_configured_poll_interval():
+    deferred = _deferred(SubmitTaskOptions(max_query_timeout=3600, poll_interval=10))
+
+    assert isinstance(deferred.trigger, StarRocksTaskCompleteTrigger)
+    assert deferred.trigger.serialize()[1]["sleep_time"] == 10
+
+
+# Regression: no defer timeout meant a wedged or restarted triggerer left the task deferred forever.
+def test_submit_query_sets_defer_timeout_from_query_timeout():
+    deferred = _deferred(SubmitTaskOptions(max_query_timeout=3600, poll_interval=10))
+
+    assert deferred.timeout.total_seconds() == 3600 + SubmitTaskOptions.DEFER_TIMEOUT_MARGIN
+
+
+def test_submit_query_honours_explicit_defer_timeout():
+    deferred = _deferred(SubmitTaskOptions(max_query_timeout=3600, poll_interval=10, defer_timeout=120))
+
+    assert deferred.timeout.total_seconds() == 120
 
 
 def test_mapped_render_partition_swap_resolves_table_per_tenant():
