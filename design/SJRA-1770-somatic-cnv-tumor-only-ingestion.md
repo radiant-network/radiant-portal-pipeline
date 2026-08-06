@@ -18,6 +18,16 @@ Shape it like germline CNV, informed by QLIN's `CNVSomaticTumorOnly`.
 **In scope:** new Iceberg table, new StarRocks table, extraction, load, structural annotations.
 **Out of scope:** cohort/population CNV frequencies of our own, tumor-normal CNV, API/UI.
 
+Also out of scope, and tracked separately: **two pre-existing germline CNV bugs that this work inherits by
+copying germline's shape.** One fix in each repairs germline and somatic together, which is why they are
+their own tickets rather than part of this one.
+
+- **SJRA-1784** *(high)* — a failed VCF download is skipped, but the Airflow task still succeeds, so the
+  experiment is marked ingested and per SJRA-1187 the incremental delta never offers it again. Silent,
+  permanent data loss.
+- **SJRA-1785** *(low)* — deleted tasks are still downloaded and extracted. StarRocks output stays correct
+  (the partition swap excludes deleted `seq_id`s), so the cost is wasted work, not bad data.
+
 The good news up front: **CNV is the simplest flow in the platform.** It writes exactly one table.
 There is no variant catalogue, no consequence table, no shared-table race, and no frequency layer to
 extend — the three things that made somatic SNV expensive. Almost all the work is mechanical
@@ -178,6 +188,20 @@ The code exists in the `task_type` dictionary (line 552) but **no `task` row use
 germline-calling or tumor-only-calling, never both, so there is no collision, and a new column would
 otherwise ripple through five SQL files plus the partition assigner.
 
+### Validating the file against the task type
+
+The task type asserts tumor-only, but the file should be checked against it. Three cheap checks:
+
+1. exactly one experiment on the task;
+2. that experiment's `histology_type == 'tumoral'` — stops a mislabelled normal-only task writing normal
+   depths as tumor values;
+3. the VCF declares exactly one sample — capture `vcf.samples` **before** `set_samples` narrows it (the
+   trick in `snv/somatic/process.py:44-49`), since narrowing rewrites `vcf.samples` and `vcf.raw_header`
+   and destroys the evidence.
+
+Check 3 is the only one that catches a genuinely tumor-normal file mislabelled upstream. Tumor-normal CNV
+is out of scope, so fail loudly rather than process the tumor sample and half-succeed.
+
 ---
 
 ## 4. What the input actually looks like
@@ -300,16 +324,12 @@ invented, and both formats then produce identical rows:
 4. **Never write an `UNKNOWN` row.** Its `cnv_id` would be NULL against a `NOT NULL` key column and the
    whole load would fail (§5). Skip, or fail, but do not persist it.
 
+
 **Why there is no copy-number fallback.** An earlier draft of this document proposed deriving the LOH split
 from `CN`, or from `MCN=0`. Measured against a real DRAGEN somatic tumor-only file, that is not available:
 
-- **`CN` and `MCN` cannot be relied on.** DRAGEN 3.10.8 does not emit them at all (FORMAT is
-  `GT:SM:BC:PE`); 4.2.4 declares them but omits them from the LOH row's own FORMAT. This is also why
-  QLIN's schema has no `cn` — accurate to the files, not an oversight as an earlier draft assumed.
-- **`SM` (segment-mean copy ratio) is always present but not separable.** Over file A's 304 records: GAIN
-  spans 1.003–1.832, LOSS spans 0.035–**1.074** — so **25 of 151 losses sit above 1.0**. A threshold there
-  misclassifies 16% of them, and the overlap is intrinsic (those rows carry the `cnvCopyRatio` filter,
-  "copy ratio within ±0.2 of 1.0"). File B's CNLOH row sits at SM 1.019, i.e. inside that same band.
+But **`CN` and `MCN` cannot be relied on.** DRAGEN 3.10.8 does not emit them at all (FORMAT is
+  `GT:SM:BC:PE`); 4.2.4 declares them but omits them from the LOH row's own FORMAT. 
 
 So relying on the DRAGEN ID is not a stylistic preference — it is forced by the data. The portability
 concern about other callers stands, but the honest limit is: a caller without a parseable ID gives us
@@ -333,23 +353,6 @@ cnv_id    ← GET_CNV_ID(chromosome, start, length, type)      -- type, not alte
 Note the last column is a **join key only** — it is never stored. A GAINLOH row reads
 `type=GAINLOH, alternate=<LOH>`; nothing in the table calls it a duplication. See §7 for the join itself.
 
-Four properties worth calling out:
-
-- **The ID column is a convenience, not a dependency.** LOH is detectable without it in both formats — two
-  ALTs in 4.2, `<LOH>` in 4.4 — and `CN` vs expected ploidy (or `MCN=0` at normal `CN`, the direct
-  minor-haplotype signal) separates CNLOH from GAINLOH. So a caller that leaves `ID` empty still resolves,
-  which answers the portability concern about relying on `DRAGEN:<TYPE>:…`.
-- **Collapsing the legacy pair is lossless.** The two ALTs are not two facts; they are one event stated as
-  "one haplotype down, one up". The allele-specific detail lives in `CN`/`MCN`, which we keep — so
-  `<LOH>` + `CN`/`MCN` carries everything `<DEL>,<DUP>` did.
-- **`alternate` stays a scalar `varchar` with three values.** Considered and rejected: keeping the raw
-  string (`<DEL>,<DUP>`), which would make the column format-dependent — the same event spelled differently
-  depending on an upstream flag — and a permanent trap for anyone writing a filter, facet or QA rule
-  against it. If provenance of the source format is ever needed, that belongs in a provenance field or the
-  task's pipeline version, not overloaded into `alternate`. An array was also rejected: it would store a
-  constant, since legacy LOH is *always* exactly `<DEL>,<DUP>`.
-- **The same event gets the same `cnv_id` under either format**, which an ALT-based id could not deliver:
-  4.2 and 4.4 would have disagreed on the ALT and so on the id.
 
 **The residual risk of depending on the ID.** The VCF spec treats it as **optional** (`.` when absent), and
 for symbolic alleles it is the **ALT** that carries the event type — the ID carries an identifier, strictly
@@ -357,6 +360,12 @@ needed only to link breakend mates via `MATEID`. `DRAGEN:<TYPE>:<chr>:<start>-<e
 not a standard; no documentation shows GATK gCNV, CNVkit or Canvas populating ID with a parseable type. We
 depend on it anyway because, as measured above, nothing else in the file can classify LOH. Worth recording
 as a known coupling to DRAGEN rather than pretending we have a fallback.
+
+**The way out, if another caller ever has to be supported, is `CN` + `MCN` rather than the ID.** `MCN=0`
+marks the loss of heterozygosity, and `CN` against expected ploidy separates CNLOH from GAINLOH. That is the
+vendor-neutral formulation — it simply does not work on the DRAGEN files we have, which either omit those
+fields entirely (3.10.8) or populate them per-record (4.2.4). **Out of scope for now**, and noted here only
+so the escape hatch is on record rather than rediscovered later.
 
 ---
 
@@ -453,57 +462,35 @@ recognise still produces a NULL `cnv_id` and a failed load, so unknown ALTs shou
 instead of reaching StarRocks. This also closes the germline landmine above.
 
 
-### Column set — decided: option C, plus `mcn`
+### Column set
 
-Three shapes were considered. All produce a working table; they differ in how far they diverge from
-germline and how much they preserve. Common core, identical in all three:
+Germline CNV's columns, plus the DRAGEN 4.2.4 ASCN fields. The base is unchanged from germline:
 
 > `part`, `seq_id`, `tenant_code`, `task_id`, `aliquot`, `chromosome`, `alternate`, `start`, `end`,
 > `type`, `length`, `name`, `quality`, `calls`, `bc`, `pe`, `sm`, `svtype`, `svlen`, `reflen`, `phased`
 
-The differences:
+Where somatic differs, and what the two measured files say:
 
-| | **A — QLIN somatic shape** | **B — mirror germline exactly** | **C — germline columns + somatic type parsing** |
-|---|---|---|---|
-| `cn` (FORMAT CN) | dropped | kept | kept, nullable — **absent from the measured file** |
-| `cipos` / `ciend` | dropped | kept | kept, nullable — **declared but never populated** |
-| `filter` | `filters ARRAY<VARCHAR>` (split on `;`) | `filter VARCHAR` (single) | `filter VARCHAR(255)` — consistent with every other occurrence table |
-| `type` source | ID column → `GAIN/LOSS/CNLOH/GAINLOH` | ALT → `GAIN/LOSS/UNKNOWN` | ID, ALT for non-LOH (§4) |
-| CNLOH / GAINLOH | preserved¹ | **collapse to `UNKNOWN`** | preserved¹ |
-| Cost | new parsing + a divergent shape | least new code | small extra parsing |
+| Column | Decision | Observed |
+|---|---|---|
+| `type` | `GAIN` / `LOSS` / `CNLOH` / `GAINLOH`, from the DRAGEN ID (§4) | all four occur in production; the ID is the only reliable source |
+| `alternate` | `<DUP>` / `<DEL>` / `<LOH>` — both LOH spellings normalised (§4) | 4.2 writes `<DEL>,<DUP>`, 4.4 writes `<LOH>` |
+| `cnv_id` | keyed on `type`, not `alternate` | requires the widened UDF below |
+| `cn, cnf, cnq, mcn, mcnf, mcnq, maf, sd, as` | added, all nullable | ASCN fields: absent in 3.10.8, per-record in 4.2.4. `MAF=0` is the direct LOH marker |
+| `cipos` / `ciend` | kept, nullable | 3.10.8 declares but never populates them; 4.2.4 does not declare them at all |
+| `filter` | `VARCHAR(255)`, as in every other occurrence table | 22% of file A's rows are multi-valued, semicolon-joined |
 
-¹ Recording the type is the easy half; making the row loadable is the other half — per §4, `cnv_id` is keyed
-on `type`, which needs the widened UDF below.
+Three things that follow:
 
-**Why C — one CNV shape across germline and somatic.** The two StarRocks tables stay comparable and the DDL
-and QA files stay near-copies. `cn`, `cipos` and `ciend` are kept **nullable**, which costs nothing, whereas
-dropping them would need a migration to undo.
+- **QA except-list.** `cn`, `mcn`, `cipos`, `ciend` and the ASCN floats are entirely NULL on older DRAGEN, so
+  they need exempting from `should_not_contain_only_null` — germline already does this for
+  `svlen`/`cipos`/`ciend` as "constant by construction".
+- **`cipos`/`ciend` are candidates for dropping outright**, since no observed version populates them.
+- **`filter` needs a split-and-check QA test**, not `accepted_values`: the value is semicolon-joined, so an
+  enumerated test would have to list *combinations* rather than values, and the vocabulary is
+  version-dependent (§4). Germline sidesteps this by not testing `filter` at all.
 
-Be aware they will be empty or near-empty: 3.10.8 has no `CN` at all and declares `CIPOS`/`CIEND` without
-populating them, while **4.2.4 does not declare `CIPOS`/`CIEND` at all**. So all three go on the QA
-`should_not_contain_only_null` except-list, exactly as germline already exempts `svlen`/`cipos`/`ciend` as
-"constant by construction" — and `cipos`/`ciend` are arguably worth dropping outright, since no observed
-version populates them. A correction to an earlier draft: QLIN dropping `cn` was **accurate to the files**,
-not the oversight that draft assumed.
-
-**Add the 4.2.4 ASCN fields, all nullable.** File B declares `CN, CNF, CNQ, MCN, MCNF, MCNQ, MAF, SD, AS`
-(plus an INFO `HET` flag) — none of which exist in 3.10.8 output, and several of which are missing even from
-file B's own LOH row. So capture them, expect NULL widely, and put them on the QA except-list. `maf` is the
-most valuable of them: `MAF=0` is the direct LOH marker. None may be *depended* on — per §4 the LOH split
-comes from the ID, because no copy-number field is reliably available.
-
-**`filter` stays a scalar `VARCHAR(255)`.** Every occurrence table in the platform declares it that way —
-`germline__cnv__occurrence`, `germline__snv__occurrence` and `somatic__snv__occurrence` alike — and CNV should
-not be the one exception. So multi-filter rows are stored as DRAGEN writes them, semicolon-joined
-(`cnvCopyRatio;LoDFail`), which is 22% of the records in file A.
-
-Two consequences for the QA file, not for the schema: *"has `LoDFail`"* is a `LIKE` rather than an
-`array_contains`, and a plain `accepted_values` test on `filter` would have to enumerate *combinations*
-rather than values — so use a split-and-check custom test, as germline effectively does by not testing
-`filter` at all. The vocabulary itself is version-dependent and must be a union (§4).
-
-Still to confirm (§9 Q1): whether an **LOH-bearing** file carries `CN`/`MCN`. The measured file has no LOH, so
-it cannot answer that.
+Open (§9 Q1): whether an LOH-bearing file carries `CN`/`MCN`. The fully measured file has no LOH.
 
 ---
 
@@ -524,13 +511,6 @@ New module `radiant/tasks/vcf/cnv/somatic/{occurrence,process}.py`, mirroring
 (1 cpu / 500Mi / 1Gi limit) should apply unchanged — a tumor-only CNV file is single-sample and
 segment-level, so it is far smaller than the SNV files that profile was sized against.
 
-**Deliberately not doing:** restructuring CNV into a fanned-out sub-DAG the way SNV was in SJRA-1751.
-That ticket left CNV's two known gaps open on purpose (it feeds the raw, unfiltered task list, and it
-tolerates failed downloads by skipping — which per SJRA-1187 makes a missing sample *permanently*
-invisible, because the experiment still gets marked ingested). Both gaps will be duplicated into the
-somatic path by this choice. **That is accepted here and should stay tracked as its own ticket**,
-which then fixes both flows at once rather than only the new one.
-
 ---
 
 ## 7. Load and annotations — *decided: structural + keep gnomAD-SV*
@@ -542,8 +522,8 @@ Two new SQL templates, near-copies of the germline pair:
 
 Wired into `import_part.py` as a new TaskGroup mirroring `germline_cnv_occurrence`: a
 `sanity_check_somatic_cnvs` short-circuit on the new `task_type`, then a
-`RadiantStarRocksPartitionSwapOperator.partial(...).expand_kwargs(tenant_params)`. It can sit
-immediately after the germline CNV group in Phase 3.
+`RadiantStarRocksPartitionSwapOperator.partial(...).expand_kwargs(tenant_params)`. Placement is §9 Q7:
+next to the germline CNV group, or later if `nb_snv` needs somatic SNV occurrences to exist first.
 
 The enrichment carries over, with **one substantive change**:
 
@@ -553,13 +533,6 @@ The enrichment carries over, with **one substantive change**:
 | `symbol` / `nb_genes` | same — join `starrocks_ensembl_gene` on overlap |
 | `nb_snv` | **must join `iceberg_somatic_snv_occurrence`, not the germline one** |
 | `gnomad_af/sc/sn/sf/sc_hom/sc_het` | **kept**, same 80% reciprocal-overlap logic, but the join moves off `alternate` — see below |
-
-`nb_snv` is the one that would be quietly wrong if copied verbatim: counting germline SNVs inside a
-somatic segment is meaningless. QLIN makes the same distinction, keying its SNV count on
-`bioinfo_analysis_code` so somatic CNV only counts somatic SNVs. Note this creates an **ordering
-constraint**: the somatic CNV load must run after somatic SNV occurrences exist for the part.
-Germline CNV already sits before `insert_variant_hashes` for the mirror-image reason — worth checking
-whether the somatic CNV group has to move later in Phase 3/4 rather than sitting next to germline's.
 
 ### The gnomAD-SV join keys on `type`, not `alternate`
 
@@ -597,69 +570,27 @@ polymorphic in the general population", not "this somatic event is common".
 
 ## 8. Work breakdown
 
-Roughly in dependency order. Nothing here is large; the count is the cost, not any single item.
+One item per sub-task of **[SJRA-1770](https://d3b.atlassian.net/browse/SJRA-1770)**, roughly in dependency order. Nothing is large; the
+count is the cost, not any single item. The reasoning for each lives in the referenced section.
 
-1. **Discovery** — `staging_external_sequencing_experiment_create_table.sql`: add `'scnv'` to the CNV
-   `CASE`, and add `tumor_only_variant_calling` to the `WHERE` **gated on `d.data_type_code='scnv'`** so
-   the calling task can never supply `vcf_filepath` (§3). No other SQL changes, since we reuse
-   `cnv_vcf_filepath`. Worth an integration assertion that a `tumor_only_variant_calling` row has
-   `vcf_filepath IS NULL` and `cnv_vcf_filepath IS NOT NULL`.
-2. **Task model** — `TUMOR_ONLY_VARIANT_CALLING_TASK = "tumor_only_variant_calling"` + a `BaseTask`
-   subclass + `_TASK_TYPES` entry in `radiant/tasks/vcf/experiment.py`. The task type asserts tumor-only,
-   but validate the file against it — three cheap checks: exactly one experiment on the task; that
-   experiment's `histology_type == 'tumoral'` (stops a mislabelled normal-only task writing normal depths
-   as tumor values); and the VCF declaring exactly one sample. For the third, capture `vcf.samples`
-   **before** `set_samples` narrows it — the trick from `snv/somatic/process.py:44-49`, since narrowing
-   rewrites `vcf.samples` and `vcf.raw_header` and destroys the evidence. It is the only check that catches
-   a genuinely tumor-normal file mislabelled upstream; since TN CNV is out of scope, fail loudly.
-   Minor: prefer `cnv_vcf_filepath: str | None = None` over germline's required `str`. The `scnv` gate
-   makes a missing path impossible, so this is only about failing small if that ever changes — a required
-   field raises while the whole partition's task list is being built, so it fails every experiment in the
-   partition rather than skipping one file.
-3. **Extraction** — `radiant/tasks/vcf/cnv/somatic/{__init__,occurrence,process}.py`: pyiceberg
-   `SCHEMA` + `process_occurrence` + `process_tasks` + `import_somatic_cnv_vcf`. Use a distinct
-   Iceberg field-ID range (germline CNV occupies 100-124 / 200-203). **While here, confirm the DRAGEN ID
-   parses on every row of a real 4.2.4 file** — the resolver in §4 makes the ID load-bearing and currently
-   *fails* on an unparseable one, so a single `ID='.'` row would take down a whole partition. Evidence is
-   thin (3.10.8 parsed 304/304; one 4.2.4 row seen). If any real file has unparseable IDs, make that path
-   **skip-and-count** rather than fail. Three further traps measured in §4:
-   **take `SVLEN[0]`**, since LOH rows carry one value per ALT allele and germline's
-   `record.INFO.get("SVLEN")` would hand a tuple to a scalar field; **read every ASCN FORMAT field
-   defensively**, since `CN`/`MCN` can be missing per-record even when declared; and **skip records whose
-   type cannot be resolved**, otherwise `cnv_id` comes back NULL and the StarRocks load fails (§5). The last
-   guard is worth applying to germline too, where it is a latent landmine today.
-4. **Iceberg table init** — `create_somatic_cnv_occurrence_table()` in
-   `radiant/tasks/iceberg/initialization.py`; register in `init_iceberg_tables.py` (**both** the K8s
-   and ECS branches — note the ECS branch currently defines its tasks but never chains them),
-   `operators/k8s.py`, and the `if/elif` plus both help strings in `scripts/ecs/init_iceberg_table.py`.
-5. **Table mappings** — two keys in `radiant/tasks/data/radiant_tables.py`.
-6. **StarRocks DDL** — `sql/radiant/init/somatic_cnv_occurrence_create_table.sql` (name must match the
-   mapping key).
-7. **Load SQL** — the copy-partition and insert-delta pair of §7. Also **update germline's gnomAD-SV join**
-   to the same `type`-keyed `CASE` (behaviour-preserving there, and keeps the two files near-copies).
-8. **Orchestration** — `import_part.py`: add to `vcf_imports` + the new TaskGroup;
-   `operators/{k8s,ecs}.py` + `scripts/ecs/import_somatic_cnv_vcf.py` (+ the Dockerfile copy path).
-9. **Data QA** — `radiant/data_qa/sources/somatic_cnv_occurrence.yml`, plus a `type` accepted-values
-    test. If we adopt CNLOH/GAINLOH, the dictionary macro needs the new values, and per `CLAUDE.md`
-    those lists must stay in sync with the portal's `facets.go` and frontend i18n.
-10. **Tests** — `tests/resources/integration/test_somatic_cnv.vcf` covering, at minimum, a GAIN, a LOSS, a
-    `.`-ALT REF row, **a legacy-4.2 `<DEL>,<DUP>` LOH row and a 4.4 `<LOH>` row**, asserting both resolve to
-    the same `type`/`alternate`/`cnv_id` (§4); unit tests for `process_occurrence` field mapping
-    (**germline has none — worth adding
-    for somatic rather than copying the omission**); an integration test mirroring
-    `test_process_germline_cnv_vcf.py`; conftest schema import + namespace fixture + a
-    `clinical_somatic_cnv_vcf` fixture; DAG task-id lists in `tests/unit/dags/test_import_part.py` and
-    `test_init_iceberg_tables.py`; clinical seeds for `scnv` documents and a `tumor_only_variant_calling`
-    task (**net-new — nothing seeds that task type today**). Seed a task carrying *both* an `scnv` and a
-    raw `ssnv` document, so the `WHERE` gate of §3 is actually exercised. Two further tests worth writing
-    because their failure mode is remote from its cause: a NULL `cnv_vcf_filepath` must be skipped rather
-    than fail the partition (§3), and a two-sample VCF handed to such a task must raise.
-11. **Close a coverage gap while here** — `tests/integration/dags/sql/test_queries.py` currently skips
-    both CNV SQL templates and omits the CNV table from its init lists, so **no CNV DDL or delta query
-    is validated against a live StarRocks today**. Adding somatic doubles the unvalidated surface;
-    including both is cheap.
-
----
+1. **[SJRA-1772](https://d3b.atlassian.net/browse/SJRA-1772) — Discovery and task model.** The two lines of §3 in
+   `staging_external_sequencing_experiment_create_table.sql`, plus the new constant, `BaseTask` subclass and
+   `_TASK_TYPES` entry in `vcf/experiment.py`, with §3's validations and a nullable `cnv_vcf_filepath`.
+2. **[SJRA-1773](https://d3b.atlassian.net/browse/SJRA-1773) — Extraction.** `radiant/tasks/vcf/cnv/somatic/{occurrence,process}.py`,
+   avoiding the traps of §4 and using a field-ID range clear of germline CNV's 100-124 / 200-203.
+3. **[SJRA-1774](https://d3b.atlassian.net/browse/SJRA-1774) — Tables.** `create_somatic_cnv_occurrence_table()` registered in
+   `init_iceberg_tables.py` (**both** branches — the ECS one defines its tasks but never chains them), two
+   keys in `radiant_tables.py`, and `somatic_cnv_occurrence_create_table.sql` named to match the mapping key.
+4. **[SJRA-1775](https://d3b.atlassian.net/browse/SJRA-1775) — Load SQL.** The copy-partition and insert-delta pair of §7, plus the same
+   `type`-keyed gnomAD join applied to germline.
+5. **[SJRA-1776](https://d3b.atlassian.net/browse/SJRA-1776) — Orchestration.** `import_part.py`, `operators/{k8s,ecs}.py`,
+   `scripts/ecs/import_somatic_cnv_vcf.py` and the Dockerfile copy path.
+6. **[SJRA-1777](https://d3b.atlassian.net/browse/SJRA-1777) — `cnv_id` UDF.** Widen to a 3-bit type field (§5), update both SQL call
+   sites, and backfill germline `cnv_id`s — these three land together.
+7. **[SJRA-1778](https://d3b.atlassian.net/browse/SJRA-1778) — Tests, data QA and seeds.** A fixture VCF covering GAIN, LOSS, a `.`-ALT
+   row and **both** LOH spellings; `somatic_cnv_occurrence.yml` per §5; seeds are net-new and should carry
+   both an `scnv` and a raw `ssnv` document so the §3 gate is exercised; and close the `test_queries.py` gap,
+   where no CNV DDL or delta query is validated against a live StarRocks today.
 
 ## 9. Open questions
 
@@ -670,13 +601,8 @@ three-value scalar and `cnv_id` keyed on `type`; **gnomAD-SV joins on `type`**, 
 
 | # | Question | Why it needs an answer |
 |---|---|---|
-| 1 | **Does a DRAGEN 4.4 file exist in the cohort?** | The `<LOH>` ALT spelling has never been observed — both characterised files use multi-allelic `<DEL>,<DUP>` — so that input branch is written speculatively and will stay untested until a 4.4 file appears. Answered by asking who runs the sequencing, not by reading a file. |
-| 2 | **What is the full DRAGEN version spread?** | At least 3.10.8 and 4.2.4 are both present (§4), and they differ in FORMAT, FILTER vocabulary and LOH support. LOH is therefore **on the critical path**. The spread also tells us how much of the cohort has usable ASCN fields. |
-| 3 | **Do the new `CNLOH` / `GAINLOH` type values need portal work first?** | Per `CLAUDE.md`, the QA dictionaries mirror `facets.go` and frontend i18n, so two new `type` values are a cross-repo coordination item, not just an ETL one. |
-| 4 | **When do we cut the UDF release + germline backfill?** | Decided *what* (shared UDF, 3-bit type, bits from `start` — §5); still open *when*. Every germline `cnv_id` changes, so the UDF release, both SQL call sites and the backfill have to land together. |
-| 5 | **Is the raw somatic SNV VCF from `tumor_only_variant_calling` catalogued as an `ssnv` document?** | Not blocking — the `WHERE` gate of §3 is correct either way — but it decides whether that gate is load-bearing or merely defensive, which is worth knowing before someone "simplifies" it to match the looser germline line. |
-| 6 | ~~Volume?~~ **Answered:** 304 segments for a WES sample (§4), so the existing CNV container profile is ample. | — |
-| 7 | **Should the somatic CNV load move after somatic SNV in Phase 3/4?** | Required if `nb_snv` joins somatic SNV occurrences (§7). Cheap to get right, annoying to discover late as a silently-zero column. |
+| 1 | **Do the new `CNLOH` / `GAINLOH` type values need portal work first?** | Per `CLAUDE.md`, the QA dictionaries mirror `facets.go` and frontend i18n, so two new `type` values are a cross-repo coordination item, not just an ETL one. |
+
 
 ---
 
