@@ -108,7 +108,9 @@ The reciprocal part is what does the work. A one-directional test would let a 5 
 two events to be comparable in **size** as well as in position.
 
 Useful consequence, used throughout §5.3: 80% reciprocal overlap implies `len_a / len_b ∈ [0.8, 1.25]` and
-`|start_a − start_b| ≤ 0.2 × min(len_a, len_b)`.
+`|start_a − start_b| ≤ 0.2 × len_first`, where `len_first` is the length of whichever interval starts
+**first**. It is **not** `0.2 × min(len_a, len_b)` — §5.3 has the counterexample, and getting this wrong
+costs real matches.
 
 ### 3.3 Non-transitivity, and what it forces
 
@@ -308,6 +310,27 @@ Two details that matter:
 On the example: A vs B overlaps 980 kb ≥ 80% of both → match. A vs C overlaps 400 kb, below 80% of A's
 1 Mb → rejected. A vs D shares bucket and bin but differs in `type` → never compared.
 
+**Why nine explicit keys instead of a range predicate.** The obvious-looking alternative is
+`t.len_bucket BETWEEN p.len_bucket - 1 AND p.len_bucket + 1` and similar for the position. A database
+cannot hash a range, so that plan degrades to a nested loop. Measured on the DGV set (711 312 distinct
+intervals, `COUNT(*)` only, so no write cost):
+
+| variant | pairs found | time | correct? |
+|---|---|---|---|
+| **nine explicit keys (this design)** | **15 199 004** | **486 ms** | ✓ |
+| `BETWEEN` on `len_bucket` + `BETWEEN` on `pos_bin` | 14 338 390 | 71 s | ✗ misses 5.7% |
+| `BETWEEN` on `len_bucket` + `start ± 0.20·len` | 15 089 070 | 124 s | ✗ misses 0.7% |
+| `BETWEEN` on `len_bucket` + `start ± 0.25·len` | 15 199 004 | 117 s | ✓ |
+
+A *correct* range join is **240× slower**. Two of the three range variants are also silently wrong, which
+is the more important lesson:
+
+- **Ranging on `pos_bin` does not work at all.** `pos_bin` is computed with each row's *own* bucket width,
+  so comparing a bucket-15 bin number against bucket-14 bin numbers compares different scales. It loses
+  essentially every cross-bucket match — 861 196 of the 15 199 004 pairs are cross-bucket, and this variant
+  found only 582 of them. No error, no warning, just a plausible-looking count that is 5.7% short.
+- **Ranging on `start` works only with the right radius** — `0.25·len`, not `0.20·len`. See §5.3.
+
 ### 5.3 Why the binning is exact
 
 The join is an equi-join on four columns with the overlap test as a cheap residual, which is what keeps
@@ -318,18 +341,50 @@ neither can drop a true match:
 lengths within 1.25× of each other fall in the same `FLOOR(LOG2(len))` bucket or in adjacent ones, so
 probing `±1` suffices.
 
-**Position.** If `start_a < start_b` then `overlap ≤ end_a − start_b = len_a − |Δstart|`; combined with
-`overlap ≥ 0.8·len_a` this gives `|Δstart| ≤ 0.2·len_a`, and symmetrically
-`|Δstart| ≤ 0.2·min(len_a, len_b)`. With bin width `2^len_bucket` and `len < 2^(len_bucket+1)`, the maximum
-displacement is `0.2 × 2^(tb+2) = 0.8 × 2^tb`, i.e. strictly less than one bin width — so `±1` bin suffices
-for the target bucket and for both neighbours.
+**Position.** Take `start_a ≤ start_b` and let `Δ = start_b − start_a`. Then
+`overlap ≤ end_a − start_b = len_a − Δ`; combined with `overlap ≥ 0.8·len_a` this gives **`Δ ≤ 0.2·len_a`**.
+Note which length that is: the bound is governed by the interval that starts **first**, not by the shorter
+one.
 
-This is a proof, and it was also checked empirically against a full brute-force join (§6.3).
+> **It is tempting to write `Δ ≤ 0.2·min(len_a, len_b)`, and that is wrong.** Counterexample:
+> `a = [0, 100]`, `b = [20, 100]`, so `len_a = 100`, `len_b = 80`, `Δ = 20`. Overlap is 80, which is
+> ≥ 0.8 × 100 and ≥ 0.8 × 80 — a genuine match — but `0.2 × min(100, 80) = 16 < 20`. This is not
+> academic: a range join built on the `min` bound silently lost 109 934 of 15 199 004 pairs (§5.2).
 
-**The scheme is not tied to 0.8, but it does have a floor.** Generalising the two arguments to a threshold
-`f`: `len_bucket ±1` is valid for any `f ≥ 0.25`, and `pos_bin ±1` for any `f ≥ 0.5`. So calibration (§5.5)
-can move the cutoff anywhere in `[0.5, 1.0)` without touching the binning. **Below 0.5, `pos_bin` needs
-`±2`** — otherwise matches are silently lost. Worth a comment in the SQL next to the constant.
+Searching outward from a query interval `p`, the partner may start either before or after `p` and may be up
+to 1.25× longer, so the safe search radius is **`0.25 × len_p`**.
+
+Now the bin argument. With `b = FLOOR(LOG2(len_p))` we have `len_p < 2^(b+1)`, so the displacement is
+strictly less than `0.25 × 2^(b+1) = 0.5 × 2^b`. Against each probed bucket:
+
+| target bucket | bin width | max displacement | as fraction of a bin |
+|---|---|---|---|
+| `b + 1` | `2^(b+1)` | `< 0.5 · 2^b` | 0.25 |
+| `b` | `2^b` | `< 0.5 · 2^b` | 0.5 |
+| `b − 1` | `2^(b−1)` | `< 0.5 · 2^b = 2^(b−1)` | **< 1.0** (binding case) |
+
+In all three the displacement is strictly less than one bin width of the *target* bucket, so the two bins
+differ by at most 1 and `±1` suffices. The `b − 1` row is the tight one — at 80% there is no margin left
+beyond it.
+
+This is a proof, and it was checked twice empirically: against a full brute-force join (§6.3) and against an
+independent range-join formulation (§5.2), both reproducing 15 199 004 pairs exactly.
+
+**The scheme is not tied to 0.8, but it has a floor — and the floor is higher than it looks.** For a general
+threshold `f` the displacement can reach `(1 − f)·2^(b+1)`, and the binding case above requires that to fit
+inside `2^(b−1)`:
+
+```
+(1 − f) · 2^(b+1)  ≤  2^(b−1)   ⟺   (1 − f) ≤ ¼   ⟺   f ≥ 0.75
+```
+
+So **`pos_bin ±1` is valid only for `f ≥ 0.75`**. (`len_bucket ±1` is laxer — it needs the length ratio to
+stay under 2 so the `LOG2` floors differ by at most 1, i.e. `f ≥ 0.5`; see Appendix B.4 — so the position
+bin is what binds.) At `f = 0.7` the displacement reaches 1.2 bin widths
+and at `f = 0.5` it reaches 2, and in both cases matches are dropped **silently**. Sweeping below 0.75
+requires `pos_bin ±2`, which covers displacement up to two bin widths and is therefore good down to
+`f = 0.5`. Worth a comment in the SQL next to the constant, because the failure mode is a plausible-looking
+undercount with no error.
 
 ### 5.4 Step 3 — expand to patients
 
@@ -383,9 +438,11 @@ report 1/5 = 0.20 — the expected answer.
 (§7.1) the exact value matters. But do **not** ship a table with `pc/pn/pf` at four thresholds crossed with
 every stratum — that is dozens of columns for no operational benefit. Instead:
 
-1. **Calibrate once.** Keep the raw overlap fraction in `matches` and emit `pc` at 0.5 / 0.7 / 0.8 / 0.9 via
+1. **Calibrate once.** Keep the raw overlap fraction in `matches` and emit `pc` at several cutoffs via
    conditional aggregation in one pass. Compare against gnomAD-SV AF and against the threshold-crossing
-   counts from §7.1. Note the `f ≥ 0.5` floor from §5.3.
+   counts from §7.1. **Mind the `f ≥ 0.75` binning floor from §5.3:** a sweep of 0.8 / 0.85 / 0.9 is safe
+   as written, but including 0.5 or 0.7 requires widening the probe to `pos_bin ±2` first — otherwise the
+   low cutoffs return silently undercounted results and the calibration reaches the wrong conclusion.
 2. **Ship one.** The production table carries the chosen threshold with full stratification.
 
 ### 5.6 The assembled statement
@@ -456,17 +513,39 @@ rather than adding new keys. Pairs grow at roughly **N^1.6**. Extrapolating, ~50
 4.8 → 5.8 → 6.6 → 8.1 across the rows above as the cohort grew, because the numerator keeps growing while
 the denominator saturates. An 8:1 at 8 464 samples and an 8:1 at 300 samples mean different things.
 
-### 6.3 The binning was verified against brute force
+### 6.3 The binning was verified against brute force — whole genome, exact set equality
 
-Full O(n²) self-join on chr22 (15 288 distinct intervals) with the overlap predicate and **no bins at all**,
-compared against the binned result:
+Full O(n²) self-join with the overlap predicate and **no bins at all**, run per chromosome and compared
+pair-by-pair against the binned result. Not a count check: a `FULL OUTER JOIN` in both directions, so a
+false negative cancelled by a false positive could not hide.
 
-| | pairs |
+| | |
 |---|---|
-| brute force | 261 556 |
-| binned | 261 556 |
+| brute-force pairs | **15 199 004** |
+| binned pairs | **15 199 004** |
 | **missed by binning (false negatives)** | **0** |
 | **extra from binning (false positives)** | **0** |
+| chromosomes with a discrepancy | **0 of 24** |
+| brute-force runtime | 573 s (per chromosome), or **152 s** as one whole-genome query |
+
+Every chromosome came out `0 / 0` individually. The heaviest was **chr6 at 2 484 259 pairs** — 2.6× the next
+highest, and exactly where it should be, since chr6 LOSS around 32.5 Mb (the MHC) is also where `max k`
+lives (§6.1).
+
+Two further independent confirmations:
+
+- **A different join strategy.** The range-join formulation in §5.2 (`start ± 0.25·len`, no position bins at
+  all) reproduces 15 199 004 across the whole genome.
+- **A different engine and storage architecture.** The entire pipeline was rebuilt from the source TSV on
+  StarRocks **4.1.4 with local storage** (the original run was 4.0.13 shared-data on S3) and reproduced every
+  intermediate exactly: 5 760 822 occurrences → 711 312 distinct intervals → 8 464 samples → 15 199 004
+  pairs.
+
+**Practical note on running the brute force yourself.** As a single whole-genome query it is 19.5 billion
+comparisons and will OOM a small node — it killed a 7.65 GB one. Run it **per chromosome** (the join never
+crosses chromosomes, so this costs no extra work) and **read-only**, as
+`WITH brute AS (...) FULL OUTER JOIN binned`, materialising nothing. On a 14.4 GB BE that completes
+comfortably in ~10 minutes.
 
 ### 6.4 Bitmaps are not needed yet
 
@@ -728,8 +807,9 @@ materially, take it.
 
 ### 10.4 Threshold calibration
 
-§5.5, with the `f ≥ 0.5` binning floor from §5.3. One-off exercise, needs real cohort data, should happen
-before the table is exposed in the portal.
+§5.5, with the `f ≥ 0.75` binning floor from §5.3 — widen the probe to `pos_bin ±2` before sweeping any
+cutoff below that, or the low end of the sweep is silently undercounted. One-off exercise, needs real cohort
+data, should happen before the table is exposed in the portal.
 
 ### 10.5 Portal side
 
@@ -808,3 +888,625 @@ whose lengths sit inside the band the predicate forces. **`min_len_ratio ≥ 0.8
 are invariants** — a violation is a bug in the predicate, not a biological finding. Also useful: real
 fuzzy-breakpoint common CNVs have many matched intervals (13–36 in the observed cases), whereas a spurious
 pairing has one partner.
+
+---
+
+## Appendix B — the two bucket keys from first principles
+
+§5.3 gives the proof compactly. This appendix walks the same ground slowly, for anyone meeting the scheme
+for the first time or debugging it later. **B.1–B.5** cover `len_bucket`, **B.6–B.11** cover `pos_bin`,
+which is the fiddlier of the two.
+
+### B.1 What the formula computes
+
+```sql
+len_bucket = FLOOR(LOG2(length))
+```
+
+`LOG2(x)` answers *"2 raised to what power gives me x?"* — `LOG2(8) = 3` because `2³ = 8`, and
+`LOG2(1024) = 10`. For anything that is not an exact power of two you get a decimal: `LOG2(1000) = 9.966`.
+`FLOOR` then discards the decimal, always rounding down.
+
+Together, `FLOOR(LOG2(x))` is **the exponent of the largest power of 2 that fits inside x** — equivalently,
+the position of the highest 1-bit in the binary representation. `1000` is `1111101000` in binary: ten
+digits, highest bit at position 9, so `FLOOR(LOG2(1000)) = 9`.
+
+### B.2 The bands
+
+Bucket `b` holds every length from `2^b` to `2^(b+1) − 1`:
+
+| bucket | band | | bucket | band |
+|---|---|---|---|---|
+| 8 | 256 – 511 | | 14 | 16 384 – 32 767 |
+| 9 | 512 – 1 023 | | 15 | 32 768 – 65 535 |
+| 10 | 1 024 – 2 047 | | 16 | 65 536 – 131 071 |
+| 11 | 2 048 – 4 095 | | 17 | 131 072 – 262 143 |
+| 12 | 4 096 – 8 191 | | 18 | 262 144 – 524 287 |
+| 13 | 8 192 – 16 383 | | 20 | 1 048 576 – 2 097 151 |
+
+Real lengths dropped into it:
+
+| length | `LOG2` | bucket |
+|---|---|---|
+| 300 bp | 8.229 | 8 |
+| 500 bp | 8.966 | 8 |
+| **511 bp** | **8.997** | **8** |
+| **512 bp** | **9.000** | **9** |
+| 1 000 bp | 9.966 | 9 |
+| **1 023 bp** | **9.999** | **9** |
+| **1 024 bp** | **10.000** | **10** |
+| 1 200 bp | 10.229 | 10 |
+| 45 643 bp | 15.478 | 15 |
+| 53 285 bp | 15.702 | 15 |
+
+Bands widen as lengths grow, which is the point: 100 bp is an enormous difference for a 500 bp event and
+irrelevant for a 50 kb one. **Every band spans exactly a factor of 2**, so they are equal-sized in the only
+sense that matters — proportionally.
+
+### B.3 Why matching lengths are within 1.25× — the derivation
+
+Let `O` be the length of the overlapping region. 80% reciprocal overlap is two requirements at once:
+
+```
+O ≥ 0.8 × len_A          and          O ≥ 0.8 × len_B
+```
+
+The bridge to length is a fact that is obvious once stated: **the shared region lies inside both intervals,
+so it cannot be longer than either of them.**
+
+```
+O ≤ len_A                and          O ≤ len_B
+```
+
+The best possible case is perfect nesting — the smaller interval lying entirely inside the larger — where
+`O` equals the whole smaller interval and cannot do better.
+
+```
+A (1000 bp)   ████████████████████
+B  (800 bp)       ████████████████
+                  └─ overlap = 800, all of B
+```
+
+Chain the first requirement with the second bound:
+
+```
+0.8 × len_A  ≤  O  ≤  len_B      ⟹      0.8 × len_A ≤ len_B      ⟹      len_A / len_B ≤ 1.25
+```
+
+In words: **B must be at least 80% the size of A**, because if it were smaller then even perfectly nested
+it would not be long enough to cover 80% of A. Repeat starting from the other requirement and you get
+`len_A / len_B ≥ 0.8`. Together:
+
+```
+0.8  ≤  len_A / len_B  ≤  1.25
+```
+
+`0.8` and `1.25` are reciprocals — it is one rule told from each interval's point of view, symmetric
+around 1 because neither interval is special.
+
+Checked on numbers, assuming the best possible placement each time:
+
+| len_A | len_B | best `O` | `O ≥ 0.8·len_A`? | `O ≥ 0.8·len_B`? | ratio | can match? |
+|---|---|---|---|---|---|---|
+| 1 000 | 900 | 900 | 900 ≥ 800 ✓ | 900 ≥ 720 ✓ | 1.11 | yes |
+| 1 000 | 800 | 800 | 800 ≥ 800 ✓ | 800 ≥ 640 ✓ | **1.25** | yes — with zero margin |
+| 1 000 | 700 | 700 | 700 ≥ 800 ✗ | — | 1.43 | **no, at any position** |
+| 1 000 | 500 | 500 | 500 ≥ 800 ✗ | — | 2.00 | **no, at any position** |
+
+The 1 000 / 800 row passes only under perfect nesting; shift B by one base pair and the overlap falls to
+799 and it fails. That is why 1.25 is an exact boundary, not an approximation.
+
+### B.4 Why `±1` is necessary and sufficient
+
+Take `LOG2` of the ratio bound. Logs turn division into subtraction:
+
+```
+LOG2(0.8) ≤ LOG2(len_A) − LOG2(len_B) ≤ LOG2(1.25)
+  −0.322  ≤ LOG2(len_A) − LOG2(len_B) ≤  +0.322
+```
+
+So `| LOG2(len_A) − LOG2(len_B) | ≤ 0.322`. The remaining step is that **two numbers less than 1 apart have
+floors that differ by at most 1**. That is worth seeing rather than asserting.
+
+`FLOOR` chops the number line into unit-width cells, one per integer. The boundaries are spaced **exactly
+1.0 apart** — that is the fact doing all the work:
+
+```
+        9                    10                   11                   12
+        ├────────────────────┼────────────────────┼────────────────────┤
+        └──── FLOOR = 9 ─────┘└──── FLOOR = 10 ───┘└──── FLOOR = 11 ────┘
+```
+
+Slide a window of width 0.322 anywhere along it:
+
+```
+        9                    10                   11
+        ├────────────────────┼────────────────────┼
+   (a)   ├──┤                                          both in cell 9   → 9, 9    diff 0
+   (b)                    ├──┤                         crosses one line → 9, 10   diff 1
+   (c)                       ├──┤                      both in cell 10  → 10, 10  diff 0
+```
+
+Wherever it lands, the window covers **at most one** boundary — it is 0.322 wide and the boundaries are
+1.0 apart, so there is no room for two. Each boundary crossed adds exactly 1 to the floor difference, so
+the difference is 0 or 1 and nothing else.
+
+Floors 2 apart would need one point in cell 9 and the other in cell 11. Even the tightest such pair is more
+than 1.0 apart, because getting from cell 9 to cell 11 means traversing the whole of cell 10:
+
+```
+        9                    10                   11
+        ├────────────────────┼────────────────────┼
+                          x                       y
+                        9.999                   11.000
+                          └───────── > 1.0 ──────┘
+                                     ↑
+                          must cross ALL of cell 10
+```
+
+Not unlikely — arithmetically impossible for a 0.322-wide window. Equivalently, as a counting rule:
+`FLOOR(y) − FLOOR(x)` is exactly *the number of integers strictly between x and y*, and at most one integer
+fits in a gap of 0.322.
+
+Since `0.322 < 1`:
+
+> Two matching intervals are in the same bucket, or in adjacent buckets. Never further.
+
+That sentence is the whole justification for probing `±1`. Three cases:
+
+- **Same bucket.** 45 643 and 53 285 — ratio 1.167, `LOG2` 15.478 and 15.702, difference 0.224, both floor
+  to 15.
+- **Adjacent buckets — this is why `±1` exists.** 1 000 and 1 200 — ratio 1.20, comfortably matchable.
+  `LOG2` 9.966 and 10.229, a difference of only 0.263 — but the boundary at 10.000 falls between them, so
+  they floor to **9** and **10**. Joining on equal buckets alone would lose this pair. With `±1`, the 1 000
+  probes buckets 8/9/10 and finds it.
+
+  ```
+          9                    10                   11
+          ├────────────────────┼────────────────────┼
+                            ├──┤
+                         9.966  10.229
+                       (1 000 bp) (1 200 bp)
+                        FLOOR 9   FLOOR 10
+  ```
+- **Two buckets apart — correctly pruned.** 1 000 and 3 000 — ratio 3.0, cannot pass 80% RO at any
+  position. `LOG2` 9.966 and 11.551, difference 1.585, buckets 9 and 11. Rejected before the overlap test
+  runs.
+
+### B.5 Two things not to misread
+
+**The length condition is necessary, not sufficient.** A ratio inside `[0.8, 1.25]` means the pair is *not
+ruled out by size*. It does **not** mean the intervals match — two 1 000 bp deletions at opposite ends of
+chr1 have ratio 1.0 and zero overlap. `len_bucket` is a cheap filter that removes definite non-matches;
+`pos_bin` is the second filter, on position; and the real reciprocal-overlap predicate still runs on
+whatever survives both. Neither bucket decides anything. Together they shrink the candidate set from
+~506 billion pairs to ~15 million so the actual test becomes affordable.
+
+**Base 2 is a choice, and it is already tight enough.** Any base works. Base 2 is the smallest whole-number
+base whose band factor (2) exceeds the maximum ratio (1.25), and `LOG2` is a fast native function. A tighter
+base — `FLOOR(LOG(len) / LOG(1.25))`, giving bands of exactly 1.25× — would prune slightly harder, but
+measured bucket occupancy is already **2.49 intervals on average**, so there is essentially nothing left to
+remove and the join runs in 486 ms. Not worth the complexity.
+
+### B.6 What `pos_bin` prunes on, and the tolerance
+
+`len_bucket` prunes on size. But two 1 000 bp deletions at opposite ends of chr1 have a perfect size ratio
+and zero overlap, so a second filter is needed — on position. The question it must answer is: **how far
+apart can two matching intervals start?**
+
+Two intervals, A starting at `a` with length `L_A`, B at `b` with length `L_B`, and `Δ = b − a` with A
+starting first:
+
+```
+        a                                        a+L_A
+   A:   ├────────────────────────────────────────┤
+        │
+        │      b                            b+L_B
+   B:   │      ├────────────────────────────────────┤
+        │      │                                 │
+        ├──Δ───┤                                 │
+        wasted └────────── overlap ──────────────┘
+```
+
+The first `Δ` of A lies before B begins, so it can never be part of the overlap:
+
+```
+overlap ≤ L_A − Δ
+```
+
+Apply `overlap ≥ 0.8 × L_A`:
+
+```
+0.8 × L_A ≤ L_A − Δ        ⟹        Δ ≤ 0.2 × L_A
+```
+
+**The tolerance is 20% of the length of whichever interval starts *first*** — the one with the exposed
+front end. Not the shorter one. That distinction is the subject of B.7 and is where a range join built on
+the wrong bound lost 109 934 pairs (§5.2).
+
+### B.7 Why the search radius is 0.25, not 0.2
+
+Writing the search for a query interval `p`, we only know `L_p` — finding `t` is the whole point. So the
+radius must be expressed in terms of `L_p`, and `t` may start on either side:
+
+- **`p` starts first** — the wasted front is `p`'s, so `Δ ≤ 0.2 × L_p`. Already in terms of `L_p`. ✓
+- **`t` starts first** — the wasted front is `t`'s, so `Δ ≤ 0.2 × L_t`. Not usable directly, but the length
+  filter guarantees `L_t ≤ 1.25 × L_p`, giving `Δ ≤ 0.2 × 1.25 × L_p = 0.25 × L_p`.
+
+The worse of the two governs, so the **safe search radius is `0.25 × L_p`**. In one sentence: *a partner
+that is both longer and earlier can sit further away and still overlap enough, because it has more length
+to spare.*
+
+At the extreme, with `L_p = 1000` and a partner at the maximum allowed length starting before us:
+
+```
+   t = [0, 1250]      █████████████████████████
+   p = [250, 1250]         ████████████████████
+                      ├─Δ──┤
+                        250
+```
+
+Overlap = 1000. Covers 80% of `p` (`1000 ≥ 800`) ✓ and 80% of `t` (`1000 ≥ 1000`) ✓ — a genuine match at
+`Δ = 0.25 × L_p`. A radius of `0.2 × L_p = 200` misses it.
+
+The reachable set is genuinely lopsided as a result — `p` reaches 250 bp left but only 200 bp right, since
+"starts first" is directional. We search a symmetric `±0.25 · L_p` anyway; over-searching the right side by
+50 bp costs a couple of candidates the exact test discards (B.11).
+
+### B.8 The formula: zoom levels, not regions
+
+```sql
+pos_bin = FLOOR(start / 2^len_bucket)
+```
+
+`FLOOR(x / W)` chops the chromosome into cells of width `W` and reports which one you are in. Here
+`W = 2^len_bucket`, so **the cell width is the base length of your size band**.
+
+The mental model that fits is **map zoom levels**, not boxes inside boxes. `len_bucket` is not a region of
+the genome — it is a size class, so it cannot "contain" positions. Instead there is one grid per size class,
+all covering the same genome at different resolutions, and a point has a *different cell number at each
+zoom*:
+
+| level | cell width | our example's cell |
+|---|---|---|
+| bucket 16 | 65 536 bp | 933 |
+| bucket 15 | 32 768 bp | 1867 |
+| bucket 14 | 16 384 bp | 3735 |
+
+Because the widths are powers of two and the grids share an origin, they nest exactly — each coarse cell is
+precisely two finer ones. Running example: **chr11, start 61 203 531, length 45 643** (a real row from the
+DRAGEN WES uplift output), which puts it in bucket 15 at `pos_bin 1867`:
+
+```
+                                                     ▼ 61 203 531
+        ┌───────────────────────┬───────────────────────┬───────────────────────┐
+b+1=16  │▓▓▓▓▓▓▓▓▓▓932▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓▓▓▓▓▓933▓▓▓▓▓▓▓▓▓▓│▓▓▓▓▓▓▓▓▓▓934▓▓▓▓▓▓▓▓▓▓│
+        ├───────────┬───────────┼───────────┬───────────┼───────────┬───────────┤
+b  =15  │   1864    │   1865    │▓▓▓1866▓▓▓▓│▓▓▓1867▓▓▓▓│▓▓▓1868▓▓▓▓│   1869    │
+        ├─────┬─────┼─────┬─────┼─────┬─────┼─────┬─────┼─────┬─────┼─────┬─────┤
+b-1=14  │ 3728│ 3729│ 3730│ 3731│ 3732│ 3733│▓3734│▓3735│▓3736│ 3737│ 3738│ 3739│
+        └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+
+        ▓ = one of the 9 probed cells        ▼ = where our interval starts
+```
+
+Cell 933 = 1866 + 1867 = 3732…3735. The three probed windows are **not** nested selections — each is
+centred on where *we* fall at that zoom, computed independently. Reach shrinks as you zoom in: ~197 kb at
+level 16, ~98 kb at 15, ~49 kb at 14. Coarser level, longer partners, larger tolerated displacement.
+
+**The bins index start positions, not extents.** Our interval is 45 643 bp but its cell is only 32 768 —
+it spans cells 1867, 1868 and into 1869, yet 1869 is never probed. That is correct: the join only ever asks
+*"is the partner's **start** close enough to my **start**?"*. Where either interval ends is handled by the
+length filter and the exact overlap test. This is why a 4 Mb interval works with the same nine probes
+despite sprawling across hundreds of cells — only its first base pair is ever looked up.
+
+This structure is the **UCSC binning scheme**, the same idea used for BAM and tabix indexing. It is the
+standard answer to overlap queries on intervals spanning many orders of magnitude.
+
+### B.9 Why `±1`, and the trap that comes with it
+
+The key property, and the reason the width is tied to the length bucket:
+
+```
+tolerance = 0.25 × L_p     and     L_p < 2^(b+1) = 2W     ⟹     tolerance < 0.5 × W
+```
+
+**Every interval's search radius is under half its own cell width, automatically, at every scale.** Since
+cell boundaries are `W` apart, a window of `0.5 W` can straddle at most one — so a partner is in the same
+cell or an adjacent one, and `±1` suffices. Same number-line argument as B.4, with `W` in place of 1.
+
+For our interval the radius is `±11 411`, i.e. `[61 192 120, 61 214 942]`, which crosses the boundary at
+61 210 624 into cell 1868 — so a genuine partner can indeed sit one cell over.
+
+**The trap, which has no analogue for `len_bucket`:** cell width differs per bucket, so bin numbers from
+different buckets are not comparable. Same start, three contexts:
+
+| looking in bucket | cell width | `pos_bin` |
+|---|---|---|
+| 14 | 16 384 | **3735** |
+| 15 | 32 768 | **1867** |
+| 16 | 65 536 | **933** |
+
+Probing bucket 14 requires **3735**, not 1867 — hence `+ db` sitting *inside* the power in
+`FLOOR(start / POW(2, len_bucket + db))`. Comparing 1867 against 3735 is comparing different scales; that is
+exactly what `BETWEEN p.pos_bin - 1 AND p.pos_bin + 1` does, and it silently lost **861 196 pairs** (§5.2).
+
+A corollary that looks like corruption if you read `pos_bin` as "where on the chromosome": two intervals
+with the **same start** but different lengths get **different** `pos_bin`, because they are on different
+maps.
+
+Probing *down* a bucket is the tight case — the cells are half as wide but the tolerance is unchanged, so it
+consumes nearly a whole cell. §5.3 has the table and the resulting `f ≥ 0.75` threshold floor.
+
+### B.10 Why not a fixed-width grid
+
+The obvious first design is a fixed cell width. It cannot work, because **the tolerance scales with length**
+and CNV lengths in the DGV set span 1 bp to 4 123 510 bp:
+
+| event length | tolerance (`0.25 × len`) | scaled cell (`2^len_bucket`) | tolerance ÷ cell |
+|---|---|---|---|
+| 300 bp | 75 bp | 256 | 0.29 |
+| 1 000 bp | 250 bp | 512 | 0.49 |
+| 45 643 bp | 11 411 bp | 32 768 | 0.35 |
+| 4 123 510 bp | 1 030 878 bp | 2 097 152 | 0.49 |
+
+The scaled cell is always 2–4× the tolerance. A fixed 100 kb cell is simultaneously **1 333× too wide** for
+a 300 bp event (no pruning at all) and **10× too narrow** for a 4 Mb one (`±1` misses matches). Measured
+probe radius a fixed 100 kb grid would need, per size class:
+
+| len_bucket | intervals | max_len | probes **each side** |
+|---|---|---|---|
+| 5–17 | 597 927 | ≤ 262 143 | ±1 |
+| 18 | 5 567 | 524 256 | **±2** |
+| 19 | 2 289 | 1 046 884 | **±3** |
+| 20 | 797 | 2 096 298 | **±6** |
+| 21 | 242 | 4 123 510 | **±11** |
+
+The radius stops being constant, so the clean three-value `CROSS JOIN` collapses. Measured pruning quality:
+
+| scheme | bins | max k | avg k | Σk² |
+|---|---|---|---|---|
+| **scaled (`2^len_bucket`)** | 285 787 | 1 026 | 2.49 | **16 860 738** |
+| fixed 100 kb | 168 689 | 1 128 | 4.22 | 24 247 166 |
+| fixed 1 kb | 285 815 | **132** | 2.49 | **12 470 914** |
+
+Fixed 100 kb is plainly worse. **Fixed 1 kb looks better** on Σk² — and that number is misleading. A finer
+grid puts fewer intervals per cell but forces proportionally more cells to be probed for the same tolerance:
+with 1 kb cells a 45 kb event needs `±17` instead of `±1`. Same candidates, ~33 M probe rows instead of
+6.4 M. **Cell width only moves the bookkeeping; the candidate set is fixed by the geometry.**
+
+**Measured end to end.** A fixed-width grid *can* be made correct on its own — drop `len_bucket` entirely
+and prune on position alone — and it does work. Every variant below returns exactly 15 199 004 pairs, so
+all are lossless; only the cost differs:
+
+| join keys | probe cells | time | vs brute force |
+|---|---|---|---|
+| `chromosome` + `type` only (brute force) | 1 | 152 s | 1× |
+| `len_bucket` only, ±1 | 3 | 40.8 s | 3.7× |
+| `pos_bin` only, fixed 2 Mb, ±1 | 3 | 11.5 s | 13× |
+| `pos_bin` only, fixed 512 kb, ±2 | 5 | 6.8 s | 22× |
+| `pos_bin` only, fixed 128 kb, ±8 | 17 | **6.1 s** | 25× |
+| **both keys, 9 cells** | 9 | **0.461 s** | **330×** |
+
+Position is much the stronger of the two filters — positions spread over 3.1 Gb while lengths pile into a
+few bands — but **position alone is still 13× slower than using both**, and length alone is 88× slower.
+
+**The stronger objection to a fixed grid is the parameter, not the 13×.** The probe radius must be sized
+from the *largest* interval in the dataset, so a single 4 Mb event dictates the radius for all 711 312:
+
+| width | radius required | probe cells |
+|---|---|---|
+| 1 kb | **±1007** | 2015 |
+| 8 kb | ±126 | 253 |
+| 128 kb | ±8 | 17 |
+| 2 Mb | ±1 | 3 |
+
+At 1 kb that is ≈3.5 × 10¹⁰ comparisons — **worse than brute force**. The optimum near 128 kb is a property
+of *this* length distribution and would need re-tuning for a different cohort, caller, or the arrival of
+whole-chromosome events.
+
+So the argument for scaling is not raw speed — it is **invariance**: a constant 9 probe keys at every scale,
+one `CROSS JOIN`, no per-row radius, and no data-dependent constant to tune or get wrong.
+
+### B.11 What the nine cells actually buy
+
+Most of the nine are dead for any given interval, and that is fine.
+
+For our 45 643 bp example, a partner's length must be in `[36 514, 57 054]` — a window that sits **entirely
+inside bucket 15**:
+
+```
+   bucket 14              bucket 15                      bucket 16
+├─────────────────┼───────────────────────────────┼──────────────────────►
+16 384      32 767│32 768                   65 535│65 536         131 071
+                  │      ├─────────────────┤      │
+                  │   36 514           57 054     │
+   ✗ too short         ✓ entirely inside            ✗ too long
+```
+
+So levels 14 and 16 cannot contribute. And of the three level-15 cells, the `±11 411` radius does not reach
+back into 1866 — leaving **2 of the 9 live**. Confirmed by the data: this row's 36 real matches have
+`min_match_len 36 516` and `max_match_len 55 790`, all inside bucket 15, with the minimum sitting almost
+exactly on the theoretical floor of 36 514.
+
+**All nine can never be live.** The partner-length window spans a factor of `1.25 / 0.8 = 1.5625`, narrower
+than a band's factor of 2, so it can never reach across three bands — at least 3 of the 9 cells are
+guaranteed waste for every interval. Neighbouring buckets only pay off near a band edge:
+
+| our length | position in band | partner window | live buckets |
+|---|---|---|---|
+| 34 000 | near the bottom | 27 200 – 42 500 | 14 and 15 |
+| **45 643** | middle | 36 514 – 57 054 | **15 only** |
+| 60 000 | near the top | 48 000 – 75 000 | 15 and 16 |
+
+Measured cost of that waste across the whole DGV set:
+
+```
+candidates examined (share a bin key) :  32 006 039
+matches kept (pass 80% RO)            :  15 199 004
+hit rate                              :  47.5%
+```
+
+Nearly half of everything the probe returns is a real match — a dead cell is a failed hash lookup, not a
+scan. And where the matches come from:
+
+| bucket offset | matches | share |
+|---|---|---|
+| **0** (same bucket) | 14 337 808 | **94.33%** |
+| −1 | 430 598 | 2.83% |
+| +1 | 430 598 | 2.83% |
+
+The two neighbours contribute only 5.7% — but that is 861 196 pairs, exactly what the broken range join
+lost, and they are the near-band-edge intervals the whole design exists to catch. (The two offsets being
+*exactly* equal is a useful correctness signal: matching is symmetric, so every `+1` pair must have a `−1`
+twin.)
+
+Skipping the dead cells would require a per-row branch on band and cell edges, emitting a variable number of
+keys, to shave a fraction of 486 ms. Not worth it.
+
+**The general principle, which shows up three times in this design** — in the 0.25 radius, the `±1` cells,
+and the nine probes:
+
+> The filter must never lose a true match. It is allowed to be sloppy in the other direction, because the
+> exact test cleans up after it.
+
+Over-searching costs discarded candidates. Under-searching loses data silently and nobody finds out. This is
+the standard **filter-and-refine** pattern — cheap uniform over-approximation, then the exact predicate on
+the survivors.
+
+---
+
+## Appendix C — inside `probe` and `matches`
+
+The two intermediate relations from §5.2. Neither is persisted in production — both are CTEs — but during
+development and debugging it is worth materialising them, and worth knowing their exact shape. All sizes
+below are measured on the DGV set (711 312 distinct intervals).
+
+### C.1 `probe` — the 9-key explosion
+
+**One row per (distinct interval × probe offset), so exactly 9 rows per interval.**
+
+```
+711 312 distinct intervals  ×  3 length buckets  ×  3 position cells  =  6 401 808 rows
+```
+
+Each row carries the interval's identity and geometry (`cnv_id`, `chromosome`, `type`, `start`, `end`) plus
+the **target** key it is asking for (`t_len_bucket`, `t_pos_bin`). Only the target key changes across an
+interval's 9 rows; the geometry is repeated, because the overlap predicate needs it after the join.
+
+For the running example (chr11, `start 61 203 531`, `length 45 643`, so `len_bucket 15`, `pos_bin 1867`):
+
+| `db` | `dp` | `t_len_bucket` | `t_pos_bin` |
+|---|---|---|---|
+| −1 | −1 | 14 | 3734 |
+| −1 | 0 | 14 | **3735** |
+| −1 | +1 | 14 | 3736 |
+| 0 | −1 | 15 | 1866 |
+| 0 | 0 | 15 | **1867** |
+| 0 | +1 | 15 | 1868 |
+| +1 | −1 | 16 | 932 |
+| +1 | 0 | 16 | **933** |
+| +1 | +1 | 16 | 934 |
+
+These are the nine shaded cells in the B.8 diagram. Note the bolded `dp = 0` rows: **3735 / 1867 / 933** are
+the same base pair expressed on three different grids (B.9).
+
+**The nine target keys are pairwise distinct.** Rows with different `db` differ in `t_len_bucket`; rows with
+the same `db` differ in `t_pos_bin`. Since any candidate row has exactly one `(len_bucket, pos_bin)`, it can
+match **at most one** of an interval's nine keys — which is why no pair is produced twice and there is no
+`DISTINCT` anywhere downstream.
+
+### C.2 `matches` — the surviving pairs
+
+**One row per ordered pair `(query_id, match_id)` that passes the overlap test.**
+
+| | measured |
+|---|---|
+| candidates (share a target key, before the RO test) | 32 006 039 |
+| **`matches` rows (after the RO test)** | **15 199 004** |
+| hit rate | 47.5% |
+| average matches per interval | 21.37 |
+| maximum matches for one interval | 715 |
+
+Two structural properties, both consequences of the predicate rather than of the implementation:
+
+**Reflexive.** Every interval matches itself — for `a = b` the overlap is the full length, and
+`len ≥ 0.8 × len` holds for any `len > 0`. The `db = 0, dp = 0` probe key always finds it. So `matches`
+contains exactly **711 312 self-pairs**, one per distinct interval.
+
+**Symmetric.** The predicate is symmetric in `a` and `b`, so `(X, Y)` appears if and only if `(Y, X)` does.
+Both directions are stored deliberately: the frequency is *egocentric* (§3.3), so each interval needs its
+own complete match set.
+
+Together these give a cheap arithmetic invariant:
+
+```
+15 199 004  −  711 312 self-pairs  =  14 487 692 non-self ordered pairs
+                                   =   7 243 846 unordered pairs   ← must be a whole number
+```
+
+**`(total − n_distinct_intervals)` must be even.** An odd result means a pair exists in one direction only,
+which can only happen if the join is losing rows — exactly the failure mode of the broken range variant in
+§5.2. It costs one query and catches a whole class of bug.
+
+### C.3 Invariants worth asserting
+
+| assertion | why it catches something |
+|---|---|
+| `probe` rows = `9 × COUNT(DISTINCT cnv_id)` | the `CROSS JOIN` degenerated, or a `NULL` length nulled a key |
+| every `cnv_id` appears in `matches` at least once | reflexivity; a missing interval means a `NULL` `cnv_id` (§10.1) or a lost self-pair |
+| `(matches − distinct intervals)` is even | asymmetry ⇒ the join is dropping rows |
+| offsets `−1` and `+1` yield equal match counts | same, cross-bucket specific — measured 430 598 each |
+| no pair appears twice in `matches` | a probe key collided; the nine should be pairwise distinct |
+
+### C.4 Debugging queries
+
+**Inspect one interval's nine probe keys.** Substitute the `cnv_id` under investigation:
+
+```sql
+SELECT d.len_bucket, d.pos_bin,
+       d.len_bucket + b.db                                  AS t_len_bucket,
+       FLOOR(d.`start` / POW(2, d.len_bucket + b.db)) + p.dp AS t_pos_bin
+FROM distinct_cnv d
+CROSS JOIN (SELECT -1 AS db UNION ALL SELECT 0 AS db UNION ALL SELECT 1 AS db) b
+CROSS JOIN (SELECT -1 AS dp UNION ALL SELECT 0 AS dp UNION ALL SELECT 1 AS dp) p
+WHERE d.cnv_id = :cnv_id
+ORDER BY t_len_bucket, t_pos_bin;
+```
+
+Expect exactly 9 rows, all `(t_len_bucket, t_pos_bin)` distinct. If two coincide, the bin arithmetic is
+wrong.
+
+**Inspect one interval's matches with the actual overlap fraction**, to see how close each sits to the
+threshold:
+
+```sql
+SELECT m.match_id, t.`start`, t.`end` - t.`start` AS match_len,
+       ROUND((t.`end` - t.`start`) / (q.`end` - q.`start`), 3) AS len_ratio,
+       ROUND(LEAST(
+         GREATEST(0, LEAST(q.`end`,t.`end`) - GREATEST(q.`start`,t.`start`)) / (q.`end` - q.`start`),
+         GREATEST(0, LEAST(q.`end`,t.`end`) - GREATEST(q.`start`,t.`start`)) / (t.`end` - t.`start`)
+       ), 3) AS reciprocal_overlap
+FROM matches m
+JOIN distinct_cnv q ON q.cnv_id = m.query_id
+JOIN distinct_cnv t ON t.cnv_id = m.match_id
+WHERE m.query_id = :cnv_id
+ORDER BY reciprocal_overlap DESC;
+```
+
+**`len_ratio` must lie in `[0.8, 1.25]` and `reciprocal_overlap` in `[0.8, 1.0]` for every row** — those are
+forced by the predicate (§3.2, B.3). A value outside either range is a bug in the predicate, not a
+biological finding. Same invariant as A.5, applied to a single interval.
+
+### C.5 Whether to materialise them
+
+In production both stay CTEs — the optimiser keeps the whole thing one statement and nothing needs
+persisting. Materialise them when:
+
+- **calibrating the threshold** (§5.5) — keep the raw overlap fraction in `matches` and cut it at several
+  cutoffs without re-running the join;
+- **comparing against brute force** (§6.3) — the set-difference check needs both sides as tables;
+- **investigating a suspicious frequency** — C.4's queries are far easier against a persisted `matches`.
+
+Sizes are modest: `probe` ≈ 6.4 M rows and `matches` ≈ 15.2 M rows of two `BIGINT`s. Both rebuild in
+seconds.
