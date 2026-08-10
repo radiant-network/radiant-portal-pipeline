@@ -91,7 +91,7 @@ def test_sequencing_experiment_empty(
 
     assert results is not None, "Results should not be None"
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 14
+    assert len(result_df) == 15
 
 
 def test_sequencing_experiment_delta_carries_tumor_only_tasks(
@@ -117,8 +117,10 @@ def test_sequencing_experiment_delta_carries_tumor_only_tasks(
         results = cursor.fetchall()
 
     somatic = pd.DataFrame(results, columns=sequencing_delta_columns).query("analysis_type == 'somatic'")
+    # Task 70 is the tumor-only *calling* step behind task 69, covered by its own test below.
+    annotations = somatic.query("task_type == 'radiant_somatic_annotation'")
 
-    assert {int(task_id): sorted(rows["histology_type"]) for task_id, rows in somatic.groupby("task_id")} == {
+    assert {int(task_id): sorted(rows["histology_type"]) for task_id, rows in annotations.groupby("task_id")} == {
         67: ["normal", "tumoral"],
         68: ["tumoral"],
         69: ["tumoral"],
@@ -140,6 +142,42 @@ def test_sequencing_experiment_delta_carries_tumor_only_tasks(
 
     # Every somatic experiment here is wgs, so the tumor-only cohort lands in the wgs buckets.
     assert set(somatic["experimental_strategy"]) == {"wgs"}
+
+
+def test_sequencing_experiment_delta_gates_somatic_cnv_documents(
+    postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """A somatic CNV VCF is discovered by task type + document data type, never by filename.
+
+    Task 70 is the `tumor_only_variant_calling` step behind the tumor-only annotation task 69, and it
+    registers three output documents: the `scnv` CNV VCF, its index, and a raw un-annotated `ssnv`
+    SNV VCF. Only the CNV VCF may surface — the raw SNV file must not reach `vcf_filepath`, which
+    only ever holds the annotated VCF of a `radiant_somatic_annotation` task. Without the
+    `data_type_code = 'scnv'` gate in the view's WHERE clause, it would, giving somatic SNV a second
+    ingestion route it must not have.
+    """
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
+        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        results = cursor.fetchall()
+
+    delta = pd.DataFrame(results, columns=sequencing_delta_columns)
+    calling = delta.query("task_id == 70")
+
+    # One row: the task's single tumoral experiment, carrying the CNV VCF and nothing else.
+    assert len(calling) == 1
+    row = calling.iloc[0]
+    assert row["task_type"] == "tumor_only_variant_calling"
+    assert (row["seq_id"], row["aliquot"], row["histology_type"]) == (64, "TCRBOA6_SRX1166091-T", "tumoral")
+    assert row["cnv_vcf_filepath"].endswith("TCRBOA6_SRX1166091-T.cnv.vcf.gz")
+    # pd.isna, not `is None`: pandas renders a SQL NULL as either None or NaN depending on what else
+    # the column holds, and a leak would show up as a URL string either way.
+    assert pd.isna(row["vcf_filepath"]), "the raw un-annotated ssnv VCF leaked into vcf_filepath"
+
+    # The annotation task on the same experiment still points at its own annotated VCF.
+    annotation = delta.query("task_id == 69").iloc[0]
+    assert annotation["vcf_filepath"].endswith("variants.SRX1166091-T.snv.vep.vcf.gz")
+    assert pd.isna(annotation["cnv_vcf_filepath"])
 
 
 def test_sequencing_experiment_no_delta(
@@ -254,7 +292,7 @@ def test_sequencing_experiment_existing_wgs_task_partition(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 13
+    assert len(result_df) == 14
 
 
 def test_sequencing_experiment_with_recently_updated_task(
@@ -298,7 +336,7 @@ def test_sequencing_experiment_with_recently_updated_task(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 13
+    assert len(result_df) == 14
 
     with (
         psycopg2.connect(
@@ -324,4 +362,4 @@ def test_sequencing_experiment_with_recently_updated_task(
 
     # Should capture the updated experiment
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 14
+    assert len(result_df) == 15
