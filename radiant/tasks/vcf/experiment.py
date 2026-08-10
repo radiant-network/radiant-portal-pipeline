@@ -6,6 +6,7 @@ RADIANT_GERMLINE_ANNOTATION_TASK = "radiant_germline_annotation"
 ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK = "alignment_germline_variant_calling"
 EXOMISER_TASK = "exomiser"
 RADIANT_SOMATIC_ANNOTATION_TASK = "radiant_somatic_annotation"
+TUMOR_ONLY_VARIANT_CALLING_TASK = "tumor_only_variant_calling"
 
 
 class Experiment(BaseModel):
@@ -96,11 +97,34 @@ class RadiantSomaticAnnotationTask(BaseTask):
         raise ValueError("No tumor sample found in rows for `radiant_somatic_annotation` task.")
 
 
+class TumorOnlyVariantCallingTask(BaseTask):
+    task_type: str = TUMOR_ONLY_VARIANT_CALLING_TASK
+    cnv_vcf_filepath: str | None = None
+
+    @staticmethod
+    def gather_additional_args(rows: list[dict]) -> dict:
+        # The task type asserts tumor-only; these checks hold the file to it. A second row means a
+        # tumor-normal task mislabelled upstream, and a non-tumoral histology means a normal sample
+        # whose depths would otherwise be written as tumor values. Tumor-normal CNV is out of scope,
+        # so fail loudly rather than half-succeed.
+        if len(rows) > 1:
+            raise ValueError("`tumor_only_variant_calling` task expects a single row per task.")
+        if rows[0].get("histology_type") != "tumoral":
+            raise ValueError(
+                f"`tumor_only_variant_calling` task [{rows[0].get('task_id')}] expects a tumoral sample, "
+                f"got histology_type: {rows[0].get('histology_type')}."
+            )
+        return {
+            "cnv_vcf_filepath": rows[0].get("cnv_vcf_filepath"),
+        }
+
+
 _TASK_TYPES = {
     RADIANT_GERMLINE_ANNOTATION_TASK: RadiantGermlineAnnotationTask,
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK: AlignmentGermlineVariantCallingTask,
     EXOMISER_TASK: ExomiserTask,
     RADIANT_SOMATIC_ANNOTATION_TASK: RadiantSomaticAnnotationTask,
+    TUMOR_ONLY_VARIANT_CALLING_TASK: TumorOnlyVariantCallingTask,
 }
 
 

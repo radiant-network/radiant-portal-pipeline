@@ -985,7 +985,11 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     -- is per-task, not per-case: case 22 carries both.
     (68, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- Tumor-only analysis of case 23, whose tumor sample has no matched normal at all.
-    (69, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant');
+    (69, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    -- The calling step behind task 69: this is where the somatic CNV VCF comes from. Somatic CNV is
+    -- discovered by task type + document data type (`tumor_only_variant_calling` + `scnv`), never by
+    -- filename, exactly as germline CNV is by `alignment_germline_variant_calling` + `gcnv`.
+    (70, 'tumor_only_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant');
 
 TRUNCATE {{ params.clinical_task_context }} CASCADE;
 INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_experiment_id) VALUES
@@ -1063,7 +1067,9 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     (67, 22, 63),
     -- Task 68 spans only the tumoral experiment 62 -> tumor-only.
     (68, 22, 62),
-    (69, 23, 64)
+    (69, 23, 64),
+    -- Task 70 calls the same single tumoral experiment 64 that task 69 annotates.
+    (70, 23, 64)
 ;
 
 
@@ -1326,7 +1332,13 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (259, 'variants.SRX1091647-T.snv.vep.vcf.gz', 'genomic', 'snv', 'vcf', 21903112, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T.snv.vep.vcf.gz', '39056b126bc06b21446c9f6912bc259e', 'radiant'),
     (260, 'variants.SRX1091647-T.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 612884, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T.snv.vep.vcf.gz.tbi', '97cfc0224aa7e916bfddd070c7522dc7', 'radiant'),
     (261, 'variants.SRX1166091-T.snv.vep.vcf.gz', 'genomic', 'snv', 'vcf', 23417650, '{{ params.vcf_bucket_prefix }}/variants.SRX1166091-T.snv.vep.vcf.gz', 'adc19953d1b08acdf57f20be42dbcdf3', 'radiant'),
-    (262, 'variants.SRX1166091-T.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 641327, '{{ params.vcf_bucket_prefix }}/variants.SRX1166091-T.snv.vep.vcf.gz.tbi', 'ce6da3c5c64ee1debb468acac4999080', 'radiant');
+    (262, 'variants.SRX1166091-T.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 641327, '{{ params.vcf_bucket_prefix }}/variants.SRX1166091-T.snv.vep.vcf.gz.tbi', 'ce6da3c5c64ee1debb468acac4999080', 'radiant'),
+    -- Outputs of the tumor-only *calling* task 70. A calling step emits both the somatic CNV VCF and
+    -- a raw, un-annotated somatic SNV VCF: document 265 is that raw file, and it must never reach
+    -- `vcf_filepath`, which only ever holds the annotated VCF of a `radiant_somatic_annotation` task.
+    (263, 'TCRBOA6_SRX1166091-T.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1204512, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.cnv.vcf.gz', 'b4e1f0a2c7d95836ae2f1c0d4b7a9e51', 'radiant'),
+    (264, 'TCRBOA6_SRX1166091-T.cnv.vcf.gz.tbi', 'genomic', 'scnv', 'tbi', 18432, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.cnv.vcf.gz.tbi', 'd0c6a3f92b17e845cf30ab29e6d15473', 'radiant'),
+    (265, 'TCRBOA6_SRX1166091-T.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 19874233, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.snv.vcf.gz', 'f27a5b910ce3d648b0a71f2c85d9e304', 'radiant');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1589,7 +1601,10 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (68, 259, 'output'),
     (68, 260, 'output'),
     (69, 261, 'output'),
-    (69, 262, 'output');
+    (69, 262, 'output'),
+    (70, 263, 'output'),
+    (70, 264, 'output'),
+    (70, 265, 'output');
 
 -- Reset sequences
 ALTER TABLE {{ params.clinical_analysis_catalog }} ALTER COLUMN id RESTART WITH 1000;
