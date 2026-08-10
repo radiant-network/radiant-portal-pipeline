@@ -49,7 +49,7 @@ loaded by the machinery germline CNV already uses. No frequencies of our own, no
 - **Tables** — `somatic_cnv_occurrence` (Iceberg, shared, partitioned by `tenant_code`) and
   `somatic__cnv__occurrence` (StarRocks, per-tenant). Two mapping-dict entries do most of the wiring. (§5)
 - **Column set** — mirror germline, plus the DRAGEN 4.2.4 ASCN fields (`cn, cnf, cnq, mcn, mcnf, mcnq, maf,
-  sd, as`), all nullable and often empty. `filter` stays `VARCHAR(255)` like every other occurrence
+  sd, ascn_as`), all nullable and often empty. `filter` stays `VARCHAR(255)` like every other occurrence
   table. (§5)
 - **`type` comes from the DRAGEN ID** — `GAIN`, `LOSS`, `CNLOH`, `GAINLOH`. Measured: there is no usable
   copy-number fallback, since `CN`/`MCN` are absent or per-record and `SM` distributions overlap. A knowing
@@ -476,7 +476,7 @@ Where somatic differs, and what the two measured files say:
 | `type` | `GAIN` / `LOSS` / `CNLOH` / `GAINLOH`, from the DRAGEN ID (§4) | all four occur in production; the ID is the only reliable source |
 | `alternate` | `<DUP>` / `<DEL>` / `<LOH>` — both LOH spellings normalised (§4) | 4.2 writes `<DEL>,<DUP>`, 4.4 writes `<LOH>` |
 | `cnv_id` | keyed on `type`, not `alternate` | requires the widened UDF below |
-| `cn, cnf, cnq, mcn, mcnf, mcnq, maf, sd, as` | added, all nullable | ASCN fields: absent in 3.10.8, per-record in 4.2.4. `MAF=0` is the direct LOH marker |
+| `cn, cnf, cnq, mcn, mcnf, mcnq, maf, sd, ascn_as` | added, all nullable | ASCN fields: absent in 3.10.8, per-record in 4.2.4. `MAF=0` is the direct LOH marker. DRAGEN's FORMAT `AS` is stored as **`ascn_as`**: `as` is reserved in both Python and StarRocks/MySQL and would need quoting in every DDL, load-SQL and dbt call site |
 | `cipos` / `ciend` | kept, nullable | 3.10.8 declares but never populates them; 4.2.4 does not declare them at all |
 | `filter` | `VARCHAR(255)`, as in every other occurrence table | 22% of file A's rows are multi-valued, semicolon-joined |
 

@@ -1,0 +1,24 @@
+##fileformat=VCFv4.2
+##ALT=<ID=CNV,Description="Copy number variant region">
+##ALT=<ID=DEL,Description="Deletion relative to the reference">
+##ALT=<ID=DUP,Description="Region of elevated copy number relative to the reference">
+##contig=<ID=chr1,length=248956422>
+##reference=file:///ephemeral/reference/index
+##INFO=<ID=REFLEN,Number=1,Type=Integer,Description="Number of REF positions included in this record">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=SVLEN,Number=.,Type=Integer,Description="Difference in length between REF and ALT alleles">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">
+##INFO=<ID=CIPOS,Number=2,Type=Integer,Description="Confidence interval around POS">
+##INFO=<ID=CIEND,Number=2,Type=Integer,Description="Confidence interval around END">
+##FILTER=<ID=cnvQual,Description="CNV with quality below 10">
+##FILTER=<ID=cnvBinSupportRatio,Description="CNV with low supporting number of bins with respect to event length">
+##FILTER=<ID=cnvCopyRatio,Description="CNV with copy ratio within +/- 0.2 of 1.0">
+##FILTER=<ID=LoDFail,Description="CNV below the limit of detection">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=SM,Number=1,Type=Float,Description="Linear copy ratio of the segment mean">
+##FORMAT=<ID=BC,Number=1,Type=Integer,Description="Number of bins in the region">
+##FORMAT=<ID=PE,Number=2,Type=Integer,Description="Number of improperly paired end reads at start and stop breakpoints">
+##DRAGENVersion=<ID=dragen,Version="SW: 05.021.510.3.10.8, HW: 05.021.510">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	TCRBOA7-T
+chr1	450730	DRAGEN:LOSS:chr1:450731-7249626	N	<DEL>	128	cnvCopyRatio;LoDFail	SVTYPE=CNV;SVLEN=-6798896;END=7249626;REFLEN=6798896	GT:SM:BC:PE	0/1:1.04404:1979:25,7
+chr1	124941718	DRAGEN:GAIN:chr1:124941719-124975661	N	<DUP>	36	PASS	END=124975661;REFLEN=33943	GT:SM:BC:PE	0/1:1.43012:20:5,30
