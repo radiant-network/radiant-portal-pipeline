@@ -108,6 +108,24 @@ def test_process_tasks_buffers_only_classifiable_records():
     assert {occ["task_id"] for occ in buffered} == {70}
 
 
+def test_process_tasks_rejects_a_two_sample_vcf():
+    """The multi-sample check has to see the *file's* sample list, which only exists before
+    `set_samples` narrows it -- narrowing rewrites `vcf.samples` and `vcf.raw_header` and destroys the
+    evidence. Exercised through `process_tasks` rather than `validate_task_is_tumor_only` directly,
+    because it is that ordering, not the validation itself, that a refactor would quietly break."""
+    task = _task().model_copy(update={"cnv_vcf_filepath": str(RESOURCES_DIR / "test_somatic_cnv_two_samples.vcf")})
+
+    with (
+        patch.object(cnv_process, "load_catalog"),
+        patch.object(cnv_process, "pa") as mock_pa,
+        pytest.raises(ValueError, match="declares 2 samples"),
+    ):
+        cnv_process.process_tasks([task], namespace="radiant")
+
+    # Tumor-normal CNV is out of scope: fail loudly rather than half-succeed on the tumor sample.
+    mock_pa.Table.from_pylist.assert_not_called()
+
+
 def test_import_somatic_cnv_vcf_processes_only_tumor_only_tasks():
     tasks = [
         _task_dict(1, "s3://bucket/germline.cnv.vcf.gz", task_type=ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK),

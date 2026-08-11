@@ -33,6 +33,12 @@
              'substitution', 'sequence_alteration']) }}
 {% endmacro %}
 
+{% macro dict_cnv_type() %}
+  {# Notion: https://app.notion.com/p/ferlab/83970f81d6ca44628abd12f697627ab1?v=e787d2d6aa1b46148d58bb936d59c230 #}
+  {# mirrors facets.go + i18n — keep in sync #}
+  {{ return(['GAIN', 'LOSS', 'CNLOH', 'GAINLOH']) }}
+{% endmacro %}
+
 {% macro dict_clinvar_interpretation() %}
   {# Notion: https://app.notion.com/p/ferlab/79b61815da5c4fbb898d65a6e88b5256?v=af0f09733b8345d3a68ee75dafabecfb #}
   {# mirrors facets.go + classification-badge.tsx + i18n — keep in sync #}
