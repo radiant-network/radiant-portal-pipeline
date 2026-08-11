@@ -135,6 +135,35 @@ def create_germline_snv_occurrence_table():
     catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec)
 
 
+def create_somatic_cnv_occurrence_table():
+    import os
+
+    from pyiceberg.catalog import load_catalog
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    from radiant.tasks.vcf.cnv.somatic.occurrence import SCHEMA as OCCURRENCE_SCHEMA
+
+    namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
+    catalog = load_catalog("default")
+    table_name = f"{namespace}.somatic_cnv_occurrence"
+    if catalog.table_exists(table_name):
+        catalog.drop_table(table_name)
+
+    tenant_code_field = OCCURRENCE_SCHEMA.find_field("tenant_code")
+    partition_spec = PartitionSpec(
+        fields=[
+            PartitionField(
+                field_id=1001,
+                source_id=tenant_code_field.field_id,
+                name=tenant_code_field.name,
+                transform=IdentityTransform(),
+            ),
+        ]
+    )
+    catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec)
+
+
 def create_somatic_snv_occurrence_table():
     import os
 

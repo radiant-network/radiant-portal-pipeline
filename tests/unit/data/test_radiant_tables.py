@@ -1,3 +1,4 @@
+from radiant.dags import DAGS_DIR
 from radiant.tasks.data.radiant_tables import (
     STARROCKS_RADIANT_BASE_MAPPING,
     STARROCKS_RADIANT_PER_TENANT_MAPPING,
@@ -41,3 +42,12 @@ def test_per_tenant_and_base_keys_route_consistently():
         assert mapping[key].startswith("chop_tenant.")
     for key in STARROCKS_RADIANT_BASE_MAPPING:
         assert mapping[key].startswith("radiant.")
+
+
+def test_every_per_tenant_key_has_a_create_table_template():
+    # `prepare_tenants_tables` derives the DDL filename from the mapping key and opens it unguarded, so a
+    # key without a matching template fails tenant preparation for the whole DAG run. Catch it here instead.
+    init_dir = DAGS_DIR / "sql" / "radiant" / "init"
+    for key in STARROCKS_RADIANT_PER_TENANT_MAPPING:
+        template = init_dir / f"{key.removeprefix('starrocks_')}_create_table.sql"
+        assert template.is_file(), f"[{key}] has no create-table template at {template}"
