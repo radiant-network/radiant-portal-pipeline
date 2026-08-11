@@ -9,7 +9,7 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-init-iceberg-tables")
-    assert len(dag.tasks) == 7  # 1 get namespace + 1 init + 4 germline tables + 1 somatic table
+    assert len(dag.tasks) == 8  # 1 get namespace + 1 init + 4 germline tables + 2 somatic tables
 
 
 def test_dag_has_correct_tasks(dag_bag):
@@ -22,6 +22,7 @@ def test_dag_has_correct_tasks(dag_bag):
     assert "create_consequence_table_k8s" in task_ids
     assert "create_germline_cnv_occurrence_table_k8s" in task_ids
     assert "create_somatic_snv_occurrence_table_k8s" in task_ids
+    assert "create_somatic_cnv_occurrence_table_k8s" in task_ids
 
 
 def test_dag_has_correct_task_dependencies(dag_bag):
@@ -37,4 +38,8 @@ def test_dag_has_correct_task_dependencies(dag_bag):
     assert (
         "create_germline_cnv_occurrence_table_k8s"
         in dag.get_task("create_somatic_snv_occurrence_table_k8s").upstream_task_ids
+    )
+    assert (
+        "create_somatic_snv_occurrence_table_k8s"
+        in dag.get_task("create_somatic_cnv_occurrence_table_k8s").upstream_task_ids
     )

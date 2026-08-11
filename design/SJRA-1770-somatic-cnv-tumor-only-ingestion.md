@@ -522,8 +522,15 @@ Two new SQL templates, near-copies of the germline pair:
 
 Wired into `import_part.py` as a new TaskGroup mirroring `germline_cnv_occurrence`: a
 `sanity_check_somatic_cnvs` short-circuit on the new `task_type`, then a
-`RadiantStarRocksPartitionSwapOperator.partial(...).expand_kwargs(tenant_params)`. Placement is §9 Q7:
-next to the germline CNV group, or later if `nb_snv` needs somatic SNV occurrences to exist first.
+`RadiantStarRocksPartitionSwapOperator.partial(...).expand_kwargs(tenant_params)`.
+
+**Placement — resolved while implementing SJRA-1775: it sits next to the germline CNV group, in Phase 3.**
+The worry was that `nb_snv` would force the somatic CNV load after `tg_somatic_snv_occurrence_per_tenant`
+in Phase 4. It does not: `nb_snv` counts rows in the **Iceberg** `somatic_snv_occurrence` table, exactly as
+germline counts `iceberg_germline_snv_occurrence` — not the StarRocks `somatic__snv__occurrence`. Those
+Iceberg rows are written in Phase 2 by `import_snv_vcf`, and `refresh_iceberg_tables` runs at the top of
+Phase 3, ahead of `tg_germline_cnv_occurrence_per_tenant`. So there is no ordering constraint beyond the
+one germline CNV already satisfies.
 
 The enrichment carries over, with **one substantive change**:
 
@@ -582,15 +589,25 @@ count is the cost, not any single item. The reasoning for each lives in the refe
    `init_iceberg_tables.py` (**both** branches — the ECS one defines its tasks but never chains them), two
    keys in `radiant_tables.py`, and `somatic_cnv_occurrence_create_table.sql` named to match the mapping key.
 4. **[SJRA-1775](https://d3b.atlassian.net/browse/SJRA-1775) — Load SQL.** The copy-partition and insert-delta pair of §7, plus the same
-   `type`-keyed gnomAD join applied to germline.
+   `type`-keyed gnomAD join applied to germline. *Done.* It also took two things originally listed
+   elsewhere: **both `GET_CNV_ID` call sites now pass `type`** (leaving item 6 as a pure UDF-release and
+   backfill ticket), and the `test_queries.py` CNV gap from item 7 is closed — CNV DDL and the `cnv_id` UDF
+   are created, both delta queries are `EXPLAIN`ed, and an `EXPLAIN INSERT INTO` pass checks the projection
+   against the target table, which a bare `EXPLAIN <select>` does not. Registering the UDF needed the
+   StarRocks test container moved from `allin1-ubuntu:3.4.2` to `4.0.13`: the `v2.0.0` jar is Java 17 and
+   3.4.2 runs a Java 11 runtime.
 5. **[SJRA-1776](https://d3b.atlassian.net/browse/SJRA-1776) — Orchestration.** `import_part.py`, `operators/{k8s,ecs}.py`,
    `scripts/ecs/import_somatic_cnv_vcf.py` and the Dockerfile copy path.
-6. **[SJRA-1777](https://d3b.atlassian.net/browse/SJRA-1777) — `cnv_id` UDF.** Widen to a 3-bit type field (§5), update both SQL call
-   sites, and backfill germline `cnv_id`s — these three land together.
+6. **[SJRA-1777](https://d3b.atlassian.net/browse/SJRA-1777) — `cnv_id` UDF.** Widen to a 3-bit type field (§5) and backfill germline
+   `cnv_id`s. **Ordering, now that SJRA-1775 has moved the call sites to `type`: this must ship first.** The
+   released UDF only understands `<DUP>`/`<DEL>` and returns NULL for anything else, against a `NOT NULL`
+   key column — so until the widened jar is out, *both* the germline and the somatic CNV load fail. CI will
+   not catch a violation: `EXPLAIN` type-checks the `(string, bigint, bigint, string)` signature, which
+   `type` satisfies, and never executes the function.
 7. **[SJRA-1778](https://d3b.atlassian.net/browse/SJRA-1778) — Tests, data QA and seeds.** A fixture VCF covering GAIN, LOSS, a `.`-ALT
    row and **both** LOH spellings; `somatic_cnv_occurrence.yml` per §5; seeds are net-new and should carry
-   both an `scnv` and a raw `ssnv` document so the §3 gate is exercised; and close the `test_queries.py` gap,
-   where no CNV DDL or delta query is validated against a live StarRocks today.
+   both an `scnv` and a raw `ssnv` document so the §3 gate is exercised. (The `test_queries.py` gap moved to
+   item 4.)
 
 ## 9. Open questions
 
@@ -641,8 +658,8 @@ difficulty.
   rejected), `process_occurrence` field mapping incl. a CNLOH row, DAG task-id assertions.
 - `USE_DOCKER_FIXTURES=true make test-integration` — extraction against the local Iceberg REST
   catalog + MinIO: table created, rows written, `type` domain correct, tenant/seq/task tagging right.
-- The same run also covers the SQL: with the load-SQL and test-coverage items done, `test_queries.py` validates the new DDL
-  and `EXPLAIN`s the delta query against a live StarRocks.
+- The same run also covers the SQL: `test_queries.py` creates both CNV tables and the `cnv_id` UDF, and
+  `EXPLAIN`s each delta query both bare and as `INSERT INTO <table> …`, against a live StarRocks.
 - `make test-docker` — the full compose stack end to end, driven by seeded `scnv` documents.
 - Manual spot-check on a real file once available: segment count in, row count out, and
   `type` / `filter` value distributions against the DRAGEN dictionaries in §4.

@@ -54,6 +54,7 @@ ICEBERG_RADIANT_MAPPING = {
     "iceberg_germline_snv_occurrence": "germline_snv_occurrence",
     "iceberg_snv_variant": "snv_variant",
     "iceberg_snv_consequence": "snv_consequence",
+    "iceberg_somatic_cnv_occurrence": "somatic_cnv_occurrence",
     "iceberg_somatic_snv_occurrence": "somatic_snv_occurrence",
 }
 
@@ -106,6 +107,7 @@ STARROCKS_RADIANT_PER_TENANT_MAPPING = {
     "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
     "starrocks_snv_variant": "snv__variant",
     "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
+    "starrocks_somatic_cnv_occurrence": "somatic__cnv__occurrence",
     "starrocks_somatic_snv_occurrence": "somatic__snv__occurrence",
     "starrocks_somatic_snv_variant_frequency": "somatic__snv__variant_frequency",
 }

@@ -24,7 +24,7 @@ ICEBERG_INIT_IMAGE = "apache/polaris-admin-tool:1.3.0-incubating"
 
 STARROCKS_FE_HOSTNAME = "radiant-starrocks-fe"
 STARROCKS_ALLIN1_HOSTNAME = "radiant-starrocks-allin1"
-STARROCKS_IMAGE = "starrocks/allin1-ubuntu:3.4.2"
+STARROCKS_IMAGE = "starrocks/allin1-ubuntu:4.0.13"
 
 
 @pytest.fixture(scope="session")

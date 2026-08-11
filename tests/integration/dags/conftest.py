@@ -39,6 +39,10 @@ def open_data_iceberg_tables(iceberg_client, iceberg_namespace, resources_dir, r
         "dbsnp": None,
         "gnomad_genomes_v3": None,
         "gnomad_constraint_v_2_1_1": None,
+        # Read straight from Iceberg by the CNV enrichment -- there is no StarRocks DDL for it. The columns
+        # in the .tsv are the ones *_cnv_occurrence_insert_partition_delta.sql touches, not the full
+        # gnomAD-SV column set.
+        "gnomad_sv": None,
         "ensembl_gene": None,
         "ensembl_exon_by_gene": ["transcript_ids"],
         "spliceai_enriched": ["max_score"],

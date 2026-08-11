@@ -61,7 +61,7 @@ def _execute_file(cursor, sql_file, args=None, tenant_code=None):
 
     context = {"mapping": get_radiant_mapping(tenant_code=tenant_code)}
     if "udf" in sql_file:
-        context["params"] = {"udf_release_version": "v1.1.0"}
+        context["params"] = {"udf_release_version": "v2.0.0"}
 
     with open(sql_file) as f:
         rendered_sql = jinja2.Template(f.read()).render(context)
@@ -88,14 +88,14 @@ def _explain_insert(starrocks_session, sql_dir):
             if (
                 "staging_exomiser" in sql_file
                 or "load" in sql_file.lower()
-                or "cnv_occurrence_insert_partition_delta" in sql_file.lower()
                 or "cnv_occurrence_copy_partition" in sql_file.lower()
                 or "snv_occurrence_insert_partition_delta" in sql_file.lower()
                 or "snv_occurrence_copy_partition" in sql_file.lower()
                 or "exomiser_copy_partition" in sql_file.lower()
                 or "exomiser_insert_partition_delta" in sql_file.lower()
             ):
-                # "EXPLAIN" not supported with "LOAD"
+                # "EXPLAIN" not supported with "LOAD"; the *_copy_partition files select from an explicit
+                # `{{ table }} PARTITION (p0)` that only exists once the swap operator has created it.
                 continue
             with open(sql_file) as f:
                 rendered_sql = jinja2.Template(f.read()).render(
@@ -106,9 +106,34 @@ def _explain_insert(starrocks_session, sql_dir):
                         # rendered per-tenant UNION branches against the tables created above.
                         "tenants": _MOCK_PARAMS["tenants"],
                         "per_tenant_mapping": lambda _t: get_radiant_mapping(),
+                        "partition": _MOCK_PARAMS["part"],
                     }
                 )
             _execute_query(cursor, f"EXPLAIN {rendered_sql}", args=_MOCK_PARAMS)
+
+
+def _explain_insert_into(starrocks_session, targets):
+    """EXPLAIN the delta queries as the positional INSERT the swap operator actually runs.
+
+    `_explain_insert` only EXPLAINs the bare SELECT, which happily passes even when the projection no longer
+    lines up with the target table. `RadiantStarRocksPartitionSwapOperator.run_insert` emits
+    `INSERT INTO <table> <select>`, so a column added, dropped or reordered on either side is only caught by
+    explaining the insert itself.
+    """
+    from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+    mapping = get_radiant_mapping()
+    with starrocks_session.cursor() as cursor:
+        for mapping_key, sql_filename in targets:
+            with open(os.path.join(_RADIANT_INSERT_DIR, sql_filename)) as f:
+                rendered_sql = jinja2.Template(f.read()).render(
+                    {"mapping": mapping, "partition": _MOCK_PARAMS["part"]}
+                )
+            _execute_query(
+                cursor,
+                f"EXPLAIN INSERT INTO {mapping[mapping_key]} {rendered_sql.rstrip().rstrip(';')}",
+                args=_MOCK_PARAMS,
+            )
 
 
 def _explain_tenant_scoped_insert(starrocks_session, sql_files, tenant_code):
@@ -159,6 +184,7 @@ def test_queries_are_valid(
             "hpo_term",
             "ensembl_gene",
             "ensembl_exon_by_gene",
+            "cytoband",
             "orphanet_gene_panel",
             "ddd_gene_panel",
             "cosmic_gene_panel",
@@ -187,14 +213,24 @@ def test_queries_are_valid(
             "somatic_snv_occurrence",
             "somatic_snv_variant_frequency",
             "somatic_snv_staging_variant_frequency",
+            "germline_cnv_occurrence",
+            "somatic_cnv_occurrence",
         ],
         views=["staging_external_sequencing_experiment", "staging_sequencing_experiment_delta"],
-        udfs=["variant_id"],
+        udfs=["variant_id", "cnv_id"],
     )
 
     # Validate table insertion using SQL `EXPLAIN` for Open Data & Radiant (Requires existing tables)
     _explain_insert(starrocks_session, sql_dir=_OPEN_DATA_INSERT_DIR)
     _explain_insert(starrocks_session, sql_dir=_RADIANT_INSERT_DIR)
+
+    _explain_insert_into(
+        starrocks_session,
+        targets=[
+            ("starrocks_germline_cnv_occurrence", "germline_cnv_occurrence_insert_partition_delta.sql"),
+            ("starrocks_somatic_cnv_occurrence", "somatic_cnv_occurrence_insert_partition_delta.sql"),
+        ],
+    )
 
     # Same again for the variant catalog, but against a real tenant database.
     _validate_init(
