@@ -201,6 +201,36 @@ class ImportPart(RadiantTaskECSOperator):
         )
 
     @staticmethod
+    def get_import_somatic_cnv_vcf(radiant_namespace: str, ecs_env: ECSEnv):
+        return ecs.EcsRunTaskOperator.partial(
+            **dict(
+                task_id="import_somatic_cnv_vcf_ecs",
+                task_display_name="[ECS] Import Somatic CNV VCF",
+                overrides={
+                    "containerOverrides": [
+                        {
+                            "name": "radiant-operator-qa-etl-container",
+                            "command": [
+                                "python /opt/radiant/import_somatic_cnv_vcf.py --tasks '{{ params.stored_tasks }}'"
+                            ],
+                            "environment": [
+                                {"name": "PYTHONPATH", "value": "/opt/radiant"},
+                                {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
+                                {"name": "RADIANT_ICEBERG_NAMESPACE", "value": radiant_namespace},
+                                {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
+                            ],
+                        }
+                    ]
+                },
+            )
+            | ImportSNVVCF._get_ecs_context(
+                ecs_cluster=ecs_env.ECS_CLUSTER,
+                ecs_subnets=ecs_env.ECS_SUBNETS,
+                ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
+            )
+        )
+
+    @staticmethod
     def get_cleanup(ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator.partial(
             **dict(

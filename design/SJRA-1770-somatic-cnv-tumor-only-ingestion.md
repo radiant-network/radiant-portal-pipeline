@@ -511,6 +511,16 @@ New module `radiant/tasks/vcf/cnv/somatic/{occurrence,process}.py`, mirroring
 (1 cpu / 500Mi / 1Gi limit) should apply unchanged — a tumor-only CNV file is single-sample and
 segment-level, so it is far smaller than the SNV files that profile was sized against.
 
+**Done in SJRA-1776**, as described. Two notes from implementing it:
+
+- The Dockerfile needed no change after all: `Dockerfile.radiant.operator` ends in
+  `COPY scripts/ecs/ /opt/radiant/`, a wholesale directory copy, so the new script is picked up by
+  existing lines.
+- The new container must go **inside the `vcf_imports` list literal**, not be appended after it. On
+  the ECS path, `vcf_imports >> cleanup.expand(params=stored_tasks)` reads the list as it exists at
+  that line, and `cleanup` deletes the very `stored_tasks` S3 JSON the container reads — so an op
+  wired in outside the literal would race a deletion of its own input.
+
 ---
 
 ## 7. Load and annotations — *decided: structural + keep gnomAD-SV*
@@ -596,8 +606,14 @@ count is the cost, not any single item. The reasoning for each lives in the refe
    against the target table, which a bare `EXPLAIN <select>` does not. Registering the UDF needed the
    StarRocks test container moved from `allin1-ubuntu:3.4.2` to `4.0.13`: the `v2.0.0` jar is Java 17 and
    3.4.2 runs a Java 11 runtime.
-5. **[SJRA-1776](https://d3b.atlassian.net/browse/SJRA-1776) — Orchestration.** `import_part.py`, `operators/{k8s,ecs}.py`,
-   `scripts/ecs/import_somatic_cnv_vcf.py` and the Dockerfile copy path.
+5. **[SJRA-1776](https://d3b.atlassian.net/browse/SJRA-1776) — Orchestration.** `import_part.py`,
+   `operators/{k8s,ecs}.py`, `scripts/ecs/import_somatic_cnv_vcf.py` and the Dockerfile copy path.
+   *Done.* The Dockerfile turned out to need nothing (§6). The `somatic_cnv_occurrence` group is
+   chained serially after `germline_cnv_occurrence` in Phase 3 rather than run in parallel with it,
+   so the StarRocks insert concurrency stays capped as it is elsewhere in the DAG; that chaining is
+   what makes `trigger_rule=NONE_FAILED` on `sanity_check_somatic_cnvs` load-bearing — a
+   germline-only part skips the germline insert upstream, and an `ALL_SUCCESS` root would be skipped
+   with it. Exactly the germline-SNV → somatic-SNV idiom already used in Phase 4.
 6. **[SJRA-1777](https://d3b.atlassian.net/browse/SJRA-1777) — `cnv_id` UDF.** Widen to a 3-bit type field (§5) and backfill germline
    `cnv_id`s. **Ordering, now that SJRA-1775 has moved the call sites to `type`: this must ship first.** The
    released UDF only understands `<DUP>`/`<DEL>` and returns NULL for anything else, against a `NOT NULL`
