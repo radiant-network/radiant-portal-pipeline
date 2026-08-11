@@ -25,6 +25,7 @@ from radiant.tasks.vcf.experiment import (
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
     RADIANT_GERMLINE_ANNOTATION_TASK,
     RADIANT_SOMATIC_ANNOTATION_TASK,
+    TUMOR_ONLY_VARIANT_CALLING_TASK,
     build_task_from_rows,
 )
 
@@ -155,11 +156,16 @@ def import_part():
             radiant_namespace=namespace_task,
             ecs_env=ecs_env,
         )
+        import_somatic_cnv_vcf = operators.ImportPart.get_import_somatic_cnv_vcf(
+            radiant_namespace=namespace_task,
+            ecs_env=ecs_env,
+        )
 
         cleanup = operators.ImportPart.get_cleanup(ecs_env=ecs_env)
 
     else:
         import_cnv_vcf = operators.ImportPart.get_import_cnv_vcf(namespace_task)
+        import_somatic_cnv_vcf = operators.ImportPart.get_import_somatic_cnv_vcf(namespace_task)
 
     @task(task_id="build_tenant_params", task_display_name="[PyOp] Per-tenant Params")
     def prepare_tenant_scoped_params(tasks) -> list[dict[str, Any]]:
@@ -228,7 +234,7 @@ def import_part():
 
         @task.short_circuit(
             task_id="sanity_check_cnvs",
-            task_display_name="[PyOp] Sanity Check CNVs",
+            task_display_name="[PyOp] Sanity Check Germline CNVs",
             ignore_downstream_trigger_rules=False,
         )
         def sanity_check_cnvs(tasks: Any) -> Any:
@@ -239,7 +245,7 @@ def import_part():
         insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator.partial(
             task_id="insert_germline_cnv_occurrences",
             table="{{ mapping.starrocks_germline_cnv_occurrence }}",
-            task_display_name="[StarRocks] Insert CNV Occurrences Part",
+            task_display_name="[StarRocks] Insert Germline CNV Occurrences Part",
             map_index_template="{{ task.tenant_code }}",
             swap_partition=SwapPartition(
                 partition="{{ params.part }}",
@@ -251,6 +257,37 @@ def import_part():
         ).expand_kwargs(tenant_params)
 
         sanity_check_cnvs(tasks) >> insert_germline_cnv_occurrences
+
+    with TaskGroup(group_id="somatic_cnv_occurrence") as tg_somatic_cnv_occurrence_per_tenant:
+
+        @task.short_circuit(
+            task_id="sanity_check_somatic_cnvs",
+            task_display_name="[PyOp] Sanity Check Somatic CNVs",
+            ignore_downstream_trigger_rules=False,
+            trigger_rule=TriggerRule.NONE_FAILED,  # If we have germline only, we don't want to skip somatic
+        )
+        def sanity_check_somatic_cnvs(tasks: Any) -> Any:
+            # No `not deleted` clause, unlike the SNV checks: a part holding only deleted tumor-only tasks
+            # must still run the swap, because that is what purges their rows from the partition.
+            has_somatic_cnv = any(t.get("task_type") == TUMOR_ONLY_VARIANT_CALLING_TASK for t in tasks)
+            return has_somatic_cnv
+
+        # max_active_tis_per_dagrun=1: process tenants one at a time within a dagrun
+        insert_somatic_cnv_occurrences = RadiantStarRocksPartitionSwapOperator.partial(
+            task_id="insert_somatic_cnv_occurrences",
+            table="{{ mapping.starrocks_somatic_cnv_occurrence }}",
+            task_display_name="[StarRocks] Insert Somatic CNV Occurrences Part",
+            map_index_template="{{ task.tenant_code }}",
+            swap_partition=SwapPartition(
+                partition="{{ params.part }}",
+                copy_partition_sql="./sql/radiant/somatic_cnv_occurrence_copy_partition.sql",
+            ),
+            submit_task_options=std_submit_task_opts,
+            insert_partition_sql="./sql/radiant/somatic_cnv_occurrence_insert_partition_delta.sql",
+            max_active_tis_per_dagrun=1,
+        ).expand_kwargs(tenant_params)
+
+        sanity_check_somatic_cnvs(tasks) >> insert_somatic_cnv_occurrences
 
     # Single, shared load: all tenants' exomiser files land in one staging table, each row tagged with
     # tenant_code (set during the broker load) so the per-tenant insert_exomiser can route them later.
@@ -578,9 +615,12 @@ def import_part():
     )
 
     # Parallel VCF Imports
+    # Every ECS member must be listed here: `cleanup` below deletes the `stored_tasks` S3 file those
+    # containers read, and it only waits on the imports this list holds.
     vcf_imports = [
         import_snv_vcf,
         import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(tasks=tasks),
+        import_somatic_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_somatic_cnv_vcf(tasks=tasks),
     ]
     if IS_AWS:
         vcf_imports >> cleanup.expand(params=stored_tasks)
@@ -599,6 +639,7 @@ def import_part():
         >> load_exomiser
         >> refresh_iceberg_tables
         >> tg_germline_cnv_occurrence_per_tenant
+        >> tg_somatic_cnv_occurrence_per_tenant
         >> insert_hashes
         >> overwrite_snv_tmp_variants
         >> insert_exomiser_per_tenant

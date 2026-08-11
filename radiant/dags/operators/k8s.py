@@ -190,6 +190,29 @@ class ImportPart(RadiantTaskK8SOperator):
 
         return import_cnv_vcf
 
+    @staticmethod
+    def get_import_somatic_cnv_vcf(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                task_id="import_somatic_cnv_vcf_k8s",
+                task_display_name="[K8s] Import Somatic CNV VCF",
+                name="import-somatic-cnv-vcf",
+                do_xcom_push=True,
+            )
+            # Same profile as germline CNV: a tumor-only CNV file is single-sample and segment-level
+            # (~304 segments for a WES sample), so it is no heavier than the germline one.
+            | ImportPart._get_k8s_context(radiant_namespace, container_resources=_cnv_container_resources())
+        )
+        def import_somatic_cnv_vcf(tasks: list[dict]) -> None:
+            import os
+
+            from radiant.tasks.vcf.cnv.somatic.process import import_somatic_cnv_vcf as _import_somatic_cnv_vcf
+
+            namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
+            _import_somatic_cnv_vcf(tasks=tasks, namespace=namespace)
+
+        return import_somatic_cnv_vcf
+
 
 class InitIcebergTables(RadiantTaskK8SOperator):
     @staticmethod

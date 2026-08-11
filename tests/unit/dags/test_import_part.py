@@ -1,4 +1,5 @@
 import pytest
+from airflow.utils.trigger_rule import TriggerRule
 
 from radiant.dags import NAMESPACE
 from radiant.dags.import_part import (
@@ -190,12 +191,15 @@ def test_dag_contains_all_tasks(dag_bag):
         "extract_task_ids",
         "checkpoint_after_setup",
         "import_cnv_vcf_k8s",
+        "import_somatic_cnv_vcf_k8s",
         "import_snv_vcf",
         "checkpoint_after_vcf_imports",
         "load_exomiser_files",
         "refresh_iceberg_tables",
         "germline_cnv_occurrence.sanity_check_cnvs",
         "germline_cnv_occurrence.insert_germline_cnv_occurrences",
+        "somatic_cnv_occurrence.sanity_check_somatic_cnvs",
+        "somatic_cnv_occurrence.insert_somatic_cnv_occurrences",
         "insert_variant_hashes",
         "overwrite_snv_tmp_variant",
         "insert_exomiser",
@@ -232,6 +236,20 @@ def test_dag_task_dependencies_are_valid(dag_bag):
     namespace_task = dag.get_task("get_iceberg_namespace")
     import_cnv_vcf_k8s_task = dag.get_task("import_cnv_vcf_k8s")
     assert namespace_task in import_cnv_vcf_k8s_task.get_flat_relatives(upstream=True)
+    import_somatic_cnv_vcf_k8s_task = dag.get_task("import_somatic_cnv_vcf_k8s")
+    assert namespace_task in import_somatic_cnv_vcf_k8s_task.get_flat_relatives(upstream=True)
+
+    # The somatic CNV group is chained after the germline one, so its short-circuit carries
+    # `trigger_rule=NONE_FAILED` to survive a germline-only part skipping the germline insert.
+    assert (
+        "somatic_cnv_occurrence.sanity_check_somatic_cnvs"
+        in dag.get_task("germline_cnv_occurrence.insert_germline_cnv_occurrences").downstream_task_ids
+    )
+    assert dag.get_task("somatic_cnv_occurrence.sanity_check_somatic_cnvs").trigger_rule == TriggerRule.NONE_FAILED
+
+    # What keeps `insert_variant_hashes` (NONE_FAILED_MIN_ONE_SUCCESS) alive when both CNV groups skip:
+    # `parameters` is a template field, so the `extract_task_ids` XComArg is a real, successful upstream.
+    assert "insert_variant_hashes" in dag.get_task("extract_task_ids").downstream_task_ids
 
     # `compute_parts` is only referenced through `.partial(parameters=...)`; the edge exists because
     # `parameters` is a template field, so `MappedOperator` applies the XComArg relationship.
