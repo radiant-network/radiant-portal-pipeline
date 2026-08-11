@@ -1,0 +1,45 @@
+##fileformat=VCFv4.2
+##ALT=<ID=CNV,Description="Copy number variant region">
+##ALT=<ID=DEL,Description="Deletion relative to the reference">
+##ALT=<ID=DUP,Description="Region of elevated copy number relative to the reference">
+##ALT=<ID=LOH,Description="Loss of heterozygosity">
+##contig=<ID=chr1,length=248956422>
+##contig=<ID=chr2,length=242193529>
+##contig=<ID=chrX,length=156040895>
+##reference=file:///ephemeral/reference/index
+##INFO=<ID=REFLEN,Number=1,Type=Integer,Description="Number of REF positions included in this record">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=SVLEN,Number=.,Type=Integer,Description="Difference in length between REF and ALT alleles">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">
+##INFO=<ID=CIPOS,Number=2,Type=Integer,Description="Confidence interval around POS">
+##INFO=<ID=CIEND,Number=2,Type=Integer,Description="Confidence interval around END">
+##INFO=<ID=HET,Number=0,Type=Flag,Description="Segment is heterogeneous">
+##FILTER=<ID=cnvQual,Description="CNV with quality below threshold">
+##FILTER=<ID=cnvLength,Description="CNV with length below 10000">
+##FILTER=<ID=binCount,Description="CNV with low bin count">
+##FILTER=<ID=segmentMean,Description="CNV with copy ratio within +/- 0.2 of 1.0">
+##FILTER=<ID=cnvBinSupportRatio,Description="CNV with low supporting number of bins with respect to event length">
+##FILTER=<ID=cnvCopyRatio,Description="CNV with copy ratio within +/- 0.2 of 1.0">
+##FILTER=<ID=LoDFail,Description="CNV below the limit of detection">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=SM,Number=1,Type=Float,Description="Linear copy ratio of the segment mean">
+##FORMAT=<ID=SD,Number=1,Type=Float,Description="Standard deviation of the segment mean">
+##FORMAT=<ID=BC,Number=1,Type=Integer,Description="Number of bins in the region">
+##FORMAT=<ID=PE,Number=2,Type=Integer,Description="Number of improperly paired end reads at start and stop breakpoints">
+##FORMAT=<ID=CN,Number=1,Type=Integer,Description="Estimated copy number">
+##FORMAT=<ID=CNF,Number=1,Type=Float,Description="Floating point copy number estimate">
+##FORMAT=<ID=CNQ,Number=1,Type=Float,Description="Phred-scaled quality of the copy number call">
+##FORMAT=<ID=MCN,Number=1,Type=Integer,Description="Estimated minor haplotype copy number">
+##FORMAT=<ID=MCNF,Number=1,Type=Float,Description="Floating point minor haplotype copy number estimate">
+##FORMAT=<ID=MCNQ,Number=1,Type=Float,Description="Phred-scaled quality of the minor haplotype copy number call">
+##FORMAT=<ID=MAF,Number=1,Type=Float,Description="MAP estimate of minor allele frequency">
+##FORMAT=<ID=AS,Number=1,Type=Integer,Description="Number of allele-specific sites used in the segment">
+##DRAGENVersion=<ID=dragen,Version="SW: 07.021.732.4.2.4, HW: 07.021.732">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	TCRBOA6-T
+chr1	450730	DRAGEN:LOSS:chr1:450731-7249626	N	<DEL>	128	cnvCopyRatio;LoDFail	SVTYPE=CNV;SVLEN=-6798896;END=7249626;REFLEN=6798896	GT:SM:SD:BC:PE:CN:CNF:CNQ:MCN:MCNF:MCNQ:MAF:AS	0/1:1.04404:702.9:1979:25,7:1:1.02:44.1:0:0.01:60.3:0.02:1979
+chr1	6667699	DRAGEN:CNLOH:chr1:6667700-6887749	N	<DEL>,<DUP>	3	cnvQual;segmentMean	SVTYPE=CNV;SVLEN=-220050,220050;END=6887749;REFLEN=220050;HET	GT:SM:SD:MAF:BC:AS:PE	1/2:1.018696:702.9:0:20:1:4,0
+chr1	124941718	DRAGEN:GAIN:chr1:124941719-124975661	N	<DUP>	36	PASS	SVTYPE=CNV;SVLEN=33943;END=124975661;REFLEN=33943;CIPOS=-150,150;CIEND=-200,200	GT:SM:SD:BC:PE:CN:CNF:CNQ:MCN:MCNF:MCNQ:MAF:AS	0/1:1.43012:120.5:20:5,30:3:3.12:180.4:1:1.04:95.2:0.34:12
+chr2	31000000	DRAGEN:GAINLOH:chr2:31000001-31500000	N	<LOH>	41	PASS	SVTYPE=CNV;SVLEN=500000;END=31500000;REFLEN=500000	GT:SM:SD:MAF:BC:AS:PE	1/2:1.512:88.4:0:64:9:12,3
+chr2	80000000	DRAGEN:LOSS:chr2:80000001-80400000	N	<DEL>	52	PASS	SVTYPE=CNV;SVLEN=-400000;END=80400000;REFLEN=400000	GT:SM:SD:BC:PE:CN:CNF:CNQ:MCN:MCNF:MCNQ:MAF:AS	0/1:0.51:.:48:8,2:.:.:.:.:.:.:.:.
+chrX	9000000	DRAGEN:REF:chrX:9000001-9100000	N	.	21	PASS	SVTYPE=CNV;END=9100000;REFLEN=100000	GT:SM:SD:BC:PE	0/0:1.001:12.4:10:0,0
+chrX	154548409	DRAGEN:GAIN:chrX:154548410-154554958	N	<CNV>	65	cnvLength	SVTYPE=CNV;SVLEN=6549;END=154554958;REFLEN=6549	GT:SM:SD:BC:PE	1/1:2.01527:41.2:5:28,4
