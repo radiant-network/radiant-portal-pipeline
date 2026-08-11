@@ -1,0 +1,102 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: somatic__cnv__occurrence
+        tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: somatic_cnv_occurrence__should_not_be_empty
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: somatic_cnv_occurrence__should_not_contain_only_null
+              except:
+                # Already covered by somatic_cnv_occurrence__should_not_contain_null__*
+                - part
+                - task_id
+                - cnv_id
+                # Constant by construction
+                - cipos
+                - ciend
+                - cn
+                - cnf
+                - cnq
+                - mcn
+                - mcnf
+                - mcnq
+                - maf
+                - sd
+                - ascn_as
+
+          # --- Should Not Contain Same Value ---------------------------------
+          - should_not_contain_same_value:
+              name: somatic_cnv_occurrence__should_not_contain_same_value
+              except:
+                # Constant by construction
+                - part
+                - phased
+                - svtype
+                # Single tumor-only task QA dataset
+                - seq_id
+                - task_id
+                - aliquot
+
+          # --- Should Be Within Range ----------------------------------------
+          # gnomAD frequencies must be in [0,1] (defaults: 0..1)
+          - should_be_within_range:
+              name: somatic_cnv_occurrence__should_be_within_range_gnomad_af
+              like: gnomad_af
+          - should_be_within_range:
+              name: somatic_cnv_occurrence__should_be_within_range_gnomad_sf
+              like: gnomad_sf
+          # minor allele frequency must be in [0,1] (defaults: 0..1)
+          - should_be_within_range:
+              name: somatic_cnv_occurrence__should_be_within_range_maf
+              like: maf
+
+          # --- Should Be Unique ----------------------------------------------
+          - dbt_utils.unique_combination_of_columns:
+              name: somatic_cnv_occurrence__should_be_unique__part_seq_id_task_id_cnv_id
+              combination_of_columns:
+                - part
+                - seq_id
+                - task_id
+                - cnv_id
+        columns:
+          - name: part
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: somatic_cnv_occurrence__should_not_contain_null__part
+          - name: task_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: somatic_cnv_occurrence__should_not_contain_null__task_id
+          - name: cnv_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: somatic_cnv_occurrence__should_not_contain_null__cnv_id
+          - name: chromosome
+            description: "VARCHAR(20)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_chromosome() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: somatic_cnv_occurrence__accepted_values_chromosome
+                  values: "{{ dict_chromosome() }}"
+                  config:
+                    where: "chromosome is not null"
+          - name: type
+            description: "VARCHAR(10)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_cnv_type() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: somatic_cnv_occurrence__accepted_values_type
+                  values: "{{ dict_cnv_type() }}"
+                  config:
+                    where: "type is not null"

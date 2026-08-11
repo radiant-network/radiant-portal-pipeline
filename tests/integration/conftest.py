@@ -445,6 +445,55 @@ def clinical_cnv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
 
 
 @pytest.fixture(scope="session")
+def clinical_somatic_cnv_vcf(s3_fs, starrocks_session, starrocks_jdbc_catalog):
+    """
+    Creates "mock" somatic (tumor-only) CNV VCFs for clinical documents.
+
+    Gated on `data_type_code='scnv'`, which is how the staging view finds a tumor-only CNV file --
+    never by filename. The reference VCF lives in the unit resources directory rather than
+    `resources/integration`, so it is read from there instead of through the session `indexed_vcfs`
+    fixture, as `test_process_somatic_cnv_vcf.py` already does.
+    """
+    reference_vcf = CURRENT_DIR.parent / "resources" / "test_somatic_cnv.vcf"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with open(reference_vcf) as f:
+            vcf_content = f.read()
+
+        with starrocks_session.cursor() as cursor:
+            cursor.execute(f"""
+                SELECT
+                     aliquot,
+                     d.name
+                FROM {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.sequencing_experiment se
+                LEFT JOIN
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_context tc
+                ON se.id = tc.sequencing_experiment_id
+                LEFT JOIN
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.task_has_document thd
+                ON tc.task_id = thd.task_id
+                LEFT JOIN
+                {starrocks_jdbc_catalog.catalog}.{starrocks_jdbc_catalog.database}.document d
+                ON thd.document_id = d.id
+                WHERE d.data_type_code='scnv' and d.format_code='vcf'
+                """)
+            results = cursor.fetchall()
+
+        for aliquot, document_name in results:
+            _path = document_name.replace(".gz", "")
+            src_path = os.path.join(tmpdir, f"source_{_path}")
+            dest_path = os.path.join(tmpdir, f"{_path}.gz")
+
+            with open(src_path, "w") as f:
+                # The somatic fixture's sample is the file's own aliquot, not germline's `SA0001`.
+                _new_content = vcf_content.replace("TCRBOA6-T", str(aliquot))
+                f.write(_new_content)
+
+            compress_and_index_vcf(src_path, dest_path)
+            s3_fs.put(dest_path, "test-vcf/" + document_name)
+            s3_fs.put(dest_path + ".tbi", "test-vcf/" + document_name + ".tbi")
+
+
+@pytest.fixture(scope="session")
 def sample_exomiser_tsv(s3_fs):
     """
     Uploads the sample Exomiser TSV to S3.

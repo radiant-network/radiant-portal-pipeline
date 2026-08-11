@@ -619,11 +619,37 @@ count is the cost, not any single item. The reasoning for each lives in the refe
    released UDF only understands `<DUP>`/`<DEL>` and returns NULL for anything else, against a `NOT NULL`
    key column — so until the widened jar is out, *both* the germline and the somatic CNV load fail. CI will
    not catch a violation: `EXPLAIN` type-checks the `(string, bigint, bigint, string)` signature, which
-   `type` satisfies, and never executes the function.
-7. **[SJRA-1778](https://d3b.atlassian.net/browse/SJRA-1778) — Tests, data QA and seeds.** A fixture VCF covering GAIN, LOSS, a `.`-ALT
-   row and **both** LOH spellings; `somatic_cnv_occurrence.yml` per §5; seeds are net-new and should carry
-   both an `scnv` and a raw `ssnv` document so the §3 gate is exercised. (The `test_queries.py` gap moved to
-   item 4.)
+   `type` satisfies, and never executes the function. **Jar status, checked while doing item 7:** `v2.0.0`
+   is released and *is* the widened layout (type codes LOSS 0, GAIN 1, CNLOH 2, GAINLOH 3; `start` and
+   `length` 28 bits each), and `test_queries.py` already pins it. What is left for this ticket is the
+   pipeline side: `init_starrocks_tables.py` still defaults `udf_release_version` to `v1.2.0`, and the
+   germline `cnv_id` backfill has not run.
+7. **[SJRA-1778](https://d3b.atlassian.net/browse/SJRA-1778) — Tests, data QA and seeds.** A fixture VCF
+   covering GAIN, LOSS, a `.`-ALT row and **both** LOH spellings; `somatic_cnv_occurrence.yml` per §5; seeds
+   are net-new and should carry both an `scnv` and a raw `ssnv` document so the §3 gate is exercised. (The
+   `test_queries.py` gap moved to item 4.) *Done*, but most of it had already arrived with items 1-5, each of
+   which carried its own tests: the fixture VCFs (`test_somatic_cnv.vcf`, `test_somatic_cnv_no_ascn.vcf`),
+   the three somatic CNV unit-test files, the integration extraction test, the seeds (task 70 with documents
+   263/264 `scnv` + 265 the raw `ssnv` decoy) and the delta-gate assertion all pre-existed. What was
+   actually left:
+   - **Data QA** — `sources/somatic_cnv_occurrence.yml`, a new `dict_cnv_type()`, and two singular tests
+     (`validate_start_end_order`, plus `validate_type_alternate_consistency`, which asserts the
+     `ALTERNATE_BY_TYPE` invariant of §4 — the thing that makes the two DRAGEN VCF versions
+     interchangeable). `svlen` is **not** in the `should_not_contain_only_null` except list, unlike
+     germline: germline's VCF carries no `SVLEN`, both measured somatic files do.
+   - **`clinical_somatic_cnv_vcf`** in `tests/integration/conftest.py`, gated on `scnv`. Like its germline
+     twin `clinical_cnv_vcf`, no test references it — it is scaffolding for driving the seeded stack.
+   - **The two-sample rejection through `process_tasks`**, on a real two-sample fixture. The existing test
+     passed a synthetic sample list straight to `validate_task_is_tumor_only`, so nothing covered the
+     ordering the check depends on: `vcf.samples` must be read *before* `set_samples` narrows it (§3).
+
+   Three deliberate omissions, decided rather than overlooked: **no `filter` split-and-check test** (it
+   needs a net-new generic test macro, germline sidesteps `filter` entirely, and the vocabulary is
+   version-dependent); **runtime SQL verification stays EXPLAIN-only**, as item 4 left it; and
+   `dict_cnv_type()` carries **all four** values, so QA records the domain and passes rather than firing on
+   `CNLOH`/`GAINLOH` — the portal coordination stays tracked as §9 Q1. Germline CNV's own test gaps
+   (no unit coverage of its `process_occurrence`/`process_tasks`, a much thinner integration assertion set
+   than its somatic twin, no `gcnv` gate test) were left alone; they belong with SJRA-1784/1785.
 
 ## 9. Open questions
 
