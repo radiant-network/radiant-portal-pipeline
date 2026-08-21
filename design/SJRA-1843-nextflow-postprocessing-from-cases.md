@@ -1,6 +1,7 @@
 # Case-driven Nextflow post-processing — analysis
 
-**Status:** analysis / proposal — no code written yet
+**Status:** implemented — `radiant/dags/nextflow_postprocessing_cases.py` and
+`radiant/tasks/nextflow/`.
 
 ## 1. Why
 
@@ -35,9 +36,10 @@ cleanup behaviour stay in one place.
 
 | param | required | meaning |
 |---|---|---|
-| `case_ids` | yes | list of `cases.id` in the tenant |
-| `tenant` | yes | tenant code |
+| `case_ids` | yes | list of `cases.id`, all in one tenant |
 | `dry_run` | no, default `true` | passed to the batch PATCH; makes the last task validate-only |
+
+The tenant is not a param: `cases.id` already determines it (§3).
 
 Only per-run intent is a param. The two storage roots are environment, alongside the other
 `RADIANT_*` settings in `radiant/dags/__init__.py`:
@@ -68,9 +70,23 @@ own default, so the coupling between the two DAGs stays visible.
 
 ## 3. `resolve_cases` — case ids to a family model
 
-Two queries against the tenant database, as templated SQL under
-`radiant/dags/sql/clinical/`, run through `RadiantStarRocksOperator` with an
-`output_processor` (the `radiant/dags/import_radiant.py` pattern).
+Two queries as templated SQL under `radiant/dags/sql/clinical/`, run through
+`RadiantStarRocksOperator` with an `output_processor` (the `radiant/dags/import_radiant.py`
+pattern).
+
+**Where the clinical tables live, and why there is no tenant input.** They are a *single
+shared schema* behind the `radiant_jdbc` JDBC catalog, with a `tenant_code` column on every
+table; `CLINICAL_MAPPING` resolves to `radiant_jdbc.public.*` and is not tenant-scoped. Only
+the StarRocks analytics tables live in `{tenant}_tenant`. So neither `RADIANT_TENANT_CODE`
+nor the operator's `tenant_code` argument is involved here.
+
+Nor is a `tenant` param. `cases.id` is a plain single-column identity primary key over that
+one shared table — in QA, `case_pkey PRIMARY KEY, btree (id)`, with `tenant_code` merely an
+attribute — so a case id already determines its tenant. The queries filter on `case_ids`
+alone and *return* `tenant_code`, which `register_tasks` uses to address the batch PATCH.
+Taking the tenant as input could only introduce a disagreement: name a correct case under
+the wrong tenant and the run reports the case as missing. What `resolve_cases` does assert
+is that the requested cases share one tenant, because one batch PATCH goes to one tenant.
 
 **members** — one row per (case, family member), filtered to the requested `case_ids` and
 `case_type_code = 'germline'`:
@@ -305,18 +321,17 @@ The consequence for this DAG is only that each run needs its own output location
 
 ## 12. Open questions
 
-- **Which tenants?** Grants in §8 are per tenant; the DAG takes `tenant` as a param, so the
-  set has to be known.
-- **`project_code`** is required for the PATCH lookup and should come from `resolve_cases`.
-  Note that `cases.project_id` does not necessarily match a row in `project` — worth
-  understanding before relying on that join.
+- **Which tenants?** Grants in §8 are per tenant, and the DAG derives the tenant from the
+  cases rather than being told it — so it will resolve cases in a tenant the service account
+  has not been granted, and find that out at `register_tasks`. The set of granted tenants
+  still has to be known.
 - **Exomiser version** `14.0.0` is inherited from existing seed data, not read
   from the container (`ferlabcrsj/exomiser:2.4.1`, data `2402`). Someone should confirm the
   real software version before it becomes load-bearing metadata.
 
 ## Annex — `resolve_cases` SQL
 
-Both queries are tenant-scoped through the `mapping` dict the StarRocks operators inject
+Both queries resolve their tables through the `mapping` dict the StarRocks operators inject
 (see `radiant/tasks/data/radiant_tables.py`), and take the requested ids as a bound
 parameter, following `radiant/dags/sql/radiant/sequencing_experiment_delete.sql`.
 
@@ -350,6 +365,8 @@ WITH gvcf_doc AS (
 SELECT c.id                           AS case_id,
        c.submitter_case_id,
        c.primary_condition,
+       c.tenant_code,
+       pr.code                        AS project_code,
        f.relationship_to_proband_code AS role,
        f.affected_status_code         AS affected_status,
        p.id                           AS patient_id,
@@ -368,13 +385,16 @@ JOIN {{ mapping.clinical_case_has_sequencing_experiment }}  chse ON chse.case_id
 JOIN {{ mapping.clinical_sequencing_experiment }}           se   ON se.id = chse.sequencing_experiment_id
 JOIN {{ mapping.clinical_sample }}                          s    ON s.id = se.sample_id
                                                                 AND s.patient_id = p.id
+-- On the primary key alone: `cases.project_id` is a foreign key to `project.id`, so this
+-- resolves to exactly one row. Qualifying it with tenant_code can only produce a NULL.
+LEFT JOIN {{ mapping.clinical_project }}                    pr   ON pr.id = c.project_id
 -- One candidate: take it. Several (a task spanning siblings): fall back to the sample id.
 LEFT JOIN gvcf_doc g ON g.seq_id = se.id
                     AND (g.n_candidates = 1
                          OR g.name LIKE concat(s.submitter_sample_id, '%'))
 WHERE c.id IN %(case_ids)s
   AND c.case_type_code = 'germline'
-GROUP BY c.id, c.submitter_case_id, c.primary_condition,
+GROUP BY c.id, c.submitter_case_id, c.primary_condition, c.tenant_code, pr.code,
          f.relationship_to_proband_code, f.affected_status_code,
          p.id, p.sex_code, p.submitter_patient_id,
          s.submitter_sample_id, se.id, se.aliquot, se.experimental_strategy_code
@@ -406,7 +426,7 @@ SELECT oc.case_id,
        oc.onset_code,
        oc.interpretation_code
 FROM {{ mapping.clinical_obs_categorical }} oc
-LEFT JOIN {{ mapping.hpo_term }} h ON h.id = oc.code_value
+LEFT JOIN {{ mapping.starrocks_hpo_term }} h ON h.id = oc.code_value
 WHERE oc.case_id IN %(case_ids)s
   AND oc.observation_code = 'phenotype'
   AND oc.coding_system    = 'HPO'
@@ -414,4 +434,14 @@ ORDER BY oc.case_id, oc.patient_id, oc.code_value;
 ```
 
 `hpo_term` is a shared dictionary in the base database, not tenant-scoped — hence the
-`LEFT JOIN`, so an unknown code yields a null label rather than dropping the row.
+`LEFT JOIN`, so an unknown code yields a null label rather than dropping the row. Its
+mapping key is `starrocks_hpo_term`; there is no bare `hpo_term` key, and the join therefore
+crosses catalogs, from `radiant_jdbc` to the base StarRocks database.
+
+### C. The doubled percent sign applies to comments too
+
+`cursor.execute(sql, parameters)` runs `sql % params` over the **whole statement**, so a
+bare `%` anywhere — including inside a `--` comment, such as one explaining this very rule —
+raises `ValueError: unsupported format character`. Since nothing about the statement makes
+that visible on reading, `tests/unit/dags/test_clinical_case_sql_render.py` asserts that
+every `%` in these templates belongs to `%%` or to a `%(name)s` placeholder.
