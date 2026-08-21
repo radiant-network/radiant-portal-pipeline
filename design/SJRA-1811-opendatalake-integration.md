@@ -190,6 +190,27 @@ from them in the StarRocks' Variant, Consequence and Occurrence tables and for b
 - Only 2 additional columns to store in the Occurrences
 - Cost: needs re-importing the existing data to add the extra columns
 
+```mermaid
+flowchart LR
+    subgraph SRC["inputs"]
+        GSV["gnomad_sv<br/><i>the only one this refresh updates</i>"]
+        CB["cytoband<br/><i>S3 broker load — never OpenDataLake</i>"]
+        EG["ensembl_gene<br/><i>absent upstream — SJRA-1803</i>"]
+    end
+    SNVO["snv__occurrence<br/><i>supplies nb_snv — the reason<br/>chromosome + start are needed</i>"]
+    OCC["cnv__occurrence<br/><i>partition swap · tenant × part</i>"]
+    GSV --> OCC
+    CB --> OCC
+    EG --> OCC
+    SNVO -->|"Decision 2"| OCC
+    style GSV fill:#cfe8cf,color:#000
+    style SNVO fill:#ffe0b2,color:#000
+```
+
+`nb_snv` counts the SNVs falling inside each CNV's interval, so the CNV statement has to join SNV occurrences
+on coordinates. That join is the whole reason Decision 2 exists: today it reads them from Iceberg, and
+`chromosome` + `start` are what let it read them from StarRocks instead.
+
 Query example for re-annotation variants:
 
 ```sql
@@ -264,11 +285,33 @@ Only the second is genuinely tenant × part. Note also that a **variant-part is 
 **Those four are not independent — they are two serial pairs.** Each partitioned table is a partitioned copy of
 the unpartitioned one above it, so the copy has to be rebuilt first:
 
+```mermaid
+flowchart LR
+    subgraph OD["<b>phase 1</b> — open data refreshed"]
+        A1["clinvar · dbsnp · gnomad_genomes_v3<br/>topmed_bravo · 1000_genomes · omim_gene_panel"]
+        A2["dbnsfp · spliceai · gnomad_constraint"]
+    end
+    subgraph P2["<b>phase 2</b> — accumulators · upsert in place"]
+        SV["snv__staging_variant<br/><i>7 of 29 cols re-derived</i>"]
+        SC["snv__consequence<br/><i>18 of 34 cols re-derived</i>"]
+    end
+    subgraph P3["<b>phase 3a</b> — portal-facing · INSERT OVERWRITE"]
+        V["snv__variant<br/><i>per tenant</i>"]
+        VP["snv__variant_partitioned<br/><i>tenant × variant-part</i>"]
+        CF["snv__consequence_filter<br/><i>once</i>"]
+        CFP["snv__consequence_filter_partitioned<br/><i>per part</i>"]
+    end
+    A1 --> SV --> V --> VP
+    A2 --> SC --> CF --> CFP
+    style SV fill:#cfe8cf,color:#000
+    style SC fill:#cfe8cf,color:#000
+    style V fill:#ffe0b2,color:#000
+    style VP fill:#ffe0b2,color:#000
+    style CF fill:#ffe0b2,color:#000
+    style CFP fill:#ffe0b2,color:#000
 ```
-phase 2                          phase 3a
-snv__staging_variant  ──▶  snv__variant  ──▶  snv__variant_partitioned
-snv__consequence      ──▶  snv__consequence_filter  ──▶  snv__consequence_filter_partitioned
-```
+
+Top row and bottom row are independent; left-to-right inside a row is not.
 
 `snv_variant_part_insert_part.sql:2-6` is literally `SELECT %(variant_part)s AS part, v.* FROM
 {{ mapping.starrocks_snv_variant }} v`, and `snv_consequence_filter_insert.sql:78` reads
