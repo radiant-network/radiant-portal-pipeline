@@ -1,0 +1,66 @@
+# Nextflow driver image. Runs as the `postprocessing-driver` K8s Job on
+# qlin-eks (namespace `nextflow`): it mounts the FSx-Lustre PVC, runs
+# `nextflow run`, and the K8s executor spawns one worker pod per task.
+#
+# Ported from poc-nextflow-aws/container/launcher/Dockerfile, which had no
+# build automation - it was built and pushed by hand to the `poc-nextflow`
+# ECR repo. Here it follows the same GHCR + tag-triggered workflow as the
+# other images in this repo.
+#
+# IMPORTANT: the framework, the pipeline assets and the plugins are all
+# baked at build time. Nothing in the runtime path fetches from nextflow.io,
+# nf-co.re or github.com - the LZ egress firewall blocks part of that, and
+# a driver that resolves its own pipeline at runtime is a boot-time failure
+# waiting to happen. The consequence is that bumping PIPELINE_REV requires
+# rebuilding this image.
+
+FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023
+
+ARG NXF_VER=24.10.5
+ARG PIPELINE_REPO=Ferlab-Ste-Justine/Post-processing-Pipeline
+ARG PIPELINE_REV=v3.0.0
+
+# Keep in sync with the pipeline's own `plugins` block: v3.0.0 declares
+# nf-schema@2.1.0 (v2.11.0 declared nf-validation@1.1.3 - a different
+# plugin, not a version bump). A mismatch fails at plugin resolution,
+# offline, with no way to recover at runtime.
+ARG NXF_PLUGINS="nf-schema@2.1.0 nf-amazon"
+
+# Set NXF_HOME *before* installing Nextflow, so the build-time
+# `nextflow -version` populates ${NXF_HOME}/framework/... and the build-time
+# `nextflow pull` populates ${NXF_HOME}/assets/...
+ENV NXF_HOME=/opt/nextflow \
+    NXF_ASSETS=/opt/nextflow/assets
+
+RUN dnf install -y \
+        java-21-amazon-corretto-headless \
+        awscli-2 \
+        git \
+        bash \
+        tar \
+        gzip \
+        which \
+        findutils \
+        procps-ng \
+        shadow-utils \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf \
+    && mkdir -p ${NXF_HOME} ${NXF_ASSETS}
+
+RUN curl -fsSL https://get.nextflow.io | NXF_VER=${NXF_VER} bash \
+    && mv nextflow /usr/local/bin/nextflow \
+    && chmod +x /usr/local/bin/nextflow \
+    && /usr/local/bin/nextflow -version \
+    && /usr/local/bin/nextflow pull "${PIPELINE_REPO}" -r "${PIPELINE_REV}" \
+    && for p in ${NXF_PLUGINS}; do /usr/local/bin/nextflow plugin install "$p"; done
+
+WORKDIR /workspace
+
+# Sanity: confirm framework + pipeline + plugins are all baked in, so a
+# missing piece fails the build instead of the first production run.
+RUN ls "${NXF_HOME}/framework/${NXF_VER}/" \
+    && ls "${NXF_ASSETS}/${PIPELINE_REPO}/.git" >/dev/null 2>&1 \
+    && ls "${NXF_HOME}/plugins/" | grep -E 'nf-schema|nf-amazon' \
+    || (echo "ERROR: cache layout incomplete" && exit 1)
+
+CMD ["/bin/bash"]
