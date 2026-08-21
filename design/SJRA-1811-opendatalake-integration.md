@@ -287,6 +287,27 @@ on coordinates. That join is the whole reason Decision 3 exists: today it reads 
 the dependency to remove. The occurrence tables store no coordinates, only `locus_id` — so the coordinates
 come from the variant table that `locus_id` points into, and both sides of the join live in StarRocks.
 
+```mermaid
+flowchart LR
+    subgraph SRC["inputs"]
+        GSV["gnomad_sv<br/><i>the only one this refresh updates</i>"]
+        CB["cytoband<br/><i>S3 broker load — never OpenDataLake</i>"]
+        EG["ensembl_gene<br/><i>absent upstream — SJRA-1803</i>"]
+    end
+    SNVO["snv__occurrence<br/><i>supplies nb_snv — the reason<br/>chromosome + start are needed</i>"]
+    OCC["cnv__occurrence<br/><i>partition swap · tenant × part</i>"]
+    GSV --> OCC
+    CB --> OCC
+    EG --> OCC
+    SNVO -->|"Decision 2"| OCC
+    style GSV fill:#cfe8cf,color:#000
+    style SNVO fill:#ffe0b2,color:#000
+```
+
+`nb_snv` counts the SNVs falling inside each CNV's interval, so the CNV statement has to join SNV occurrences
+on coordinates. That join is the whole reason Decision 2 exists: today it reads them from Iceberg, and
+`chromosome` + `start` are what let it read them from StarRocks instead.
+
 Query example for re-annotation variants:
 
 ```sql
