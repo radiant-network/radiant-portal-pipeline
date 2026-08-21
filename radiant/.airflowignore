@@ -1,0 +1,15 @@
+# dag-sync copies this whole package into the Airflow DAGs folder, because the DAGs
+# import `radiant.tasks.*`. That makes the DAG processor scan `tasks/` too, and
+# DAG_DISCOVERY_SAFE_MODE imports any .py containing both "airflow" and "dag" -- which
+# `tasks/vcf/snv/somatic/process.py` does incidentally (a `getLogger("airflow.task")`
+# and a comment). It then fails on `from cyvcf2 import VCF`, since cyvcf2 is a
+# task-image dependency and is deliberately absent from the Airflow image.
+#
+# Only DAG discovery is affected; `sys.path` imports from task bodies still resolve,
+# so the k8s/ECS operators keep working.
+#
+# Bare `tasks/` on purpose: Airflow 2 matches these as regex and Airflow 3 as glob,
+# and this is the spelling that works under both. `radiant/tasks/` would match the
+# regex but not the glob.
+tasks/
+data_qa/

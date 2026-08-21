@@ -186,3 +186,4 @@ logs
 *.DS_STORE
 .testquality
 .copilot
+tmp/
