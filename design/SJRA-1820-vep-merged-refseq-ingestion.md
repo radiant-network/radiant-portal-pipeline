@@ -19,8 +19,8 @@ decisions we need before implementing. The goal is to:
 
 1. Ingest merged VCFs without breaking the files we already support.
 2. Keep RefSeq consequences alongside Ensembl consequences (not throw them away).
-3. Partition the StarRocks consequences table **by source**, so queries that only want one
-   transcript set read only that half of the table.
+3. Record **which catalogue each consequence came from**, so everything downstream can tell an
+   Ensembl annotation from a RefSeq one and label, link and filter accordingly.
 
 ---
 
@@ -77,7 +77,7 @@ is safe for the older files, and the rule is a single code path for every file t
 |---|---|---|
 | VCF extraction | Populate a `source` value on every consequence, per the rule above | Small, contained |
 | Iceberg `snv_consequence` | Column already exists in the schema; it starts being filled | No schema change; ~2× rows for merged files |
-| StarRocks `snv__consequence` | New `source` column, **table partitioned by source** | Table rebuild + reload required |
+| StarRocks `snv__consequence` | New `source` column | `ALTER TABLE`, no reload — see §6 |
 | StarRocks `snv__consequence_filter` | Ensembl as today, plus the RefSeq annotations Ensembl does not already provide | ~11% more rows instead of ~100% — see §7 |
 | `snv__variant` (+ tmp, staging, partitioned) | New `pick_source` column: which catalogue VEP's picked consequence came from | Pick itself unchanged — see §5 |
 | External annotation joins (dbNSFP, gnomAD constraint) | Keyed on Ensembl transcript ids; RefSeq MANE rows borrow their twin's scores | Covers 94.7% of variants — see §7 |
@@ -193,26 +193,94 @@ two do not compare directly.
 
 ---
 
-## 6. Partitioning the consequences table by source
+## 6. Partitioning the consequences table by source: considered and rejected
 
-**What we get.** Queries that target one catalogue read only that partition — roughly half
-the table — instead of scanning everything and filtering. Reloading or correcting one
-catalogue can be done without touching the other. The table stays a single object, so
-nothing downstream has to know about two tables.
+An earlier draft of this document proposed partitioning `snv__consequence` by `source`, so that
+queries targeting one catalogue would read only half the table. **We measured it and rejected it.**
+`source` ships as a plain nullable column added with `ALTER TABLE`. This section records why, so the
+question does not have to be re-litigated.
 
-**What it costs / what to watch.**
+All figures below are from the sandbox `radiant.snv__consequence` on StarRocks 4.0.11:
+**73,040,174 rows, 5.5 GB, one partition, 10 buckets, `PRIMARY KEY(locus_id, symbol,
+transcript_id)`, `colocate_with = radiant_radiant.query_group`.** 16.76M distinct loci, 4.36
+consequences per locus.
 
-- The consequences table has to be **recreated and reloaded**; partitioning cannot be added
-  to an existing table in place. This is a migration, not a rolling change.
-- The partition key has to become part of the table's key columns. Practical effect: the
-  same variant/gene/transcript can now legitimately exist once per source, which is exactly
-  what we want, but it is a change in what "unique" means for that table.
-- The consequences table is in a colocation group with the other variant tables (so joins
-  stay local to each node). Adding partitions must not break that grouping — to be
-  validated on the sandbox before we commit to the design.
-- Two partitions only. This is deliberate: partitioning is for *pruning by source*, not for
-  data lifecycle. It composes with, and does not replace, the existing part-based
-  incremental loading.
+| query | scan time |
+|---|---|
+| point lookup — `WHERE locus_id = ?`, 256 of 73M rows | **3.4 ms** (19 ms total) |
+| the same lookup plus a low-cardinality predicate | **3.76 ms** — within noise |
+| filtered `COUNT(*)` across all 73M rows | 113 ms |
+| full scan + predicate + `GROUP BY`, 13.1M rows out | 132 ms |
+
+**1. Nothing filters by source.** The only reader of `snv__consequence` in the pipeline is
+`snv_consequence_filter_insert.sql`, an `INSERT OVERWRITE` full rebuild with no `WHERE` clause at
+all — it reads the whole table, unnests `consequences` and re-aggregates. Across the entire pipeline
+the WHERE/JOIN columns on this table are `locus_id`, `locus_hash`, `task_id`, `part`, `symbol`,
+`transcript_id` and `consequence`; never `source`, `is_picked`, `is_canonical` or the MANE flags.
+And §7 settles the display side: this is the table the variant page reads, and it must serve **both**
+catalogues in full, so the page issues no source predicate either. The anti-join in §7's filter-table
+proposal reads both sources too. There is no query to prune.
+
+**2. It would make the dominant query slower, not faster.** The variant-page read is a point lookup.
+`locus_id` bucket-prunes it to a single tablet and the primary-key short-key index narrows within
+that tablet — 3.4 ms. The query profile shows per-tablet setup (`CreateSegmentIter` 560 µs,
+`GetDelVec` 512 µs) is about a third of it. Two partitions over the same hash bucket means a lookup
+with no source predicate — i.e. the variant page — opens **two tablets instead of one**. We would pay
+roughly double on the hot path to speed up a query nobody issues. The predicate itself is free
+regardless: a two-value dictionary-encoded column pushed into the scan, measurable only as noise.
+
+**3. A 50/50 split is the weakest possible partition key.** Compare the precedent already in this
+schema: `snv__consequence_filter` partitions on `is_deleterious`, which splits **99.6% / 0.4%**
+(72.1 MB against 2.7 MB) — pruning there removes 96% of the data. That is what a partition key worth
+having looks like. Source splits 50.5/49.5 (§2: 479,333 Ensembl blocks against 470,518 RefSeq). The
+best case is halving a scan that already completes in 132 ms, inside a batch job measured in minutes.
+
+**4. The primary-key cost is real, and the key gains nothing.** `snv__consequence` is a PRIMARY KEY
+table, and StarRocks requires the partition column to be part of the primary key — so it would go
+from three columns to four, on a table with `enable_persistent_index = true`. That is permanent index
+growth on every upsert, and that upsert is the *only* deduplication on the write path (Iceberg
+receives every annotation block verbatim, ~1.36M consequence rows per tumour-only WES sample). In
+exchange, `source` adds **no discriminating power at all**: the two catalogues use disjoint
+transcript namespaces — verified, 100% of the 67.3M non-empty `transcript_id` values are version-free
+`ENST`, while RefSeq is `N[MRP]_`/`X[MRP]_` — so `(locus_id, symbol, transcript_id)` already
+separates an Ensembl row from its RefSeq twin. The earlier claim that "the same variant/gene/
+transcript can now legitimately exist once per source" is unreachable: if the transcript differs, the
+existing three-column key already distinguishes them.
+
+**5. It contradicts a decision we have already shipped.** SJRA-1823 deliberately stores
+`source = NULL` for rows that belong to no catalogue — "we record unknown rather than guessing" (§3,
+rule 4). Both partition columns in this codebase are declared `NOT NULL` (`is_deleterious`, `part`),
+consistent with StarRocks' list-partitioning requirement, so partitioning would force a sentinel
+value and undo that. This is not a corner case: **5,710,524 rows (7.8%)** of the current table have an
+empty `symbol` *and* an empty `transcript_id` — exactly the class that resolves to a null source.
+
+**Two claims from the original proposal, corrected.**
+
+- *"The colocation group must be validated on the sandbox."* No validation needed, and no risk:
+  `snv__consequence_filter` is **already** `PARTITION BY (is_deleterious)` **and** a member of the
+  same `radiant_radiant.query_group`. Partitioning and colocation demonstrably coexist here today.
+- *"Reloading or correcting one catalogue without touching the other."* Already possible.
+  `snv_consequence_insert.sql` is an incremental upsert (`WHERE c.task_id IN (…)`) into a PRIMARY KEY
+  table, and PK tables support `DELETE … WHERE source = 'RefSeq'` and key-wise replacement.
+  Partitioning would only upgrade that to `TRUNCATE PARTITION` — faster, for an operation nobody runs
+  on a schedule.
+
+**What we do instead.** One statement, no rebuild, no reload, no downtime; primary key, distribution
+and colocation all untouched, and nulls permitted so SJRA-1823's rule stands:
+
+```sql
+ALTER TABLE snv__consequence ADD COLUMN source VARCHAR(20) AFTER transcript_id;
+```
+
+The `AFTER` position is mandatory rather than cosmetic: `snv_consequence_insert.sql` is a positional
+`INSERT` with no column list, so the table has to match `init/snv_consequence_create_table.sql`
+column for column. The integration suite does catch a mismatch — `_explain_insert` in
+`tests/integration/dags/sql/test_queries.py` explains the statement as a real `INSERT INTO`, so a
+column present on one side only fails with a count mismatch.
+
+**If a single-source access pattern ever appears** — and is *measured*, not assumed — the cheap lever
+is the sort key (`ALTER TABLE … ORDER BY`), which gives zone-map pruning without touching the key
+semantics or requiring a reload. Partitioning stays the last resort, not the first.
 
 ---
 
@@ -377,9 +445,11 @@ Items 2–4 are product decisions; 1, 5 and 6 are technical with product impact.
 
 - Files without a source column keep working unchanged; they simply resolve to a single
   source via the fallback rule.
-- Existing rows already loaded in StarRocks have no source value. During migration they are
-  labelled as Ensembl, which is factually what they are — every file ingested to date was
-  annotated against the Ensembl cache.
+- Existing rows already loaded in StarRocks have no source value. A one-shot `UPDATE` after the
+  `ALTER TABLE` (§6) labels them as Ensembl, which is factually what they are — every file ingested
+  to date was annotated against the Ensembl cache, and this is verifiable rather than assumed: all
+  67.3M non-empty `transcript_id` values in the current table are `ENST`. Rows with no transcript at
+  all keep a null source, per §3 rule 4.
 - No portal change is *required* for the pipeline change to ship; the portal changes are
   what turn RefSeq data into something a user can see.
 
@@ -395,9 +465,12 @@ Items 2–4 are product decisions; 1, 5 and 6 are technical with product impact.
    when ingested by the current pipeline.
 3. **No regression on old files.** A previously-ingested non-merged file reproduces exactly
    the same rows as before, with `source = Ensembl` added.
-4. **Partition pruning works.** A query restricted to one source reads only that partition
-   (verifiable in the query profile), and returns the same rows as the equivalent filter on
-   an unpartitioned copy.
+4. **The primary key still separates the two catalogues.**
+   `unique_combination_of_columns(locus_id, symbol, transcript_id)` still holds on a merged
+   file — an Ensembl row and its RefSeq twin never collide on the key, because the two
+   transcript namespaces are disjoint. This is the assumption doing the work that a source
+   partition key would otherwise have done (§6), so it is asserted rather than assumed. The
+   variant-page point lookup should also still touch a single tablet.
 5. **The headline block is coherent.** For the ~1.4% of variants where VEP picked a RefSeq
    transcript, `pick_source` says RefSeq and every headline field — `transcript_id`,
    `hgvsc`, `hgvsp`, `dna_change`, `aa_change`, `symbol` — comes from that same transcript.
@@ -439,7 +512,7 @@ of the portal work.
 | 2 | [SJRA-1823] Classify each consequence's source (§3) and populate it into Iceberg | M | 1 |
 | 3 | [SJRA-1824] Populate `is_mane_select` / `is_mane_plus` from the `MANE` column, and store both sides of the pair **unversioned** as `mane_pair_transcript_id` and `transcript_id_unversioned` | S | 1 |
 | 4 | [SJRA-1825] Add a merged-VCF test fixture and unit tests covering both file types | M | 2, 3 |
-| 5 | [SJRA-1826] `snv__consequence`: add `source`, partition by it, migrate existing environments, verify the colocation group survives (§6) | M | 2 |
+| 5 | [SJRA-1826] `snv__consequence`: add a `source` column via `ALTER TABLE` and label existing rows as Ensembl. Not partitioned by it — see §6 | S | 2 |
 | 6 | [SJRA-1827] `snv_consequence_insert`: borrow dbNSFP and constraint scores for RefSeq MANE rows through the cross-reference, plus the `scores_from_mane_pair` flag (§7) | M | 3, 5 |
 | 7 | [SJRA-1828] `snv_consequence_filter_insert`: load only the RefSeq annotations Ensembl does not already provide (§7) | M | 5 |
 | 8 | [SJRA-1833] Add `pick_source` to `snv__variant` and its tmp / staging / partitioned equivalents (§5) | S | 2 |
@@ -459,8 +532,8 @@ of the portal work.
 | 12 | [SJRA-1832] Label borrowed scores as coming from the MANE twin; show "not available" rather than blank for non-MANE RefSeq rows | S |
 
 Tasks 1–3 are small and independent of any product decision, so they can start immediately.
-Task 5 is the only one requiring a migration and a reload, and should be scheduled
-deliberately rather than bundled into a routine release.
+Task 5 is a metadata-only `ALTER TABLE` (§6) and can ride a routine release; no table rebuild
+or reload is needed anywhere in this story.
 
 Two notes on scope: task 1 is a bug fix that happens to be a prerequisite, so it is worth
 landing on its own rather than hidden inside task 2; and task 3 is in scope only because the
