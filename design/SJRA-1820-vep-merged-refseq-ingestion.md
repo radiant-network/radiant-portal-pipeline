@@ -350,6 +350,67 @@ Two practical consequences:
   Ensembl did not cover, so it has no scored counterpart to compete with. Those rows behave
   exactly like any variant dbNSFP does not cover today.
 
+*Implementation note (SJRA-1828, which built it).*
+
+The restriction is a single `LEFT ANTI JOIN` between the existing `UNNEST` and the existing
+`GROUP BY` in `snv_consequence_filter_insert.sql`, against the Ensembl `(locus_id, symbol,
+consequence)` keys of the same load. Nothing else about the statement changes — the aggregation, the
+projection and the table's shape are untouched, as this section promised.
+
+**`gr.source = 'RefSeq'` is a conjunct of the `ON` clause, not a `WHERE`.** An anti join keeps a left
+row when no right row satisfies the *whole* condition, so that conjunct is what confines the
+restriction to RefSeq: an Ensembl row can never satisfy it and passes through, and so does an
+intergenic row, whose source is NULL under `resolve_source()` rule 4. Moving it to a `WHERE` would
+change the meaning entirely.
+
+**These duplicates do not collapse on their own,** which is the whole reason the join is needed. The
+`GROUP BY` keys on the score columns, and a non-MANE RefSeq transcript carries nulls where the Ensembl
+row it duplicates has dbNSFP values, so the two land in different groups and the duplicate survives as
+a second row. This is pinned in
+`tests/integration/dags/sql/test_snv_consequence_insert.py`: neutralising the join makes exactly that
+unscored second `(TP53, missense_variant)` row reappear.
+
+**Why `vep_impact` is not part of the key.** The obvious objection is that impact is derived from the
+consequence, so it is redundant. It is not: VEP reports the impact of the **most severe term in the
+block**, and the `UNNEST` copies that single label onto every term in it. Measured on the sandbox,
+`intron_variant` occurs as MODIFIER, LOW *and* HIGH (52.0M rows), and the whole spread comes from
+multi-term blocks — single-term blocks give 23 distinct terms and exactly 23 distinct term/impact pairs,
+multi-term blocks give 25 terms and 49 pairs. `intron_variant` reaches HIGH only when it shares a block
+with `splice_donor_variant` or `splice_acceptor_variant`.
+
+Leaving it out is still correct, for a different reason: **no impact reachable through RefSeq can be
+lost.** Take A, the most severe term of a RefSeq block — the term that sets that block's impact.
+
+- If Ensembl does not report A for this `(locus, symbol)`, the RefSeq row for A survives the anti join
+  and carries the block's impact in full.
+- If Ensembl does report A, that Ensembl block contains A, so its impact is at least A's own rating —
+  which *is* the RefSeq block's impact — and the Ensembl row already carries it.
+
+The second step needs block impact never to fall below the rating of a term the block contains. Measured
+over 99.2M unnested rows: zero counterexamples.
+
+What adding `vep_impact` to the key would preserve is only the smeared label — an
+`(intron_variant, HIGH)` RefSeq row where Ensembl already has `(intron_variant, MODIFIER)`. That HIGH
+stays findable on the variant through its `splice_donor_variant` row, and Ensembl alone already produces
+both of those rows today. So it would be more rows and not one more findable variant, which is exactly
+what this restriction exists to avoid. Consistent with the MANE measurement above: across the 53,357
+pairs, consequence and impact differ in **zero** cases, so any divergence at all can only come from
+non-MANE transcripts.
+
+**`snv_consequence_filter_insert_part.sql` needed no change.** It reads `snv__consequence_filter` with
+`c.*`, not `snv__consequence`, so it inherits the restriction.
+
+**No `source` column was added to the filter table.** After the restriction every row is either
+Ensembl or "RefSeq where Ensembl was silent", and nothing in the query path distinguishes them; the
+variant page reads the source from `snv__consequence`. Revisit only if the portal asks for it.
+
+**The two cross-table dbt assertions still hold, and for a reason worth stating.**
+`..._validate_subset_of_snv_consequence` only ever gets easier — the restriction removes rows, and
+every surviving row still traces back to a base `snv__consequence` row. `..._validate_completeness_vs_snv_consequence`
+asserts at *locus* grain, and no locus can be emptied by the restriction: a RefSeq key is dropped only
+when an Ensembl key of the same locus is kept, and a locus with RefSeq annotations alone has nothing to
+duplicate, so all of them survive.
+
 ### MANE gives us a free bridge between the two catalogues
 
 With `--mane` enabled, VEP flags MANE transcripts on **both** sources — 106,985 MANE Select
@@ -462,15 +523,14 @@ would be read as "prediction scores are borrowed" and be wrong most of the time.
 guard lives in the integration test instead, which compares the borrowed values against the twin's and
 pins the two source tables independently.
 
-**Knock-on for SJRA-1828, worth knowing before that work starts.**
-`snv_consequence_filter_insert.sql` groups on the score columns
-(`sift_score, polyphen2_hvar_score, fathmm_score, revel_score, spliceai_ds, impact_score, gnomad_pli`).
-Before the borrow, a RefSeq MANE row and its Ensembl twin land in *different* groups purely because the
-RefSeq row's scores are all null; after it they collapse into the same group wherever symbol, biotype
-and consequence agree — which is 99.9% of MANE cases. So SJRA-1827 already shrinks
-`snv__consequence_filter` and rebalances the `is_deleterious` split, partly pre-empting SJRA-1828.
-Measure the row count and that split on a merged file before and after, because it moves SJRA-1828's
-baseline.
+**How this interacts with SJRA-1828.** `snv_consequence_filter_insert.sql` groups on the score
+columns, so before the borrow a RefSeq MANE row and its Ensembl twin landed in *different* groups
+purely because the RefSeq row's scores were all null. The borrow makes them collapse wherever symbol,
+biotype and consequence agree. That is a real effect, but it is not what keeps the filter table small:
+it only covers MANE pairs, and the rows that would actually have doubled the table are the **non-MANE**
+RefSeq transcripts, which have no twin and therefore no scores to borrow. Those are removed by
+SJRA-1828's restriction, not by the grouping. The two changes are complementary, and the restriction is
+the load-bearing one — see the SJRA-1828 note below.
 
 **`mane_pair_transcript_id` is materialised into `snv__consequence` too.** It is not needed for the
 borrow — the join reads the Iceberg table, where SJRA-1824 already put it — but storing it makes the

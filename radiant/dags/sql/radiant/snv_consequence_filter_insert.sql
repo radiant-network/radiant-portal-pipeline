@@ -73,11 +73,31 @@ FROM (
             gnomad_loeuf,
             phyloP17way_primate,
             phyloP100way_vertebrate,
-            vep_impact
+            vep_impact,
+            -- Not selected further up; it only feeds the anti join below.
+            source
         FROM
             {{ mapping.starrocks_snv_consequence }} c,
             UNNEST(consequences) AS unnest
     ) gr
+    -- SJRA-1828. RefSeq loads only where Ensembl is silent on that (locus, symbol, consequence). Why the
+    -- source conjunct sits in the ON clause, and why vep_impact is not a key: section 7 of
+    -- design/SJRA-1820-vep-merged-refseq-ingestion.md.
+    LEFT ANTI JOIN (
+        SELECT
+            locus_id,
+            symbol,
+            -- StarRocks names the unnested column `unnest` whatever the table alias is.
+            unnest AS consequence
+        FROM
+            {{ mapping.starrocks_snv_consequence }} e,
+            UNNEST(consequences) AS unnest
+        WHERE source = 'Ensembl'
+    ) ens
+        ON  ens.locus_id = gr.locus_id
+        AND ens.symbol = gr.symbol
+        AND ens.consequence = gr.consequence
+        AND gr.source = 'RefSeq'
     GROUP BY
         locus_id,
         consequence,

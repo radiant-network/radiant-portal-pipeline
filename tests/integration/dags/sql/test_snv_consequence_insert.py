@@ -88,7 +88,19 @@ def _flag(row):
     return bool(row["scores_from_mane_pair"])
 
 
-def _consequence_row(*, symbol, transcript_id, transcript_id_unversioned, source, mane_select, mane_pair, is_mane):
+def _consequence_row(
+    *,
+    symbol,
+    transcript_id,
+    transcript_id_unversioned,
+    source,
+    mane_select,
+    mane_pair,
+    is_mane,
+    consequences=("missense_variant",),
+    vep_impact="MODERATE",
+    impact_score=3,
+):
     """One Iceberg consequence row, with every non-nullable field of the merged schema filled."""
     return {
         "task_id": _TASK_ID,
@@ -110,8 +122,8 @@ def _consequence_row(*, symbol, transcript_id, transcript_id_unversioned, source
         "biotype": "protein_coding",
         "strand": "1",
         "exon": None,
-        "vep_impact": "MODERATE",
-        "consequences": ["missense_variant"],
+        "vep_impact": vep_impact,
+        "consequences": list(consequences),
         "mane_select": mane_select,
         "mane_pair_transcript_id": mane_pair,
         "is_mane_select": is_mane,
@@ -120,7 +132,7 @@ def _consequence_row(*, symbol, transcript_id, transcript_id_unversioned, source
         "is_canonical": is_mane,
         "aa_change": None,
         "dna_change": None,
-        "impact_score": 3,
+        "impact_score": impact_score,
     }
 
 
@@ -189,6 +201,22 @@ _CONSEQUENCE_ROWS = [
         mane_pair="ENST0003",
         is_mane=True,
     ),
+    # 8. Non-MANE RefSeq reporting a consequence Ensembl does not report for this gene. This is the
+    #    class SJRA-1828 exists to preserve: on the reference file it is 79 HIGH-impact keys that an
+    #    impact filter would otherwise never surface. Contrast with row 3, same gene and the *same*
+    #    consequence as the Ensembl row, which SJRA-1828 must drop.
+    _consequence_row(
+        symbol="TP53",
+        transcript_id="NM_8888.1",
+        transcript_id_unversioned="NM_8888",
+        source="RefSeq",
+        mane_select="",
+        mane_pair="",
+        is_mane=False,
+        consequences=("frameshift_variant",),
+        vep_impact="HIGH",
+        impact_score=4,
+    ),
     # 7. Intergenic: `resolve_source()` rule 4 leaves the source NULL. `source = 'RefSeq'` then yields
     #    NULL, which is what the COALESCE around the flag exists to absorb -- the column is NOT NULL.
     _consequence_row(
@@ -240,6 +268,7 @@ def seeded_consequences(starrocks_session, iceberg_client, setup_iceberg_namespa
     """
     for subdir, table in (
         ("radiant", "snv_consequence"),
+        ("radiant", "snv_consequence_filter"),
         ("radiant", "snv_tmp_variant"),
         ("open_data", "dbnsfp"),
         ("open_data", "gnomad_constraint"),
@@ -292,15 +321,28 @@ def seeded_consequences(starrocks_session, iceberg_client, setup_iceberg_namespa
     iceberg_table.delete(EqualTo("task_id", _TASK_ID))
 
 
-def test_refseq_mane_rows_borrow_their_twins_scores(seeded_consequences, starrocks_session, radiant_mapping):
-    with open(os.path.join(_SQL_DIR, "radiant/snv_consequence_insert.sql")) as f_in:
-        insert_sql = jinja2.Template(f_in.read()).render({"mapping": radiant_mapping})
+def _run(starrocks_session, mapping, sql_file, params=None):
+    with open(os.path.join(_SQL_DIR, sql_file)) as f_in:
+        rendered_sql = jinja2.Template(f_in.read()).render({"mapping": mapping})
 
     with starrocks_session.cursor() as cursor:
-        cursor.execute(insert_sql, {"task_ids": [_TASK_ID]})
+        cursor.execute(rendered_sql, params)
+
+
+def test_refseq_mane_rows_borrow_their_twins_scores(seeded_consequences, starrocks_session, radiant_mapping):
+    _run(starrocks_session, radiant_mapping, "radiant/snv_consequence_insert.sql", {"task_ids": [_TASK_ID]})
 
     rows = _fetch_by_transcript(starrocks_session, radiant_mapping["starrocks_snv_consequence"])
-    assert set(rows) == {"ENST0001", "NM_0001.6", "NM_9999.1", "ENST0002", "NM_0002.1", "NM_0003.1", ""}
+    assert set(rows) == {
+        "ENST0001",
+        "NM_0001.6",
+        "NM_9999.1",
+        "NM_8888.1",
+        "ENST0002",
+        "NM_0002.1",
+        "NM_0003.1",
+        "",
+    }
 
     ensembl_mane = rows["ENST0001"]
     refseq_twin = rows["NM_0001.6"]
@@ -338,7 +380,7 @@ def test_refseq_mane_rows_borrow_their_twins_scores(seeded_consequences, starroc
 
     # A non-MANE RefSeq transcript has no pair, so it borrows nothing -- and must not be labelled as if
     # it had. Same for an intergenic block, whose source is NULL.
-    for row in (refseq_non_mane, intergenic):
+    for row in (refseq_non_mane, rows["NM_8888.1"], intergenic):
         assert all(value is None for value in _scores(row).values())
         assert row["gnomad_pli"] is None
         assert _flag(row) is False
@@ -375,9 +417,50 @@ def test_score_borrow_joins_are_hash_joins(seeded_consequences, starrocks_sessio
         insert_sql = jinja2.Template(f_in.read()).render({"mapping": radiant_mapping})
 
     with starrocks_session.cursor() as cursor:
-        cursor.execute(f"EXPLAIN {insert_sql}", {"task_ids": [_TASK_ID]})
+        cursor.execute(f"EXPLAIN {insert_sql}", {"task_ids": [_TASK_ID]})  # noqa: S608
         plan = "\n".join(str(row[0]) for row in cursor.fetchall())
 
     assert "NESTLOOP" not in plan, f"the MANE-pair score key is no longer an equi-join condition:\n{plan}"
     # One per borrowed source table, plus the two locus joins onto snv__tmp_variant and spliceai.
     assert plan.count("HASH JOIN") >= 2, f"snv_consequence_insert.sql lost its hash joins:\n{plan}"
+
+
+def test_filter_table_takes_only_the_refseq_annotations_ensembl_does_not_provide(
+    seeded_consequences, starrocks_session, radiant_mapping
+):
+    """SJRA-1828 -- `snv__consequence_filter` loads Ensembl as before, plus only what RefSeq adds.
+
+    The fixture holds both cases on the same gene: `NM_9999.1` reports the *same* consequence as the
+    Ensembl transcript and must be dropped, while `NM_8888.1` reports one Ensembl never mentions and
+    must survive.
+
+    `NM_9999.1` is what makes this a real test. It carries no scores -- it is non-MANE, so SJRA-1827
+    finds no twin to borrow from -- while the Ensembl row it duplicates has dbNSFP values. The
+    aggregation below groups on the score columns, so the two land in different groups: without the
+    restriction that duplicate survives as a second `(TP53, missense_variant)` row rather than
+    collapsing away.
+    """
+    _run(starrocks_session, radiant_mapping, "radiant/snv_consequence_insert.sql", {"task_ids": [_TASK_ID]})
+    _run(starrocks_session, radiant_mapping, "radiant/snv_consequence_filter_insert.sql")
+
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(
+            f"SELECT symbol, consequence, vep_impact, is_deleterious, sift_score, gnomad_pli "  # noqa: S608
+            f"FROM {radiant_mapping['starrocks_snv_consequence_filter']} ORDER BY symbol, consequence"
+        )
+        rows = cursor.fetchall()
+
+    assert rows == (
+        # Intergenic (source NULL): must not be caught by the RefSeq restriction.
+        ("", "missense_variant", "MODERATE", 0, None, None),
+        # Ensembl, scored. Its MANE twin duplicates this key and contributes no second row.
+        ("BRCA1", "missense_variant", "MODERATE", 1, 0.375, None),
+        # RefSeq-only symbol: Ensembl says nothing about EGFR at this locus, so it is kept. pLI alone
+        # does not make a row deleterious -- `is_deleterious` looks only at the prediction scores.
+        ("EGFR", "missense_variant", "MODERATE", 0, None, 0.875),
+        # The row SJRA-1828 exists to keep: a consequence only RefSeq reports for this gene.
+        ("TP53", "frameshift_variant", "HIGH", 0, None, None),
+        # Exactly one row for the duplicated key, and it is the scored Ensembl one. Two rows here would
+        # mean the anti join stopped firing; a null `sift_score` would mean it dropped the wrong side.
+        ("TP53", "missense_variant", "MODERATE", 1, 0.5, 0.5),
+    )
