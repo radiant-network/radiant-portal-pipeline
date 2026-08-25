@@ -67,17 +67,23 @@ SCHEMA = merge_schemas(
 
 def get_csq_field(csq_fields, fields, field_name):
     """
-    Safely retrieves a field from CSQ annotation by name.
+    Safely retrieves a field from CSQ annotation by name, ignoring case.
+
+    VEP does not spell its CSQ column names consistently across versions and plugins
+    (`SOURCE` vs `Source`), and a lookup under the wrong spelling silently yields None.
+    Matching on the lowercased name removes that failure mode.
 
     Args:
-        csq_fields (dict): Mapping of CSQ field names to indexes.
+        csq_fields (dict): Mapping of lowercased CSQ field names to indexes, as
+            returned by `parse_csq_header`.
         fields (list): Parsed CSQ annotation fields from a single transcript.
-        field_name (str): Name of the CSQ field to retrieve.
+        field_name (str): Name of the CSQ field to retrieve, in any case.
 
     Returns:
         str or None: Value of the CSQ field or None if not found.
     """
-    return fields[csq_fields[field_name]] if field_name in csq_fields else None
+    index = csq_fields.get(field_name.lower())
+    return fields[index] if index is not None else None
 
 
 def process_consequence(record: Variant, csq_fields: dict[str, int], common: Common) -> tuple[dict, list[dict]]:
@@ -101,7 +107,8 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
         csq_data = csq.split(",")
         for c in csq_data:
             fields = c.split("|")
-            exon = get_csq_field(csq_fields, fields, "EXON").split("/")
+            exon_field = get_csq_field(csq_fields, fields, "EXON")
+            exon = exon_field.split("/") if exon_field else []
             vep_impact = get_csq_field(csq_fields, fields, "IMPACT")
             hgvsg = get_csq_field(csq_fields, fields, "HGVSg")
             hgvsp = get_csq_field(csq_fields, fields, "HGVSp")
@@ -122,13 +129,13 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
                 "hgvsc": hgvsc,
                 "symbol": get_csq_field(csq_fields, fields, "SYMBOL"),
                 "transcript_id": get_csq_field(csq_fields, fields, "Feature"),
-                "source": get_csq_field(csq_fields, fields, "Source"),
+                "source": get_csq_field(csq_fields, fields, "SOURCE"),
                 "biotype": get_csq_field(csq_fields, fields, "BIOTYPE"),
                 "strand": get_csq_field(csq_fields, fields, "STRAND"),
                 "exon": {"rank": str(exon[0]), "total": str(exon[1])} if len(exon) == 2 else None,
                 "vep_impact": vep_impact,
                 "consequences": get_csq_field(csq_fields, fields, "Consequence").split("&"),
-                "mane_select": get_csq_field(csq_fields, fields, "ManeSelect"),
+                "mane_select": get_csq_field(csq_fields, fields, "MANE_SELECT"),
                 "is_mane_select": False,
                 "is_mane_plus": False,
                 "is_picked": picked,
@@ -153,13 +160,13 @@ def parse_csq_header(vcf):
         vcf: A cyvcf2.VCF reader object.
 
     Returns:
-        dict[str, int]: Mapping from CSQ field names to their indexes.
+        dict[str, int]: Mapping from lowercased CSQ field names to their indexes.
     """
     info_csq = vcf.get_header_type(CSQ_FORMAT_FIELD)
     csq_meta = info_csq.get("Description", "")
     csq_meta = csq_meta.split("Format:")[-1].strip(' "')
     csq_fields = csq_meta.split("|") if csq_meta else []
-    return {f: i for i, f in enumerate(csq_fields)}
+    return {f.lower(): i for i, f in enumerate(csq_fields)}
 
 
 IMPACT_SCORE = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}
