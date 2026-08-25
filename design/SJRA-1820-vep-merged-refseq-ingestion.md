@@ -77,7 +77,7 @@ is safe for the older files, and the rule is a single code path for every file t
 |---|---|---|
 | VCF extraction | Populate a `source` value on every consequence, per the rule above | Small, contained |
 | Iceberg `snv_consequence` | Column already exists in the schema; it starts being filled | No schema change; ~2× rows for merged files |
-| StarRocks `snv__consequence` | New `source` column | `ALTER TABLE`, no reload — see §6 |
+| StarRocks `snv__consequence` | New `source` column, plus `mane_pair_transcript_id` and `scores_from_mane_pair` | `ALTER TABLE`, no reload — see §6 and §7 |
 | StarRocks `snv__consequence_filter` | Ensembl as today, plus the RefSeq annotations Ensembl does not already provide | ~11% more rows instead of ~100% — see §7 |
 | `snv__variant` (+ tmp, staging, partitioned) | New `pick_source` column: which catalogue VEP's picked consequence came from | Pick itself unchanged — see §5 |
 | External annotation joins (dbNSFP, gnomAD constraint) | Keyed on Ensembl transcript ids; RefSeq MANE rows borrow their twin's scores | Covers 94.7% of variants — see §7 |
@@ -272,6 +272,12 @@ and colocation all untouched, and nulls permitted so SJRA-1823's rule stands:
 ALTER TABLE snv__consequence ADD COLUMN source VARCHAR(20) AFTER transcript_id;
 ```
 
+All three columns this story adds to the table — `source`, plus SJRA-1827's
+`mane_pair_transcript_id` and `scores_from_mane_pair` — ship as one runbook script,
+`radiant/dags/sql/radiant/migrations/SJRA-1820_snv_consequences_add_columns.sql`. One story, one
+table, and no consequence row is loaded between the statements, so splitting them per sub-task buys
+nothing.
+
 The `AFTER` position is mandatory rather than cosmetic: `snv_consequence_insert.sql` is a positional
 `INSERT` with no column list, so the table has to match `init/snv_consequence_create_table.sql`
 column for column. The integration suite does catch a mismatch — `_explain_insert` in
@@ -420,6 +426,61 @@ works in either direction, and `mane_pair_transcript_id` also lines up directly 
 `ensembl_transcript_id` and gnomAD constraint's `transcript_id`. The raw `transcript_id` keeps
 its version for display, since that is the form a clinician cites.
 
+*Implementation note (SJRA-1827, which built option 1).* Three things were settled while
+implementing it, all measured rather than assumed.
+
+**The join key is a source-keyed `CASE`, not a `COALESCE`.** Both enrichment joins in
+`snv_consequence_insert.sql` now key on
+`CASE WHEN c.source = 'RefSeq' THEN NULLIF(c.mane_pair_transcript_id, '') ELSE NULLIF(c.transcript_id_unversioned, '') END`.
+The branches are not interchangeable, so this is the only correct form:
+`COALESCE(mane_pair_transcript_id, transcript_id_unversioned)` would hand every *Ensembl* row its
+paired `NM_…` and destroy the scores those rows get today, while the reverse order would never reach
+the pair, because `transcript_id_unversioned` is always populated on a RefSeq row. `NULLIF` matters
+because `strip_transcript_version` yields `''` — not NULL — for a declared-but-empty CSQ column, i.e.
+on every non-MANE-Select row.
+
+`ON d.ensembl_transcript_id IN (transcript_id_unversioned, mane_pair_transcript_id)` reads better and
+is equally correct, since the two identifier namespaces are disjoint. It plans as a **NESTLOOP JOIN**
+and was rejected on that basis. The `CASE` is hoisted into a `Project` above the scan, both joins stay
+`HASH JOIN`, the `dbnsfp` join keeps `colocate: true`, and the expression is evaluated once across both
+`ON` clauses via common-subexpression elimination — so inlining it twice costs nothing. Asserted in
+`tests/integration/dags/sql/test_snv_consequence_insert.py`, because CI pins StarRocks 3.4.2 while this
+was measured on 4.0.11.
+
+**`scores_from_mane_pair` states the provenance of the join *key*, not that a value was found.** It is
+`c.source = 'RefSeq' AND NULLIF(c.mane_pair_transcript_id, '') IS NOT NULL`, wrapped in a `COALESCE`
+because `source` is NULL on intergenic blocks and the column is `NOT NULL DEFAULT "false"`. So a true
+flag with a null `sift_score` means dbNSFP does not cover that locus — exactly as on an Ensembl row.
+SJRA-1832 must therefore null-check each value and render "not available", rather than reading the flag
+as "this row is scored".
+
+The alternative — set the flag only when a value actually came back — was considered and dropped. It
+would double as a silent-failure detector, but it conflates two different things: `gnomad_constraint`
+is transcript-grained with no locus predicate, so its leg matches for nearly every paired row, while
+`dbnsfp` is locus × transcript and only hits scored loci. A flag driven mostly by the constraint leg
+would be read as "prediction scores are borrowed" and be wrong most of the time. The silent-failure
+guard lives in the integration test instead, which compares the borrowed values against the twin's and
+pins the two source tables independently.
+
+**Knock-on for SJRA-1828, worth knowing before that work starts.**
+`snv_consequence_filter_insert.sql` groups on the score columns
+(`sift_score, polyphen2_hvar_score, fathmm_score, revel_score, spliceai_ds, impact_score, gnomad_pli`).
+Before the borrow, a RefSeq MANE row and its Ensembl twin land in *different* groups purely because the
+RefSeq row's scores are all null; after it they collapse into the same group wherever symbol, biotype
+and consequence agree — which is 99.9% of MANE cases. So SJRA-1827 already shrinks
+`snv__consequence_filter` and rebalances the `is_deleterious` split, partly pre-empting SJRA-1828.
+Measure the row count and that split on a merged file before and after, because it moves SJRA-1828's
+baseline.
+
+**`mane_pair_transcript_id` is materialised into `snv__consequence` too.** It is not needed for the
+borrow — the join reads the Iceberg table, where SJRA-1824 already put it — but storing it makes the
+borrow auditable in place: a RefSeq row joins straight back to its twin on
+`mane_pair_transcript_id = twin.transcript_id`, with no version stripping in the consumer. That is what
+SJRA-1830's "borrowed scores match their twin" assertion and the portal's RefSeq → Ensembl link both
+need, and the stored `mane_select` cannot serve it because it keeps its version. `transcript_id_unversioned`
+is deliberately *not* propagated: it is identical to `transcript_id` on Ensembl rows, and the direction
+that matters (RefSeq → Ensembl) works with the pair column alone.
+
 **Non-MANE RefSeq transcripts get no scores under either option.** Loading RefSeq-keyed
 dbNSFP would be the only way to change that; it is not proposed, since those are alternative
 transcripts dbNSFP largely does not cover under any identifier.
@@ -532,8 +593,8 @@ of the portal work.
 | 12 | [SJRA-1832] Label borrowed scores as coming from the MANE twin; show "not available" rather than blank for non-MANE RefSeq rows | S |
 
 Tasks 1–3 are small and independent of any product decision, so they can start immediately.
-Task 5 is a metadata-only `ALTER TABLE` (§6) and can ride a routine release; no table rebuild
-or reload is needed anywhere in this story.
+Tasks 5 and 6 are metadata-only `ALTER TABLE`s (§6) and can ride a routine release; no table
+rebuild or reload is needed anywhere in this story.
 
 Two notes on scope: task 1 is a bug fix that happens to be a prerequisite, so it is worth
 landing on its own rather than hidden inside task 2; and task 3 is in scope only because the
