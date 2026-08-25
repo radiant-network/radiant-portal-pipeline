@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_consequence }} (
     `locus_id` bigint(20) COMMENT "",
     `symbol` varchar(30) COMMENT "",
     `transcript_id` varchar(100) COMMENT "",
+    `source` varchar(20) NULL COMMENT "",
     `consequences` array<varchar(50)> COMMENT "",
     `impact_score` tinyint(4) NULL COMMENT "",
     `biotype` varchar(50) NULL COMMENT "",

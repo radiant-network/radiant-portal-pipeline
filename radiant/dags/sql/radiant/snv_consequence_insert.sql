@@ -3,6 +3,7 @@ SELECT
     v.locus_id AS locus_id,
     COALESCE(c.symbol, '') AS symbol,
     COALESCE(c.transcript_id, '') AS transcript_id,
+    c.source,
     c.consequences,
     c.impact_score,
     c.biotype,
