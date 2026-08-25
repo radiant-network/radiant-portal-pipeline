@@ -1,0 +1,5 @@
+##fileformat=VCFv4.2
+##INFO=<ID=CSQ,Number=.,Type=String,Description="Consequence annotations from Ensembl VEP. Format: Allele|Consequence|IMPACT|SYMBOL|Gene|Feature|BIOTYPE|CANONICAL|PICK|MANE|MANE_SELECT|SOURCE">
+##contig=<ID=chr17,length=83257441>
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr17	7676154	.	G	A	99	PASS	CSQ=A|missense_variant|MODERATE|TP53|ENSG00000141510|ENST00000269305|protein_coding|YES|1|MANE_Select|NM_000546.6|Ensembl,A|missense_variant|MODERATE|TP53|7157|NM_000546.6|protein_coding|YES|0|MANE_Select|ENST00000269305.9|RefSeq,A|missense_variant|MODERATE|NEB|ENSG00000183091|ENST00000427231|protein_coding|NO|0|MANE_Plus_Clinical||Ensembl,A|intron_variant|MODIFIER|TP53|ENSG00000141510|ENST00000413465|protein_coding|NO|0|||Ensembl

@@ -8,6 +8,8 @@ This module defines:
 - Functions to parse CSQ headers, extract CSQ field values, and process consequences.
 - Resolution of the transcript catalogue (Ensembl or RefSeq) each annotation came from,
   which is what lets a VEP `--merged` file be told apart from a single-catalogue one.
+- The MANE flags, plus version-free copies of the transcript identifier and of the MANE
+  cross-reference, which together bridge a RefSeq annotation to its Ensembl twin.
 
 Dependencies:
 - cyvcf2: for reading VCF records.
@@ -35,6 +37,15 @@ CSQ_FORMAT_FIELD = "CSQ"
 # spells them in its `SOURCE` column, since that value is stored as is.
 SOURCE_ENSEMBL = "Ensembl"
 SOURCE_REFSEQ = "RefSeq"
+
+# The two values VEP's `MANE` column takes, spelled as VEP spells them. Note that `MANE` and
+# `MANE_SELECT` are unrelated columns despite the near-identical names: `MANE` is the flag
+# resolved here, while `MANE_SELECT` holds an accession (see `strip_transcript_version`).
+# The two labels are mutually exclusive on a given transcript -- MANE Plus Clinical is an
+# *additional* transcript for genes the Select one does not cover well enough for clinical
+# reporting, so a gene can carry both, on two different transcripts.
+MANE_SELECT_FLAG = "MANE_Select"
+MANE_PLUS_CLINICAL_FLAG = "MANE_Plus_Clinical"
 
 # Iceberg schema definition for the consequence annotations,
 # merged with a common schema shared across VCF processors.
@@ -74,6 +85,8 @@ SCHEMA = merge_schemas(
         NestedField(221, "aa_change", StringType(), required=False),
         NestedField(222, "dna_change", StringType(), required=False),
         NestedField(223, "impact_score", IntegerType(), required=True),
+        NestedField(224, "mane_pair_transcript_id", StringType(), required=False),
+        NestedField(225, "transcript_id_unversioned", StringType(), required=False),
     ),
 )
 
@@ -97,6 +110,33 @@ def get_csq_field(csq_fields, fields, field_name):
     """
     index = csq_fields.get(field_name.lower())
     return fields[index] if index is not None else None
+
+
+def strip_transcript_version(value: str | None) -> str | None:
+    """
+    Drops the version suffix from a transcript accession, so it can be used as a join key.
+
+    Two columns need this, and for different reasons -- which is why it is applied to both
+    sides of the MANE pair rather than only to the cross-reference:
+
+    - `MANE_SELECT` is a pointer to the paired transcript in the *other* catalogue, and it is
+      always versioned (`ENST00000269305.9`, `NM_000546.6`).
+    - `Feature` is versioned on RefSeq rows (`NM_000546.6`) but *not* on Ensembl ones
+      (`ENST00000269305`). Measured on a reference `--merged --mane` file: stripping only the
+      cross-reference joins RefSeq rows onto their Ensembl twin 99.9% of the time but Ensembl
+      rows onto their RefSeq twin 0% of the time. Stripping both sides makes it 100% either
+      way, and is also what lines the value up with dbNSFP's and gnomAD constraint's
+      unversioned Ensembl transcript ids.
+
+    Args:
+        value (str | None): A transcript accession, versioned or not.
+
+    Returns:
+        str or None: The accession up to the first `.`, or the input unchanged when it is
+            None or empty. An absent CSQ column reads as None and a declared-but-empty one as
+            "", and callers rely on that distinction surviving, so neither is collapsed.
+    """
+    return value.split(".")[0] if value else value
 
 
 # Both catalogues use disjoint identifier namespaces, so the identifier alone is enough to
@@ -211,6 +251,12 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
             transcript_id = get_csq_field(csq_fields, fields, "Feature")
             # `Gene` is read only to resolve the source; it is not part of the schema.
             gene_id = get_csq_field(csq_fields, fields, "Gene")
+            # `MANE` carries the flag (`MANE_Select` / `MANE_Plus_Clinical`), `MANE_SELECT`
+            # carries the paired transcript in the other catalogue. Deliberately kept
+            # independent: files that emit `MANE_SELECT` but no `MANE` column still yield a
+            # usable pair, which is what the score borrowing downstream joins on.
+            mane = get_csq_field(csq_fields, fields, "MANE")
+            mane_select = get_csq_field(csq_fields, fields, "MANE_SELECT")
             consequence = {
                 "task_id": common.task_id,
                 "locus": common.locus,
@@ -226,15 +272,19 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
                 "hgvsc": hgvsc,
                 "symbol": get_csq_field(csq_fields, fields, "SYMBOL"),
                 "transcript_id": transcript_id,
+                "transcript_id_unversioned": strip_transcript_version(transcript_id),
                 "source": resolve_source(get_csq_field(csq_fields, fields, "SOURCE"), transcript_id, gene_id),
                 "biotype": get_csq_field(csq_fields, fields, "BIOTYPE"),
                 "strand": get_csq_field(csq_fields, fields, "STRAND"),
                 "exon": {"rank": str(exon[0]), "total": str(exon[1])} if len(exon) == 2 else None,
                 "vep_impact": vep_impact,
                 "consequences": get_csq_field(csq_fields, fields, "Consequence").split("&"),
-                "mane_select": get_csq_field(csq_fields, fields, "MANE_SELECT"),
-                "is_mane_select": False,
-                "is_mane_plus": False,
+                "mane_select": mane_select,
+                # Null on MANE Plus Clinical rows: VEP only fills `MANE_SELECT` on the Select
+                # transcript, so those rows have no 1:1 pointer to borrow scores through.
+                "mane_pair_transcript_id": strip_transcript_version(mane_select),
+                "is_mane_select": mane == MANE_SELECT_FLAG,
+                "is_mane_plus": mane == MANE_PLUS_CLINICAL_FLAG,
                 "is_picked": picked,
                 "is_canonical": get_csq_field(csq_fields, fields, "CANONICAL") == "YES",
                 "aa_change": hgvsp.split(":")[-1] if hgvsp else None,

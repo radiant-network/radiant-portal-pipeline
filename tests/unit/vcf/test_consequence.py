@@ -10,6 +10,7 @@ from radiant.tasks.vcf.snv.consequence import (
     parse_csq_header,
     process_consequence,
     resolve_source,
+    strip_transcript_version,
 )
 from tests.unit.vcf.vcf_test_utils import variant, vcf
 
@@ -62,12 +63,14 @@ def test_one_sample():
         "locus": "1-1000-AC-A",
         "locus_hash": "hash",
         "mane_select": "ENST00000357654.7",
+        "mane_pair_transcript_id": "ENST00000357654",
         "reference": "AC",
         "source": "Ensembl",
         "start": 1000,
         "strand": "1",
         "symbol": "BRCA1",
         "transcript_id": "ENST00000357654",
+        "transcript_id_unversioned": "ENST00000357654",
         "variant_class": "SNV",
         "vep_impact": "MODERATE",
     }
@@ -106,6 +109,57 @@ def test_source_absent_from_header_resolves_from_identifiers():
     assert consequences
     assert all(c["source"] == "Ensembl" for c in consequences)
     assert all(c["mane_select"] == "" for c in consequences)
+
+
+def test_a_non_merged_file_extracts_exactly_as_before():
+    # Regression guard for the files we already ingest. `test_somatic_snv.vcf` predates merged
+    # support: it has no SOURCE column, so the source has to come from the identifiers, and
+    # every other field must be untouched by the merged-file work. Asserted as a whole dict so
+    # a field changing silently cannot slip through.
+    v = variant("test_somatic_snv.vcf", row_number=4)
+    with vcf("test_somatic_snv.vcf") as vcf_file:
+        csq_header = parse_csq_header(vcf_file)
+
+    assert "source" not in csq_header
+
+    picked, consequences = process_consequence(v, csq_header, common)
+
+    assert len(consequences) == 3
+    assert picked == {
+        "aa_change": None,
+        "alternate": "A",
+        "biotype": "protein_coding",
+        "chromosome": "1",
+        "consequences": ["upstream_gene_variant"],
+        "dna_change": None,
+        "end": 1000,
+        "exon": None,
+        "hgvsc": "",
+        "hgvsg": "chr1:g.64976C>T",
+        "hgvsp": "",
+        "impact_score": 1,
+        "is_canonical": True,
+        # The `MANE` column exists here but is empty, while `MANE_SELECT` is populated. That is
+        # what makes this row worth pinning: the flag stays False and the pair is still derived,
+        # which is the independence the merged work relies on.
+        "is_mane_plus": False,
+        "is_mane_select": False,
+        "is_picked": True,
+        "locus": "1-1000-AC-A",
+        "locus_hash": "hash",
+        "mane_pair_transcript_id": "NM_001005484",
+        "mane_select": "NM_001005484.2",
+        "reference": "AC",
+        "source": "Ensembl",
+        "start": 1000,
+        "strand": "1",
+        "symbol": "OR4F5",
+        "task_id": 1,
+        "transcript_id": "ENST00000641515",
+        "transcript_id_unversioned": "ENST00000641515",
+        "variant_class": "SNV",
+        "vep_impact": "MODIFIER",
+    }
 
 
 def test_source_column_takes_precedence_over_identifiers():
@@ -182,6 +236,94 @@ def test_missing_exon_field_does_not_raise():
 
     assert picked["exon"] is None
     assert picked["symbol"] == "BRCA1"
+
+
+def mane_consequences():
+    v = variant("test_consequence_mane.vcf")
+    with vcf("test_consequence_mane.vcf") as vcf_file:
+        csq_header = parse_csq_header(vcf_file)
+    _, consequences = process_consequence(v, csq_header, common)
+    return consequences
+
+
+def test_mane_flags_are_derived_from_the_mane_column():
+    # The flags come from `MANE`, not from `MANE_SELECT` — the two are different columns. The
+    # fixture's blocks are, in order: an Ensembl MANE Select transcript, its RefSeq twin, a
+    # MANE Plus Clinical transcript, and a transcript that is neither.
+    consequences = mane_consequences()
+
+    assert [(c["is_mane_select"], c["is_mane_plus"]) for c in consequences] == [
+        (True, False),
+        (True, False),
+        (False, True),
+        (False, False),
+    ]
+
+
+def test_mane_flags_are_absent_when_the_mane_column_is():
+    # A file with no `MANE` column cannot claim either flag. Both must still be booleans, since
+    # the schema declares them required.
+    v = variant("test_consequence_one_sample.vcf")
+    with vcf("test_consequence_one_sample.vcf") as vcf_file:
+        csq_header = parse_csq_header(vcf_file)
+
+    assert "mane" not in csq_header
+
+    picked, _ = process_consequence(v, csq_header, common)
+
+    assert picked["is_mane_select"] is False
+    assert picked["is_mane_plus"] is False
+
+
+def test_mane_pair_transcript_id_is_unversioned():
+    # `MANE_SELECT` always arrives versioned; the stored pair never is. VEP leaves the column
+    # empty on MANE Plus Clinical rows, so those carry no pair to strip.
+    consequences = mane_consequences()
+
+    assert [c["mane_select"] for c in consequences] == ["NM_000546.6", "ENST00000269305.9", "", ""]
+    assert [c["mane_pair_transcript_id"] for c in consequences] == ["NM_000546", "ENST00000269305", "", ""]
+
+
+def test_mane_pair_joins_the_twins_transcript_id_in_both_directions():
+    # The acceptance criterion. Both sides are stripped because RefSeq `Feature` values are
+    # versioned while Ensembl ones are not: stripping only the cross-reference would leave the
+    # Ensembl→RefSeq direction matching nothing, silently.
+    ensembl, refseq = mane_consequences()[:2]
+
+    assert ensembl["mane_pair_transcript_id"] == refseq["transcript_id_unversioned"] == "NM_000546"
+    assert refseq["mane_pair_transcript_id"] == ensembl["transcript_id_unversioned"] == "ENST00000269305"
+
+
+def test_refseq_transcript_id_keeps_its_version():
+    # Only the derived column is stripped. The versioned accession stays available for display,
+    # which is the form a clinician cites.
+    refseq = mane_consequences()[1]
+
+    assert refseq["source"] == "RefSeq"
+    assert refseq["transcript_id"] == "NM_000546.6"
+    assert refseq["transcript_id_unversioned"] == "NM_000546"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # An absent CSQ column reads as None and a declared-but-empty one as "". Both are
+        # preserved as is, because callers distinguish them.
+        (None, None),
+        ("", ""),
+        # Ensembl `Feature` values arrive unversioned already, so stripping is a no-op...
+        ("ENST00000269305", "ENST00000269305"),
+        ("LRG_214t1", "LRG_214t1"),
+        # ...while RefSeq `Feature` values and every `MANE_SELECT` value are versioned.
+        ("ENST00000269305.9", "ENST00000269305"),
+        ("NM_000546.6", "NM_000546"),
+        ("XR_935622.3", "XR_935622"),
+        # Only the first `.` matters, whatever follows it.
+        ("NM_000546.6.1", "NM_000546"),
+    ],
+)
+def test_strip_transcript_version(value, expected):
+    assert strip_transcript_version(value) == expected
 
 
 @pytest.mark.parametrize(
