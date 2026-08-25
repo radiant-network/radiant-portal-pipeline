@@ -6,12 +6,18 @@ This module defines:
 - A schema for consequence data.
 - A helper dataclass for exon rank/total.
 - Functions to parse CSQ headers, extract CSQ field values, and process consequences.
+- Resolution of the transcript catalogue (Ensembl or RefSeq) each annotation came from,
+  which is what lets a VEP `--merged` file be told apart from a single-catalogue one.
 
 Dependencies:
 - cyvcf2: for reading VCF records.
 - pyiceberg: for defining the Iceberg schema.
 - Common metadata and schema merging from internal modules.
 """
+
+import logging
+import re
+from collections import Counter
 
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
@@ -21,7 +27,14 @@ from radiant.tasks.iceberg.utils import merge_schemas
 from radiant.tasks.vcf.snv.common import SCHEMA as COMMON_SCHEMA
 from radiant.tasks.vcf.snv.common import Common
 
+logger = logging.getLogger("airflow.task")
+
 CSQ_FORMAT_FIELD = "CSQ"
+
+# The two transcript catalogues a VEP `--merged` file annotates against. Spelled as VEP
+# spells them in its `SOURCE` column, since that value is stored as is.
+SOURCE_ENSEMBL = "Ensembl"
+SOURCE_REFSEQ = "RefSeq"
 
 # Iceberg schema definition for the consequence annotations,
 # merged with a common schema shared across VCF processors.
@@ -86,6 +99,87 @@ def get_csq_field(csq_fields, fields, field_name):
     return fields[index] if index is not None else None
 
 
+# Both catalogues use disjoint identifier namespaces, so the identifier alone is enough to
+# tell them apart. Every pattern is anchored: unanchored matching would misfire on gene
+# symbols, some of which contain these substrings.
+_ENSEMBL_FEATURE_RE = re.compile(r"^(?:ENST|ENSR|LRG_)")
+_REFSEQ_FEATURE_RE = re.compile(r"^[NX][MRP]_")
+_ENSEMBL_GENE_RE = re.compile(r"^ENSG\d+$")
+_REFSEQ_GENE_RE = re.compile(r"^\d+$")
+
+_KNOWN_SOURCES = {SOURCE_ENSEMBL.lower(): SOURCE_ENSEMBL, SOURCE_REFSEQ.lower(): SOURCE_REFSEQ}
+
+# A merged file carries one SOURCE value per annotation block, so warning per row would emit
+# one line per block. Warn once per distinct unexpected value per process instead.
+_warned_unknown_sources: set[str] = set()
+
+
+def resolve_source(source: str | None, transcript_id: str | None, gene_id: str | None) -> str | None:
+    """
+    Resolves which transcript catalogue an annotation block came from.
+
+    VEP `--merged` files annotate against both Ensembl and RefSeq and carry an explicit
+    `SOURCE` column; older single-catalogue files carry no such column. This resolves both
+    file types through one path, falling back on the identifier namespaces when VEP does not
+    state the source itself.
+
+    Rules, first one that answers wins:
+
+    1. `SOURCE` from the CSQ block, matched case-insensitively. This is VEP's own answer.
+    2. The transcript (`Feature`) prefix — `ENST` / `ENSR` (regulatory) / `LRG_` are Ensembl,
+       `NM_ / NR_ / NP_ / XM_ / XR_ / XP_` are RefSeq.
+    3. The gene (`Gene`) format — `ENSG…` is Ensembl, a bare NCBI numeric id is RefSeq.
+    4. Nothing. Intergenic blocks have neither a gene nor a transcript and belong to no
+       catalogue, so they resolve to None rather than being forced into one.
+
+    Rules 2 and 3 are both needed because they fail on opposite rows: a regulatory feature
+    has an `ENSR…` transcript and an *empty* gene, while a block with a gene but no feature
+    id can only be resolved by its gene.
+
+    An unexpected `SOURCE` value falls through to rules 2-3 rather than being stored, keeping
+    the column a closed set of `Ensembl` / `RefSeq` / None.
+
+    Args:
+        source (str | None): Raw `SOURCE` value, or None when the column is absent.
+        transcript_id (str | None): Raw `Feature` value, or None when the column is absent.
+        gene_id (str | None): Raw `Gene` value, or None when the column is absent.
+
+    Returns:
+        str or None: `SOURCE_ENSEMBL`, `SOURCE_REFSEQ`, or None when no rule applies.
+    """
+    # A column absent from the CSQ header reads as None, one declared but empty for this
+    # block reads as "". Both mean "no value here" and must fall through to the next rule.
+    source = (source or "").strip()
+    transcript_id = (transcript_id or "").strip()
+    gene_id = (gene_id or "").strip()
+
+    if source:
+        known = _KNOWN_SOURCES.get(source.lower())
+        if known:
+            return known
+        if source not in _warned_unknown_sources:
+            _warned_unknown_sources.add(source)
+            logger.warning(
+                f"Unexpected CSQ SOURCE value {source!r}: not one of "
+                f"{SOURCE_ENSEMBL!r} / {SOURCE_REFSEQ!r}. Falling back to the transcript and "
+                f"gene identifiers to resolve the source."
+            )
+
+    if transcript_id:
+        if _ENSEMBL_FEATURE_RE.match(transcript_id):
+            return SOURCE_ENSEMBL
+        if _REFSEQ_FEATURE_RE.match(transcript_id):
+            return SOURCE_REFSEQ
+
+    if gene_id:
+        if _ENSEMBL_GENE_RE.match(gene_id):
+            return SOURCE_ENSEMBL
+        if _REFSEQ_GENE_RE.match(gene_id):
+            return SOURCE_REFSEQ
+
+    return None
+
+
 def process_consequence(record: Variant, csq_fields: dict[str, int], common: Common) -> tuple[dict, list[dict]]:
     """
     Processes VEP CSQ annotations from a VCF record and builds structured consequence data.
@@ -114,6 +208,9 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
             hgvsp = get_csq_field(csq_fields, fields, "HGVSp")
             hgvsc = get_csq_field(csq_fields, fields, "HGVSc")
             picked = get_csq_field(csq_fields, fields, "PICK") == "1"
+            transcript_id = get_csq_field(csq_fields, fields, "Feature")
+            # `Gene` is read only to resolve the source; it is not part of the schema.
+            gene_id = get_csq_field(csq_fields, fields, "Gene")
             consequence = {
                 "task_id": common.task_id,
                 "locus": common.locus,
@@ -128,8 +225,8 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
                 "hgvsp": hgvsp,
                 "hgvsc": hgvsc,
                 "symbol": get_csq_field(csq_fields, fields, "SYMBOL"),
-                "transcript_id": get_csq_field(csq_fields, fields, "Feature"),
-                "source": get_csq_field(csq_fields, fields, "SOURCE"),
+                "transcript_id": transcript_id,
+                "source": resolve_source(get_csq_field(csq_fields, fields, "SOURCE"), transcript_id, gene_id),
                 "biotype": get_csq_field(csq_fields, fields, "BIOTYPE"),
                 "strand": get_csq_field(csq_fields, fields, "STRAND"),
                 "exon": {"rank": str(exon[0]), "total": str(exon[1])} if len(exon) == 2 else None,
@@ -150,6 +247,37 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
     if pick_consequence is None:
         pick_consequence = next((c for c in consequences if c["is_canonical"]), None)
     return pick_consequence, consequences
+
+
+def log_source_counts(source_counts: Counter, task_id: int, vcf_filepath: str) -> None:
+    """
+    Reports the per-source consequence counts accumulated over one VCF file.
+
+    Two things are reported. The breakdown itself, because a merged file should come out
+    roughly half Ensembl and half RefSeq and a large skew means the `--merged` annotation was
+    lost upstream. And the count of blocks no rule could classify — those are legitimate
+    (intergenic annotations belong to no catalogue) but they are loaded with a null source, so
+    they are surfaced rather than left to be discovered as unexplained nulls downstream.
+
+    The totals cover the blocks actually ingested. Multi-allelic records and unsupported
+    chromosomes are skipped before extraction, so this is deliberately not the raw annotation
+    block count of the file.
+
+    Args:
+        source_counts (Counter): Counts keyed by resolved source, including None.
+        task_id (int): Id of the annotation task being processed, for log correlation.
+        vcf_filepath (str): Path of the VCF file being processed.
+    """
+    counts = Counter(source_counts)
+    unclassified = counts.pop(None, 0)
+    breakdown = ", ".join(f"{source}={count}" for source, count in sorted(counts.items())) or "none"
+    logger.info(f"Consequence sources for task {task_id}: {breakdown}, unclassified={unclassified}")
+    if unclassified:
+        logger.warning(
+            f"⚠️ Task {task_id}: {unclassified} consequence rows in {vcf_filepath} have no resolvable "
+            f"transcript source (intergenic annotations, or identifiers matching neither catalogue). "
+            f"They are loaded with a null source, not dropped."
+        )
 
 
 def parse_csq_header(vcf):
