@@ -279,8 +279,13 @@ Two practical consequences:
 ### MANE gives us a free bridge between the two catalogues
 
 With `--mane` enabled, VEP flags MANE transcripts on **both** sources — 106,985 MANE Select
-and 714 MANE Plus Clinical annotation blocks in the file — and, importantly, the
-`MANE_SELECT` value is a **cross-reference to the other catalogue**:
+and 714 MANE Plus Clinical annotation blocks in the file. Two separate columns are involved,
+and their near-identical names invite confusion: **`MANE`** carries the flag (`MANE_Select` /
+`MANE_Plus_Clinical` / empty), while **`MANE_SELECT`** carries an accession. The two labels are
+mutually exclusive on a given transcript, but a gene can carry both on two different
+transcripts (54 genes in the file, e.g. *NEB*), so the flags are two columns, not one.
+
+The `MANE_SELECT` value is a **cross-reference to the other catalogue**:
 
 - on an Ensembl row it holds the paired RefSeq accession (`ENST00000641515` → `NM_001005484.2`)
 - on a RefSeq row it holds the paired Ensembl transcript (`NM_001005484.2` → `ENST00000641515.2`)
@@ -294,6 +299,12 @@ table needed. Coverage on the reference file:
 | Have a MANE Select RefSeq annotation | 46,156 | 95.2% |
 | Have a MANE Select Ensembl annotation | 45,900 | 94.7% |
 | **Have both sides of the pair** | **45,900** | **94.7%** |
+
+One limit of the bridge: VEP fills `MANE_SELECT` only on MANE **Select** rows. All 714 MANE
+Plus Clinical blocks have it empty — the paired accession is in the `&`-joinable `RefSeq`
+column instead, which is not a 1:1 join key. So Plus Clinical rows carry no pair and cannot
+borrow scores through it. Harmless on the Ensembl side (those rows have their own `ENST`); it
+leaves 357 RefSeq blocks unscored.
 
 ### Prediction scores on RefSeq rows: two options
 
@@ -322,9 +333,24 @@ across the variant page, exports, and anything built later, with a silent failur
 Add a boolean beside the scores — `scores_from_mane_pair` or similar — so the UI can label
 those values as coming from the MANE twin rather than computed on the RefSeq transcript.
 
-*Implementation note:* the cross-reference carries a version suffix (`ENST00000641515.2`)
-while the transcript identifier we store and join on does not (`ENST00000641515`). Strip the
-version before joining, or the join silently matches nothing.
+*Implementation note (corrected during SJRA-1824, which measured it).* The cross-reference
+always carries a version suffix (`ENST00000641515.2`). The transcript identifier we store is
+version-free on Ensembl rows (`ENST00000641515`) but **versioned on RefSeq rows** — all 470,518
+RefSeq `Feature` values in the file are (`NM_000546.6`). So stripping only the cross-reference
+gives a one-directional key:
+
+| Direction | stripped `MANE_SELECT` vs the twin's raw `transcript_id` |
+|---|---|
+| RefSeq → Ensembl | 13,745 / 13,759 = **99.9%** |
+| Ensembl → RefSeq | 0 / 13,745 = **0%** |
+| Ensembl → RefSeq, twin's `transcript_id` also stripped | 13,745 / 13,745 = **100%** |
+
+SJRA-1824 therefore stores **both** sides stripped, as two columns beside the raw values:
+`mane_pair_transcript_id` (version-free `MANE_SELECT`) and `transcript_id_unversioned`
+(version-free `Feature`). Joining `mane_pair_transcript_id` to `transcript_id_unversioned`
+works in either direction, and `mane_pair_transcript_id` also lines up directly with dbNSFP's
+`ensembl_transcript_id` and gnomAD constraint's `transcript_id`. The raw `transcript_id` keeps
+its version for display, since that is the form a clinician cites.
 
 **Non-MANE RefSeq transcripts get no scores under either option.** Loading RefSeq-keyed
 dbNSFP would be the only way to change that; it is not proposed, since those are alternative
@@ -411,7 +437,7 @@ of the portal work.
 |---|---|---|---|
 | 1 | [SJRA-1822] Fix the CSQ field lookup in extraction — `SOURCE` and `MANE_SELECT` are read under the wrong names today, so both columns are always empty | S | — |
 | 2 | [SJRA-1823] Classify each consequence's source (§3) and populate it into Iceberg | M | 1 |
-| 3 | [SJRA-1824] Populate `is_mane_select` / `is_mane_plus`, and store the MANE cross-reference **unversioned** as its own column | S | 1 |
+| 3 | [SJRA-1824] Populate `is_mane_select` / `is_mane_plus` from the `MANE` column, and store both sides of the pair **unversioned** as `mane_pair_transcript_id` and `transcript_id_unversioned` | S | 1 |
 | 4 | [SJRA-1825] Add a merged-VCF test fixture and unit tests covering both file types | M | 2, 3 |
 | 5 | [SJRA-1826] `snv__consequence`: add `source`, partition by it, migrate existing environments, verify the colocation group survives (§6) | M | 2 |
 | 6 | [SJRA-1827] `snv_consequence_insert`: borrow dbNSFP and constraint scores for RefSeq MANE rows through the cross-reference, plus the `scores_from_mane_pair` flag (§7) | M | 3, 5 |
