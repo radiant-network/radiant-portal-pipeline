@@ -2,7 +2,7 @@ import json
 import logging
 import sys
 import tempfile
-from collections import namedtuple
+from collections import Counter, namedtuple
 
 from cyvcf2 import VCF
 from pyiceberg.catalog import load_catalog
@@ -12,7 +12,7 @@ from radiant.tasks.iceberg.table_accumulator import TableAccumulator
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
 from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.common import process_common
-from radiant.tasks.vcf.snv.consequence import parse_csq_header, process_consequence
+from radiant.tasks.vcf.snv.consequence import log_source_counts, parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence
 from radiant.tasks.vcf.snv.variant import process_variant
 
@@ -96,12 +96,14 @@ def process_task(
 
     consequence_table = catalog.load_table(consequences_table_name)
     consequence_buffer = TableAccumulator(consequence_table, partition_filter=variant_csq_partition_filter)
+    source_counts = Counter()
 
     for record in vcf:
         if len(record.ALT) <= 1:
             if record.CHROM in SUPPORTED_CHROMOSOMES:
                 common = process_common(record, task_id=task.task_id, part=task.part)
                 picked_consequence, consequences = process_consequence(record, csq_header, common)
+                source_counts.update(c["source"] for c in consequences)
                 consequence_buffer.extend(consequences)
                 occurrences = process_occurrence(
                     record,
@@ -126,6 +128,8 @@ def process_task(
             )
 
     #### End of VCF file processing, flush buffers ####
+    log_source_counts(source_counts, task.task_id, task.vcf_filepath)
+
     occurrence_buffer.write_files()
     occurrences_partition_commit.append(
         PartitionCommit(
