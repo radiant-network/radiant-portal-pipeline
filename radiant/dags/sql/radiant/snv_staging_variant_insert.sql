@@ -28,6 +28,7 @@ SELECT
     v.dna_change,
     v.aa_change,
     v.transcript_id,
+    v.pick_source,
     om.inheritance_code AS omim_inheritance_code
 FROM {{ mapping.starrocks_snv_tmp_variant }} v
 LEFT JOIN {{ mapping.starrocks_gnomad_genomes_v3 }} g ON g.locus_id = v.locus_id

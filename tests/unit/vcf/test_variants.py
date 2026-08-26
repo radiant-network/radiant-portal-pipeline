@@ -68,5 +68,14 @@ def test_variants_with_picked():
         "dna_change": None,
         "aa_change": None,
         "transcript_id": None,
+        "pick_source": None,
     }
     assert expected == result
+
+
+def test_variants_picked_source_is_carried_through():
+    v = variant("test_variants.vcf")
+    picked = {"transcript_id": "NM_012234", "source": "RefSeq"}
+    result = process_variant(v, picked, common)
+    assert result["transcript_id"] == "NM_012234"
+    assert result["pick_source"] == "RefSeq"

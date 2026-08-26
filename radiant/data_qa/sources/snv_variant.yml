@@ -27,6 +27,7 @@ sources:
               # SJRA-1550 is_mane_select is_mane_plus
               name: snv_variant__should_not_contain_same_value_SJRA-1550
               except:
+                - pick_source
                 # Already covered by snv_variant__should_be_unique__*
                 - locus_id
                 - locus
