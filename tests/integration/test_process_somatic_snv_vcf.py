@@ -68,6 +68,13 @@ def test_import_somatic_snv_vcf(
     assert len(variants) == 21, "Unexpected number of rows in variants table"
     assert variants.chromosome.unique().tolist() == ["1", "4", "12"], "Unexpected chromosome values in variants table"
 
+    # SJRA-1833: the picked consequence's catalogue reaches the variant row. This fixture is not a
+    # merged file, so every populated value is Ensembl and must agree with the transcript namespace.
+    picked = variants[variants.transcript_id.notna() & (variants.transcript_id != "")]
+    assert not picked.empty, "Expected at least one variant carrying a picked transcript"
+    assert picked.pick_source.unique().tolist() == ["Ensembl"], "Unexpected pick_source values in variants table"
+    assert picked.transcript_id.str.startswith("ENST").all(), "pick_source disagrees with the picked transcript"
+
     assert len(consequences) == 236, "Unexpected number of rows in consequences table"
     assert variants.chromosome.unique().tolist() == ["1", "4", "12"], (
         "Unexpected chromosome values in consequences table"

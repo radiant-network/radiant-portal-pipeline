@@ -58,6 +58,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_variant_partitioned }} (
     dna_change VARCHAR(2000),
     aa_change VARCHAR(2000),
     transcript_id varchar(100) COMMENT "",
+    pick_source varchar(20) NULL COMMENT "",
     omim_inheritance_code array<varchar(5)> COMMENT ""
 )
 PARTITION BY (`part`)
