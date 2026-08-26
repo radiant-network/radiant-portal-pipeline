@@ -19,6 +19,7 @@ sources:
                 - symbol
                 - transcript_id
                 - mane_pair_transcript_id
+                - transcript_version
 
           # --- Should Not Contain Same Value ---------------------------------
           - should_not_contain_same_value:

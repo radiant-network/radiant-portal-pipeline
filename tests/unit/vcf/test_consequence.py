@@ -6,6 +6,7 @@ import pytest
 from radiant.tasks.vcf.experiment import Experiment, RadiantGermlineAnnotationTask
 from radiant.tasks.vcf.snv.common import Common
 from radiant.tasks.vcf.snv.consequence import (
+    extract_transcript_version,
     log_source_counts,
     parse_csq_header,
     process_consequence,
@@ -70,7 +71,7 @@ def test_one_sample():
         "strand": "1",
         "symbol": "BRCA1",
         "transcript_id": "ENST00000357654",
-        "transcript_id_unversioned": "ENST00000357654",
+        "transcript_version": None,
         "variant_class": "SNV",
         "vep_impact": "MODERATE",
     }
@@ -89,7 +90,10 @@ def test_one_sample_second_consequence_is_refseq():
 
     assert len(consequences) == 1
     assert consequences[0]["source"] == "RefSeq"
-    assert consequences[0]["transcript_id"] == "NM_000546.5"
+    # The accession arrives as `NM_000546.5` and is split, so that `transcript_id` means the
+    # same thing here as on an Ensembl row.
+    assert consequences[0]["transcript_id"] == "NM_000546"
+    assert consequences[0]["transcript_version"] == "5"
     # On a RefSeq row the MANE cross-reference points at the Ensembl twin.
     assert consequences[0]["mane_select"] == "ENST00000269305.9"
 
@@ -156,7 +160,7 @@ def test_a_non_merged_file_extracts_exactly_as_before():
         "symbol": "OR4F5",
         "task_id": 1,
         "transcript_id": "ENST00000641515",
-        "transcript_id_unversioned": "ENST00000641515",
+        "transcript_version": None,
         "variant_class": "SNV",
         "vep_impact": "MODIFIER",
     }
@@ -285,23 +289,33 @@ def test_mane_pair_transcript_id_is_unversioned():
 
 
 def test_mane_pair_joins_the_twins_transcript_id_in_both_directions():
-    # The acceptance criterion. Both sides are stripped because RefSeq `Feature` values are
-    # versioned while Ensembl ones are not: stripping only the cross-reference would leave the
-    # Ensembl→RefSeq direction matching nothing, silently.
+    # The acceptance criterion. Both sides are version-free because RefSeq `Feature` values
+    # arrive versioned while Ensembl ones do not: stripping only the cross-reference would
+    # leave the Ensembl→RefSeq direction matching nothing, silently.
     ensembl, refseq = mane_consequences()[:2]
 
-    assert ensembl["mane_pair_transcript_id"] == refseq["transcript_id_unversioned"] == "NM_000546"
-    assert refseq["mane_pair_transcript_id"] == ensembl["transcript_id_unversioned"] == "ENST00000269305"
+    assert ensembl["mane_pair_transcript_id"] == refseq["transcript_id"] == "NM_000546"
+    assert refseq["mane_pair_transcript_id"] == ensembl["transcript_id"] == "ENST00000269305"
 
 
-def test_refseq_transcript_id_keeps_its_version():
-    # Only the derived column is stripped. The versioned accession stays available for display,
-    # which is the form a clinician cites.
-    refseq = mane_consequences()[1]
+def test_transcript_id_is_version_free_on_both_catalogues():
+    # `transcript_id` is part of the `snv__consequence` primary key, so it must not carry a
+    # version on one catalogue and not the other -- a RefSeq release bump would otherwise
+    # insert a second row for the same transcript instead of replacing it.
+    ensembl, refseq = mane_consequences()[:2]
 
-    assert refseq["source"] == "RefSeq"
-    assert refseq["transcript_id"] == "NM_000546.6"
-    assert refseq["transcript_id_unversioned"] == "NM_000546"
+    assert (ensembl["source"], refseq["source"]) == ("Ensembl", "RefSeq")
+    assert ensembl["transcript_id"] == "ENST00000269305"
+    assert refseq["transcript_id"] == "NM_000546"
+
+
+def test_transcript_version_holds_what_the_identifier_gave_up():
+    # The citable form stays recoverable as `transcript_id.transcript_version`. Null on the
+    # Ensembl row because VEP emits no version there, not because we dropped one.
+    ensembl, refseq = mane_consequences()[:2]
+
+    assert refseq["transcript_version"] == "6"
+    assert ensembl["transcript_version"] is None
 
 
 @pytest.mark.parametrize(
@@ -324,6 +338,29 @@ def test_refseq_transcript_id_keeps_its_version():
 )
 def test_strip_transcript_version(value, expected):
     assert strip_transcript_version(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        # Unlike `strip_transcript_version`, "" collapses to None: an absent version and an
+        # empty accession are the same fact for this column.
+        (None, None),
+        ("", None),
+        # Ensembl `Feature` values arrive unversioned, so there is nothing to return...
+        ("ENST00000269305", None),
+        ("LRG_214t1", None),
+        # ...while RefSeq `Feature` values and every `MANE_SELECT` value are versioned.
+        ("ENST00000269305.9", "9"),
+        ("NM_000546.6", "6"),
+        ("XR_935622.3", "3"),
+        # Everything after the first `.` is the version, so the two helpers stay exact
+        # complements: identifier + "." + version reconstructs the input.
+        ("NM_000546.6.1", "6.1"),
+    ],
+)
+def test_extract_transcript_version(value, expected):
+    assert extract_transcript_version(value) == expected
 
 
 @pytest.mark.parametrize(

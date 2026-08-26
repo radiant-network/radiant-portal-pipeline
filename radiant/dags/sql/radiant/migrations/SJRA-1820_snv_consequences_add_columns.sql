@@ -1,9 +1,10 @@
 -- SJRA-1820 — add every `snv__consequence` column the merged-RefSeq story needs, in one script.
 --
--- Covers the three sub-tasks that touch the table's shape:
+-- Covers the four sub-tasks that touch the table's shape:
 --   SJRA-1826  `source`                   — which transcript catalogue the annotation came from
 --   SJRA-1827  `mane_pair_transcript_id`  — the version-free MANE cross-reference
 --   SJRA-1827  `scores_from_mane_pair`    — flags the rows whose scores were borrowed through it
+--   SJRA-1820  `transcript_version`       — the version suffix taken out of `transcript_id`
 --
 -- They are one file because they are one story against one table, and running them separately buys
 -- nothing: no consequence row is loaded between them, and the ALTERs must be sequenced anyway.
@@ -16,7 +17,7 @@
 -- and run only the SJRA-1827 block. StarRocks has no `ADD COLUMN IF NOT EXISTS` (3.4.2), so the first
 -- statement would otherwise fail — check `DESC snv__consequence` before starting.
 --
--- New deployments get all three columns from init/snv_consequence_create_table.sql and must NOT run
+-- New deployments get all four columns from init/snv_consequence_create_table.sql and must NOT run
 -- this script at all.
 --
 -- The `AFTER` positions are required, not cosmetic: `snv_consequence_insert.sql` is a positional INSERT
@@ -31,8 +32,8 @@
 -- colocation group are all unchanged by this migration.
 --
 -- HARD PREREQUISITE for the SJRA-1827 block, and it is a failure rather than a wrong result. The new
--- snv_consequence_insert.sql reads `c.mane_pair_transcript_id` and `c.transcript_id_unversioned` from
--- the *Iceberg* consequence table; SJRA-1824 added those fields to
+-- snv_consequence_insert.sql reads `c.mane_pair_transcript_id` and `c.transcript_version` from
+-- the *Iceberg* consequence table; SJRA-1824 and this task added those fields to
 -- radiant/tasks/vcf/snv/consequence.py::SCHEMA. `create_consequences_table()` in
 -- radiant/tasks/iceberg/initialization.py drops and recreates the Iceberg table from that schema, so
 -- the init-iceberg-tables DAG must have run since SJRA-1824 before the new SQL is deployed. Against an
@@ -43,6 +44,16 @@
 -- UPDATE rewrites every Ensembl row (~67.3M rows / ~5.5 GB at time of writing) on a primary-key table,
 -- which means minutes of write load, a new data version and persistent-index churn — schedule it in a
 -- maintenance window.
+--
+-- ONE-WAY DOOR, and the reason this script must run before the first merged-file load rather than after.
+-- `transcript_id` is now stored version-free on both catalogues (see the SJRA-1820 block below), and it
+-- is part of the PRIMARY KEY. Every row currently in the table is Ensembl and therefore already
+-- version-free, so today the change is a pure column addition with nothing to rewrite. Once versioned
+-- RefSeq accessions have been loaded, correcting them is no longer an UPDATE — StarRocks cannot update
+-- a primary-key column — it is a delete-and-reinsert of every RefSeq row. Verify the table is still
+-- Ensembl-only before deploying the new code:
+--
+--   SELECT count(*) AS should_be_zero FROM snv__consequence WHERE transcript_id LIKE '%.%';
 --
 
 
@@ -96,11 +107,29 @@ ALTER TABLE snv__consequence
 
 
 -- ---------------------------------------------------------------------------------------------------
+-- SJRA-1820 — the transcript version, taken back out of the identifier.
+-- ---------------------------------------------------------------------------------------------------
+
+-- `AFTER transcript_id` and therefore *after* the SJRA-1826 block above, not before it: each ADD COLUMN
+-- inserts immediately after the named column, so adding `source` first and `transcript_version` second
+-- yields transcript_id, transcript_version, source — the order
+-- init/snv_consequence_create_table.sql declares and the positional INSERT requires. Reversing the two
+-- statements silently produces transcript_id, source, transcript_version and the next load writes every
+-- value into the wrong column.
+--
+-- No backfill. NULL is the factual value for every pre-existing row: they are all Ensembl, and VEP does
+-- not emit a version for Ensembl accessions under any option. It fills in for RefSeq rows from the
+-- first merged load onward.
+ALTER TABLE snv__consequence
+    ADD COLUMN transcript_version VARCHAR(10) AFTER transcript_id;
+
+
+-- ---------------------------------------------------------------------------------------------------
 -- Post-checks, read-only.
 -- ---------------------------------------------------------------------------------------------------
 --
 --   SHOW ALTER TABLE COLUMN FROM radiant;
---       -- expect State = FINISHED immediately for all three statements
+--       -- expect State = FINISHED immediately for all four statements
 --
 --   DESC snv__consequence;
 --       -- the column order must match init/snv_consequence_create_table.sql exactly
@@ -122,3 +151,11 @@ ALTER TABLE snv__consequence
 --   SELECT count(*) AS should_be_zero FROM snv__consequence
 --    WHERE mane_pair_transcript_id LIKE '%.%';
 --       -- no version suffix may survive into the join key
+--
+--   SELECT count(*) AS should_be_zero FROM snv__consequence WHERE transcript_id LIKE '%.%';
+--       -- nor into the identifier, on either catalogue
+--
+--   SELECT source, count(*), count(transcript_version) FROM snv__consequence GROUP BY 1;
+--       -- Ensembl: count(transcript_version) = 0. RefSeq: it must equal count(*) — a RefSeq row with a
+--       -- null version means the split ran against a file whose accessions were already bare, which
+--       -- would also mean `transcript_id` is fine but the citable form is unrecoverable.

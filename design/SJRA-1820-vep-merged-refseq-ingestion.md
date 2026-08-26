@@ -480,27 +480,72 @@ gives a one-directional key:
 | Ensembl → RefSeq | 0 / 13,745 = **0%** |
 | Ensembl → RefSeq, twin's `transcript_id` also stripped | 13,745 / 13,745 = **100%** |
 
-SJRA-1824 therefore stores **both** sides stripped, as two columns beside the raw values:
-`mane_pair_transcript_id` (version-free `MANE_SELECT`) and `transcript_id_unversioned`
-(version-free `Feature`). Joining `mane_pair_transcript_id` to `transcript_id_unversioned`
-works in either direction, and `mane_pair_transcript_id` also lines up directly with dbNSFP's
-`ensembl_transcript_id` and gnomAD constraint's `transcript_id`. The raw `transcript_id` keeps
-its version for display, since that is the form a clinician cites.
+SJRA-1824 therefore stores **both** sides stripped. It did so as two columns beside the raw
+values — `mane_pair_transcript_id` (version-free `MANE_SELECT`) and `transcript_id_unversioned`
+(version-free `Feature`) — keeping the version inside `transcript_id` "for display, since that is
+the form a clinician cites". **That second column was replaced during SJRA-1820; see the note
+immediately below.**
+
+*Implementation note (SJRA-1820, superseding the paragraph above).* Keeping the version inside
+`transcript_id` was wrong, and not only for tidiness. `snv__consequence` is
+`PRIMARY KEY(locus_id, symbol, transcript_id)`, so the version was **part of row identity on one
+catalogue and not the other**. RefSeq re-releases roughly twice a year and bumps accession
+versions; the file measured here was annotated against `GCF_000001405.40-RS_2024_08`. A later
+cohort annotated against a newer cache would arrive as `NM_000546.7` — a *different* primary key —
+and land beside the existing `NM_000546.6` row rather than replacing it. The variant page would
+then list the same transcript twice, at two versions, with nothing marking which is current.
+Ensembl rows cannot do this, because VEP emits their accession unversioned.
+
+The justification did not survive checking either. What a clinician cites is the HGVS string, and
+`hgvsc` is stored in full: on every one of the 410,458 RefSeq blocks that has an `HGVSc`, the
+accession is versioned and its base matches `Feature`. The 60,060 RefSeq blocks without one are
+non-coding, where no transcript version is cited.
+
+So `transcript_id` is now stored **version-free on both catalogues**, and the version moves to its
+own `transcript_version` column (`"6"` for `NM_000546.6`). `transcript_id_unversioned` is deleted:
+it is exactly what `transcript_id` now holds. `transcript_version` takes over its Iceberg field id
+(225). That is safe only because `create_consequences_table()` drops and recreates the table rather
+than evolving it, so no Parquet file written while 225 meant `transcript_id_unversioned` is still
+reachable through it — the init-iceberg-tables DAG must run before the new code is deployed, which
+this story already requires for the SJRA-1824 fields.
+
+`transcript_version` is always NULL on Ensembl rows, and that gap cannot be filled: `HGVSc` is the
+only other place an Ensembl version appears and it is empty on **146,688 of 479,333 (30.6%)**
+Ensembl blocks — non-coding, up/downstream and regulatory annotations. Consumers render RefSeq as
+`concat_ws('.', transcript_id, transcript_version)` and Ensembl as `transcript_id` alone.
+
+**This is a one-way door and the migration must run before the first merged-file load.** Every row
+in `snv__consequence` today is Ensembl and therefore already version-free, so the change costs one
+`ADD COLUMN` and rewrites nothing. Once versioned RefSeq accessions have been loaded it is no
+longer an `UPDATE` — StarRocks cannot update a primary-key column — but a delete-and-reinsert of
+every RefSeq row. `migrations/SJRA-1820_snv_consequences_add_columns.sql` carries the pre-flight
+check.
+
+Two things are deliberately *not* in scope. `snv__variant.transcript_id` comes from the picked
+consequence and so also becomes version-free, for the 1.4% of variants whose pick is RefSeq; no
+`transcript_version` is propagated there, because that table is keyed on `locus_id` alone (no
+duplicate-row risk) and the version remains available by joining `snv__consequence` on
+`(locus_id, symbol, transcript_id)`. And VEP's `--xref_refseq` output (the `RefSeq` CSQ column)
+stays unstored: it is multi-valued in the direction it is populated — up to 87 `&`-joined
+accessions — and carries no guarantee that the aligned transcripts match in sequence or protein
+product, so it cannot serve as a second bridge.
 
 *Implementation note (SJRA-1827, which built option 1).* Three things were settled while
 implementing it, all measured rather than assumed.
 
 **The join key is a source-keyed `CASE`, not a `COALESCE`.** Both enrichment joins in
 `snv_consequence_insert.sql` now key on
-`CASE WHEN c.source = 'RefSeq' THEN NULLIF(c.mane_pair_transcript_id, '') ELSE NULLIF(c.transcript_id_unversioned, '') END`.
+`CASE WHEN c.source = 'RefSeq' THEN NULLIF(c.mane_pair_transcript_id, '') ELSE NULLIF(c.transcript_id, '') END`.
 The branches are not interchangeable, so this is the only correct form:
-`COALESCE(mane_pair_transcript_id, transcript_id_unversioned)` would hand every *Ensembl* row its
+`COALESCE(mane_pair_transcript_id, transcript_id)` would hand every *Ensembl* row its
 paired `NM_…` and destroy the scores those rows get today, while the reverse order would never reach
-the pair, because `transcript_id_unversioned` is always populated on a RefSeq row. `NULLIF` matters
+the pair, because `transcript_id` is always populated on a RefSeq row. `NULLIF` matters
 because `strip_transcript_version` yields `''` — not NULL — for a declared-but-empty CSQ column, i.e.
-on every non-MANE-Select row.
+on every non-MANE-Select row. Dropping the `CASE` altogether is now the more tempting mistake, since
+`transcript_id` is version-free on both sides and *looks* directly joinable; the poison dbNSFP row in
+the integration test exists to catch exactly that.
 
-`ON d.ensembl_transcript_id IN (transcript_id_unversioned, mane_pair_transcript_id)` reads better and
+`ON d.ensembl_transcript_id IN (transcript_id, mane_pair_transcript_id)` reads better and
 is equally correct, since the two identifier namespaces are disjoint. It plans as a **NESTLOOP JOIN**
 and was rejected on that basis. The `CASE` is hoisted into a `Project` above the scan, both joins stay
 `HASH JOIN`, the `dbnsfp` join keeps `colocate: true`, and the expression is evaluated once across both
@@ -537,9 +582,8 @@ borrow — the join reads the Iceberg table, where SJRA-1824 already put it — 
 borrow auditable in place: a RefSeq row joins straight back to its twin on
 `mane_pair_transcript_id = twin.transcript_id`, with no version stripping in the consumer. That is what
 SJRA-1830's "borrowed scores match their twin" assertion and the portal's RefSeq → Ensembl link both
-need, and the stored `mane_select` cannot serve it because it keeps its version. `transcript_id_unversioned`
-is deliberately *not* propagated: it is identical to `transcript_id` on Ensembl rows, and the direction
-that matters (RefSeq → Ensembl) works with the pair column alone.
+need, and the stored `mane_select` cannot serve it because it keeps its version. Since SJRA-1820 that
+join needs no stripping on either side: `transcript_id` is itself version-free.
 
 **Non-MANE RefSeq transcripts get no scores under either option.** Loading RefSeq-keyed
 dbNSFP would be the only way to change that; it is not proposed, since those are alternative
@@ -586,12 +630,16 @@ Items 2–4 are product decisions; 1, 5 and 6 are technical with product impact.
    when ingested by the current pipeline.
 3. **No regression on old files.** A previously-ingested non-merged file reproduces exactly
    the same rows as before, with `source = Ensembl` added.
-4. **The primary key still separates the two catalogues.**
+4. **The primary key still separates the two catalogues, and is version-stable.**
    `unique_combination_of_columns(locus_id, symbol, transcript_id)` still holds on a merged
    file — an Ensembl row and its RefSeq twin never collide on the key, because the two
    transcript namespaces are disjoint. This is the assumption doing the work that a source
    partition key would otherwise have done (§6), so it is asserted rather than assumed. The
-   variant-page point lookup should also still touch a single tablet.
+   variant-page point lookup should also still touch a single tablet. Separately,
+   `transcript_id LIKE '%.%'` must return zero rows on both catalogues: a version reaching the
+   key would make a RefSeq release bump duplicate rows instead of replacing them, and it would
+   do so silently. `transcript_version` must be non-null on every RefSeq row and null on every
+   Ensembl one.
 5. **The headline block is coherent.** For the ~1.4% of variants where VEP picked a RefSeq
    transcript, `pick_source` says RefSeq and every headline field — `transcript_id`,
    `hgvsc`, `hgvsp`, `dna_change`, `aa_change`, `symbol` — comes from that same transcript.
@@ -632,6 +680,7 @@ of the portal work.
 | 1 | [SJRA-1822] Fix the CSQ field lookup in extraction — `SOURCE` and `MANE_SELECT` are read under the wrong names today, so both columns are always empty | S | — |
 | 2 | [SJRA-1823] Classify each consequence's source (§3) and populate it into Iceberg | M | 1 |
 | 3 | [SJRA-1824] Populate `is_mane_select` / `is_mane_plus` from the `MANE` column, and store both sides of the pair **unversioned** as `mane_pair_transcript_id` and `transcript_id_unversioned` | S | 1 |
+| 3b | [SJRA-1820] Split VEP's `Feature` into a version-free `transcript_id` and a `transcript_version` column, replacing `transcript_id_unversioned`, so the primary key stops depending on the RefSeq cache release (§7) | S | 3 |
 | 4 | [SJRA-1825] Add a merged-VCF test fixture and unit tests covering both file types | M | 2, 3 |
 | 5 | [SJRA-1826] `snv__consequence`: add a `source` column via `ALTER TABLE` and label existing rows as Ensembl. Not partitioned by it — see §6 | S | 2 |
 | 6 | [SJRA-1827] `snv_consequence_insert`: borrow dbNSFP and constraint scores for RefSeq MANE rows through the cross-reference, plus the `scores_from_mane_pair` flag (§7) | M | 3, 5 |
@@ -654,7 +703,9 @@ of the portal work.
 
 Tasks 1–3 are small and independent of any product decision, so they can start immediately.
 Tasks 5 and 6 are metadata-only `ALTER TABLE`s (§6) and can ride a routine release; no table
-rebuild or reload is needed anywhere in this story.
+rebuild or reload is needed anywhere in this story. Task 3b is metadata-only *today* and a
+delete-and-reinsert of every RefSeq row once a merged file has landed, so it must ship before
+task 9's first end-to-end load — see the pre-flight check in its migration.
 
 Two notes on scope: task 1 is a bug fix that happens to be a prerequisite, so it is worth
 landing on its own rather than hidden inside task 2; and task 3 is in scope only because the

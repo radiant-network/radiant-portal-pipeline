@@ -3,6 +3,7 @@ SELECT
     v.locus_id AS locus_id,
     COALESCE(c.symbol, '') AS symbol,
     COALESCE(c.transcript_id, '') AS transcript_id,
+    c.transcript_version,
     c.source,
     c.consequences,
     c.impact_score,
@@ -44,12 +45,12 @@ LEFT JOIN {{ mapping.starrocks_dbnsfp }} d
     ON v.locus_id=d.locus_id
    AND d.ensembl_transcript_id = CASE
            WHEN c.source = 'RefSeq' THEN NULLIF(c.mane_pair_transcript_id, '')
-           ELSE NULLIF(c.transcript_id_unversioned, '')
+           ELSE NULLIF(c.transcript_id, '')
        END
 LEFT JOIN {{ mapping.starrocks_spliceai }} sp ON v.locus_id=sp.locus_id AND sp.symbol = c.symbol
 LEFT JOIN {{ mapping.starrocks_gnomad_constraint }} gc
     ON gc.transcript_id = CASE
            WHEN c.source = 'RefSeq' THEN NULLIF(c.mane_pair_transcript_id, '')
-           ELSE NULLIF(c.transcript_id_unversioned, '')
+           ELSE NULLIF(c.transcript_id, '')
        END
 WHERE c.task_id in %(task_ids)s

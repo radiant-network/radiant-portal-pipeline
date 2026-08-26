@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_consequence }} (
     `locus_id` bigint(20) COMMENT "",
     `symbol` varchar(30) COMMENT "",
     `transcript_id` varchar(100) COMMENT "",
+    `transcript_version` varchar(10) NULL COMMENT "",
     `source` varchar(20) NULL COMMENT "",
     `consequences` array<varchar(50)> COMMENT "",
     `impact_score` tinyint(4) NULL COMMENT "",
@@ -32,18 +33,6 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_consequence }} (
     `gnomad_loeuf` float NULL COMMENT "",
     `phyloP17way_primate` float NULL COMMENT "",
     `phyloP100way_vertebrate` float NULL COMMENT "",
-    -- SJRA-1827. True when the score columns above were looked up through this row's MANE twin in the
-    -- other catalogue instead of its own transcript. Only a RefSeq MANE Select row can be true:
-    -- dbNSFP and gnomAD constraint are both keyed on Ensembl transcript ids.
-    --
-    -- It states the provenance of the *join key*, not that values were found -- a true flag with a null
-    -- `sift_score` means dbNSFP does not cover that locus, exactly as on an Ensembl row. Consumers must
-    -- still null-check each value and render "not available" rather than reading the flag as "scored".
-    --
-    -- NOT NULL DEFAULT "false" so the rows loaded before SJRA-1827 read false without a rewrite: they
-    -- are all Ensembl, for which false is factual. Declared identically in
-    -- migrations/SJRA-1820_snv_consequences_add_columns.sql -- the two MUST agree, or a fresh
-    -- deployment and a migrated one disagree on nullability and on the introspecting dbt sweeps.
     `scores_from_mane_pair` boolean NOT NULL DEFAULT "false" COMMENT "",
     `vep_impact` VARCHAR(20) NULL COMMENT "",
     `aa_change` varchar(1000) NULL COMMENT "",

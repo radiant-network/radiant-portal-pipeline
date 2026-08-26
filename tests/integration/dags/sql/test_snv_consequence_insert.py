@@ -57,6 +57,9 @@ _DBNSFP_COLUMNS = ("locus_id", "ensembl_transcript_id", *_ENST1_SCORES)
 # A dbNSFP row and a constraint row keyed on the *RefSeq* side of a pair. Nothing may ever join to
 # these: they are the tripwire for the key being built with a COALESCE instead of a source-keyed CASE,
 # which would hand every Ensembl row its paired `NM_...` and quietly replace the scores it gets today.
+# They also catch the CASE being dropped altogether now that `transcript_id` is version-free on both
+# catalogues: `ON d.ensembl_transcript_id = c.transcript_id` would match the RefSeq row straight onto
+# this poison instead of borrowing its twin's scores.
 _POISON_TRANSCRIPT = "NM_0001"
 _POISON_SCORE = -99.0
 
@@ -92,7 +95,7 @@ def _consequence_row(
     *,
     symbol,
     transcript_id,
-    transcript_id_unversioned,
+    transcript_version,
     source,
     mane_select,
     mane_pair,
@@ -117,7 +120,7 @@ def _consequence_row(
         "hgvsc": None,
         "symbol": symbol,
         "transcript_id": transcript_id,
-        "transcript_id_unversioned": transcript_id_unversioned,
+        "transcript_version": transcript_version,
         "source": source,
         "biotype": "protein_coding",
         "strand": "1",
@@ -136,15 +139,17 @@ def _consequence_row(
     }
 
 
-# `mane_select` deliberately keeps its version suffix while `mane_pair_transcript_id` does not. dbNSFP
-# and gnomAD constraint only ever hold unversioned ids, so a join built on `mane_select` matches nothing
-# -- these rows are what makes that mistake fail rather than pass with silent nulls.
+# `mane_select` deliberately keeps its version suffix while `mane_pair_transcript_id` and
+# `transcript_id` do not. dbNSFP and gnomAD constraint only ever hold unversioned ids, so a join built
+# on `mane_select` matches nothing -- these rows are what makes that mistake fail rather than pass with
+# silent nulls. The RefSeq rows keep a non-null `transcript_version` for the same reason: it must stay
+# out of the identifier, and a row that carried its version in both would let a regression pass.
 _CONSEQUENCE_ROWS = [
     # 1. Ensembl MANE Select. Scored on its own transcript, as before this change.
     _consequence_row(
         symbol="TP53",
         transcript_id="ENST0001",
-        transcript_id_unversioned="ENST0001",
+        transcript_version=None,
         source="Ensembl",
         mane_select="NM_0001.6",
         mane_pair="NM_0001",
@@ -153,8 +158,8 @@ _CONSEQUENCE_ROWS = [
     # 2. Its RefSeq twin. Must end up with row 1's scores, from both source tables.
     _consequence_row(
         symbol="TP53",
-        transcript_id="NM_0001.6",
-        transcript_id_unversioned="NM_0001",
+        transcript_id="NM_0001",
+        transcript_version="6",
         source="RefSeq",
         mane_select="ENST0001.2",
         mane_pair="ENST0001",
@@ -163,8 +168,8 @@ _CONSEQUENCE_ROWS = [
     # 3. Non-MANE RefSeq. `MANE_SELECT` is empty for these, so there is no pair and nothing to borrow.
     _consequence_row(
         symbol="TP53",
-        transcript_id="NM_9999.1",
-        transcript_id_unversioned="NM_9999",
+        transcript_id="NM_9999",
+        transcript_version="1",
         source="RefSeq",
         mane_select="",
         mane_pair="",
@@ -174,7 +179,7 @@ _CONSEQUENCE_ROWS = [
     _consequence_row(
         symbol="BRCA1",
         transcript_id="ENST0002",
-        transcript_id_unversioned="ENST0002",
+        transcript_version=None,
         source="Ensembl",
         mane_select="NM_0002.1",
         mane_pair="NM_0002",
@@ -183,8 +188,8 @@ _CONSEQUENCE_ROWS = [
     # 5. Its RefSeq twin -- isolates the dbNSFP leg: scores arrive, pLI/LOEUF stay null.
     _consequence_row(
         symbol="BRCA1",
-        transcript_id="NM_0002.1",
-        transcript_id_unversioned="NM_0002",
+        transcript_id="NM_0002",
+        transcript_version="1",
         source="RefSeq",
         mane_select="ENST0002.4",
         mane_pair="ENST0002",
@@ -194,8 +199,8 @@ _CONSEQUENCE_ROWS = [
     #    dbNSFP-leg failure cannot hide behind it (or the reverse).
     _consequence_row(
         symbol="EGFR",
-        transcript_id="NM_0003.1",
-        transcript_id_unversioned="NM_0003",
+        transcript_id="NM_0003",
+        transcript_version="1",
         source="RefSeq",
         mane_select="ENST0003.7",
         mane_pair="ENST0003",
@@ -207,8 +212,8 @@ _CONSEQUENCE_ROWS = [
     #    consequence as the Ensembl row, which SJRA-1828 must drop.
     _consequence_row(
         symbol="TP53",
-        transcript_id="NM_8888.1",
-        transcript_id_unversioned="NM_8888",
+        transcript_id="NM_8888",
+        transcript_version="1",
         source="RefSeq",
         mane_select="",
         mane_pair="",
@@ -222,7 +227,7 @@ _CONSEQUENCE_ROWS = [
     _consequence_row(
         symbol="",
         transcript_id="",
-        transcript_id_unversioned="",
+        transcript_version=None,
         source=None,
         mane_select="",
         mane_pair="",
@@ -333,24 +338,31 @@ def test_refseq_mane_rows_borrow_their_twins_scores(seeded_consequences, starroc
     _run(starrocks_session, radiant_mapping, "radiant/snv_consequence_insert.sql", {"task_ids": [_TASK_ID]})
 
     rows = _fetch_by_transcript(starrocks_session, radiant_mapping["starrocks_snv_consequence"])
+    # Version-free on both catalogues: `transcript_id` is part of the primary key, so a RefSeq release
+    # bump must replace a row rather than sit beside it.
     assert set(rows) == {
         "ENST0001",
-        "NM_0001.6",
-        "NM_9999.1",
-        "NM_8888.1",
+        "NM_0001",
+        "NM_9999",
+        "NM_8888",
         "ENST0002",
-        "NM_0002.1",
-        "NM_0003.1",
+        "NM_0002",
+        "NM_0003",
         "",
     }
 
     ensembl_mane = rows["ENST0001"]
-    refseq_twin = rows["NM_0001.6"]
-    refseq_non_mane = rows["NM_9999.1"]
+    refseq_twin = rows["NM_0001"]
+    refseq_non_mane = rows["NM_9999"]
     dbnsfp_only_ensembl = rows["ENST0002"]
-    dbnsfp_only_twin = rows["NM_0002.1"]
-    constraint_only_twin = rows["NM_0003.1"]
+    dbnsfp_only_twin = rows["NM_0002"]
+    constraint_only_twin = rows["NM_0003"]
     intergenic = rows[""]
+
+    # The version survives the load beside the identifier, so the citable accession is reconstructible.
+    # Null on the Ensembl row because VEP never emitted one, not because the load dropped it.
+    assert refseq_twin["transcript_version"] == "6"
+    assert ensembl_mane["transcript_version"] is None
 
     # The Ensembl row is unchanged by this ticket: scored on its own transcript, flag clear. The poison
     # dbNSFP row keyed on its MANE pair must not have displaced any of it.
@@ -380,7 +392,7 @@ def test_refseq_mane_rows_borrow_their_twins_scores(seeded_consequences, starroc
 
     # A non-MANE RefSeq transcript has no pair, so it borrows nothing -- and must not be labelled as if
     # it had. Same for an intergenic block, whose source is NULL.
-    for row in (refseq_non_mane, rows["NM_8888.1"], intergenic):
+    for row in (refseq_non_mane, rows["NM_8888"], intergenic):
         assert all(value is None for value in _scores(row).values())
         assert row["gnomad_pli"] is None
         assert _flag(row) is False
@@ -404,7 +416,7 @@ def test_score_borrow_joins_are_hash_joins(seeded_consequences, starrocks_sessio
     StarRocks 4.0.11 but not on the 3.4.2 the compose stack pins.
 
     It also guards against the tempting rewrite
-    `ON d.ensembl_transcript_id IN (c.transcript_id_unversioned, c.mane_pair_transcript_id)`. That is
+    `ON d.ensembl_transcript_id IN (c.transcript_id, c.mane_pair_transcript_id)`. That is
     *correct* -- the two identifier namespaces are disjoint, so only one candidate can ever match -- but
     it plans as a NESTLOOP JOIN over the whole consequence table. Nothing else would catch it: the
     results would be identical and `EXPLAIN` would still succeed.
@@ -430,11 +442,11 @@ def test_filter_table_takes_only_the_refseq_annotations_ensembl_does_not_provide
 ):
     """SJRA-1828 -- `snv__consequence_filter` loads Ensembl as before, plus only what RefSeq adds.
 
-    The fixture holds both cases on the same gene: `NM_9999.1` reports the *same* consequence as the
-    Ensembl transcript and must be dropped, while `NM_8888.1` reports one Ensembl never mentions and
+    The fixture holds both cases on the same gene: `NM_9999` reports the *same* consequence as the
+    Ensembl transcript and must be dropped, while `NM_8888` reports one Ensembl never mentions and
     must survive.
 
-    `NM_9999.1` is what makes this a real test. It carries no scores -- it is non-MANE, so SJRA-1827
+    `NM_9999` is what makes this a real test. It carries no scores -- it is non-MANE, so SJRA-1827
     finds no twin to borrow from -- while the Ensembl row it duplicates has dbNSFP values. The
     aggregation below groups on the score columns, so the two land in different groups: without the
     restriction that duplicate survives as a second `(TP53, missense_variant)` row rather than

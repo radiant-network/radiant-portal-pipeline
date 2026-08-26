@@ -12,11 +12,6 @@
   Locus grain on purpose: it targets the partition / semi-join logic without
   replaying the UNNEST + GROUP BY of the derivation.
 
-  SJRA-1828 restricts which rows feed that derivation -- a RefSeq annotation is
-  loaded only where Ensembl is silent on the same (locus_id, symbol,
-  consequence). That cannot empty a locus, so this assertion is unaffected: a
-  RefSeq key is dropped only when an Ensembl key of the same locus is kept, and
-  a locus carrying RefSeq annotations alone has nothing to duplicate.
 #}
 
 select

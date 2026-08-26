@@ -8,8 +8,8 @@ This module defines:
 - Functions to parse CSQ headers, extract CSQ field values, and process consequences.
 - Resolution of the transcript catalogue (Ensembl or RefSeq) each annotation came from,
   which is what lets a VEP `--merged` file be told apart from a single-catalogue one.
-- The MANE flags, plus version-free copies of the transcript identifier and of the MANE
-  cross-reference, which together bridge a RefSeq annotation to its Ensembl twin.
+- The MANE flags and a version-free copy of the MANE cross-reference, which bridges a RefSeq
+  annotation to its Ensembl twin.
 
 Dependencies:
 - cyvcf2: for reading VCF records.
@@ -86,7 +86,7 @@ SCHEMA = merge_schemas(
         NestedField(222, "dna_change", StringType(), required=False),
         NestedField(223, "impact_score", IntegerType(), required=True),
         NestedField(224, "mane_pair_transcript_id", StringType(), required=False),
-        NestedField(225, "transcript_id_unversioned", StringType(), required=False),
+        NestedField(225, "transcript_version", StringType(), required=False),
     ),
 )
 
@@ -114,19 +114,13 @@ def get_csq_field(csq_fields, fields, field_name):
 
 def strip_transcript_version(value: str | None) -> str | None:
     """
-    Drops the version suffix from a transcript accession, so it can be used as a join key.
+    Drops the version suffix from a transcript accession, so it can be used as a stable key.
 
-    Two columns need this, and for different reasons -- which is why it is applied to both
-    sides of the MANE pair rather than only to the cross-reference:
-
-    - `MANE_SELECT` is a pointer to the paired transcript in the *other* catalogue, and it is
-      always versioned (`ENST00000269305.9`, `NM_000546.6`).
-    - `Feature` is versioned on RefSeq rows (`NM_000546.6`) but *not* on Ensembl ones
-      (`ENST00000269305`). Measured on a reference `--merged --mane` file: stripping only the
-      cross-reference joins RefSeq rows onto their Ensembl twin 99.9% of the time but Ensembl
-      rows onto their RefSeq twin 0% of the time. Stripping both sides makes it 100% either
-      way, and is also what lines the value up with dbNSFP's and gnomAD constraint's
-      unversioned Ensembl transcript ids.
+    Two columns need it. `Feature` is versioned on RefSeq rows and not on Ensembl ones, and it
+    is part of `snv__consequence`'s primary key -- left raw, a newer RefSeq release would land
+    `NM_000546.7` beside `NM_000546.6` instead of replacing it. `MANE_SELECT` is always
+    versioned, and stripping it is what lines it up with dbNSFP's and gnomAD constraint's
+    unversioned Ensembl transcript ids.
 
     Args:
         value (str | None): A transcript accession, versioned or not.
@@ -137,6 +131,27 @@ def strip_transcript_version(value: str | None) -> str | None:
             "", and callers rely on that distinction surviving, so neither is collapsed.
     """
     return value.split(".")[0] if value else value
+
+
+def extract_transcript_version(value: str | None) -> str | None:
+    """
+    Returns the version suffix of a transcript accession, or None when it carries none.
+
+    The counterpart to `strip_transcript_version`: together they split `Feature` into the
+    identifier we key on and the version a clinician cites. Ensembl rows always yield None,
+    since VEP emits their accession unversioned.
+
+    Args:
+        value (str | None): A transcript accession, versioned or not.
+
+    Returns:
+        str or None: Everything after the first `.` (`"6"` for `NM_000546.6`), or None when the
+            input is None, empty, or unversioned. Unlike `strip_transcript_version` this does
+            collapse "" to None, which no caller distinguishes from an absent version.
+    """
+    if not value or "." not in value:
+        return None
+    return value.split(".", 1)[1]
 
 
 # Both catalogues use disjoint identifier namespaces, so the identifier alone is enough to
@@ -181,7 +196,8 @@ def resolve_source(source: str | None, transcript_id: str | None, gene_id: str |
 
     Args:
         source (str | None): Raw `SOURCE` value, or None when the column is absent.
-        transcript_id (str | None): Raw `Feature` value, or None when the column is absent.
+        transcript_id (str | None): `Feature` value, version stripped, or None when the column
+            is absent. The patterns are anchored, so the version makes no difference either way.
         gene_id (str | None): Raw `Gene` value, or None when the column is absent.
 
     Returns:
@@ -248,7 +264,10 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
             hgvsp = get_csq_field(csq_fields, fields, "HGVSp")
             hgvsc = get_csq_field(csq_fields, fields, "HGVSc")
             picked = get_csq_field(csq_fields, fields, "PICK") == "1"
-            transcript_id = get_csq_field(csq_fields, fields, "Feature")
+            # Split rather than stored raw: `transcript_id` is a primary-key column and must
+            # mean the same thing on both catalogues. See `strip_transcript_version`.
+            feature = get_csq_field(csq_fields, fields, "Feature")
+            transcript_id = strip_transcript_version(feature)
             # `Gene` is read only to resolve the source; it is not part of the schema.
             gene_id = get_csq_field(csq_fields, fields, "Gene")
             # `MANE` carries the flag (`MANE_Select` / `MANE_Plus_Clinical`), `MANE_SELECT`
@@ -272,7 +291,7 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
                 "hgvsc": hgvsc,
                 "symbol": get_csq_field(csq_fields, fields, "SYMBOL"),
                 "transcript_id": transcript_id,
-                "transcript_id_unversioned": strip_transcript_version(transcript_id),
+                "transcript_version": extract_transcript_version(feature),
                 "source": resolve_source(get_csq_field(csq_fields, fields, "SOURCE"), transcript_id, gene_id),
                 "biotype": get_csq_field(csq_fields, fields, "BIOTYPE"),
                 "strand": get_csq_field(csq_fields, fields, "STRAND"),
