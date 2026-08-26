@@ -11,6 +11,7 @@
 
   Locus grain on purpose: it targets the partition / semi-join logic without
   replaying the UNNEST + GROUP BY of the derivation.
+
 #}
 
 select

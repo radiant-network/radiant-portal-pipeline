@@ -18,16 +18,16 @@ sources:
                 - locus_id
                 - symbol
                 - transcript_id
+                - mane_pair_transcript_id
+                - transcript_version
 
           # --- Should Not Contain Same Value ---------------------------------
           - should_not_contain_same_value:
               # SJRA-1550 is_mane_select is_mane_plus
               name: snv_consequence__should_not_contain_same_value_SJRA-1550
               except:
-                # SJRA-1826: `source` is legitimately constant ('Ensembl') until merged VCFs are
-                # ingested — every file annotated so far used the Ensembl cache only. Drop this
-                # exception once RefSeq rows are loading, so the test starts guarding the column.
                 - source
+                - scores_from_mane_pair
 
           # --- Should Be Unique ----------------------------------------------
           - dbt_utils.unique_combination_of_columns:

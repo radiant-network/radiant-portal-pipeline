@@ -121,31 +121,48 @@ def test_mane_flags_are_derived_from_the_mane_column(blocks):
 
 
 def test_version_stripping_is_applied_to_both_sides_of_the_pair(blocks):
-    # The versioned raw values are kept; only the derived columns are stripped. RefSeq
-    # `Feature` values are versioned and Ensembl ones are not, so both are covered here.
+    # `mane_select` keeps its raw versioned value; the identifier is split instead of kept raw,
+    # because it is what the tables key on. RefSeq `Feature` values are versioned and Ensembl
+    # ones are not, so both cases are covered here.
     stripped = 0
     for consequence, raw in blocks:
         assert consequence["mane_select"] == raw[MANE_SELECT_IDX]
-        assert consequence["transcript_id"] == raw[FEATURE_IDX]
         assert consequence["mane_pair_transcript_id"] == (raw[MANE_SELECT_IDX].split(".")[0])
-        assert consequence["transcript_id_unversioned"] == (raw[FEATURE_IDX].split(".")[0])
+        assert consequence["transcript_id"] == (raw[FEATURE_IDX].split(".")[0])
+        # The two halves must reconstruct the accession VEP emitted, or the citable form is lost.
+        version = consequence["transcript_version"]
+        assert ".".join(filter(None, (consequence["transcript_id"], version))) == raw[FEATURE_IDX]
         stripped += "." in raw[MANE_SELECT_IDX] or "." in raw[FEATURE_IDX]
     assert stripped, "nothing in the fixture was versioned -- the test proves nothing"
 
 
+def test_transcript_version_is_populated_on_refseq_and_empty_on_ensembl(blocks):
+    # The asymmetry is VEP's, and it is pinned here so that an Ensembl row acquiring a version
+    # -- or a RefSeq row losing one -- is a test failure rather than a silent change in what
+    # the variant page can cite.
+    by_source = {SOURCE_ENSEMBL: set(), SOURCE_REFSEQ: set()}
+    for consequence, _ in blocks:
+        if consequence["source"] in by_source:
+            by_source[consequence["source"]].add(consequence["transcript_version"])
+
+    assert by_source[SOURCE_ENSEMBL] == {None}
+    assert None not in by_source[SOURCE_REFSEQ]
+    assert by_source[SOURCE_REFSEQ], "fixture no longer carries a RefSeq block"
+
+
 def test_the_mane_pair_joins_its_twin_in_both_directions(merged):
-    # The reason `transcript_id_unversioned` exists. Stripping only the cross-reference makes
+    # The reason both sides are stored version-free. Stripping only the cross-reference makes
     # RefSeq->Ensembl resolve and Ensembl->RefSeq resolve nothing, silently; this fails in
     # that case because the round trip never completes from the Ensembl side.
     directions = set()
     for _, _, consequences, _ in merged:
-        by_transcript = {c["transcript_id_unversioned"]: c for c in consequences}
+        by_transcript = {c["transcript_id"]: c for c in consequences}
         for consequence in consequences:
             twin = by_transcript.get(consequence["mane_pair_transcript_id"])
             if not consequence["is_mane_select"] or twin is None:
                 continue
             assert twin["source"] != consequence["source"], "a MANE pair must span the two catalogues"
-            assert twin["mane_pair_transcript_id"] == consequence["transcript_id_unversioned"]
+            assert twin["mane_pair_transcript_id"] == consequence["transcript_id"]
             directions.add(consequence["source"])
     assert directions == {SOURCE_ENSEMBL, SOURCE_REFSEQ}, f"pair resolved only from {directions or 'neither side'}"
 

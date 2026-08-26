@@ -77,7 +77,7 @@ is safe for the older files, and the rule is a single code path for every file t
 |---|---|---|
 | VCF extraction | Populate a `source` value on every consequence, per the rule above | Small, contained |
 | Iceberg `snv_consequence` | Column already exists in the schema; it starts being filled | No schema change; ~2× rows for merged files |
-| StarRocks `snv__consequence` | New `source` column | `ALTER TABLE`, no reload — see §6 |
+| StarRocks `snv__consequence` | New `source` column, plus `mane_pair_transcript_id` and `scores_from_mane_pair` | `ALTER TABLE`, no reload — see §6 and §7 |
 | StarRocks `snv__consequence_filter` | Ensembl as today, plus the RefSeq annotations Ensembl does not already provide | ~11% more rows instead of ~100% — see §7 |
 | `snv__variant` (+ tmp, staging, partitioned) | New `pick_source` column: which catalogue VEP's picked consequence came from | Pick itself unchanged — see §5 |
 | External annotation joins (dbNSFP, gnomAD constraint) | Keyed on Ensembl transcript ids; RefSeq MANE rows borrow their twin's scores | Covers 94.7% of variants — see §7 |
@@ -272,6 +272,12 @@ and colocation all untouched, and nulls permitted so SJRA-1823's rule stands:
 ALTER TABLE snv__consequence ADD COLUMN source VARCHAR(20) AFTER transcript_id;
 ```
 
+All three columns this story adds to the table — `source`, plus SJRA-1827's
+`mane_pair_transcript_id` and `scores_from_mane_pair` — ship as one runbook script,
+`radiant/dags/sql/radiant/migrations/SJRA-1820_snv_consequences_add_columns.sql`. One story, one
+table, and no consequence row is loaded between the statements, so splitting them per sub-task buys
+nothing.
+
 The `AFTER` position is mandatory rather than cosmetic: `snv_consequence_insert.sql` is a positional
 `INSERT` with no column list, so the table has to match `init/snv_consequence_create_table.sql`
 column for column. The integration suite does catch a mismatch — `_explain_insert` in
@@ -344,6 +350,67 @@ Two practical consequences:
   Ensembl did not cover, so it has no scored counterpart to compete with. Those rows behave
   exactly like any variant dbNSFP does not cover today.
 
+*Implementation note (SJRA-1828, which built it).*
+
+The restriction is a single `LEFT ANTI JOIN` between the existing `UNNEST` and the existing
+`GROUP BY` in `snv_consequence_filter_insert.sql`, against the Ensembl `(locus_id, symbol,
+consequence)` keys of the same load. Nothing else about the statement changes — the aggregation, the
+projection and the table's shape are untouched, as this section promised.
+
+**`gr.source = 'RefSeq'` is a conjunct of the `ON` clause, not a `WHERE`.** An anti join keeps a left
+row when no right row satisfies the *whole* condition, so that conjunct is what confines the
+restriction to RefSeq: an Ensembl row can never satisfy it and passes through, and so does an
+intergenic row, whose source is NULL under `resolve_source()` rule 4. Moving it to a `WHERE` would
+change the meaning entirely.
+
+**These duplicates do not collapse on their own,** which is the whole reason the join is needed. The
+`GROUP BY` keys on the score columns, and a non-MANE RefSeq transcript carries nulls where the Ensembl
+row it duplicates has dbNSFP values, so the two land in different groups and the duplicate survives as
+a second row. This is pinned in
+`tests/integration/dags/sql/test_snv_consequence_insert.py`: neutralising the join makes exactly that
+unscored second `(TP53, missense_variant)` row reappear.
+
+**Why `vep_impact` is not part of the key.** The obvious objection is that impact is derived from the
+consequence, so it is redundant. It is not: VEP reports the impact of the **most severe term in the
+block**, and the `UNNEST` copies that single label onto every term in it. Measured on the sandbox,
+`intron_variant` occurs as MODIFIER, LOW *and* HIGH (52.0M rows), and the whole spread comes from
+multi-term blocks — single-term blocks give 23 distinct terms and exactly 23 distinct term/impact pairs,
+multi-term blocks give 25 terms and 49 pairs. `intron_variant` reaches HIGH only when it shares a block
+with `splice_donor_variant` or `splice_acceptor_variant`.
+
+Leaving it out is still correct, for a different reason: **no impact reachable through RefSeq can be
+lost.** Take A, the most severe term of a RefSeq block — the term that sets that block's impact.
+
+- If Ensembl does not report A for this `(locus, symbol)`, the RefSeq row for A survives the anti join
+  and carries the block's impact in full.
+- If Ensembl does report A, that Ensembl block contains A, so its impact is at least A's own rating —
+  which *is* the RefSeq block's impact — and the Ensembl row already carries it.
+
+The second step needs block impact never to fall below the rating of a term the block contains. Measured
+over 99.2M unnested rows: zero counterexamples.
+
+What adding `vep_impact` to the key would preserve is only the smeared label — an
+`(intron_variant, HIGH)` RefSeq row where Ensembl already has `(intron_variant, MODIFIER)`. That HIGH
+stays findable on the variant through its `splice_donor_variant` row, and Ensembl alone already produces
+both of those rows today. So it would be more rows and not one more findable variant, which is exactly
+what this restriction exists to avoid. Consistent with the MANE measurement above: across the 53,357
+pairs, consequence and impact differ in **zero** cases, so any divergence at all can only come from
+non-MANE transcripts.
+
+**`snv_consequence_filter_insert_part.sql` needed no change.** It reads `snv__consequence_filter` with
+`c.*`, not `snv__consequence`, so it inherits the restriction.
+
+**No `source` column was added to the filter table.** After the restriction every row is either
+Ensembl or "RefSeq where Ensembl was silent", and nothing in the query path distinguishes them; the
+variant page reads the source from `snv__consequence`. Revisit only if the portal asks for it.
+
+**The two cross-table dbt assertions still hold, and for a reason worth stating.**
+`..._validate_subset_of_snv_consequence` only ever gets easier — the restriction removes rows, and
+every surviving row still traces back to a base `snv__consequence` row. `..._validate_completeness_vs_snv_consequence`
+asserts at *locus* grain, and no locus can be emptied by the restriction: a RefSeq key is dropped only
+when an Ensembl key of the same locus is kept, and a locus with RefSeq annotations alone has nothing to
+duplicate, so all of them survive.
+
 ### MANE gives us a free bridge between the two catalogues
 
 With `--mane` enabled, VEP flags MANE transcripts on **both** sources — 106,985 MANE Select
@@ -413,12 +480,110 @@ gives a one-directional key:
 | Ensembl → RefSeq | 0 / 13,745 = **0%** |
 | Ensembl → RefSeq, twin's `transcript_id` also stripped | 13,745 / 13,745 = **100%** |
 
-SJRA-1824 therefore stores **both** sides stripped, as two columns beside the raw values:
-`mane_pair_transcript_id` (version-free `MANE_SELECT`) and `transcript_id_unversioned`
-(version-free `Feature`). Joining `mane_pair_transcript_id` to `transcript_id_unversioned`
-works in either direction, and `mane_pair_transcript_id` also lines up directly with dbNSFP's
-`ensembl_transcript_id` and gnomAD constraint's `transcript_id`. The raw `transcript_id` keeps
-its version for display, since that is the form a clinician cites.
+SJRA-1824 therefore stores **both** sides stripped. It did so as two columns beside the raw
+values — `mane_pair_transcript_id` (version-free `MANE_SELECT`) and `transcript_id_unversioned`
+(version-free `Feature`) — keeping the version inside `transcript_id` "for display, since that is
+the form a clinician cites". **That second column was replaced during SJRA-1820; see the note
+immediately below.**
+
+*Implementation note (SJRA-1820, superseding the paragraph above).* Keeping the version inside
+`transcript_id` was wrong, and not only for tidiness. `snv__consequence` is
+`PRIMARY KEY(locus_id, symbol, transcript_id)`, so the version was **part of row identity on one
+catalogue and not the other**. RefSeq re-releases roughly twice a year and bumps accession
+versions; the file measured here was annotated against `GCF_000001405.40-RS_2024_08`. A later
+cohort annotated against a newer cache would arrive as `NM_000546.7` — a *different* primary key —
+and land beside the existing `NM_000546.6` row rather than replacing it. The variant page would
+then list the same transcript twice, at two versions, with nothing marking which is current.
+Ensembl rows cannot do this, because VEP emits their accession unversioned.
+
+The justification did not survive checking either. What a clinician cites is the HGVS string, and
+`hgvsc` is stored in full: on every one of the 410,458 RefSeq blocks that has an `HGVSc`, the
+accession is versioned and its base matches `Feature`. The 60,060 RefSeq blocks without one are
+non-coding, where no transcript version is cited.
+
+So `transcript_id` is now stored **version-free on both catalogues**, and the version moves to its
+own `transcript_version` column (`"6"` for `NM_000546.6`). `transcript_id_unversioned` is deleted:
+it is exactly what `transcript_id` now holds. `transcript_version` takes over its Iceberg field id
+(225). That is safe only because `create_consequences_table()` drops and recreates the table rather
+than evolving it, so no Parquet file written while 225 meant `transcript_id_unversioned` is still
+reachable through it — the init-iceberg-tables DAG must run before the new code is deployed, which
+this story already requires for the SJRA-1824 fields.
+
+`transcript_version` is always NULL on Ensembl rows, and that gap cannot be filled: `HGVSc` is the
+only other place an Ensembl version appears and it is empty on **146,688 of 479,333 (30.6%)**
+Ensembl blocks — non-coding, up/downstream and regulatory annotations. Consumers render RefSeq as
+`concat_ws('.', transcript_id, transcript_version)` and Ensembl as `transcript_id` alone.
+
+**This is a one-way door and the migration must run before the first merged-file load.** Every row
+in `snv__consequence` today is Ensembl and therefore already version-free, so the change costs one
+`ADD COLUMN` and rewrites nothing. Once versioned RefSeq accessions have been loaded it is no
+longer an `UPDATE` — StarRocks cannot update a primary-key column — but a delete-and-reinsert of
+every RefSeq row. `migrations/SJRA-1820_snv_consequences_add_columns.sql` carries the pre-flight
+check.
+
+Two things are deliberately *not* in scope. `snv__variant.transcript_id` comes from the picked
+consequence and so also becomes version-free, for the 1.4% of variants whose pick is RefSeq; no
+`transcript_version` is propagated there, because that table is keyed on `locus_id` alone (no
+duplicate-row risk) and the version remains available by joining `snv__consequence` on
+`(locus_id, symbol, transcript_id)`. And VEP's `--xref_refseq` output (the `RefSeq` CSQ column)
+stays unstored: it is multi-valued in the direction it is populated — up to 87 `&`-joined
+accessions — and carries no guarantee that the aligned transcripts match in sequence or protein
+product, so it cannot serve as a second bridge.
+
+*Implementation note (SJRA-1827, which built option 1).* Three things were settled while
+implementing it, all measured rather than assumed.
+
+**The join key is a source-keyed `CASE`, not a `COALESCE`.** Both enrichment joins in
+`snv_consequence_insert.sql` now key on
+`CASE WHEN c.source = 'RefSeq' THEN NULLIF(c.mane_pair_transcript_id, '') ELSE NULLIF(c.transcript_id, '') END`.
+The branches are not interchangeable, so this is the only correct form:
+`COALESCE(mane_pair_transcript_id, transcript_id)` would hand every *Ensembl* row its
+paired `NM_…` and destroy the scores those rows get today, while the reverse order would never reach
+the pair, because `transcript_id` is always populated on a RefSeq row. `NULLIF` matters
+because `strip_transcript_version` yields `''` — not NULL — for a declared-but-empty CSQ column, i.e.
+on every non-MANE-Select row. Dropping the `CASE` altogether is now the more tempting mistake, since
+`transcript_id` is version-free on both sides and *looks* directly joinable; the poison dbNSFP row in
+the integration test exists to catch exactly that.
+
+`ON d.ensembl_transcript_id IN (transcript_id, mane_pair_transcript_id)` reads better and
+is equally correct, since the two identifier namespaces are disjoint. It plans as a **NESTLOOP JOIN**
+and was rejected on that basis. The `CASE` is hoisted into a `Project` above the scan, both joins stay
+`HASH JOIN`, the `dbnsfp` join keeps `colocate: true`, and the expression is evaluated once across both
+`ON` clauses via common-subexpression elimination — so inlining it twice costs nothing. Asserted in
+`tests/integration/dags/sql/test_snv_consequence_insert.py`, because CI pins StarRocks 3.4.2 while this
+was measured on 4.0.11.
+
+**`scores_from_mane_pair` states the provenance of the join *key*, not that a value was found.** It is
+`c.source = 'RefSeq' AND NULLIF(c.mane_pair_transcript_id, '') IS NOT NULL`, wrapped in a `COALESCE`
+because `source` is NULL on intergenic blocks and the column is `NOT NULL DEFAULT "false"`. So a true
+flag with a null `sift_score` means dbNSFP does not cover that locus — exactly as on an Ensembl row.
+SJRA-1832 must therefore null-check each value and render "not available", rather than reading the flag
+as "this row is scored".
+
+The alternative — set the flag only when a value actually came back — was considered and dropped. It
+would double as a silent-failure detector, but it conflates two different things: `gnomad_constraint`
+is transcript-grained with no locus predicate, so its leg matches for nearly every paired row, while
+`dbnsfp` is locus × transcript and only hits scored loci. A flag driven mostly by the constraint leg
+would be read as "prediction scores are borrowed" and be wrong most of the time. The silent-failure
+guard lives in the integration test instead, which compares the borrowed values against the twin's and
+pins the two source tables independently.
+
+**How this interacts with SJRA-1828.** `snv_consequence_filter_insert.sql` groups on the score
+columns, so before the borrow a RefSeq MANE row and its Ensembl twin landed in *different* groups
+purely because the RefSeq row's scores were all null. The borrow makes them collapse wherever symbol,
+biotype and consequence agree. That is a real effect, but it is not what keeps the filter table small:
+it only covers MANE pairs, and the rows that would actually have doubled the table are the **non-MANE**
+RefSeq transcripts, which have no twin and therefore no scores to borrow. Those are removed by
+SJRA-1828's restriction, not by the grouping. The two changes are complementary, and the restriction is
+the load-bearing one — see the SJRA-1828 note below.
+
+**`mane_pair_transcript_id` is materialised into `snv__consequence` too.** It is not needed for the
+borrow — the join reads the Iceberg table, where SJRA-1824 already put it — but storing it makes the
+borrow auditable in place: a RefSeq row joins straight back to its twin on
+`mane_pair_transcript_id = twin.transcript_id`, with no version stripping in the consumer. That is what
+SJRA-1830's "borrowed scores match their twin" assertion and the portal's RefSeq → Ensembl link both
+need, and the stored `mane_select` cannot serve it because it keeps its version. Since SJRA-1820 that
+join needs no stripping on either side: `transcript_id` is itself version-free.
 
 **Non-MANE RefSeq transcripts get no scores under either option.** Loading RefSeq-keyed
 dbNSFP would be the only way to change that; it is not proposed, since those are alternative
@@ -465,12 +630,16 @@ Items 2–4 are product decisions; 1, 5 and 6 are technical with product impact.
    when ingested by the current pipeline.
 3. **No regression on old files.** A previously-ingested non-merged file reproduces exactly
    the same rows as before, with `source = Ensembl` added.
-4. **The primary key still separates the two catalogues.**
+4. **The primary key still separates the two catalogues, and is version-stable.**
    `unique_combination_of_columns(locus_id, symbol, transcript_id)` still holds on a merged
    file — an Ensembl row and its RefSeq twin never collide on the key, because the two
    transcript namespaces are disjoint. This is the assumption doing the work that a source
    partition key would otherwise have done (§6), so it is asserted rather than assumed. The
-   variant-page point lookup should also still touch a single tablet.
+   variant-page point lookup should also still touch a single tablet. Separately,
+   `transcript_id LIKE '%.%'` must return zero rows on both catalogues: a version reaching the
+   key would make a RefSeq release bump duplicate rows instead of replacing them, and it would
+   do so silently. `transcript_version` must be non-null on every RefSeq row and null on every
+   Ensembl one.
 5. **The headline block is coherent.** For the ~1.4% of variants where VEP picked a RefSeq
    transcript, `pick_source` says RefSeq and every headline field — `transcript_id`,
    `hgvsc`, `hgvsp`, `dna_change`, `aa_change`, `symbol` — comes from that same transcript.
@@ -511,6 +680,7 @@ of the portal work.
 | 1 | [SJRA-1822] Fix the CSQ field lookup in extraction — `SOURCE` and `MANE_SELECT` are read under the wrong names today, so both columns are always empty | S | — |
 | 2 | [SJRA-1823] Classify each consequence's source (§3) and populate it into Iceberg | M | 1 |
 | 3 | [SJRA-1824] Populate `is_mane_select` / `is_mane_plus` from the `MANE` column, and store both sides of the pair **unversioned** as `mane_pair_transcript_id` and `transcript_id_unversioned` | S | 1 |
+| 3b | [SJRA-1820] Split VEP's `Feature` into a version-free `transcript_id` and a `transcript_version` column, replacing `transcript_id_unversioned`, so the primary key stops depending on the RefSeq cache release (§7) | S | 3 |
 | 4 | [SJRA-1825] Add a merged-VCF test fixture and unit tests covering both file types | M | 2, 3 |
 | 5 | [SJRA-1826] `snv__consequence`: add a `source` column via `ALTER TABLE` and label existing rows as Ensembl. Not partitioned by it — see §6 | S | 2 |
 | 6 | [SJRA-1827] `snv_consequence_insert`: borrow dbNSFP and constraint scores for RefSeq MANE rows through the cross-reference, plus the `scores_from_mane_pair` flag (§7) | M | 3, 5 |
@@ -532,8 +702,10 @@ of the portal work.
 | 12 | [SJRA-1832] Label borrowed scores as coming from the MANE twin; show "not available" rather than blank for non-MANE RefSeq rows | S |
 
 Tasks 1–3 are small and independent of any product decision, so they can start immediately.
-Task 5 is a metadata-only `ALTER TABLE` (§6) and can ride a routine release; no table rebuild
-or reload is needed anywhere in this story.
+Tasks 5 and 6 are metadata-only `ALTER TABLE`s (§6) and can ride a routine release; no table
+rebuild or reload is needed anywhere in this story. Task 3b is metadata-only *today* and a
+delete-and-reinsert of every RefSeq row once a merged file has landed, so it must ship before
+task 9's first end-to-end load — see the pre-flight check in its migration.
 
 Two notes on scope: task 1 is a bug fix that happens to be a prerequisite, so it is worth
 landing on its own rather than hidden inside task 2; and task 3 is in scope only because the
