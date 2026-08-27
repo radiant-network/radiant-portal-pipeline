@@ -58,6 +58,16 @@ sources:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
                   name: snv_consequence__should_not_contain_null__transcript_id
+          - name: source
+            description: "VARCHAR(20). Null on intergenic rows only."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_transcript_source() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: snv_consequence__accepted_values_source
+                  values: "{{ dict_transcript_source() }}"
+                  config:
+                    where: "source is not null"
           - name: consequences
             tests:
               # --- Accepted Values (array) -----------------------------------
