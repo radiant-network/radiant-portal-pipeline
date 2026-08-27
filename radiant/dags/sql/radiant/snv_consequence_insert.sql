@@ -8,8 +8,8 @@ SELECT
     c.consequences,
     c.impact_score,
     c.biotype,
-    c.exon.rank,
-    c.exon.total,
+    c.exon_rank,
+    c.exon_total,
     sp.spliceai_ds,
     sp.spliceai_type,
     c.is_canonical,
@@ -34,23 +34,56 @@ SELECT
     gc.loeuf,
     d.phyloP17way_primate,
     d.phyloP100way_vertebrate,
-    COALESCE(c.source = 'RefSeq' AND NULLIF(c.mane_pair_transcript_id, '') IS NOT NULL, FALSE)
+    COALESCE(c.source = 'RefSeq' AND c.score_transcript_id IS NOT NULL, FALSE)
         AS scores_from_mane_pair,
     c.vep_impact,
     c.aa_change,
     c.dna_change
-FROM {{ mapping.iceberg_snv_consequence }} c
-LEFT JOIN {{ mapping.starrocks_snv_tmp_variant }} v ON c.locus_hash = v.locus_hash
-LEFT JOIN {{ mapping.starrocks_dbnsfp }} d
-    ON v.locus_id=d.locus_id
-   AND d.ensembl_transcript_id = CASE
-           WHEN c.source = 'RefSeq' THEN NULLIF(c.mane_pair_transcript_id, '')
-           ELSE NULLIF(c.transcript_id, '')
-       END
-LEFT JOIN {{ mapping.starrocks_spliceai }} sp ON v.locus_id=sp.locus_id AND sp.symbol = c.symbol
+FROM (
+    SELECT
+        locus_hash,
+        symbol,
+        transcript_id,
+        transcript_version,
+        source,
+        consequences,
+        impact_score,
+        biotype,
+        exon.rank AS exon_rank,
+        exon.total AS exon_total,
+        is_canonical,
+        is_picked,
+        is_mane_select,
+        is_mane_plus,
+        mane_select,
+        mane_pair_transcript_id,
+        vep_impact,
+        aa_change,
+        dna_change,
+        -- A RefSeq row reads its scores under the Ensembl twin its MANE pair names.
+        CASE
+            WHEN source = 'RefSeq' THEN NULLIF(mane_pair_transcript_id, '')
+            ELSE NULLIF(transcript_id, '')
+        END AS score_transcript_id
+    FROM {{ mapping.iceberg_snv_consequence }}
+    -- No literal per-cent sign in this file: task_ids binds via pymysql printf paramstyle.
+    WHERE task_id in %(task_ids)s
+) c
+-- INNER, not LEFT: locus_id leads the target primary key and is NOT NULL, so unmatched rows cannot land.
+JOIN {{ mapping.starrocks_snv_tmp_variant }} v ON c.locus_hash = v.locus_hash
+-- Only this batch's loci can match: the colocate semi joins cut dbnsfp 239M -> ~101k, spliceai 80M -> ~14k.
+-- [BROADCAST] is required, not tuning: without it the ~600M-row stream becomes a RIGHT OUTER build side, ~120GB.
+LEFT JOIN [BROADCAST] (
+    SELECT d.*
+    FROM {{ mapping.starrocks_dbnsfp }} d
+    LEFT SEMI JOIN {{ mapping.starrocks_snv_tmp_variant }} tv ON d.locus_id = tv.locus_id
+) d
+    ON v.locus_id = d.locus_id
+   AND d.ensembl_transcript_id = c.score_transcript_id
+LEFT JOIN [BROADCAST] (
+    SELECT s.*
+    FROM {{ mapping.starrocks_spliceai }} s
+    LEFT SEMI JOIN {{ mapping.starrocks_snv_tmp_variant }} tv ON s.locus_id = tv.locus_id
+) sp ON v.locus_id = sp.locus_id AND sp.symbol = c.symbol
 LEFT JOIN {{ mapping.starrocks_gnomad_constraint }} gc
-    ON gc.transcript_id = CASE
-           WHEN c.source = 'RefSeq' THEN NULLIF(c.mane_pair_transcript_id, '')
-           ELSE NULLIF(c.transcript_id, '')
-       END
-WHERE c.task_id in %(task_ids)s
+    ON gc.transcript_id = c.score_transcript_id
