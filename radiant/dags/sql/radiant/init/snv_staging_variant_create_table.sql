@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_staging_variant }} (
     clinvar_name VARCHAR(2000) NULL COMMENT '',
     variant_class VARCHAR(50) NULL COMMENT '',
     clinvar_interpretation ARRAY<VARCHAR(100)> NULL COMMENT '',
-    symbol VARCHAR(20) NULL COMMENT '',
+    symbol VARCHAR(100) NULL COMMENT '',
     impact_score tinyint NULL COMMENT "",
     consequences ARRAY<VARCHAR(50)> NULL COMMENT '',
     vep_impact VARCHAR(20) NULL COMMENT '',
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_staging_variant }} (
     dna_change VARCHAR(2000),
     aa_change VARCHAR(2000),
     transcript_id varchar(100) COMMENT "",
+    pick_source varchar(20) NULL COMMENT "",
     omim_inheritance_code array<varchar(5)> COMMENT ""
 )
 PRIMARY KEY(locus_id)
