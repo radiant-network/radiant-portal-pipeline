@@ -185,18 +185,12 @@ def import_part():
     def extract_all_tenants() -> list[str]:
         # Every tenant known to the platform (not just this batch). The shared consequence filter
         # pools loci across all of these, so it reflects the current state of all tenants.
-        from airflow.hooks.base import BaseHook
         from airflow.operators.python import get_current_context
 
-        from radiant.tasks.data.radiant_tables import get_radiant_mapping
+        from radiant.tasks.data.tenants import list_all_tenants
 
         context = get_current_context()
-        dag_conf = context["dag_run"].conf or {}
-        table = get_radiant_mapping(dag_conf)["starrocks_staging_sequencing_experiment"]
-        conn = BaseHook.get_connection("starrocks_conn")
-        with conn.get_hook().get_conn().cursor() as cursor:
-            cursor.execute(f"SELECT DISTINCT tenant_code FROM {table}")
-            return sorted({row[0] for row in cursor.fetchall() if row[0]})
+        return list_all_tenants(context["dag_run"].conf or {})
 
     all_tenants = extract_all_tenants()
 

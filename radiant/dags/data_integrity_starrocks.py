@@ -60,6 +60,21 @@ def _dbt_s3_uri(filename: str, run_id: str) -> str:
     return f"s3://{bucket}/dbt-qa/{run_id}/{filename}"
 
 
+def _resolve_tenant_schemas(conf: dict | None, tenant_codes: list[str]) -> list[dict]:
+    """Pair each tenant code with the StarRocks database holding its tables.
+
+    Resolved here rather than in the dbt container because RADIANT_TENANT_DB_TEMPLATE is
+    configurable and `_resolve_radiant_databases` is the one place that owns it — the dbt
+    image ships only the dbt project, not the `radiant` package.
+    """
+    from radiant.tasks.data.radiant_tables import _resolve_radiant_databases
+
+    return [
+        {"code": code, "schema": _resolve_radiant_databases(conf, tenant_code=code)[1]}
+        for code in sorted(tenant_codes)
+    ]
+
+
 def _download_from_s3(uri: str) -> bytes:
     from urllib.parse import urlparse
 
@@ -84,6 +99,17 @@ def _download_from_s3(uri: str) -> bytes:
             type="boolean",
             title="Skip TestQuality push",
             description="When enabled, the TestQuality upload task is skipped for this run.",
+        ),
+        "tenants": Param(
+            [],
+            type="array",
+            items={"type": "string"},
+            title="Tenants",
+            description=(
+                "Tenant codes whose per-tenant tables should be tested. Leave empty to "
+                "discover every tenant on the platform. The scheduled import passes only "
+                "the tenants in its batch."
+            ),
         ),
     },
 )
@@ -139,6 +165,32 @@ def data_integrity_starrocks():
         LOGGER.info("Uploaded JUnit report to TestQuality as run '%s'.", run_name)
 
     @task(
+        task_id="resolve_tenants",
+        task_display_name="Resolve tenants to test",
+    )
+    def resolve_tenants() -> str:
+        """Resolve the tenants to test into the JSON the dbt container expects.
+
+        An explicit `tenants` param wins; an empty one means "discover every tenant".
+
+        Returns a JSON *string*, not a list: this DAG does not render templates as native
+        objects, so a list would reach the container as a Python repr with single quotes.
+        """
+        import json
+
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.data.tenants import list_all_tenants
+
+        context = get_current_context()
+        dag_conf = context["dag_run"].conf or {}
+
+        resolved = _resolve_tenant_schemas(dag_conf, context["params"]["tenants"] or list_all_tenants(dag_conf))
+
+        LOGGER.info("Testing %d tenant(s): %s", len(resolved), ", ".join(t["code"] for t in resolved) or "none")
+        return json.dumps(resolved)
+
+    @task(
         task_id="check_qa_results",
         task_display_name="Assert no failing data tests",
     )
@@ -163,7 +215,12 @@ def data_integrity_starrocks():
             status_counts[status] += 1
             if status in ("fail", "error"):
                 uid = r["unique_id"]
-                (known if KNOWN_ERROR_TAG.search(uid) else unexpected).append(uid)
+                # A per-tenant assertion keeps the same unique_id in every tenant's pass, so
+                # the tenant has to be carried alongside it or "which tenant failed" is lost.
+                # The known-error match stays on the raw uid.
+                tenant = r.get("tenant")
+                label = f"{uid} [tenant={tenant}]" if tenant else uid
+                (known if KNOWN_ERROR_TAG.search(uid) else unexpected).append(label)
 
         LOGGER.info(
             "%d passed · %d warned · %d failed — %d known, %d unexpected (of %d)",
@@ -187,12 +244,16 @@ def data_integrity_starrocks():
     run_results_s3_uri = _dbt_s3_uri("run_results.json", "{{ run_id }}")
     junit_s3_uri = _dbt_s3_uri("junit.xml", "{{ run_id }}")
 
-    if IS_AWS:
-        run_dbt = operators.CheckDataIntegrity.get_run_dbt(run_results_s3_uri, junit_s3_uri, ECSEnv())
-    else:
-        run_dbt = operators.CheckDataIntegrity.get_run_dbt(run_results_s3_uri, junit_s3_uri)
+    # Pulled as a template string rather than an XComArg: both operators carry it in a
+    # Jinja-templated env field, which is the same path `{{ run_id }}` above already takes.
+    tenants = "{{ ti.xcom_pull(task_ids='resolve_tenants') }}"
 
-    run_dbt >> [check_results(run_results_s3_uri), upload_to_testquality(junit_s3_uri)]
+    if IS_AWS:
+        run_dbt = operators.CheckDataIntegrity.get_run_dbt(run_results_s3_uri, junit_s3_uri, tenants, ECSEnv())
+    else:
+        run_dbt = operators.CheckDataIntegrity.get_run_dbt(run_results_s3_uri, junit_s3_uri, tenants)
+
+    resolve_tenants() >> run_dbt >> [check_results(run_results_s3_uri), upload_to_testquality(junit_s3_uri)]
 
 
 data_integrity_starrocks()

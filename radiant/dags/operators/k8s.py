@@ -357,7 +357,7 @@ class CheckDataIntegrity:
     directly via KubernetesPodOperator."""
 
     @staticmethod
-    def get_run_dbt(run_results_s3_uri: str, junit_s3_uri: str) -> KubernetesPodOperator:
+    def get_run_dbt(run_results_s3_uri: str, junit_s3_uri: str, tenants: str) -> KubernetesPodOperator:
         return KubernetesPodOperator(
             task_id="run_dbt",
             task_display_name="[K8s] Run dbt data tests",
@@ -372,6 +372,8 @@ class CheckDataIntegrity:
             env_vars={
                 "RUN_RESULTS_S3_URI": run_results_s3_uri,
                 "JUNIT_S3_URI": junit_s3_uri,
+                # JSON list of {"code", "schema"}: one extra dbt pass per entry.
+                "TENANTS": tenants,
                 # We inject these for the local sandbox (like the other k8s operators).
                 # In prod (EKS), boto3 uses Pod Identity instead, so these resolve to empty.
                 "AWS_REGION": os.getenv("AWS_REGION"),

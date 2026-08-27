@@ -1,8 +1,8 @@
 version: 2
 
 sources:
-  - name: radiant
-    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+  - name: tenant_db
+    schema: "{{ env_var('SR_TENANT_SCHEMA', env_var('SR_SCHEMA', 'radiant')) }}"
     tables:
       - name: germline__snv__occurrence
         tests:
@@ -66,7 +66,7 @@ sources:
               # occurrence locus must exist in the snv__variant
               - relationships:
                   name: germline_snv_occurrence__relationships__locus_id__snv_variant
-                  to: source('radiant', 'snv__variant')
+                  to: source('tenant_db', 'snv__variant')
                   field: locus_id
           - name: phased
             description: "BOOLEAN."

@@ -21,6 +21,7 @@ def test_get_run_dbt():
         op = CheckDataIntegrity.get_run_dbt(
             run_results_s3_uri="s3://bucket/dbt-qa/run1/run_results.json",
             junit_s3_uri="s3://bucket/dbt-qa/run1/junit.xml",
+            tenants='[{"code": "chusj", "schema": "chusj_tenant"}]',
             ecs_env=ecs_env,
         )
 
@@ -43,6 +44,9 @@ def test_get_run_dbt():
     env = {e["name"]: e["value"] for e in container["environment"]}
     assert env["RUN_RESULTS_S3_URI"] == "s3://bucket/dbt-qa/run1/run_results.json"
     assert env["JUNIT_S3_URI"] == "s3://bucket/dbt-qa/run1/junit.xml"
+    # Drives the per-tenant dbt passes inside the container. Set here rather than in the
+    # ECS task definition, so no Terraform change is needed.
+    assert env["TENANTS"] == '[{"code": "chusj", "schema": "chusj_tenant"}]'
 
     # network config from ecs_env
     vpc = op.network_configuration["awsvpcConfiguration"]
