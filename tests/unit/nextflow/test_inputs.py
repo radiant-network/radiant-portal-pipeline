@@ -11,12 +11,12 @@ PREFIX_POD = "/workspace/inputs/manual__2026-08-21T12-00-00"
 
 @pytest.fixture
 def trio(trio_rows, phenotype_rows):
-    return resolve_families(trio_rows, phenotype_rows, [1072])[0]
+    return resolve_families(trio_rows, phenotype_rows)[0]
 
 
 @pytest.fixture
 def singleton(singleton_rows):
-    return resolve_families(singleton_rows, [], [8])[0]
+    return resolve_families(singleton_rows, [])[0]
 
 
 def test_samplesheet_columns_are_the_ones_nf_schema_expects(trio):

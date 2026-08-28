@@ -1,25 +1,37 @@
-"""Run the Ferlab post-processing pipeline from a list of case ids, end to end.
+"""Find the germline cases waiting for an annotation, run the pipeline, register the result.
 
-`radiant-nextflow-postprocessing` runs the pipeline. This DAG closes the two manual ends
-around it: it builds the samplesheet, PED files and phenopackets from the clinical model,
-triggers that DAG, then registers what the run published back onto the cases as
-`radiant_germline_annotation` and `exomiser` tasks.
+`radiant-nextflow-postprocessing` runs the Ferlab post-processing pipeline. This DAG closes
+the two manual ends around it: it discovers what needs running, builds the samplesheet, PED
+files and phenopackets from the clinical model, triggers that DAG, then registers what the
+run published back onto the cases as `radiant_germline_annotation` and `exomiser` tasks.
 
-    fetch_members ----+
-                      +-> resolve_cases -> generate_inputs -> run_pipeline
-    fetch_phenotypes -+                                            |
-                                        register_tasks <- collect_outputs
+    discover_scope -> select_cases -> fetch_phenotypes -> resolve_cases -> generate_inputs
+                                                                                  |
+                                                                            run_pipeline
+                                                                                  |
+              register_tasks (one per tenant) <- collect_outputs <----------------+
 
-It **triggers** the pipeline DAG rather than duplicating it, so the driver-pod, resume and
-cleanup behaviour stay in one place.
+Nothing is asked of an operator on a scheduled run. `discover_scope` asks the clinical model
+which sequencing has been aligned but never annotated; `task_ids` narrows that to specific
+alignment tasks when someone wants a targeted rerun, and is empty otherwise.
+
+Two rules do most of the work, and both live in
+`sql/clinical/pending_annotation_select.sql` rather than here:
+
+- exactly one sequencing experiment per (case, member) -- the newest `completed` one -- and
+  exactly one alignment task per experiment. The same selection decides eligibility *and*
+  builds the family, which is what stops a superseded experiment keeping its case eligible
+  for ever;
+- a candidate that cannot be run is excluded with a reason and reported, never fatal. One
+  unfixable case must not block every other case, every night.
 
 Paths are derived from the run, not parameterised: `{root}/{run_tag}` for both inputs and
-outputs, where `run_tag` comes from `run_id`. That makes "a fresh prefix per run"
-structural rather than a rule someone has to remember, and gives each run its own output
-location -- which matters because re-running a case adds a second analysis alongside the
-first rather than replacing it.
+outputs, where `run_tag` comes from `run_id`. That gives each run its own output location --
+which matters because re-running a case adds a second analysis alongside the first rather
+than replacing it.
 
-Full analysis: `design/SJRA-1843-nextflow-postprocessing-from-cases.md`.
+Full analysis: `design/SJRA-1857-nextflow-postprocessing-automation.md`, which builds on
+`design/SJRA-1843-nextflow-postprocessing-from-cases.md`.
 """
 
 import logging
@@ -52,24 +64,49 @@ OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "3
 
 PORTAL_CONN_ID = "radiant_api_conn"
 
+# Tenants the service account has been granted `ingest_data` on, comma separated. Empty
+# means "do not filter", which is right for a single-tenant deployment and wrong the moment
+# a second tenant exists: an ungranted tenant's cases get a flat 403 from the batch PATCH
+# *after* the pipeline has spent hours on them, and stay eligible, so the next run does it
+# again. Filtering here turns that into a line in the exclusion report.
+TENANTS_ENV = "NEXTFLOW_POSTPROCESSING_TENANTS"
+
+
+def _default_tenants() -> list[str]:
+    return [tenant.strip() for tenant in os.getenv(TENANTS_ENV, "").split(",") if tenant.strip()]
+
+
 dag_params = {
-    "case_ids": Param(
+    "task_ids": Param(
+        [],
         type="array",
         items={"type": "integer"},
-        minItems=1,
-        title="Case ids",
+        title="Alignment task ids",
         description=(
-            "`cases.id` values. Germline only; a somatic id is rejected. The tenant is read off "
-            "the cases, so they must all belong to the same one."
+            "`alignment_germline_variant_calling` task ids, for a targeted rerun. Leave empty -- "
+            "as a scheduled run does -- to process every case that has been aligned but never "
+            "annotated. A task shared by several cases runs all of them."
+        ),
+    ),
+    "tenants": Param(
+        _default_tenants(),
+        type="array",
+        items={"type": "string"},
+        title="Tenant allow-list",
+        description=(
+            "Tenants the portal has granted this service account `ingest_data` on. Cases in any "
+            "other tenant are excluded before the pipeline runs, rather than failing at "
+            f"registration. Defaults to ${TENANTS_ENV}; empty means no filtering."
         ),
     ),
     "dry_run": Param(
-        True,
+        False,
         type="boolean",
         title="Dry run the registration",
         description=(
-            "When enabled the batch PATCH validates and writes nothing. Run once this way first: "
-            "the report names every failure with its code and path."
+            "When enabled the batch PATCH validates and writes nothing, and the report names "
+            "every failure with its code and path. Note that a dry run leaves every case "
+            "eligible, so a *scheduled* run must not use it."
         ),
     ),
 }
@@ -99,12 +136,14 @@ def _workspace_env() -> dict[str, str]:
     dag_display_name="Radiant - Nextflow Post-processing (from Cases)",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-    schedule=None,
+    schedule="@daily",
     catchup=False,
-    # The pipeline DAG this triggers is max_active_runs=1 because concurrent drivers would
-    # share the FSx workspace. Serialising here too keeps the queue visible on the parent.
+    # This is the entire concurrency story, and it is why no lock or marker column is
+    # needed. A run that overruns a day makes the next one queue rather than start, and
+    # because discovery runs at the *start* of a run, the queued one re-queries after the
+    # previous has registered and sees the shorter list. Nothing is picked up twice.
     max_active_runs=1,
-    tags=["radiant", "nextflow", "manual"],
+    tags=["radiant", "nextflow"],
     params=dag_params,
     doc_md=load_docs_md("nextflow_postprocessing_cases.md"),
     render_template_as_native_obj=True,
@@ -112,46 +151,89 @@ def _workspace_env() -> dict[str, str]:
 )
 def nextflow_postprocessing_cases():
     # The clinical tables are one shared schema behind the `radiant_jdbc` catalog, not one
-    # per tenant, and `cases.id` is a single-column primary key over all of it -- so the case
-    # ids alone scope the result, and the tenant comes back with the rows. Nothing here
-    # needs RADIANT_TENANT_CODE.
-    query_parameters = {"case_ids": "{{ params.case_ids }}"}
-
-    fetch_members = RadiantStarRocksOperator(
-        task_id="fetch_members",
-        task_display_name="[StarRocks] Fetch case members",
-        sql="./sql/clinical/case_members_select.sql",
-        parameters=query_parameters,
+    # per tenant, and `cases.id` is a single-column primary key over all of it -- so the
+    # tenant comes back with the rows rather than scoping the query. Nothing here needs
+    # RADIANT_TENANT_CODE.
+    discover_scope = RadiantStarRocksOperator(
+        task_id="discover_scope",
+        task_display_name="[StarRocks] Discover cases pending annotation",
+        sql="./sql/clinical/pending_annotation_select.sql",
+        parameters={
+            "task_ids": "{{ params.task_ids }}",
+            "tenants": "{{ params.tenants }}",
+        },
         output_processor=rows_output_processor,
         do_xcom_push=True,
     )
+
+    @task(task_id="select_cases", task_display_name="[PyOp] Select the cases that can run")
+    def select_cases(member_rows: Any) -> Any:
+        """Keep what can run, report what cannot, and skip the run if nothing can."""
+        from airflow.exceptions import AirflowSkipException
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.nextflow.resolve import select_cases as select
+
+        context = get_current_context()
+        requested = list(context["params"]["task_ids"] or [])
+        # Named tasks are an operator's request, so a case that cannot be resolved is an
+        # error. A discovered scope is the job's own doing, so it is a line in a report.
+        selection = select(member_rows, requested, strict=bool(requested))
+
+        if not selection.case_ids:
+            raise AirflowSkipException(
+                f"nothing to run: {len(selection.excluded)} candidate case(s) discovered, all excluded"
+            )
+
+        LOGGER.info(
+            "%d case(s) selected across tenant(s) %s: %s",
+            len(selection.case_ids),
+            ", ".join(selection.tenants),
+            ", ".join(str(case_id) for case_id in selection.case_ids),
+        )
+        return {
+            "case_ids": selection.case_ids,
+            "members": [m.model_dump() for m in selection.members],
+            "excluded": [e.model_dump() for e in selection.excluded],
+        }
+
+    selection = select_cases(discover_scope.output)
 
     fetch_phenotypes = RadiantStarRocksOperator(
         task_id="fetch_phenotypes",
         task_display_name="[StarRocks] Fetch case phenotypes",
         sql="./sql/clinical/case_phenotypes_select.sql",
-        parameters=query_parameters,
+        parameters={"case_ids": "{{ ti.xcom_pull(task_ids='select_cases')['case_ids'] }}"},
         output_processor=rows_output_processor,
         do_xcom_push=True,
     )
 
     @task(task_id="resolve_cases", task_display_name="[PyOp] Resolve cases to families")
-    def resolve_cases(member_rows: Any, phenotype_rows: Any) -> Any:
-        """Group and validate. Every check here fails the run rather than producing a
-        plausible-but-wrong samplesheet, which would only surface hours into the pipeline."""
-        from airflow.operators.python import get_current_context
-
+    def resolve_cases(selected: Any, phenotype_rows: Any) -> Any:
         from radiant.tasks.nextflow.resolve import resolve_families
 
-        context = get_current_context()
-        families = resolve_families(member_rows, phenotype_rows, context["params"]["case_ids"])
+        families = resolve_families(selected["members"], phenotype_rows)
         LOGGER.info(
-            "resolved %d case(s) in tenant '%s': %s",
+            "resolved %d case(s) in tenant(s) %s: %s",
             len(families),
-            families[0].tenant_code,
+            ", ".join(sorted({f.tenant_code for f in families})),
             ", ".join(f"{f.family_id} ({len(f.members)} member(s), {f.sequencing_type})" for f in families),
         )
         return [f.model_dump() for f in families]
+
+    @task(task_id="list_tenants", task_display_name="[PyOp] List the tenants to register into")
+    def list_tenants(families: Any) -> Any:
+        """One batch PATCH per tenant, and one mapped `register_tasks` per batch.
+
+        Mapped rather than one task looping: PATCH *appends*, so a single task that failed
+        halfway and was retried would double-register every tenant that had already
+        succeeded -- a second annotation task per case, pointing at the same outputs and
+        indistinguishable from a legitimate re-run. Mapping gives per-tenant retry for free.
+        """
+        from radiant.tasks.nextflow.model import Family
+        from radiant.tasks.nextflow.resolve import tenants_of
+
+        return tenants_of([Family(**f) for f in families])
 
     @task(task_id="generate_inputs", task_display_name="[PyOp] Generate samplesheet, PED, phenopackets")
     def generate_inputs(families: Any) -> Any:
@@ -238,8 +320,12 @@ def nextflow_postprocessing_cases():
             return collected
         raise last_error
 
-    @task(task_id="register_tasks", task_display_name="[PyOp] Register tasks in the portal")
-    def register_tasks(families: Any, collected: Any) -> Any:
+    @task(
+        task_id="register_tasks",
+        task_display_name="[PyOp] Register tasks in the portal",
+        max_active_tis_per_dagrun=1,
+    )
+    def register_tasks(tenant: str, families: Any, collected: Any) -> Any:
         import json
 
         from airflow.exceptions import AirflowFailException, AirflowNotFoundException
@@ -249,14 +335,14 @@ def nextflow_postprocessing_cases():
         from radiant.tasks.nextflow.batch import build_patch_body
         from radiant.tasks.nextflow.model import Family
         from radiant.tasks.nextflow.portal import fetch_token, patch_case_batch, wait_for_batch
-        from radiant.tasks.nextflow.resolve import tenant_of
 
         context = get_current_context()
         dry_run = context["params"]["dry_run"]
-        parsed = [Family(**f) for f in families]
-        # The tenant the cases themselves carry, not one someone typed at trigger time --
-        # so the batch can only ever be addressed where the data actually came from.
-        tenant = tenant_of(parsed)
+        # This tenant's share of the run. The tenant comes off the cases themselves, so a
+        # batch can only ever be addressed where its data actually came from.
+        parsed = [Family(**f) for f in families if f["tenant_code"] == tenant]
+        if not parsed:
+            raise AirflowFailException(f"no resolved case belongs to tenant '{tenant}'")
 
         try:
             conn = BaseHook.get_connection(PORTAL_CONN_ID)
@@ -286,8 +372,13 @@ def nextflow_postprocessing_cases():
         token = fetch_token(extra["token_url"], conn.login, conn.password, extra.get("scope"))
         batch_id = patch_case_batch(conn.host, tenant, token, body, dry_run)
         LOGGER.info("batch id: %s", batch_id)
+        # Returning green here would be the worst outcome available: nothing registered, so
+        # the cases stay eligible and the pipeline redoes them tomorrow, and the night after.
         if not batch_id:
-            return None
+            raise AirflowFailException(
+                f"the portal accepted the batch for tenant '{tenant}' but reported no batch id, "
+                f"so nothing can be confirmed as registered"
+            )
 
         report = wait_for_batch(conn.host, tenant, token, batch_id)
         LOGGER.info("batch report:\n%s", json.dumps(report, indent=2, default=str)[:8000])
@@ -295,7 +386,7 @@ def nextflow_postprocessing_cases():
             raise AirflowFailException(f"batch {batch_id} did not succeed: status={report.get('status')}")
         return report
 
-    families = resolve_cases(fetch_members.output, fetch_phenotypes.output)
+    families = resolve_cases(selection, fetch_phenotypes.output)
     paths = generate_inputs(families)
 
     run_pipeline = TriggerDagRunOperator(
@@ -317,8 +408,9 @@ def nextflow_postprocessing_cases():
     )
 
     collected = collect_outputs(families, paths)
-    register_tasks(families, collected)
+    register_tasks.partial(families=families, collected=collected).expand(tenant=list_tenants(families))
 
+    selection >> fetch_phenotypes
     paths >> run_pipeline >> collected
 
 
