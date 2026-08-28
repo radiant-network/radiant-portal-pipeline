@@ -5,6 +5,53 @@ StarRocks database, without producing any models. Generic and singular
 tests assert null-safety, uniqueness, accepted values, and cross-field
 invariants on tables.
 
+## Multi-tenancy
+
+Radiant's tables live in **two** kinds of database, so this project declares
+**two dbt sources** — which one a table belongs to is decided by
+`STARROCKS_RADIANT_PER_TENANT_MAPPING` in
+`radiant/tasks/data/radiant_tables.py`, the authority for the split:
+
+| source | schema env var | holds |
+| ------ | -------------- | ----- |
+| `radiant` | `SR_SCHEMA` | open data, `snv__consequence*`, staging — one shared copy |
+| `tenant_db` | `SR_TENANT_SCHEMA` | `germline__snv__occurrence`, `somatic__snv__occurrence`, `germline__cnv__occurrence`, `somatic__cnv__occurrence`, `snv__variant`, `exomiser` — one copy per tenant, in `{tenant}_tenant` |
+
+dbt resolves `source.schema` at **parse time**, one value per invocation, so a
+single `dbt test` cannot fan a source across N tenant databases. The suite
+therefore runs **1 + N passes**:
+
+```
+pass 0  shared    dbt test --exclude source:tenant_db
+pass i  <tenant>  dbt test --select  source:tenant_db   (SR_TENANT_SCHEMA=<tenant>_tenant)
+```
+
+`scripts/run_qa.py` drives that loop and merges the passes into the single
+`target/run_results.json` + `reports/junit.xml` pair the pipeline expects. The
+split is what buys the **selection**: without it, the ~120 shared assertions
+would re-run once per tenant.
+
+The two selectors are complementary and disjoint (dbt's default *eager*
+indirect selection), so every test node runs in exactly one pass. A test that
+joins a per-tenant table to a shared one — e.g.
+`snv_consequence_filter_partitioned__validate_completeness_vs_snv_consequence`
+— is pulled out of the shared pass and into the tenant pass, which is where it
+belongs: it is a per-tenant assertion.
+
+**Which source does a new test belong to?** Whichever source its table is
+declared under. A test that touches *both* needs no special handling — it lands
+in the tenant pass automatically. But mind the direction: an assertion from a
+shared table *into* a per-tenant one is generally invalid, because each tenant's
+tables hold only that tenant's rows (see SJRA-1754). The reverse — per-tenant
+into shared — is fine, and becomes a genuine cross-database join.
+
+Verify the partition after touching any source declaration:
+
+```bash
+dbt ls --resource-type test --select source:tenant_db   # per-tenant assertions
+dbt ls --resource-type test --exclude source:tenant_db  # shared assertions
+```
+
 ## Test Categories
 
 | Category                       | dbt implementation                              |
@@ -122,18 +169,50 @@ export DBT_PROFILES_DIR=$(pwd)
 export DBT_SEND_ANONYMOUS_USAGE_STATS=false
 ```
 
+Two more vars drive the per-tenant passes (see [Multi-tenancy](#multi-tenancy)):
+
+- `SR_TENANT_SCHEMA` — the tenant database a single `dbt` invocation reads.
+  Defaults to `SR_SCHEMA`, which is only useful for parsing: the per-tenant
+  tables do not exist in the base database.
+- `TENANTS` — JSON consumed by `scripts/run_qa.py`, one extra pass per entry:
+
+  ```json
+  [{"code": "chusj", "schema": "chusj_tenant"}, {"code": "chop", "schema": "chop_tenant"}]
+  ```
+
+  The **schema is passed in already resolved**, never rebuilt from the code:
+  the database name comes from `RADIANT_TENANT_DB_TEMPLATE`, which is
+  configurable, and Airflow owns that resolution.
+
 ## Run
 
 ```bash
 # Sanity check connection
 dbt debug
 
-# Run all data tests
-dbt test
+# Run the shared (open data / base) assertions only
+dbt test --exclude source:tenant_db
+
+# Run the per-tenant assertions against one tenant
+SR_TENANT_SCHEMA=chusj_tenant dbt test --select source:tenant_db
 
 # Scope to one table (list available tables with the command below)
-dbt test --select source:radiant.<table>
-dbt list --resource-type source     # shows every source:radiant.<table>
+dbt test --select source:radiant.<table>          # shared table
+dbt test --select source:tenant_db.<table>   # per-tenant table
+dbt list --resource-type source                   # shows every source:<source>.<table>
+```
+
+A bare `dbt test` runs both sources in one invocation, against a single schema
+— which is wrong for the per-tenant tables unless every tenant happens to live
+in `SR_TENANT_SCHEMA`. Use `./scripts/run_qa.sh` instead, which does the full
+1 + N loop:
+
+```bash
+# shared pass only
+./scripts/run_qa.sh
+
+# shared pass + one tenant
+TENANTS='[{"code":"chusj","schema":"chusj_tenant"}]' ./scripts/run_qa.sh
 ```
 
 dbt writes detailed results to `target/run_results.json`. Each failing test
@@ -147,7 +226,7 @@ data_qa/
 ├── macros/    # custom generic tests + dictionaries.sql
 ├── sources/   # source + generic-test declarations, one YAML per table
 ├── tests/     # singular tests (cross-field invariants), one SQL per check
-├── scripts/   # dbt test runner + JUnit conversion (CI-ready)
+├── scripts/   # 1+N dbt runner + JUnit conversion (CI-ready)
 ├── reports/   # generated JUnit XML (gitignored) for TestQuality
 └── models/    # empty by design
 ```
@@ -158,8 +237,10 @@ Root also holds the usual dbt config (`dbt_project.yml`, `profiles.yml`,
 ## Adding tests for another table
 
 1. Add a `sources/<table_name>.yml` file (one per table, named after it).
-   Each declares the shared `radiant` source with a single table — dbt merges
-   tables across files as long as no `(source, table)` pair is duplicated.
+   Each declares a single table under either the `radiant` or the
+   `tenant_db` source — see [Multi-tenancy](#multi-tenancy) for which one,
+   and copy the header from an existing file of that kind. dbt merges tables
+   across files as long as no `(source, table)` pair is duplicated.
 2. List its columns with the relevant generic tests, and/or attach
    `should_not_contain_only_null` / `should_not_contain_same_value` at the
    table level with an appropriate `except` list. For an `accepted_values` /
@@ -183,16 +264,29 @@ the format that test dashboards (TestQuality, CI test reporters, ...) ingest.
   `warn → <system-out>`, `pass → bare <testcase>`. A data-test failure is
   encoded in the XML, **not** treated as a script failure — the run only
   "fails" if dbt couldn't execute at all (e.g. no connection).
-- **`scripts/run_qa.sh`** — the reusable core: `dbt test` + JUnit conversion.
-  Assumes StarRocks is already reachable (VPN, tunnel, or in-cluster runner).
-  **Reused verbatim in CI.**
+  A result carrying a `tenant` is named `<test>[tenant=<code>]`, the standard
+  parametrized-test convention: a per-tenant assertion keeps the same dbt
+  `unique_id` in every pass (the schema only ever appears in `compiled_code`),
+  so without the suffix the cases would collide and "which tenant failed" would
+  be lost.
+- **`scripts/run_qa.py`** — runs dbt once per pass (see
+  [Multi-tenancy](#multi-tenancy)), stamps the tenant onto every result, and
+  merges the passes into one `run_results.json` before converting. A failing
+  tenant does **not** abort the loop — tenant B is still worth testing when
+  tenant A's database is broken — but a pass that produced no artifact at all
+  is recorded as an `error` result rather than silently vanishing. Per-pass raw
+  artifacts are kept under `target/run_results/<label>.json` for debugging.
+- **`scripts/run_qa.sh`** — the reusable core: environment setup (venv, `.env`,
+  profiles dir) then `run_qa.py`. Assumes StarRocks is already reachable (VPN,
+  tunnel, or in-cluster runner). **Reused verbatim in CI**, and by the Airflow
+  pipeline via `scripts/dbt/entrypoint.py`.
 
 ### Generating the report
 
 With connectivity to StarRocks established (see Configuration above):
 
 ```bash
-./scripts/run_qa.sh        # dbt test + writes reports/junit.xml
+./scripts/run_qa.sh        # 1+N dbt passes + writes reports/junit.xml
 ```
 
 ### Import into TestQuality
@@ -203,7 +297,7 @@ later step.
 
 ### What carries over to CI
 
-`profiles.yml` (env-var driven), the dbt project, `run_qa.sh`, and
+`profiles.yml` (env-var driven), the dbt project, `run_qa.sh`, `run_qa.py` and
 `run_results_to_junit.py` are reused **as-is**. CI replaces only the glue:
 connectivity (dropped if the runner is in-cluster, or configured via CI
 secrets otherwise), the scheduler (CI `schedule:` trigger), and the report

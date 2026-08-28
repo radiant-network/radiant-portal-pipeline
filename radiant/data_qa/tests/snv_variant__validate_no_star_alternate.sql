@@ -9,5 +9,5 @@ select
     start,
     reference,
     alternate
-from {{ source('radiant', 'snv__variant') }}
+from {{ source('tenant_db', 'snv__variant') }}
 where alternate = '*'

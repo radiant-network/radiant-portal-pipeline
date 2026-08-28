@@ -19,6 +19,7 @@ def test_get_run_dbt():
         op = CheckDataIntegrity.get_run_dbt(
             run_results_s3_uri="s3://bucket/dbt-qa/run1/run_results.json",
             junit_s3_uri="s3://bucket/dbt-qa/run1/junit.xml",
+            tenants='[{"code": "chusj", "schema": "chusj_tenant"}]',
         )
 
     assert op.task_id == "run_dbt"
@@ -40,6 +41,8 @@ def test_get_run_dbt():
     env = {e.name: e.value for e in op.env_vars}
     assert env["RUN_RESULTS_S3_URI"] == "s3://bucket/dbt-qa/run1/run_results.json"
     assert env["JUNIT_S3_URI"] == "s3://bucket/dbt-qa/run1/junit.xml"
+    # Drives the per-tenant dbt passes inside the container.
+    assert env["TENANTS"] == '[{"code": "chusj", "schema": "chusj_tenant"}]'
     assert env["AWS_REGION"] == "ca-central-1"
     assert env["AWS_ACCESS_KEY_ID"] == "my-access-key"
     assert env["AWS_SECRET_ACCESS_KEY"] == "my-secret-key"

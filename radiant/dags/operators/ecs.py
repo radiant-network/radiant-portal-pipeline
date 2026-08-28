@@ -262,7 +262,7 @@ class CheckDataIntegrity:
     a Docker image specific to dbt instead of the standard radiant-task image."""
 
     @staticmethod
-    def get_run_dbt(run_results_s3_uri: str, junit_s3_uri: str, ecs_env: ECSEnv):
+    def get_run_dbt(run_results_s3_uri: str, junit_s3_uri: str, tenants: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator(
             task_id="run_dbt",
             task_display_name="[ECS] Run dbt data tests",
@@ -280,6 +280,8 @@ class CheckDataIntegrity:
                         "environment": [
                             {"name": "RUN_RESULTS_S3_URI", "value": run_results_s3_uri},
                             {"name": "JUNIT_S3_URI", "value": junit_s3_uri},
+                            # JSON list of {"code", "schema"}: one extra dbt pass per entry.
+                            {"name": "TENANTS", "value": tenants},
                         ],
                     }
                 ]
