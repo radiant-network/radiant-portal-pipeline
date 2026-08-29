@@ -1,6 +1,6 @@
 # Automating Nextflow post-processing — specification
 
-**Status:** implemented on `feat/sjra-1857`. Behaviour is settled; the technical detail is deliberately
+**Status:** implemented on `feat/sjra-1698`. Behaviour is settled; the technical detail is deliberately
 left to the developer. The closing section lists what is still open.
 
 **Audience:** dev, QA, product owner.
@@ -10,7 +10,7 @@ left to the developer. The closing section lists what is still open.
 model and the "one task, several cases" trade-off), `radiant/dags/docs/nextflow_postprocessing_cases.md`
 (the operator runbook).
 
-**Ticket number is provisional.** The active band is SJRA-18xx; confirm before merging.
+**Related ticket:** SJRA-1698.
 
 ---
 

@@ -30,7 +30,7 @@ outputs, where `run_tag` comes from `run_id`. That gives each run its own output
 which matters because re-running a case adds a second analysis alongside the first rather
 than replacing it.
 
-Full analysis: `design/SJRA-1857-nextflow-postprocessing-automation.md`, which builds on
+Full analysis: `design/SJRA-1698-nextflow-postprocessing-automation.md`, which builds on
 `design/SJRA-1843-nextflow-postprocessing-from-cases.md`.
 """
 

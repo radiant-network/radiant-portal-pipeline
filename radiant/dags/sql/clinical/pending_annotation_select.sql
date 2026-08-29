@@ -1,28 +1,20 @@
 -- One row per (candidate germline case, family member): the member's *current* sequencing
--- experiment, the gVCF of that experiment's *current* alignment, and -- when the case
--- cannot be run -- why.
+-- experiment, the gVCF of that experiment's *current* alignment, and why the case cannot
+-- run if it cannot.
 --
 -- Consumed by `radiant-nextflow-postprocessing-cases` (discover_scope). Full analysis:
--- `design/SJRA-1857-nextflow-postprocessing-automation.md`.
+-- `design/SJRA-1698-nextflow-postprocessing-automation.md`.
 --
--- This one statement answers two questions that must never be answered separately: which
--- cases are waiting for an annotation, and which sequencing experiment stands for each
--- member. If the first considered every experiment while the second used only one, a
--- superseded experiment would keep its case eligible for ever and the DAG would re-run it
--- every night (SJRA-1857 5.1). Splitting this into a discovery query and a members query
--- would reintroduce exactly that drift, which is why they are one query.
+-- One statement on purpose: it decides both which cases are pending and which experiment
+-- stands for each member. Split in two, those definitions drift and a superseded experiment
+-- keeps its case eligible for ever (SJRA-1698 5.1).
 --
--- No tenant filter and no case filter. The clinical tables are a single shared schema
--- behind the `radiant_jdbc` catalog -- not one schema per tenant -- and `cases.id` is a
--- plain single-column identity primary key over all of it, with `tenant_code` only an
--- attribute. The tenant is therefore returned rather than asked for. `params.tenants`,
--- when set, is a *grant* list, not a scope: it marks cases the service account may not
--- write to so they never reach the pipeline, rather than narrowing what is looked at.
+-- The tenant is returned, not filtered on: clinical is one shared schema and `cases.id` is
+-- unique across it. `params.tenants` is a grant list, not a scope -- it marks cases the
+-- service account may not write to, rather than narrowing what is looked at.
 WITH germline_case AS (
-    -- `revoke` is deliberately absent. In the field a revoked case is very often precisely
-    -- a case left without an annotation on purpose, so admitting it here would resurrect
-    -- every one of them nightly. `staging_external_sequencing_experiment` filters the same
-    -- way for the same reason.
+    -- `revoke` excluded deliberately: a revoked case is often one left un-annotated on
+    -- purpose, and admitting it would resurrect every one of them nightly.
     SELECT c.id                AS case_id,
            c.submitter_case_id AS submitter_case_id,
            c.primary_condition AS primary_condition,
@@ -33,16 +25,9 @@ WITH germline_case AS (
       AND c.status_code IN ('in_progress', 'completed')
 ),
 current_experiment AS (
-    -- Exactly one sequencing experiment per (case, member): the newest `completed` one.
-    --
-    -- This is the whole supersession policy. A member re-sequenced after a contamination
-    -- has two experiments linked to the case; taking both would put a person in the PED
-    -- twice -- silently, when that person is a parent -- and taking one here while the
-    -- eligibility test below considered both would never converge. One definition, used by
-    -- both, is what makes either failure impossible.
-    --
-    -- `completed` is a whitelist, not a `revoke` blacklist: sequencing that is not finished
-    -- is not a candidate, whatever the reason it is not finished.
+    -- The supersession policy: one `completed` experiment per (case, member), newest wins.
+    -- A re-sequenced member otherwise appears twice -- silently, when that member is a
+    -- parent. `completed` is a whitelist: unfinished sequencing is not a candidate.
     SELECT case_id, patient_id, seq_id, sample_id, aliquot, strategy
     FROM (
         SELECT chse.case_id                  AS case_id,
@@ -64,12 +49,10 @@ current_experiment AS (
     WHERE rn = 1
 ),
 current_alignment AS (
-    -- The same policy, one level down: a sequencing experiment re-aligned after an error
-    -- carries two alignment tasks. Taking the newest is what lets `gvcf_matches` below mean
-    -- one thing instead of two -- see the note on `gvcf`.
+    -- Same policy one level down: a re-aligned experiment carries two alignment tasks.
     --
-    -- Joined through `sequencing_experiment_id`, never through `task_context.case_id`:
-    -- alignment tasks carry a null `case_id`, so a join on it returns nothing at all.
+    -- Joined through `sequencing_experiment_id`, never `task_context.case_id`: alignment
+    -- tasks carry a null case_id, so joining on it returns an empty set, not an error.
     SELECT seq_id, task_id
     FROM (
         SELECT tc.sequencing_experiment_id AS seq_id,
@@ -85,14 +68,12 @@ current_alignment AS (
     WHERE rn = 1
 ),
 gvcf AS (
-    -- Counted over ONE alignment task, which is what makes the count diagnostic. Before
-    -- `current_alignment` existed, two gVCFs could mean either a legitimate re-alignment or
-    -- an index document mistyped as `format_code = 'gvcf'`, and the error message had to
-    -- guess. Now more than one gVCF on a single task can only be the mistyped document.
+    -- Counted over ONE task, which is what makes the count diagnostic: across every
+    -- alignment two gVCFs could be a re-alignment or a mistyped index, and the error had to
+    -- guess. Over the current task alone it can only be the mistyped document.
     --
-    -- Selected on the document's own type fields, never on its filename: naming conventions
-    -- differ between callers. The germline code is `snv` (`ssnv` is somatic); the
-    -- `data_type` dictionary has no `gsnv`.
+    -- Selected on the document's type fields, never its filename -- conventions differ
+    -- between callers. Germline is `snv` (`ssnv` is somatic); there is no `gsnv`.
     SELECT ca.seq_id             AS seq_id,
            ca.task_id            AS task_id,
            MAX(d.url)            AS url,
@@ -106,9 +87,9 @@ gvcf AS (
     GROUP BY ca.seq_id, ca.task_id
 ),
 annotated AS (
-    -- Scoped to the case, not only to the experiment. Annotation tasks *do* carry a
-    -- `case_id` -- registration knows which case it wrote to -- and that is what keeps a
-    -- shared sequencing experiment honest: annotating case 1 must not make case 2 look done.
+    -- Scoped to the case, not just the experiment. Annotation tasks do carry a case_id, and
+    -- that is what keeps a shared experiment honest: annotating case 1 must not make case 2
+    -- look done.
     SELECT DISTINCT tc.case_id                    AS case_id,
                     tc.sequencing_experiment_id   AS seq_id
     FROM {{ mapping.clinical_task }} t
@@ -117,13 +98,11 @@ annotated AS (
       AND tc.case_id IS NOT NULL
 ),
 candidate AS (
-    -- A case is a candidate when at least one member's current experiment has a gVCF from
-    -- its current alignment and carries no annotation for that same (case, experiment).
+    -- At least one member's current experiment has a gVCF and no annotation for that pair.
     --
-    -- Note what is deliberately *not* a candidate: a case where no member has a gVCF at all.
-    -- Those were joint-called upstream, are permanently out of scope, and reporting them
-    -- every night would be noise. `no_gvcf` below therefore only ever describes a member of
-    -- a case that is otherwise ready to run -- which is the case worth acting on.
+    -- A case where *no* member has a gVCF is deliberately not a candidate: joint-called
+    -- upstream, permanently out of scope, and reporting it nightly would be noise. So
+    -- `no_gvcf` below only ever describes a member of a case that is otherwise ready.
     SELECT DISTINCT ce.case_id AS case_id
     FROM current_experiment ce
     JOIN gvcf g          ON g.seq_id = ce.seq_id
@@ -131,7 +110,8 @@ candidate AS (
                          AND a.seq_id  = ce.seq_id
     WHERE a.seq_id IS NULL
     {% if params.task_ids %}
-      -- A manual, targeted run: only cases made candidate by these alignment tasks.
+      -- Targeted rerun: narrows candidacy, never membership -- every member of a matched
+      -- case still comes back.
       AND g.task_id IN %(task_ids)s
     {% endif %}
 )
@@ -152,14 +132,9 @@ SELECT gc.case_id                      AS case_id,
        g.task_id                       AS alignment_task_id,
        g.url                           AS gvcf_url,
        COALESCE(g.matches, 0)          AS gvcf_matches,
-       -- Why this case cannot be run, or NULL. Ordered most-specific-first: a member with
-       -- no experiment at all has no alignment either, and saying so would be less useful
-       -- than saying it has not been sequenced yet.
-       --
-       -- The two `pending_*` reasons are transient by design and are not errors. A member
-       -- whose newest experiment has no alignment yet makes the case *wait* rather than run
-       -- against the superseded one -- an annotation that would be obsolete the moment it
-       -- landed.
+       -- Most specific first: a member with no experiment has no alignment either, and
+       -- saying so is less useful. The two `pending_*` reasons are transient, not errors --
+       -- they make the case wait rather than run against a superseded experiment.
        CASE
            WHEN ce.seq_id  IS NULL THEN 'pending_sequencing'
            WHEN ca.task_id IS NULL THEN 'pending_alignment'
@@ -175,19 +150,15 @@ FROM germline_case gc
 JOIN candidate cd                             ON cd.case_id = gc.case_id
 JOIN {{ mapping.clinical_family }} f          ON f.case_id = gc.case_id
 JOIN {{ mapping.clinical_patient }} p         ON p.id = f.family_member_id
--- LEFT, all three: a member with no completed experiment, no alignment or no gVCF must come
--- back carrying its reason rather than vanishing. A family silently short one member is the
--- one failure mode worth more than the rest put together.
+-- LEFT, all three: a member with no experiment, alignment or gVCF must come back carrying
+-- its reason. A family silently short one member is the worst failure available here.
 LEFT JOIN current_experiment ce               ON ce.case_id = gc.case_id
                                              AND ce.patient_id = p.id
 LEFT JOIN current_alignment ca                ON ca.seq_id = ce.seq_id
 LEFT JOIN gvcf g                              ON g.seq_id = ce.seq_id
--- On the primary key alone. `cases.project_id` is a foreign key to `project.id`, so this
--- resolves to exactly one row; `project.code` is globally unique, and a project row carries
--- a single tenant_code that need not equal the case's. Adding `AND pr.tenant_code =
--- gc.tenant_code` therefore cannot narrow a genuine ambiguity -- there is none -- and can
--- only turn a match into a NULL. project_code is what the batch PATCH looks a case up by,
--- together with submitter_case_id, and it is mandatory there.
+-- On the primary key alone. `project.code` is globally unique and a project's tenant_code
+-- need not equal the case's, so `AND pr.tenant_code = gc.tenant_code` could only turn a
+-- match into a NULL. The batch PATCH looks a case up by (project_code, submitter_case_id).
 LEFT JOIN {{ mapping.clinical_project }} pr   ON pr.id = gc.project_id
 ORDER BY gc.case_id,
          CASE f.relationship_to_proband_code

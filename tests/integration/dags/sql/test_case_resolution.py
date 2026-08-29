@@ -6,7 +6,7 @@ that parameter binding survives `cursor.execute(sql, parameters)`.
 
 Case 16 in the seeds is the happy path: a proper trio, proband 44 with father 45 and mother
 46, each with a `completed` sequencing experiment, an alignment task and a gVCF, and no
-annotation. The remaining shapes of SJRA-1857 6 do not exist in the seeds and are built by
+annotation. The remaining shapes of SJRA-1698 6 do not exist in the seeds and are built by
 `supersession_fixtures` below, on ids far above the seeded range so nothing else shifts.
 """
 
