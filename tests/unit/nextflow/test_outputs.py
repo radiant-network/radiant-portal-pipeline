@@ -8,7 +8,7 @@ OUTDIR = "s3://qlin-nextflow-outputs/manual__2026-08-21T12-00-00"
 
 @pytest.fixture
 def trio(trio_rows, phenotype_rows):
-    return resolve_families(trio_rows, phenotype_rows, [1072])[0]
+    return resolve_families(trio_rows, phenotype_rows)[0]
 
 
 @pytest.fixture
