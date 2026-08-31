@@ -15,11 +15,35 @@ a base table land in the tenant pass, which is where they belong.
 
 Tenants come from the ``TENANTS`` env var, as JSON emitted by the DAG:
 
-    TENANTS=[{"code": "chusj", "schema": "chusj_tenant"}, ...]
+    TENANTS=[{"code": "chusj", "schema": "chusj_tenant", "reference": true},
+             {"code": "chop",  "schema": "chop_tenant",
+              "absent_tables": ["somatic__snv__occurrence"]}, ...]
 
 Each tenant's *database* is resolved Airflow-side (``RADIANT_TENANT_DB_TEMPLATE`` is
 configurable), so this module never rebuilds the name itself. Absent or empty ``TENANTS``
 means "shared pass only" — the behaviour of a plain local run.
+
+Two optional keys shape a tenant's pass:
+
+``reference``
+    Runs the *whole* per-tenant suite. The semantic assertions — the column sweeps,
+    ranges and dictionaries — exercise SQL that is byte-identical for every tenant
+    (``snv_variant_insert.sql`` and friends), so replaying them per tenant re-tests the
+    same logic and, worse, reports cohort composition as a defect: a tenant with no
+    somatic cohort makes ``somatic_pc_tn_wgs`` constant, which is data shape, not a bug.
+    Non-reference tenants get the *tenant health* subset instead (see
+    ``TENANT_HEALTH_TEST_TYPES``) — the assertions that answer "did this tenant's
+    pipeline actually run and produce a coherent table?", which is the one thing no
+    other tenant's pass can tell you.
+
+``absent_tables``
+    Source tables this tenant legitimately does not have — a germline-only cohort has no
+    ``somatic__*`` occurrences. Declaring the tenant's *shape* once beats maintaining a
+    per-tenant exclusion list inside every test's ``except:``.
+
+If **no** entry declares ``reference``, every tenant runs the full suite — the behaviour
+before tiering existed. Marking a reference tenant is therefore opt-in and cannot silently
+narrow an existing pipeline's coverage.
 
 Exit codes match run_qa.sh's original contract:
     0  reports written (data-test failures are encoded in the XML, not treated as a
@@ -44,6 +68,24 @@ DATA_QA_DIR = Path(__file__).resolve().parent.parent
 # the `- name:` header of the per-tenant files in sources/.
 TENANT_SOURCE = "source:tenant_db"
 
+# Generic test *types* that make up the tenant health tier, selected by kind rather than
+# tagged one by one in the YAML: the tier is a pure function of the test type, and encoding
+# a derivable fact in ~40 places is how it rots. These assert structural integrity — keys
+# present, rows unique, references intact, table not empty — so they cannot be tripped by
+# cohort composition, and they are exactly what catches a tenant whose load ran partially
+# or not at all (SJRA-1550: snv__variant left stale against a rebuilt shared staging).
+TENANT_HEALTH_TEST_TYPES = (
+    "not_null",
+    "unique",
+    "unique_combination_of_columns",
+    "relationships",
+    "should_not_be_empty",
+)
+
+# Singular tests carry no test type to select on, so they opt into the tier explicitly with
+# `{{ config(tags=['tenant_health']) }}` in their .sql file.
+TENANT_HEALTH_TAG = "tenant_health"
+
 
 @dataclass(frozen=True)
 class Pass:
@@ -57,6 +99,25 @@ class Pass:
     select_args: list[str] = field(default_factory=list)
 
 
+def tenant_select_args(is_reference: bool, absent_tables: list[str]) -> list[str]:
+    """The `--select` / `--exclude` args for one tenant pass.
+
+    A reference tenant takes the whole per-tenant suite; the others take the health tier
+    only. Both then drop the tables the tenant does not have.
+    """
+    if is_reference:
+        selectors = [TENANT_SOURCE]
+    else:
+        # Comma = intersection within a selector, several selectors = union.
+        selectors = [f"{TENANT_SOURCE},test_name:{name}" for name in TENANT_HEALTH_TEST_TYPES]
+        selectors.append(f"{TENANT_SOURCE},tag:{TENANT_HEALTH_TAG}")
+
+    args = ["--select", *selectors]
+    if absent_tables:
+        args += ["--exclude", *(f"{TENANT_SOURCE}.{table}" for table in absent_tables)]
+    return args
+
+
 def plan_passes(tenants_json: str | None, base_schema: str) -> list[Pass]:
     """Build the 1 + N pass list from the TENANTS env var."""
     passes = [Pass("shared", None, base_schema, ["--exclude", TENANT_SOURCE])]
@@ -64,6 +125,10 @@ def plan_passes(tenants_json: str | None, base_schema: str) -> list[Pass]:
     tenants = json.loads(tenants_json) if (tenants_json or "").strip() else []
     if not isinstance(tenants, list):
         raise ValueError(f"TENANTS must be a JSON list, got {type(tenants).__name__}.")
+
+    # No declared reference means no tiering: every tenant keeps the full suite, so adding
+    # this feature cannot narrow an existing pipeline's coverage behind the DAG's back.
+    tiered = any(isinstance(entry, dict) and entry.get("reference") for entry in tenants)
 
     for entry in tenants:
         try:
@@ -73,7 +138,13 @@ def plan_passes(tenants_json: str | None, base_schema: str) -> list[Pass]:
                 f"Each TENANTS entry needs a 'code' and a 'schema', got: {entry!r}. "
                 "The DAG resolves the schema via RADIANT_TENANT_DB_TEMPLATE."
             ) from exc
-        passes.append(Pass(code, code, schema, ["--select", TENANT_SOURCE]))
+
+        absent_tables = entry.get("absent_tables") or []
+        if not isinstance(absent_tables, list):
+            raise ValueError(f"'absent_tables' must be a JSON list of table names, got: {absent_tables!r}.")
+
+        select_args = tenant_select_args(not tiered or bool(entry.get("reference")), absent_tables)
+        passes.append(Pass(code, code, schema, select_args))
 
     return passes
 
