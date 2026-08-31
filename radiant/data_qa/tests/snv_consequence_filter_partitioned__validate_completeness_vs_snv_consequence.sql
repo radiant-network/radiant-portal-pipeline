@@ -14,6 +14,8 @@
 
 #}
 
+{{ config(tags=['tenant_health']) }}
+
 select
     o.part,
     o.locus_id

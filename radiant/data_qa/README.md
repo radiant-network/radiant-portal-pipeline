@@ -52,6 +52,68 @@ dbt ls --resource-type test --select source:tenant_db   # per-tenant assertions
 dbt ls --resource-type test --exclude source:tenant_db  # shared assertions
 ```
 
+### Two tiers inside the tenant pass
+
+Running all ~85 per-tenant assertions against every tenant costs more than it
+returns. The per-tenant tables are all built by the *same* SQL
+(`snv_variant_insert.sql` and friends), so the semantic assertions — the column
+sweeps, ranges and dictionaries — re-test identical logic on each pass. Worse,
+they report **cohort composition as a defect**: a tenant with no somatic cohort
+has a constant `somatic_pc_tn_wgs`, which `should_not_contain_same_value` cannot
+distinguish from a broken load. Measured on the two QA tenants, 7 of each pass's
+9 failures were the same tests, and the tenant-specific ones were all data shape.
+
+What a second tenant *does* buy is the thing no other tenant's pass can give
+you: proof that **this** tenant's pipeline ran and left a coherent table. That is
+a real failure mode — SJRA-1550 was `radiant_tenant.snv__variant` left stale
+against a shared staging table that had since been rebuilt. So the tenant pass
+splits in two:
+
+| tier | runs on | contains |
+| ---- | ------- | -------- |
+| **tenant health** | every tenant | `not_null`, `unique`, `unique_combination_of_columns`, `relationships`, `should_not_be_empty`, plus singular tests tagged `tenant_health` |
+| **semantic** | the reference tenant only | `should_not_contain_only_null`, `should_not_contain_same_value`, `should_be_within_range`, `accepted_values*`, the remaining singular tests |
+
+The health tier is selected **by test type**, not by tagging each test:
+`TENANT_HEALTH_TEST_TYPES` in `scripts/run_qa.py` lists the types, and
+`dbt ls --select "source:tenant_db,test_name:not_null"` is the shape of the
+resulting selector. The tier is a pure function of the test type, so writing it
+once beats copying `config: tags:` into ~40 YAML blocks that would then have to
+be kept correct. A **singular** test has no type to select on, so it opts in
+explicitly with `{{ config(tags=['tenant_health']) }}` at the top of its `.sql`
+— as `snv_consequence_filter_partitioned__validate_completeness_vs_snv_consequence`
+does, since a dropped partition is exactly a health question.
+
+Two optional keys in each `TENANTS` entry drive this:
+
+```json
+[{"code": "radiant", "schema": "radiant_tenant", "reference": true},
+ {"code": "onekg",   "schema": "onekg_tenant",
+  "absent_tables": ["somatic__snv__occurrence", "somatic__cnv__occurrence"]}]
+```
+
+- `reference` — this tenant runs the whole suite. Pick the **richest** dataset:
+  the semantic assertions only find what the data exercises.
+- `absent_tables` — tables this tenant legitimately does not have. Declaring the
+  tenant's *shape* once is what keeps per-tenant exclusions out of every test's
+  `except:` list, which is where they would rot.
+
+**If no entry declares `reference`, every tenant runs the full suite** — the
+behaviour from before tiering existed. Opting in is therefore explicit and
+cannot silently narrow an existing pipeline's coverage.
+
+Preview what a non-reference tenant will run:
+
+```bash
+dbt ls --resource-type test \
+  --select "source:tenant_db,test_name:not_null" \
+           "source:tenant_db,test_name:unique" \
+           "source:tenant_db,test_name:unique_combination_of_columns" \
+           "source:tenant_db,test_name:relationships" \
+           "source:tenant_db,test_name:should_not_be_empty" \
+           "source:tenant_db,tag:tenant_health"
+```
+
 ## Test Categories
 
 | Category                       | dbt implementation                              |
@@ -183,6 +245,9 @@ Two more vars drive the per-tenant passes (see [Multi-tenancy](#multi-tenancy)):
   The **schema is passed in already resolved**, never rebuilt from the code:
   the database name comes from `RADIANT_TENANT_DB_TEMPLATE`, which is
   configurable, and Airflow owns that resolution.
+
+  Entries also accept `reference` and `absent_tables` — see
+  [Two tiers inside the tenant pass](#two-tiers-inside-the-tenant-pass).
 
 ## Run
 

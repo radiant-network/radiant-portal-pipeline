@@ -63,11 +63,13 @@ sources:
               - not_null:
                   name: germline_snv_occurrence__should_not_contain_null__locus_id
               # --- Relationships ---------------------------------------------
-              # occurrence locus must exist in the snv__variant
+              # where: mirrors germline_snv_staging_variant_freq_insert.sql — keep in sync
               - relationships:
                   name: germline_snv_occurrence__relationships__locus_id__snv_variant
                   to: source('tenant_db', 'snv__variant')
                   field: locus_id
+                  config:
+                    where: "gq >= 20 and filter = 'PASS' and ad_alt > 3"
           - name: phased
             description: "BOOLEAN."
             tests:
