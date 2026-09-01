@@ -6,7 +6,7 @@ from radiant.tasks.iceberg.utils import merge_schemas
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.snv.common import SCHEMA as COMMON_SCHEMA
 from radiant.tasks.vcf.snv.common import Common
-from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT, calls_without_phased
+from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -144,15 +144,34 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
     haplotype_score = info_fields.get("HaplotypeScore", None)
     excess_het = info_fields.get("ExcessHet", None)
 
+    # Every cyvcf2 `gt_*` property and `format(...)` call re-decodes the FORMAT matrix for
+    # *all* samples and allocates a fresh array, so each one is read exactly once per record
+    # here rather than once per sample (or worse, twice per sample in the value-or-None
+    # expressions below). On a trio this halves the cost of the whole function.
+    fmt = record.FORMAT
+    dp_arr = record.format("DP") if "DP" in fmt else None
+    gq_arr = record.format("GQ") if "GQ" in fmt else None
+    gt_ref_depths = record.gt_ref_depths
+    gt_alt_depths = record.gt_alt_depths
+    gt_types = record.gt_types
+    gt_depths = record.gt_depths
+    gt_alt_freqs = record.gt_alt_freqs
+    gt_phases = record.gt_phases
+    genotypes = record.genotypes
+
     for idx, exp in enumerate(ped.experiments):
-        dp = record.format("DP")[idx][0] if "DP" in record.FORMAT else 0
-        gq = record.format("GQ")[idx][0] if "GQ" in record.FORMAT else 0
-        ad_ref = record.gt_ref_depths[idx] if record.gt_ref_depths[idx] > 0 else None
-        ad_alt = record.gt_alt_depths[idx] if record.gt_alt_depths[idx] > 0 else None
-        calls = calls_without_phased(record, idx)
-        calls, zygosity = adjust_calls_and_zygosity(calls, record.gt_types[idx], ad_ref, ad_alt)
+        dp = dp_arr[idx][0] if dp_arr is not None else 0
+        gq = gq_arr[idx][0] if gq_arr is not None else 0
+        sample_ad_ref = gt_ref_depths[idx]
+        sample_ad_alt = gt_alt_depths[idx]
+        ad_ref = sample_ad_ref if sample_ad_ref > 0 else None
+        ad_alt = sample_ad_alt if sample_ad_alt > 0 else None
+        calls = genotypes[idx][:-1]  # last element is the phased flag
+        calls, zygosity = adjust_calls_and_zygosity(calls, gt_types[idx], ad_ref, ad_alt)
 
         has_alt = 1 in calls
+        ad_total = gt_depths[idx]
+        ad_ratio = gt_alt_freqs[idx]
         occurrences[exp.seq_id] = {
             "task_id": common.task_id,
             "part": common.part,
@@ -194,9 +213,9 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
             "zygosity": zygosity,
             "ad_ref": ad_ref,
             "ad_alt": ad_alt,
-            "ad_total": record.gt_depths[idx] if record.gt_depths[idx] > 0 else None,
-            "ad_ratio": (record.gt_alt_freqs[idx] if record.gt_alt_freqs[idx] > 0 else None),
-            "phased": record.gt_phases[idx],
+            "ad_total": ad_total if ad_total > 0 else None,
+            "ad_ratio": ad_ratio if ad_ratio > 0 else None,
+            "phased": gt_phases[idx],
         }
 
     if ped.is_family:
