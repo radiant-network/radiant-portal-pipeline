@@ -70,7 +70,9 @@ FROM (
     WHERE task_id in %(task_ids)s
 ) c
 -- INNER, not LEFT: locus_id leads the target primary key and is NOT NULL, so unmatched rows cannot land.
-JOIN {{ mapping.starrocks_snv_tmp_variant }} v ON c.locus_hash = v.locus_hash
+-- [SHUFFLE] is required, not tuning: without it the planner may broadcast the Iceberg stream as the
+-- hash build side (51GB+ per node observed) and probe with the small table.
+JOIN [SHUFFLE] {{ mapping.starrocks_snv_tmp_variant }} v ON c.locus_hash = v.locus_hash
 -- Only this batch's loci can match: the colocate semi joins cut dbnsfp 239M -> ~101k, spliceai 80M -> ~14k.
 -- [BROADCAST] is required, not tuning: without it the ~600M-row stream becomes a RIGHT OUTER build side, ~120GB.
 LEFT JOIN [BROADCAST] (
@@ -85,5 +87,7 @@ LEFT JOIN [BROADCAST] (
     FROM {{ mapping.starrocks_spliceai }} s
     LEFT SEMI JOIN {{ mapping.starrocks_snv_tmp_variant }} tv ON s.locus_id = tv.locus_id
 ) sp ON v.locus_id = sp.locus_id AND sp.symbol = c.symbol
-LEFT JOIN {{ mapping.starrocks_gnomad_constraint }} gc
+-- [BROADCAST] is required, not tuning: without it the planner may invert this outer join and build
+-- on the full joined stream (28GB observed) instead of this ~20k-row table.
+LEFT JOIN [BROADCAST] {{ mapping.starrocks_gnomad_constraint }} gc
     ON gc.transcript_id = c.score_transcript_id
