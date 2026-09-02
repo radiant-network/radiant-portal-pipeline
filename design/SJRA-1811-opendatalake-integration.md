@@ -1,14 +1,5 @@
 # OpenDataLake → Radiant ETL integration
 
-| | |
-| --- | --- |
-| **Parent** | SJRA-581 — automatic public variant DB updates |
-| **Producer contract** | `radiant-open-datalake/doc/implementation-manuals/SJRA-1546-tables-evolution.md` (SJRA-1747) |
-| **StarRocks + Iceberg branches** | `radiant-open-datalake/doc/poc/SJRA-1519-Iceberg-Branching-Tagging/` |
-| **Blocked on** | SJRA-1818 (catalog access), SJRA-1803 (Ensembl); plus the in-house prerequisites in §7 |
-
----
-
 ## 1. Why
 
 OpenDataLake tables are currently refreshed by hand. `radiant-import-open-data` is `schedule=None` and
@@ -16,11 +7,6 @@ triggered manually, so variant annotations are already stale for the open-data t
 
 **Deliver:** a weekly automatic refresh from OpenDataLake, variants re-annotated against it, and a record of
 which release is in use.
-
-Two halves. **(a)** Radiant does not read OpenDataLake today — it reads a legacy set with similar table
-names; of the 20 tables it consumes, **18 are Iceberg references to repoint** and 2 are S3 broker loads with
-no OpenDataLake source at all (§3). **(b)** Repointing them is inert until the annotations built from them are
-rebuilt (§5).
 
 ```mermaid
 flowchart LR
@@ -39,17 +25,16 @@ flowchart LR
 
 ## 2. Interface between the 2 systems
 
-| Contract point | What OpenDataLake provides                                                      |
-|----------------|---------------------------------------------------------------------------------|
-| Identity       | catalog + namespace **per deployment**; table `{table_prefix}_v{MAJOR}`         |
-| Snapshot       | one Iceberg **branch per `dataset_version`**; branch name *is* the version      |
-| Which branch   | discoverable in Iceberg metadata (`$refs` ⋈ `$snapshots`)                       |
-| Access         | catalog-appropriate grants: Lake Formation on Glue, credentials on REST/Polaris |
-
+| Contract point | What OpenDataLake provides                                                             |
+|----------------|----------------------------------------------------------------------------------------|
+| Identity       | Each Radiant deployment can keep its own version for a table `{table_prefix}_v{MAJOR}` |
+| Snapshot       | one Iceberg **branch per `dataset_version`**; branch name is the version               |
+| Which branch   | discoverable in Iceberg metadata (`$refs` / `$snapshots`)                              |
+| Access         | Use catalog (Glue or Polaris) for grants                                               |
 
 **How do we resolve the latest version automatically?**
 
-No `latest` pointer exists today — SJRA-1546 §2.2 designs snapshot tagging, but it was never implemented.
+No `latest` pointer exists today, in SJRA-1546 §2.2 designs snapshot tagging, but it was never implemented.
 
 **Decision 1 choices**:
 
@@ -128,11 +113,15 @@ so its columns carry the upstream names rather than the platform's. A pure 3-col
 | `omim_gene_set`           | On hold, licensing validation       | SJRA-1802 *On Hold* |
 | `ensembl_gene`            | Not implemented yet (need analysis) | SJRA-1803 *Backlog* |
 | `ensembl_exon_by_gene`    | Not implemented yet (need analysis) | SJRA-1803 *Backlog* |
-| `enriched.genes`          | Not implemented yet                 | none                | 
 | `gnomad_constraint`       | Not implemented yet                 | none                |
 | `cytoband`                | Not implemented yet                 | none                |
 | `raw_clinvar_rcv_summary` | Not implemented yet                 | none                |
-| `cosmic_gene_set`         | Not planned                         | —                   |
+
+
+### ⛔️Won't do
+| Radiant                   | Status                              |
+|---------------------------|-------------------------------------|
+| `cosmic_gene_set`         | Not planned                         |
 
 ---
 
