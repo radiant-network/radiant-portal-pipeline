@@ -436,7 +436,8 @@ VALUES ('alignment', 'Aligned Reads'),
        ('exp', 'Expression PNG'),
        ('covgene', 'Coverage by Gene Report'),
        ('qcrun', 'Sequencing Run QC Report'),
-       ('exomiser', 'Exomiser Report')
+       ('exomiser', 'Exomiser Report'),
+       ('aggqc', 'Aggregate Quality Control Report')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO file_format (code, name_en)
@@ -454,7 +455,8 @@ VALUES ('cram', 'CRAM File'),
        ('png', 'PNG File'),
        ('csv', 'CSV File'),
        ('pdf', 'PDF File'),
-       ('txt', 'Text File')
+       ('txt', 'Text File'),
+       ('zip', 'ZIP Archive File')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO "organization_category" ("code", "name_en")
@@ -553,7 +555,8 @@ VALUES ('alignment', 'Genome Alignment'),
        ('radiant_germline_annotation', 'RADIANT Germline Annotation'),
        ('radiant_somatic_annotation', 'RADIANT Somatic Annotation'),
        ('exomiser', 'Exomiser'),
-       ('rnaseq_analysis', 'RNAseq Analysis of Transcriptome Profiling and Gene Fusion Calling')
+       ('rnaseq_analysis', 'RNAseq Analysis of Transcriptome Profiling and Gene Fusion Calling'),
+       ('quality_control_metrics', 'Quality Control Metrics')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO "panel_type" ("code", "name_en")
