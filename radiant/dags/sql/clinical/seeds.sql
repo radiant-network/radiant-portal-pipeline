@@ -989,7 +989,10 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     -- The calling step behind task 69: this is where the somatic CNV VCF comes from. Somatic CNV is
     -- discovered by task type + document data type (`tumor_only_variant_calling` + `scnv`), never by
     -- filename, exactly as germline CNV is by `alignment_germline_variant_calling` + `gcnv`.
-    (70, 'tumor_only_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant');
+    (70, 'tumor_only_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    -- QC of case 1: the per-family MultiQC set. Case 1 is therefore *not* pending quality control,
+    -- while every other aligned germline case is (SJRA-1879).
+    (71, 'quality_control_metrics', 'quality-control-pipeline', '2.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant');
 
 TRUNCATE {{ params.clinical_task_context }} CASCADE;
 INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_experiment_id) VALUES
@@ -1069,7 +1072,11 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     (68, 22, 62),
     (69, 23, 64),
     -- Task 70 calls the same single tumoral experiment 64 that task 69 annotates.
-    (70, 23, 64)
+    (70, 23, 64),
+    -- Task 71 spans all three experiments of case 1, like the annotation task 63 does.
+    (71, 1, 1),
+    (71, 1, 2),
+    (71, 1, 3)
 ;
 
 
@@ -1338,7 +1345,10 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     -- `vcf_filepath`, which only ever holds the annotated VCF of a `radiant_somatic_annotation` task.
     (263, 'TCRBOA6_SRX1166091-T.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1204512, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.cnv.vcf.gz', 'b4e1f0a2c7d95836ae2f1c0d4b7a9e51', 'radiant'),
     (264, 'TCRBOA6_SRX1166091-T.cnv.vcf.gz.tbi', 'genomic', 'scnv', 'tbi', 18432, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.cnv.vcf.gz.tbi', 'd0c6a3f92b17e845cf30ab29e6d15473', 'radiant'),
-    (265, 'TCRBOA6_SRX1166091-T.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 19874233, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.snv.vcf.gz', 'f27a5b910ce3d648b0a71f2c85d9e304', 'radiant');
+    (265, 'TCRBOA6_SRX1166091-T.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 19874233, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.snv.vcf.gz', 'f27a5b910ce3d648b0a71f2c85d9e304', 'radiant'),
+    -- Outputs of QC task 71. `aggqc` matches no branch of staging_external_sequencing_experiment.
+    (266, 'CA1_multiqc_report.html', 'genomic', 'aggqc', 'html', 3772915, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/CA1_multiqc_report.html', '5d41402abc4b2a76b9719d911017c900', 'radiant'),
+    (267, 'CA1_multiqc_report_data.zip', 'genomic', 'aggqc', 'zip', 1616232, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/CA1_multiqc_report_data.zip', '5d41402abc4b2a76b9719d911017c901', 'radiant');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1604,7 +1614,10 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (69, 262, 'output'),
     (70, 263, 'output'),
     (70, 264, 'output'),
-    (70, 265, 'output');
+    (70, 265, 'output'),
+    -- QC task 71 -> its MultiQC set.
+    (71, 266, 'output'),
+    (71, 267, 'output');
 
 -- Reset sequences
 ALTER TABLE {{ params.clinical_analysis_catalog }} ALTER COLUMN id RESTART WITH 1000;
