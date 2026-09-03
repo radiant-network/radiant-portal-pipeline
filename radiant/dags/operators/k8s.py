@@ -391,6 +391,30 @@ class CheckDataIntegrity:
         )
 
 
+class Toolbox:
+
+    @staticmethod
+    def get_run_command(extra_env: dict[str, str] | None = None) -> KubernetesPodOperator:
+        return KubernetesPodOperator(
+            task_id="run_toolbox_command",
+            task_display_name="[K8s] Run Toolbox Command",
+            name="radiant-toolbox",
+            namespace=os.getenv("RADIANT_TASK_OPERATOR_KUBERNETES_NAMESPACE"),
+            service_account_name=os.getenv("RADIANT_TASK_OPERATOR_SERVICE_ACCOUNT_NAME"),
+            image=os.getenv("RADIANT_TOOLBOX_OPERATOR_IMAGE"),
+            image_pull_policy="IfNotPresent",
+            cmds=["{{ params.command }}"],
+            arguments="{{ params.args }}",
+            env_vars=extra_env,
+            secrets=[
+                Secret("env", None, os.getenv("RADIANT_TOOLBOX_OPERATOR_SECRET_NAME", "radiant-toolbox-secret")),
+            ],
+            get_logs=True,
+            deferrable=False,
+            is_delete_operator_pod=True,
+        )
+
+
 # `cmds`/`arguments` are Jinja-templated fields, so nothing in these scripts may
 # contain `{{` or `{%`; per-run values arrive as env vars instead.
 #

@@ -257,6 +257,40 @@ class ImportPart(RadiantTaskECSOperator):
         )
 
 
+class Toolbox:
+
+    @staticmethod
+    def get_run_command(ecs_env: ECSEnv, extra_env: list[dict] | None = None) -> ecs.EcsRunTaskOperator:
+        return ecs.EcsRunTaskOperator(
+            task_id="run_toolbox_command",
+            task_display_name="[ECS] Run Toolbox Command",
+            cluster=ecs_env.ECS_CLUSTER,
+            launch_type="FARGATE",
+            task_definition=os.getenv("RADIANT_TOOLBOX_TASK_DEFINITION"),
+            awslogs_group=os.getenv("RADIANT_TOOLBOX_LOG_GROUP"),
+            awslogs_region=os.getenv("RADIANT_TOOLBOX_LOG_REGION"),
+            awslogs_stream_prefix=os.getenv("RADIANT_TOOLBOX_LOG_PREFIX"),
+            awslogs_fetch_interval=timedelta(seconds=5),
+            overrides={
+                "containerOverrides": [
+                    {
+                        "name": "radiant-toolbox-container",
+                        "command": "{{ [params.command] + (params.args or []) }}",
+                        "environment": extra_env if extra_env is not None else [],
+                    }
+                ]
+            },
+            network_configuration={
+                "awsvpcConfiguration": {
+                    "subnets": ecs_env.ECS_SUBNETS,
+                    "assignPublicIp": "DISABLED",
+                    "securityGroups": ecs_env.ECS_SECURITY_GROUPS,
+                }
+            },
+            aws_conn_id="aws_default",
+        )
+
+
 class CheckDataIntegrity:
     """Runs dbt data-quality checks. Uses its own ECS task definition, as we use
     a Docker image specific to dbt instead of the standard radiant-task image."""
