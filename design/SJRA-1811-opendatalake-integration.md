@@ -145,7 +145,7 @@ in between — exactly the overlap this is meant to prevent. A pool caps concurr
 express "this whole run must finish before that run starts." A real lock needs an atomic test-and-set held
 for the whole run.
 
-**Lock mechanism choices**:
+**Decision 2 choices**:
 
 - Option A: A lock row in Airflow's own Postgres metadata DB (`INSERT ... ON CONFLICT DO NOTHING`).
 - Option B: A dedicated DynamoDB table with a conditional `PutItem`.
@@ -155,16 +155,9 @@ for the whole run.
 **Recommendation Option C**:
 
 - No new infra to provision or get signed off — reuses the bucket already backing every Iceberg table,
-  just one more key under it (e.g. `s3://<iceberg-bucket>/_locks/import_mutex`).
+  just one more key under it (e.g. `s3://<airflow-dags-bucket>/_locks/import_mutex`).
 - Native atomic guarantee: `PutObject` with header `If-None-Match: *` only succeeds if the key doesn't
   already exist, otherwise `412 PreconditionFailed` — no extra round trip to fake the check.
-- Option A is out, not just discouraged: on Amazon MWAA the Aurora Postgres metadata DB isn't reachable
-  from DAG/task code — Airflow 3 removed direct metadata-DB session access from workers, and AWS's own
-  docs state an operator "cannot be used to perform actions on the Amazon Aurora PostgreSQL metadata
-  database associated with an Amazon MWAA environment." This pipeline ships to MWAA (`mwaa/airflow3/`), so
-  this option doesn't run there at all.
-- Option B is out on cost/ops grounds: a whole managed service provisioned for one mutex, with no other use
-  in this pipeline.
 - Cost: local/CI integration tests (`USE_DOCKER_FIXTURES=true`) run against MinIO, and MinIO's conditional
   writes don't accept the `*` wildcard for `If-None-Match` — it requires a concrete ETag
   ([minio/minio#20346](https://github.com/minio/minio/issues/20346), open). So the create-only-if-absent
@@ -172,15 +165,29 @@ for the whole run.
   behavior itself needs verifying against the `USE_DOCKER_FIXTURES=false` sandbox path (real S3), not just
   the default docker-fixture test run.
 
+**Why not Option A (Postgres metadata DB)?**
+
+On Amazon MWAA the Aurora Postgres metadata DB isn't reachable from DAG/task code. Per AWS's docs on
+[Aurora PostgreSQL database cleanup on an Amazon MWAA
+environment](https://docs.aws.amazon.com/mwaa/latest/userguide/samples-database-cleanup.html):
+"Apache Airflow v3 restricts direct metadata database access from task code. Workers no longer connect to
+the metadata database, and DAG or task code can't import or use Apache Airflow database sessions or models
+directly."
+
+**Why not Option B (DynamoDB)?**
+
+Ruled out on cost/ops grounds: a new managed AWS service, provisioned, monitored, and paid for, with no
+other use anywhere in this pipeline.
+
 **Mechanics**:
 
 - **Acquire** — first task of each DAG: `PutObject(key="_locks/import_mutex", IfNoneMatch="*")`. A
   `412 PreconditionFailed` means the other side holds it → fail/retry with backoff until free.
 - **Release** — last task of each DAG must release. Specific conditions per DAG must be fulfilled. Because occasional
-failures can occur in `import_radiant`, the completion condition must be that all task have suceeded, to signify we are not in an
-inconsistent state at the moment or releasing the lock.
+  failures can occur in `import_radiant`, the completion condition must be that all task have suceeded, to signify we are not in an
+  inconsistent state at the moment or releasing the lock.
  - **Stale-lock guard** — before the conditional put, `HeadObject` the key; if it exists and `LastModified`
- is older than e.g. 6 hours, delete it first, so a killed run can't deadlock the lock forever.
+   is older than e.g. 6 hours, delete it first, so a killed run can't deadlock the lock forever.
 - `import_radiant` acquires/releases around its own full run (delta fetch → partition assign → insert new
   experiments); the re-annotation DAG acquires/releases around its full run (P1 through P4).
 - Separately, the update process still grabs the pool slot for `import_part` to ensure no `import_part` run
@@ -215,7 +222,7 @@ from them in the StarRocks' Variant, Consequence and Occurrence tables and for b
 
 **Important**: CNVs need extra work to ensure we don't rely on Iceberg tables (considered transient in the design).
 
-**Decision 2 choices**:
+**Decision 3 choices**:
 
 - Option A: Add `chromosome` + `start` to the SNV occurrence tables at import, making step 3b StarRocks-only.
 - Option B: Keep reading the Iceberg occurrence tables, widening `seq_ids` to the whole part.
@@ -238,13 +245,13 @@ flowchart LR
     GSV --> OCC
     CB --> OCC
     EG --> OCC
-    SNVO -->|"Decision 2"| OCC
+    SNVO -->|"Decision 3"| OCC
     style GSV fill:#cfe8cf,color:#000
     style SNVO fill:#ffe0b2,color:#000
 ```
 
 `nb_snv` counts the SNVs falling inside each CNV's interval, so the CNV statement has to join SNV occurrences
-on coordinates. That join is the whole reason Decision 2 exists: today it reads them from Iceberg, and
+on coordinates. That join is the whole reason Decision 3 exists: today it reads them from Iceberg, and
 `chromosome` + `start` are what let it read them from StarRocks instead.
 
 Query example for re-annotation variants:
@@ -295,7 +302,7 @@ LEFT JOIN {{ mapping.starrocks_spliceai }} sp ON sp.locus_id = c.locus_id AND sp
 LEFT JOIN {{ mapping.starrocks_gnomad_constraint }} gc ON gc.transcript_id = c.transcript_id;
 ```
 
-**Decision 3 choices**:
+**Decision 4 choices**:
 
 - Option A: Upsert in place.
 - Option B: Write into a **second table of identical schema**, then `ALTER TABLE … SWAP WITH` the live one.
@@ -362,6 +369,17 @@ The partitioned copies exist so portal queries prune to the partitions holding t
 difference *is* the cost.
 
 Frequencies are **not** recomputed: they derive from occurrences, never from open data.
+
+---
+
+## 6. Decisions summary
+
+| # | Decision | Chosen | Why |
+|---|----------|--------|-----|
+| 1 | Resolving the latest OpenDataLake table version (§2) | **A** — implement `latest` snapshot tagging in the OpenDataLake ETL | Deterministic even if an older version is re-updated; no need to guard against picking up the `audit_%` branch |
+| 2 | Mutual exclusion between the re-annotation DAG and `import_radiant` (§4) | **C** — S3 conditional write (`If-None-Match: *`) on a lock object | No new infra to provision; native atomic guarantee. A Postgres metadata-DB row (A) is blocked on MWAA; DynamoDB (B) isn't justified for one mutex |
+| 3 | Source for the CNV re-annotation's SNV coordinate join (§5) | **A** — add `chromosome` + `start` to the SNV occurrence tables at import | Drops the Iceberg-retention dependency; keeps SNV and CNV re-annotation independent; only 2 extra columns |
+| 4 | How re-derived values reach the portal-facing SNV tables (§5) | **A** — upsert in place | Fewer moving pieces; mirrors the existing staging-variant build query; no extra swap table to maintain |
 
 
 
