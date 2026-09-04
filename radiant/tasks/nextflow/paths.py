@@ -15,13 +15,18 @@ S3_SCHEME = "s3://"
 
 
 def sanitize_run_tag(run_id: str) -> str:
-    """The run tag, from `run_id` -- the same sanitisation the pipeline DAG applies.
+    """The run tag, from `run_id`: `scheduled__2026-09-03T00:00:00+00:00` -> `scheduled-2026-09-03T00-00-00-00-00`.
 
     Not derived from a timestamp: an Airflow 3 manual run can have a null `logical_date`,
     and date-derived templates then raise at render time. `run_id` is also stable across
     task retries, so the paths stay put and `-resume` keeps working.
+
+    The `__` after the run type is replaced too, and that is load-bearing: the cases DAGs pin
+    the *child* run id to this tag, and Airflow 3.2 refuses to create an operator-triggered
+    (manual) run whose id starts with `scheduled__` or another type's reserved prefix
+    (`DagRunType.from_run_id` in `create_dagrun`). The API answers that with an opaque 500.
     """
-    return run_id.replace(":", "-").replace("+", "-")
+    return run_id.replace(":", "-").replace("+", "-").replace("__", "-")
 
 
 def split_s3_uri(uri: str) -> tuple[str, str]:
@@ -50,27 +55,44 @@ def to_mount(url: str, s3_root: str, mount: str) -> str:
     return f"{mount.rstrip('/')}/{url[len(prefix) :]}"
 
 
-def run_paths(inputs_root: str, outputs_root: str, inputs_mount: str, outputs_mount: str, run_tag: str) -> dict:
+def run_paths(
+    inputs_root: str,
+    outputs_root: str,
+    inputs_mount: str,
+    outputs_mount: str,
+    run_tag: str,
+    *,
+    inputs_subdir: str = "",
+    outputs_subdir: str = "",
+) -> dict:
     """Every path this run reads or writes, derived from the run tag alone.
 
     Deriving rather than parameterising makes "a fresh prefix per run" structural instead
     of a rule someone has to remember, and gives each run its own output location -- which
     matters because re-runs sit alongside earlier analyses rather than replacing them.
+
+    `inputs_subdir` / `outputs_subdir` keep the pipelines apart under the shared roots:
+    post-processing writes `postprocessing-runs/<run>` and `postprocessing/<run>`, quality
+    control `qc-runs/<run>` and `qc/<run>`. Empty means directly under the root.
     """
-    input_prefix_s3 = join_s3(inputs_root, run_tag)
+    input_prefix_s3 = join_s3(inputs_root, *_parts(inputs_subdir), run_tag)
     _, inputs_root_key = split_s3_uri(inputs_root)
     _, outputs_root_key = split_s3_uri(outputs_root)
 
-    def under(mount: str, root_key: str) -> str:
-        return "/".join([mount.rstrip("/"), *([root_key] if root_key else []), run_tag])
+    def under(mount: str, root_key: str, subdir: str) -> str:
+        return "/".join([mount.rstrip("/"), *([root_key] if root_key else []), *_parts(subdir), run_tag])
 
-    input_prefix_pod = under(inputs_mount, inputs_root_key)
+    input_prefix_pod = under(inputs_mount, inputs_root_key, inputs_subdir)
     return {
         "run_tag": run_tag,
         "input_prefix_s3": input_prefix_s3,
         "input_prefix_pod": input_prefix_pod,
         "samplesheet_s3": f"{input_prefix_s3}/samplesheet.csv",
         "samplesheet_pod": f"{input_prefix_pod}/samplesheet.csv",
-        "outdir_s3": join_s3(outputs_root, run_tag),
-        "outdir_pod": under(outputs_mount, outputs_root_key),
+        "outdir_s3": join_s3(outputs_root, *_parts(outputs_subdir), run_tag),
+        "outdir_pod": under(outputs_mount, outputs_root_key, outputs_subdir),
     }
+
+
+def _parts(subdir: str) -> list[str]:
+    return [subdir.strip("/")] if subdir.strip("/") else []

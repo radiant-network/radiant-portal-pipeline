@@ -31,9 +31,21 @@ DirLister = Callable[[str], set[str]]
 TreeLister = Callable[[str], list[str]]
 
 
-def metrics_filenames(aliquot: str) -> set[str]:
-    """Both spellings the pipeline recognises for the file every DRAGEN run produces."""
-    return {f"{aliquot}.mapping_metrics.csv", f"{aliquot}.final.mapping_metrics.csv"}
+METRICS_SUFFIX = ".mapping_metrics.csv"
+
+
+def is_metrics_file(name: str, aliquot: str) -> bool:
+    """`<aliquot>.<anything>.mapping_metrics.csv` -- the file every DRAGEN run produces.
+
+    The same rule the pipeline applies: sample = everything before the first dot, type =
+    the suffix. So `NA12878.mapping_metrics.csv`, `NA12878.final.mapping_metrics.csv` and
+    `GM232700.dragen.mapping_metrics.csv` all count, for their respective aliquots.
+    """
+    return name.startswith(f"{aliquot}.") and name.endswith(METRICS_SUFFIX)
+
+
+def count_metrics_files(names, aliquot: str) -> int:
+    return sum(1 for n in names if is_metrics_file(n, aliquot))
 
 
 def parent_dir(url: str) -> str:
@@ -129,15 +141,78 @@ def locate_metrics(
     return kept, excluded
 
 
-def group_by_dir(cases: list[QcCase], run_tag: str) -> list[MetricsGroup]:
-    """One group -- one launcher run -- per distinct metrics directory, in a stable order."""
-    by_dir: dict[str, list[int]] = {}
+def group_by_dir(
+    cases: list[QcCase],
+    run_tag: str,
+    list_tree: TreeLister,
+    inputs_root: str,
+) -> list[MetricsGroup]:
+    """The fewest launcher runs that are safe.
+
+    Directories are merged, in sorted order, into a shared ancestor whenever that ancestor is
+    on the workspace, below the bucket root, and holds exactly one metrics file per aliquot of
+    the merged cases (the pipeline globs `--dragen_metrics_dir` at any depth, so an ancestor
+    works as long as no aliquot appears twice beneath it). A directory that cannot be merged
+    starts a new group. Sorting keeps siblings adjacent, so `individuals/` and
+    `individuals/HG00096` merge while an unrelated `prag/` stays apart rather than dragging
+    everything up to the bucket root.
+    """
+    cache: dict[str, list[str]] = {}
+
+    def tree(uri: str) -> list[str]:
+        if uri not in cache:
+            cache[uri] = list_tree(uri)
+        return cache[uri]
+
+    by_dir: dict[str, list[QcCase]] = {}
     for case in cases:
-        by_dir.setdefault(case.metrics_dir_s3, []).append(case.case_id)
-    return [
-        MetricsGroup(index=index, run_tag=f"{run_tag}-g{index}", metrics_dir_s3=directory, case_ids=sorted(ids))
-        for index, (directory, ids) in enumerate(sorted(by_dir.items()))
-    ]
+        by_dir.setdefault(case.metrics_dir_s3, []).append(case)
+
+    groups: list[tuple[str, list[QcCase]]] = []
+    for directory in sorted(by_dir):
+        incoming = by_dir[directory]
+        if groups:
+            current_dir, current_cases = groups[-1]
+            merged = current_cases + incoming
+            aliquots = [m.aliquot for c in merged for m in c.members]
+            ancestor = _safe_ancestor([current_dir, directory], aliquots, tree, inputs_root)
+            if ancestor:
+                groups[-1] = (ancestor, merged)
+                continue
+        groups.append((directory, list(incoming)))
+
+    result = []
+    for index, (directory, grouped) in enumerate(groups):
+        for case in grouped:
+            case.metrics_dir_s3 = directory
+        result.append(
+            MetricsGroup(
+                index=index,
+                run_tag=f"{run_tag}-g{index}",
+                metrics_dir_s3=directory,
+                case_ids=sorted(c.case_id for c in grouped),
+            )
+        )
+    if len(result) < len(by_dir):
+        LOGGER.info("%d metrics directories merged into %d run(s)", len(by_dir), len(result))
+    return result
+
+
+def _safe_ancestor(directories: list[str], aliquots: list[str], list_tree: TreeLister, inputs_root: str) -> str | None:
+    """The common ancestor of `directories` if the pipeline can be pointed at it: on the
+    workspace, below the bucket root (a whole bucket is not a directory anyone meant), and
+    holding exactly one `mapping_metrics.csv` per aliquot."""
+    ancestor = common_ancestor(directories)
+    if ancestor is None or not _on_workspace(ancestor, inputs_root):
+        return None
+    bucket, key = split_s3_uri(ancestor)
+    if not key:
+        return None
+    names = list_tree(ancestor)
+    for aliquot in aliquots:
+        if count_metrics_files(names, aliquot) != 1:
+            return None
+    return ancestor
 
 
 def _on_workspace(directory: str, inputs_root: str) -> bool:
@@ -150,7 +225,7 @@ def _on_workspace(directory: str, inputs_root: str) -> bool:
 
 def _locate_case(case: QcCase, names_in: DirLister, list_tree: TreeLister, inputs_root: str) -> tuple[str, str] | None:
     for member in case.members:
-        hits = [d for d in candidate_dirs(member) if metrics_filenames(member.aliquot) & names_in(d)]
+        hits = [d for d in candidate_dirs(member) if count_metrics_files(names_in(d), member.aliquot)]
         if not hits:
             return "no_dragen_metrics", (
                 f"case {case.case_id}, aliquot {member.aliquot}: no mapping_metrics.csv in "
@@ -167,16 +242,11 @@ def _locate_case(case: QcCase, names_in: DirLister, list_tree: TreeLister, input
         case.metrics_dir_s3 = directories[0]
         return None
 
-    ancestor = common_ancestor(directories)
-    if ancestor is None or not _on_workspace(ancestor, inputs_root):
-        return "metrics_dir_split", f"case {case.case_id}: {directories} share no directory on the workspace"
-    names = list_tree(ancestor)
-    for member in case.members:
-        count = sum(1 for n in names if n in metrics_filenames(member.aliquot))
-        if count != 1:
-            return "metrics_dir_split", (
-                f"case {case.case_id}: {ancestor} holds {count} mapping_metrics.csv for aliquot "
-                f"{member.aliquot}; the pipeline needs exactly one"
-            )
+    ancestor = _safe_ancestor(directories, [m.aliquot for m in case.members], list_tree, inputs_root)
+    if ancestor is None:
+        return "metrics_dir_split", (
+            f"case {case.case_id}: {directories} share no directory on the workspace holding exactly one "
+            f"mapping_metrics.csv per member"
+        )
     case.metrics_dir_s3 = ancestor
     return None

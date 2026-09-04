@@ -78,8 +78,9 @@ dag_params = {
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     schedule=None,
     catchup=False,
-    # One driver at a time: concurrent runs would share the FSx workspace.
-    max_active_runs=1,
+    # Runs do not share state: RUN_TAG keys the launch dir, the work dir and the outdir, so
+    # several drivers can run side by side. Five is a budget on cluster load, not a lock.
+    max_active_runs=5,
     tags=["radiant", "nextflow", "qc", "manual"],
     params=dag_params,
     doc_md=load_docs_md("nextflow_quality_control.md"),

@@ -47,8 +47,8 @@ how the metrics are found (below).
 The metrics CSVs are **not documents** in the clinical model. They sit in the same directory
 as *some* output of the alignment -- the gVCF in one layout, the CRAM in another -- so
 `locate_metrics` takes the parent directory of every output document of the member's
-alignment and **probes S3** for `<aliquot>.mapping_metrics.csv` (or `.final.mapping_metrics.csv`)
-in each. The one that answers is the member's metrics directory.
+alignment and **probes S3** for `<aliquot>.<anything>.mapping_metrics.csv` in each, the same rule the
+pipeline uses (`NA12878.mapping_metrics.csv`, `NA12878.final.…`, `GM232700.dragen.…` all count). The one that answers is the member's metrics directory.
 
 Probing rather than assuming a convention is deliberate. The pipeline matches metrics files to
 samplesheet rows by the **exact first dot-token** of the filename and **fails open**: a wrong
@@ -56,10 +56,13 @@ directory produces a green run with a half-empty report. Hence also the samplesh
 column is the **aliquot**, since that is what DRAGEN names its files after.
 
 `--dragen_metrics_dir` is **one directory per Nextflow run** (a comma-separated list is not
-split and matches nothing). Cases are therefore grouped by the directory the probe found and
-**one launcher run is fired per group**, each with its own run tag, input prefix and outdir.
+split and matches nothing). Cases are therefore grouped by the directory the probe found, neighbouring
+directories are merged into their common parent whenever that parent is still in the workspace
+bucket, below the bucket root, and holds exactly one metrics file per aliquot, and **one launcher
+run is fired per resulting group**, each with its own run tag, input prefix and outdir. Seven cases
+under `individuals/` and one under `prag/` make two runs, not eight.
 Since a night's cases usually span many directories, expect one child run per case, queued
-behind the launcher's `max_active_runs=1`. A case whose members' metrics sit in different
+up to five at a time on the launcher. A case whose members' metrics sit in different
 directories may use their common ancestor, but only if that ancestor is still in the workspace
 bucket and holds no duplicated sample; otherwise it is excluded.
 
@@ -98,7 +101,9 @@ published for the family under `multiqc/CA<case id>/`:
 |---|---|
 | `CA<id>_multiqc_report.html` | `aggqc` / `html` |
 | `CA<id>_multiqc_report_data.zip` | `aggqc` / `zip` |
-| `qc_json/<aliquot>.metrics.json`, one per member | `aggqc` / `json` |
+
+The pipeline also writes `qc_json/<aliquot>.metrics.json` per sample. They are not registered:
+everything in them is in the archive's tables, so they only lengthened each case's document list.
 
 `collect_outputs` requires the complete set for every case in a run; a partial run registers
 nothing. PATCH **appends**: a deliberate re-run adds a second task alongside the first.
@@ -117,10 +122,17 @@ Each group -- each child run -- gets its own subdirectory, named after this run 
 index:
 
 ```
-{NEXTFLOW_INPUTS_ROOT}/{run_tag}-g{n}/samplesheet.csv
-{NEXTFLOW_OUTPUTS_ROOT}/{run_tag}-g{n}/multiqc/CA<id>/…
+{NEXTFLOW_INPUTS_ROOT}/qc-runs/{run_tag}-g{n}/samplesheet.csv
+{NEXTFLOW_OUTPUTS_ROOT}/qc/{run_tag}-g{n}/multiqc/CA<id>/…
 ```
+
+The `qc-runs/` and `qc/` subdirectories keep these apart from post-processing, which writes
+`postprocessing-runs/` and `postprocessing/` under the same two roots.
 
 The child run id is pinned to `{run_tag}-g{n}`, so a retry of this DAG re-enters the same
 launcher run and its Nextflow launch directory, and `-resume` skips what already completed.
 The launcher prefixes its own `qc-` to it, which keeps it apart from post-processing.
+
+The tag also drops the `__` after the run type (`scheduled__…` becomes `scheduled-…`). Airflow
+3.2 refuses an operator-triggered run whose id starts with `scheduled__`, since that prefix is
+reserved for scheduled runs, and reports it as an opaque 500 from the API server.

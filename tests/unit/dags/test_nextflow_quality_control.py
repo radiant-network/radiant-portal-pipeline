@@ -51,10 +51,12 @@ def test_retries_are_configured_so_resume_is_reachable(dag_bag):
     assert dag.default_args["retries"] >= 1
 
 
-def test_only_one_driver_runs_at_a_time(dag_bag):
-    """Concurrent runs would share the same FSx workspace."""
+def test_up_to_five_drivers_run_side_by_side(dag_bag):
+    """Runs share no state -- RUN_TAG keys the launch dir, work dir and outdir -- so the cap
+    is a budget on cluster load, not a lock. The cases DAG fires one run per metrics
+    directory and matches this number."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert dag.max_active_runs == 1
+    assert dag.max_active_runs == 5
 
 
 def test_run_tag_is_namespaced_away_from_the_postprocessing_dag(dag_bag):
