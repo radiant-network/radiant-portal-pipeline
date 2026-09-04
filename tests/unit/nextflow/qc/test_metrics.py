@@ -4,8 +4,8 @@ from radiant.tasks.nextflow.qc.metrics import (
     candidate_dirs,
     common_ancestor,
     group_by_dir,
+    is_metrics_file,
     locate_metrics,
-    metrics_filenames,
     parent_dir,
 )
 from radiant.tasks.nextflow.qc.resolve import resolve_cases, select_cases
@@ -22,8 +22,17 @@ def cases(trio_rows, singleton_rows):
     return resolve_cases([m.model_dump() for m in selection.members])
 
 
-def test_both_dragen_spellings_are_recognised():
-    assert metrics_filenames("NA12878") == {"NA12878.mapping_metrics.csv", "NA12878.final.mapping_metrics.csv"}
+def test_every_dragen_spelling_is_recognised():
+    """Sample = before the first dot, type = the suffix, exactly as the pipeline reads them."""
+    for name in (
+        "NA12878.mapping_metrics.csv",
+        "NA12878.final.mapping_metrics.csv",
+        "NA12878.dragen.mapping_metrics.csv",
+    ):
+        assert is_metrics_file(name, "NA12878")
+    assert not is_metrics_file("NA12878.wgs_coverage_metrics.csv", "NA12878")
+    assert not is_metrics_file("NA128781.mapping_metrics.csv", "NA12878")
+    assert not is_metrics_file("NA12878_old.mapping_metrics.csv", "NA12878")
 
 
 def test_parent_dir_handles_files_and_directory_urls():
@@ -63,7 +72,6 @@ def test_a_duplicated_sample_under_the_ancestor_excludes_the_case(cases):
     kept, excluded = locate_metrics([cases[1]], *fake_listers(files), INPUTS_ROOT)
     assert kept == []
     assert excluded[0].reason == "metrics_dir_split"
-    assert "holds 2" in excluded[0].detail
 
 
 def test_metrics_in_one_directory_for_the_whole_case(cases):
@@ -94,17 +102,73 @@ def test_metrics_outside_the_workspace_bucket_are_refused(cases):
     assert excluded[0].reason == "metrics_not_on_workspace"
 
 
-def test_one_group_per_directory_with_stable_run_tags(cases):
+def test_cases_in_different_directories_share_one_run_under_a_safe_ancestor(cases):
+    """What QA showed: one sample per directory under `individuals/`. The pipeline globs at
+    any depth, so one run pointed at the ancestor covers them all."""
     files = {
         f"{RUN42}/cram": {f"{a}.mapping_metrics.csv" for a in ("NA12878", "NA12891", "NA12892")},
         f"{RUN43}/cram": {"HG00096.mapping_metrics.csv"},
     }
-    kept, _ = locate_metrics(cases, *fake_listers(files), INPUTS_ROOT)
-    groups = group_by_dir(kept, "scheduled__2026-09-02T00-00-00-00-00")
+    list_dir, list_tree = fake_listers(files)
+    kept, _ = locate_metrics(cases, list_dir, list_tree, INPUTS_ROOT)
+    groups = group_by_dir(kept, "scheduled-2026-09-02T00-00-00-00-00", list_tree, INPUTS_ROOT)
     assert [(g.run_tag, g.metrics_dir_s3, g.case_ids) for g in groups] == [
-        ("scheduled__2026-09-02T00-00-00-00-00-g0", f"{RUN42}/cram", [1072]),
-        ("scheduled__2026-09-02T00-00-00-00-00-g1", f"{RUN43}/cram", [8]),
+        ("scheduled-2026-09-02T00-00-00-00-00-g0", f"{BUCKET}/dragen", [8, 1072]),
     ]
+    assert all(c.metrics_dir_s3 == f"{BUCKET}/dragen" for c in kept)
+
+
+def test_a_duplicated_aliquot_under_the_ancestor_splits_the_runs(cases):
+    files = {
+        f"{RUN42}/cram": {f"{a}.mapping_metrics.csv" for a in ("NA12878", "NA12891", "NA12892")},
+        f"{RUN43}/cram": {"HG00096.mapping_metrics.csv"},
+        # An older alignment of the singleton's aliquot elsewhere under the ancestor.
+        f"{BUCKET}/dragen/run-41/cram": {"HG00096.mapping_metrics.csv"},
+    }
+    list_dir, list_tree = fake_listers(files)
+    kept, _ = locate_metrics(cases, list_dir, list_tree, INPUTS_ROOT)
+    groups = group_by_dir(kept, "run", list_tree, INPUTS_ROOT)
+    assert [(g.metrics_dir_s3, g.case_ids) for g in groups] == [(f"{RUN42}/cram", [1072]), (f"{RUN43}/cram", [8])]
+
+
+def test_an_ancestor_at_the_bucket_root_is_never_used(cases):
+    files = {
+        f"{RUN42}/cram": {f"{a}.mapping_metrics.csv" for a in ("NA12878", "NA12891", "NA12892")},
+        f"{BUCKET}/other/HG00096": {"HG00096.mapping_metrics.csv"},
+    }
+    for member in cases[0].members:
+        member.cram_url = f"{BUCKET}/other/HG00096/HG00096.cram"
+        member.crai_url = None
+        member.document_urls = []
+    list_dir, list_tree = fake_listers(files)
+    kept, _ = locate_metrics(cases, list_dir, list_tree, BUCKET)
+    groups = group_by_dir(kept, "run", list_tree, BUCKET)
+    assert len(groups) == 2
+
+
+def test_an_unrelated_directory_does_not_break_up_the_others(cases):
+    """What QA showed: seven cases under `individuals/` (one per subfolder, one trio at the
+    ancestor) and one case under `prag/`. Two runs, not eight."""
+    root = f"{BUCKET}/1000genomes/individuals"
+    files = {
+        f"{root}": {f"{a}.mapping_metrics.csv" for a in ("NA12878", "NA12891", "NA12892")},
+        f"{root}/HG00096": {"HG00096.mapping_metrics.csv"},
+        f"{BUCKET}/prag": {"GM232700.dragen.mapping_metrics.csv"},
+    }
+    trio, single = cases[1], cases[0]
+    for m in trio.members:
+        m.cram_url, m.crai_url, m.document_urls = f"{root}/{m.aliquot}.cram", None, []
+    for m in single.members:
+        m.cram_url, m.crai_url, m.document_urls = f"{root}/HG00096/HG00096.cram", None, []
+    prag = single.model_copy(deep=True)
+    prag.case_id, prag.family_id = 1129, "CA1129"
+    for m in prag.members:
+        m.aliquot, m.case_id = "GM232700", 1129
+        m.cram_url = f"{BUCKET}/prag/GM232700.cram"
+    list_dir, list_tree = fake_listers(files)
+    kept, _ = locate_metrics([single, trio, prag], list_dir, list_tree, BUCKET)
+    groups = group_by_dir(kept, "run", list_tree, BUCKET)
+    assert [(g.metrics_dir_s3, g.case_ids) for g in groups] == [(root, [8, 1072]), (f"{BUCKET}/prag", [1129])]
 
 
 def test_cases_sharing_a_directory_share_a_run(cases):
@@ -114,6 +178,7 @@ def test_cases_sharing_a_directory_share_a_run(cases):
             member.cram_url = f"{RUN42}/cram/{member.aliquot}.cram"
             member.crai_url = None
             member.document_urls = []
-    kept, _ = locate_metrics(cases, *fake_listers(files), INPUTS_ROOT)
-    groups = group_by_dir(kept, "run")
+    list_dir, list_tree = fake_listers(files)
+    kept, _ = locate_metrics(cases, list_dir, list_tree, INPUTS_ROOT)
+    groups = group_by_dir(kept, "run", list_tree, INPUTS_ROOT)
     assert len(groups) == 1 and groups[0].case_ids == [8, 1072]

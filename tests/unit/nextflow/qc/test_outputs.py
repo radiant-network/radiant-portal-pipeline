@@ -21,8 +21,8 @@ def test_the_per_family_multiqc_layout(trio):
     keys = {name: key for name, (key, _) in expected_keys(trio).items()}
     assert keys["multiqc_html"] == "multiqc/CA1072/CA1072_multiqc_report.html"
     assert keys["multiqc_data"] == "multiqc/CA1072/CA1072_multiqc_report_data.zip"
-    assert keys["metrics_json:NA12891"] == "multiqc/CA1072/qc_json/NA12891.metrics.json"
-    assert len(keys) == 5
+    # The per-sample JSON sidecars are not registered: their content is in the archive.
+    assert len(keys) == 2
 
 
 def test_everything_registers_as_aggqc(trio, listing):
@@ -31,7 +31,6 @@ def test_everything_registers_as_aggqc(trio, listing):
     assert {d["data_category_code"] for d in documents.values()} == {"genomic"}
     assert documents["multiqc_html"]["format_code"] == "html"
     assert documents["multiqc_data"]["format_code"] == "zip"
-    assert documents["metrics_json:NA12878"]["format_code"] == "json"
     assert documents["multiqc_html"]["url"] == f"{OUTDIR}/multiqc/CA1072/CA1072_multiqc_report.html"
     assert documents["multiqc_html"]["name"] == "CA1072_multiqc_report.html"
 
@@ -41,7 +40,7 @@ def test_sizes_come_from_the_listing(trio, listing):
     assert collect([trio], listing, OUTDIR)["CA1072"]["multiqc_html"]["size"] == 3772915
 
 
-def test_a_missing_sidecar_refuses_the_whole_case(trio, listing):
-    del listing["multiqc/CA1072/qc_json/NA12892.metrics.json"]
-    with pytest.raises(MissingOutputsError, match="NA12892.metrics.json"):
+def test_a_missing_archive_refuses_the_whole_case(trio, listing):
+    del listing["multiqc/CA1072/CA1072_multiqc_report_data.zip"]
+    with pytest.raises(MissingOutputsError, match="CA1072_multiqc_report_data.zip"):
         collect([trio], listing, OUTDIR)

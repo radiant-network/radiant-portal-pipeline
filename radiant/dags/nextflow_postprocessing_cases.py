@@ -64,6 +64,10 @@ OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "3
 
 PORTAL_CONN_ID = "radiant_api_conn"
 
+# Under the shared roots, apart from quality control (`qc-runs/`, `qc/`).
+INPUTS_SUBDIR = "postprocessing-runs"
+OUTPUTS_SUBDIR = "postprocessing"
+
 # Tenants the service account has been granted `ingest_data` on, comma separated. Empty
 # means "do not filter", which is right for a single-tenant deployment and wrong the moment
 # a second tenant exists: an ungranted tenant's cases get a flat 403 from the batch PATCH
@@ -254,6 +258,8 @@ def nextflow_postprocessing_cases():
             inputs_mount=env["inputs_mount"],
             outputs_mount=env["outputs_mount"],
             run_tag=sanitize_run_tag(context["run_id"]),
+            inputs_subdir=INPUTS_SUBDIR,
+            outputs_subdir=OUTPUTS_SUBDIR,
         )
 
         parsed = [Family(**f) for f in families]

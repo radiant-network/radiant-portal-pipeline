@@ -87,7 +87,8 @@ The tag is stable across task retries and unique per DAG run, so:
 
 - **A retry resumes.** `-resume` finds the previous session's `.nextflow/cache` and
   skips completed processes.
-- **Concurrent runs cannot collide**, and `max_active_runs=1` keeps them from trying.
+- **Concurrent runs cannot collide**: each has its own launch dir, work dir and outdir. Up to
+  five run side by side (`max_active_runs=5`), which is a budget on cluster load, not a lock.
 
 The task is **deferrable**: it releases its worker slot and the triggerer polls the
 pod, so a long run costs no Airflow capacity. Logs are flushed to the task log roughly

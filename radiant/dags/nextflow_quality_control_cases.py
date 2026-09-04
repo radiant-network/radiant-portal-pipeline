@@ -20,9 +20,8 @@ Two things make this more than a copy of the annotation DAG:
   guessing a convention, because the pipeline matches metrics by exact sample name and *fails
   open* -- a wrong directory is a green run with an empty report;
 - `--dragen_metrics_dir` is one directory per Nextflow run. Cases are grouped by the directory
-  the probe found and one launcher run is fired per group. In practice a night's cases span
-  many directories, so the normal shape is one run per case, serialised by the launcher's
-  `max_active_runs=1`.
+  the probe found, neighbouring directories are merged into a safe common parent, and one
+  launcher run is fired per group; the launcher runs up to five at a time.
 
 Full analysis: `design/SJRA-1879-nextflow-quality-control-automation.md`.
 """
@@ -58,6 +57,13 @@ TENANTS_ENV = "NEXTFLOW_QC_TENANTS"
 FALLBACK_TENANTS_ENV = "NEXTFLOW_POSTPROCESSING_TENANTS"
 
 PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-quality-control"
+
+# Under the shared roots, apart from post-processing (`postprocessing-runs/`, `postprocessing/`).
+INPUTS_SUBDIR = "qc-runs"
+OUTPUTS_SUBDIR = "qc"
+
+# The launcher accepts this many concurrent runs; each has its own launch dir and outdir.
+LAUNCHER_MAX_ACTIVE_RUNS = 5
 
 
 def _default_tenants() -> list[str]:
@@ -128,6 +134,8 @@ def _group_paths(env: dict[str, str], run_tag: str) -> dict:
         inputs_mount=env["inputs_mount"],
         outputs_mount=env["outputs_mount"],
         run_tag=run_tag,
+        inputs_subdir=INPUTS_SUBDIR,
+        outputs_subdir=OUTPUTS_SUBDIR,
     )
 
 
@@ -215,15 +223,22 @@ def nextflow_quality_control_cases():
 
     @task(task_id="group_cases", task_display_name="[PyOp] Group cases by metrics directory")
     def group_cases(cases: Any) -> Any:
-        """One group per distinct directory -- the unit of a launcher run. A plain list, because
-        Airflow can only map over a task's return value, not a keyed XCom."""
+        """One launcher run if every case's metrics share a safe common directory, otherwise one
+        per directory. A plain list, because Airflow can only map over a task's return value,
+        not a keyed XCom."""
         from airflow.operators.python import get_current_context
 
         from radiant.tasks.nextflow.paths import sanitize_run_tag
-        from radiant.tasks.nextflow.qc.metrics import group_by_dir
+        from radiant.tasks.nextflow.qc.metrics import S3Lister, group_by_dir
         from radiant.tasks.nextflow.qc.model import QcCase
 
-        groups = group_by_dir([QcCase(**c) for c in cases], sanitize_run_tag(get_current_context()["run_id"]))
+        env = _workspace_env()
+        groups = group_by_dir(
+            [QcCase(**c) for c in cases],
+            sanitize_run_tag(get_current_context()["run_id"]),
+            S3Lister().list_tree,
+            env["inputs_root"],
+        )
         for group in groups:
             LOGGER.info("run %s: %s -> case(s) %s", group.run_tag, group.metrics_dir_s3, group.case_ids)
         return [g.model_dump() for g in groups]
@@ -360,8 +375,8 @@ def nextflow_quality_control_cases():
         reset_dag_run=True,
         deferrable=True,
         poke_interval=60,
-        # The launcher allows one active run; queue the children here rather than there.
-        max_active_tis_per_dagrun=1,
+        # Matches the launcher's own limit, so the children queue here rather than there.
+        max_active_tis_per_dagrun=LAUNCHER_MAX_ACTIVE_RUNS,
     ).expand_kwargs(inputs)
 
     collected = collect_outputs(cases, groups)

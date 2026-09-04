@@ -44,8 +44,5 @@ def test_outputs_are_the_whole_multiqc_set(body):
     assert sorted(d["name"] for d in outputs) == [
         "CA1072_multiqc_report.html",
         "CA1072_multiqc_report_data.zip",
-        "NA12878.metrics.json",
-        "NA12891.metrics.json",
-        "NA12892.metrics.json",
     ]
     assert {d["data_type_code"] for d in outputs} == {"aggqc"}

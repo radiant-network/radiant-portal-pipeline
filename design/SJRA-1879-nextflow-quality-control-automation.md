@@ -116,8 +116,9 @@ of the *content*.
    CRAM alone: the distinct parent directories of those urls are the candidate directories.
 
    Rather than guess which candidate holds the metrics, **probe**: `generate_inputs` already has
-   S3 access, so it lists each candidate for `<aliquot>.mapping_metrics.csv` /
-   `<aliquot>.final.mapping_metrics.csv` and keeps the one that answers. A member with no hit is
+   S3 access, so it lists each candidate for `<aliquot>.<anything>.mapping_metrics.csv` -- sample
+   before the first dot, type as the suffix, the same rule the pipeline applies, so
+   `.final.` and `.dragen.` infixes both count -- and keeps the one that answers. A member with no hit is
    excluded with a reason (`no_dragen_metrics`), like `no_gvcf` today. Probing also checks the
    naming contract below before a pod is spent on it. The metrics must live in the FSx-imported
    bucket, since the launcher gets a pod path via `paths.to_mount`.
@@ -147,7 +148,8 @@ of the *content*.
    Rule, therefore: **group the pending cases by resolved metrics directory and fire one
    launcher run per group.** In practice a night's pending cases span many directories — each
    sequencing run or case lands in its own — so the grouping rarely merges cases and the normal
-   shape is **one launcher run per case**, serialised by the launcher's `max_active_runs=1`. That
+   shape is **one launcher run per group of neighbouring directories**, up to five side by side on
+   the launcher (`max_active_runs=5`). That
    is acceptable at nightly volumes because DRAGEN-metrics mode is light (somalier + MultiQC, no
    BAM or VCF recompute), but it makes the upstream change worth requesting: teach the pipeline to
    accept a list of directories (or a per-row `dragenMetricsDir` samplesheet column), after which
@@ -165,12 +167,10 @@ of the *content*.
    |---|---|---|
    | `multiqc/{familyId}/{familyId}_multiqc_report.html` | `aggqc` / `html` | the report itself — **mandatory** |
    | `multiqc/{familyId}/{familyId}_multiqc_report_data.zip` | `aggqc` / `zip` | MultiQC parsed data — **mandatory** |
-   | `multiqc/{familyId}/qc_json/{aliquot}.metrics.json` | `aggqc` / `json`, one per member | per-sample sidecar; keyed by aliquot, which the run already knows |
+   | `multiqc/{familyId}/qc_json/{aliquot}.metrics.json` | **not registered** | per-sample GA4GH sidecar; a strict subset of the archive's tables (decision 2026-09-03, after inspecting a real archive) |
 
-   Target is all three kinds. The per-sample JSONs cost nothing extra in the output spec — the
-   collector already iterates the case's members — so they are only dropped if a portal rule gets
-   in the way, and then the html and zip are the minimum. Sizes were real (3.7 MB html, 1.6 MB
-   zip), so the symlink-publish trap of the runbook did not occur in QA.
+   Sizes were real (3.7 MB html, 1.6 MB zip), so the symlink-publish trap of the runbook did not
+   occur in QA.
 
    With `familyId = CA<case id>` a launcher run covering several cases yields one such set per
    case, so no per-case launcher runs are needed for the report to be per case. The task binds to
@@ -248,6 +248,20 @@ revision. Implementation can start from §3 and §5.
   keyed XCom, so `locate_metrics` returns the kept cases and `group_cases` the list to expand.
 - `register_case_batch` was extracted to `radiant/tasks/nextflow/register.py`; the post-processing
   DAG still carries its own copy and can be switched over separately.
+- First QA run (2026-09-03) found two defects, both fixed: grouping only merged directories
+  *within* a case, so a night with one sample per subfolder produced one run per case instead of
+  one run at their common ancestor; and the pinned child run id inherited the parent's
+  `scheduled__` prefix, which Airflow 3.2.1 refuses for an operator-triggered run
+  (`create_dagrun` → `DagRunType.from_run_id`), surfacing as a 500. `sanitize_run_tag` now drops
+  the `__`, which also fixes the same latent defect in the post-processing cases DAG.
+- The QA layout that motivated probing over convention, seen on a real case (`prag/GM232700/`): the
+  CRAM sits under `Mapper/v4.0.3-hg38_…/`, while the gVCF **and** every DRAGEN metrics CSV sit under
+  `vcf/dragen/v1.2.2_dragen4.0.3-hg38_…/varcaller/`, with a `.dragen.` infix in every filename.
+  Pipeline-side observations from that run, not DAG defects: DRAGEN 4.0.3 wrote
+  `wgs_overall_mean_cov.csv` / `wgs_hist.csv` / `wgs_contig_mean_cov.csv` but no
+  `wgs_coverage_metrics.csv`, so the pipeline's report leaves Coverage `na` although MultiQC's built-in
+  DRAGEN module reads the mean coverage (52.56×); and the `.dragen` infix is not in the MultiQC
+  `extra_fn_clean_exts`, so built-in sections label samples `GM232700.dragen`. Both belong upstream.
 - The seeds gain task 71, a `quality_control_metrics` over case 1, so case 1 is the seeded
   "already QC'd" case and case 16 the seeded pending trio.
 
@@ -283,10 +297,7 @@ members with current experiments `101` / `102` / `103` and aliquots `NA12878` / 
           ],
           "output_documents": [
             {"name": "CA1_multiqc_report.html",     "url": "s3://…/qc-cases-2026-09-02/multiqc/CA1/CA1_multiqc_report.html",     "size": 3772915, "data_category_code": "genomic", "data_type_code": "aggqc", "format_code": "html"},
-            {"name": "CA1_multiqc_report_data.zip", "url": "s3://…/qc-cases-2026-09-02/multiqc/CA1/CA1_multiqc_report_data.zip", "size": 1616232, "data_category_code": "genomic", "data_type_code": "aggqc", "format_code": "zip"},
-            {"name": "NA12878.metrics.json",        "url": "s3://…/qc-cases-2026-09-02/multiqc/CA1/qc_json/NA12878.metrics.json", "size": 1168,    "data_category_code": "genomic", "data_type_code": "aggqc", "format_code": "json"},
-            {"name": "NA12891.metrics.json",        "url": "s3://…/qc-cases-2026-09-02/multiqc/CA1/qc_json/NA12891.metrics.json", "size": 1166,    "data_category_code": "genomic", "data_type_code": "aggqc", "format_code": "json"},
-            {"name": "NA12892.metrics.json",        "url": "s3://…/qc-cases-2026-09-02/multiqc/CA1/qc_json/NA12892.metrics.json", "size": 1167,    "data_category_code": "genomic", "data_type_code": "aggqc", "format_code": "json"}
+            {"name": "CA1_multiqc_report_data.zip", "url": "s3://…/qc-cases-2026-09-02/multiqc/CA1/CA1_multiqc_report_data.zip", "size": 1616232, "data_category_code": "genomic", "data_type_code": "aggqc", "format_code": "zip"}
           ]
         }
       ]
@@ -324,20 +335,14 @@ alignment registration):
 |---|---|---|---|---|---|---|---|
 | 2001 | `CA1_multiqc_report.html` | `genomic` | `aggqc` | `html` | 3772915 | `s3://…/multiqc/CA1/CA1_multiqc_report.html` | `radiant` |
 | 2002 | `CA1_multiqc_report_data.zip` | `genomic` | `aggqc` | `zip` | 1616232 | `s3://…/multiqc/CA1/CA1_multiqc_report_data.zip` | `radiant` |
-| 2003 | `NA12878.metrics.json` | `genomic` | `aggqc` | `json` | 1168 | `s3://…/multiqc/CA1/qc_json/NA12878.metrics.json` | `radiant` |
-| 2004 | `NA12891.metrics.json` | `genomic` | `aggqc` | `json` | 1166 | `s3://…/multiqc/CA1/qc_json/NA12891.metrics.json` | `radiant` |
-| 2005 | `NA12892.metrics.json` | `genomic` | `aggqc` | `json` | 1167 | `s3://…/multiqc/CA1/qc_json/NA12892.metrics.json` | `radiant` |
 
-`task_has_document` — outputs point at the new rows, inputs at the alignment task's existing
+`task_has_document` — outputs point at the two new rows, inputs at the alignment task's existing
 CRAM/crai documents (ids `63`/`64`-style rows in the seeds):
 
 | task_id | document_id | type |
 |---|---|---|
 | 1001 | 2001 | `output` |
 | 1001 | 2002 | `output` |
-| 1001 | 2003 | `output` |
-| 1001 | 2004 | `output` |
-| 1001 | 2005 | `output` |
 | 1001 | *(NA12878 cram id)* | `input` |
 | 1001 | *(NA12878 crai id)* | `input` |
 | 1001 | *(NA12891 cram id)* | `input` |
