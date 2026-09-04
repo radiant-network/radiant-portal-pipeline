@@ -136,9 +136,56 @@ so its columns carry the upstream names rather than the platform's. A pure 3-col
 2. Import those tables locally and applied the necessary transformations for Radiant usage.
 3. Implement a new DAG to perform table re-annotation. 
 
-**Achieving mutual exclusion between step 3 and `import-radiant`:** 
-- When starting, the import process must verify that the DAG `import_radiant` is not currently running.
-- The update process also needs to grab the pool slot for `import_part` to ensure that an update is not running at the same time.
+**Achieving mutual exclusion between step 3 and `import-radiant`:**
+
+An Airflow pool slot is released the instant the *task* holding it finishes — not when the *DAG run*
+finishes. The re-annotation DAG is multiple tasks (P1 → P2 → P3A/P3B → P4 below), so a pool acquired by its
+first task would already be free again by the time P2 starts, leaving a window for `import_radiant` to slip
+in between — exactly the overlap this is meant to prevent. A pool caps concurrent *task* count; it can't
+express "this whole run must finish before that run starts." A real lock needs an atomic test-and-set held
+for the whole run.
+
+**Lock mechanism choices**:
+
+- Option A: A lock row in Airflow's own Postgres metadata DB (`INSERT ... ON CONFLICT DO NOTHING`).
+- Option B: A dedicated DynamoDB table with a conditional `PutItem`.
+- Option C: An S3 conditional write (`If-None-Match: *`) on a lock object in the data lake bucket this
+  pipeline already writes every Iceberg table to.
+
+**Recommendation Option C**:
+
+- No new infra to provision or get signed off — reuses the bucket already backing every Iceberg table,
+  just one more key under it (e.g. `s3://<iceberg-bucket>/_locks/import_mutex`).
+- Native atomic guarantee: `PutObject` with header `If-None-Match: *` only succeeds if the key doesn't
+  already exist, otherwise `412 PreconditionFailed` — no extra round trip to fake the check.
+- Option A is out, not just discouraged: on Amazon MWAA the Aurora Postgres metadata DB isn't reachable
+  from DAG/task code — Airflow 3 removed direct metadata-DB session access from workers, and AWS's own
+  docs state an operator "cannot be used to perform actions on the Amazon Aurora PostgreSQL metadata
+  database associated with an Amazon MWAA environment." This pipeline ships to MWAA (`mwaa/airflow3/`), so
+  this option doesn't run there at all.
+- Option B is out on cost/ops grounds: a whole managed service provisioned for one mutex, with no other use
+  in this pipeline.
+- Cost: local/CI integration tests (`USE_DOCKER_FIXTURES=true`) run against MinIO, and MinIO's conditional
+  writes don't accept the `*` wildcard for `If-None-Match` — it requires a concrete ETag
+  ([minio/minio#20346](https://github.com/minio/minio/issues/20346), open). So the create-only-if-absent
+  call that's atomic on real S3 can't be exercised identically against the MinIO fixture; the concurrent-lock
+  behavior itself needs verifying against the `USE_DOCKER_FIXTURES=false` sandbox path (real S3), not just
+  the default docker-fixture test run.
+
+**Mechanics**:
+
+- **Acquire** — first task of each DAG: `PutObject(key="_locks/import_mutex", IfNoneMatch="*")`. A
+  `412 PreconditionFailed` means the other side holds it → fail/retry with backoff until free.
+- **Release** — last task of each DAG must release. Specific conditions per DAG must be fulfilled. Because occasional
+failures can occur in `import_radiant`, the completion condition must be that all task have suceeded, to signify we are not in an
+inconsistent state at the moment or releasing the lock.
+ - **Stale-lock guard** — before the conditional put, `HeadObject` the key; if it exists and `LastModified`
+ is older than e.g. 6 hours, delete it first, so a killed run can't deadlock the lock forever.
+- `import_radiant` acquires/releases around its own full run (delta fetch → partition assign → insert new
+  experiments); the re-annotation DAG acquires/releases around its full run (P1 through P4).
+- Separately, the update process still grabs the pool slot for `import_part` to ensure no `import_part` run
+  is in flight at the same time — that pool problem is single-task-scoped per partition, so a plain pool is
+  the right tool there.
 
 
 ```mermaid
