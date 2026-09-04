@@ -108,15 +108,22 @@ Both roots are environment, not params:
 Each root gets a subdirectory named after the run:
 
 ```
-{NEXTFLOW_INPUTS_ROOT}/{run_tag}/samplesheet.csv
-{NEXTFLOW_INPUTS_ROOT}/{run_tag}/pedigrees/{familyId}.ped
-{NEXTFLOW_INPUTS_ROOT}/{run_tag}/phenotypes/{familyId}.yml
-{NEXTFLOW_OUTPUTS_ROOT}/{run_tag}/{slivar,exomiser}/…
+{NEXTFLOW_INPUTS_ROOT}/postprocessing-runs/{run_tag}/samplesheet.csv
+{NEXTFLOW_INPUTS_ROOT}/postprocessing-runs/{run_tag}/pedigrees/{familyId}.ped
+{NEXTFLOW_INPUTS_ROOT}/postprocessing-runs/{run_tag}/phenotypes/{familyId}.yml
+{NEXTFLOW_OUTPUTS_ROOT}/postprocessing/{run_tag}/{slivar,exomiser}/…
 ```
+
+The `postprocessing-runs/` and `postprocessing/` subdirectories keep these apart from quality
+control, which writes `qc-runs/` and `qc/` under the same two roots.
 
 `run_tag` comes from `run_id`, not from a timestamp — an Airflow 3 manual run can have a
 null `logical_date`, and date-derived templates raise at render time. It is stable across
 retries, so the paths are too.
+
+The tag also drops the `__` after the run type (`scheduled__…` becomes `scheduled-…`). Airflow
+3.2 refuses an operator-triggered run whose id starts with `scheduled__`, since that prefix is
+reserved for scheduled runs, and reports it as an opaque 500 from the API server.
 
 The Airflow tasks only ever touch S3; the samplesheet and the `outdir` handed to the
 pipeline carry **pod paths**. `/workspace` is the FSx-Lustre filesystem: its `inputs`
