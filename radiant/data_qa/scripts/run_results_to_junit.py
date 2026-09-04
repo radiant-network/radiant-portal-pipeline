@@ -26,13 +26,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-def _test_name(unique_id: str) -> str:
+def _test_name(unique_id: str, tenant: str | None = None) -> str:
     # dbt test unique_id: "test.<project>.<test_name>.<hash>".
     # Test names contain no dots (underscores only), so segment 2 is the name.
     parts = unique_id.split(".")
-    if len(parts) >= 3 and parts[0] == "test":
-        return parts[2]
-    return unique_id
+    name = parts[2] if len(parts) >= 3 and parts[0] == "test" else unique_id
+
+    # A per-tenant assertion runs once per tenant and keeps the same unique_id every time
+    # (the schema only ever appears in compiled_code). Without this suffix the cases collide
+    # in the report and "which tenant failed" is lost. `[param]` is the standard
+    # parametrized-test convention, so dashboards treat them as distinct cases with their
+    # own history. Results with no tenant field render exactly as before.
+    return f"{name}[tenant={tenant}]" if tenant else name
 
 
 def convert(run_results_path: Path, junit_path: Path) -> int:
@@ -58,7 +63,7 @@ def convert(run_results_path: Path, junit_path: Path) -> int:
     for r in results:
         status = (r.get("status") or "").lower()
         case = ET.SubElement(testsuite, "testcase")
-        case.set("name", _test_name(r.get("unique_id", "unknown")))
+        case.set("name", _test_name(r.get("unique_id", "unknown"), r.get("tenant")))
         case.set("classname", project)
         case.set("time", f"{r.get('execution_time', 0.0):.3f}")
 

@@ -11,8 +11,12 @@
 # baked at build time. Nothing in the runtime path fetches from nextflow.io,
 # nf-co.re or github.com - the LZ egress firewall blocks part of that, and
 # a driver that resolves its own pipeline at runtime is a boot-time failure
-# waiting to happen. The consequence is that bumping PIPELINE_REV requires
-# rebuilding this image.
+# waiting to happen. The consequence is that bumping either *_PIPELINE_REV
+# requires rebuilding this image.
+#
+# Two pipelines share this image, because they share a driver: same cluster,
+# same FSx PVC, same node pool, so a second image would only add a second
+# multi-GB pull to cache on those nodes.
 
 FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023
 
@@ -20,11 +24,19 @@ ARG NXF_VER=24.10.5
 ARG PIPELINE_REPO=Ferlab-Ste-Justine/Post-processing-Pipeline
 ARG PIPELINE_REV=v3.0.0
 
-# Keep in sync with the pipeline's own `plugins` block: v3.0.0 declares
-# nf-schema@2.1.0 (v2.11.0 declared nf-validation@1.1.3 - a different
-# plugin, not a version bump). A mismatch fails at plugin resolution,
-# offline, with no way to recover at runtime.
-ARG NXF_PLUGINS="nf-schema@2.1.0 nf-amazon"
+# `-r` is load-bearing on this one: its manifest declares
+# `defaultBranch = 'master'` while the repo's actual default branch is `main`,
+# so a bare `nextflow pull` resolves a revision that does not exist.
+ARG QC_PIPELINE_REPO=Ferlab-Ste-Justine/quality-control-pipeline
+ARG QC_PIPELINE_REV=v2.0.0
+
+# Keep in sync with each pipeline's own `plugins` block: Post-processing-Pipeline
+# v3.0.0 declares nf-schema@2.1.0 (v2.11.0 declared nf-validation@1.1.3 - a
+# different plugin, not a version bump), quality-control-pipeline v2.0.0 declares
+# nf-schema@2.3.0. Nextflow keeps versioned plugin directories side by side, so
+# both resolve; a missing one fails at plugin resolution, offline, with no way to
+# recover at runtime.
+ARG NXF_PLUGINS="nf-schema@2.1.0 nf-schema@2.3.0 nf-amazon"
 
 # Set NXF_HOME *before* installing Nextflow, so the build-time
 # `nextflow -version` populates ${NXF_HOME}/framework/... and the build-time
@@ -52,15 +64,32 @@ RUN curl -fsSL https://get.nextflow.io | NXF_VER=${NXF_VER} bash \
     && chmod +x /usr/local/bin/nextflow \
     && /usr/local/bin/nextflow -version \
     && /usr/local/bin/nextflow pull "${PIPELINE_REPO}" -r "${PIPELINE_REV}" \
+    && /usr/local/bin/nextflow pull "${QC_PIPELINE_REPO}" -r "${QC_PIPELINE_REV}" \
     && for p in ${NXF_PLUGINS}; do /usr/local/bin/nextflow plugin install "$p"; done
 
 WORKDIR /workspace
 
-# Sanity: confirm framework + pipeline + plugins are all baked in, so a
+# Sanity: confirm framework + both pipelines + every plugin are baked in, so a
 # missing piece fails the build instead of the first production run.
-RUN ls "${NXF_HOME}/framework/${NXF_VER}/" \
-    && ls "${NXF_ASSETS}/${PIPELINE_REPO}/.git" >/dev/null 2>&1 \
-    && ls "${NXF_HOME}/plugins/" | grep -E 'nf-schema|nf-amazon' \
-    || (echo "ERROR: cache layout incomplete" && exit 1)
+#
+# Each plugin is checked by name, not by one grep over the directory: `nf-schema`
+# matches on either version alone, and a single missing version is exactly the
+# case this needs to catch. `nf-schema@2.1.0` installs as `nf-schema-2.1.0`, while
+# an unversioned `nf-amazon` resolves to whatever version it pulled - hence the
+# `@`->`-` rewrite plus a trailing glob rather than an exact directory name.
+#
+# `set -eu` and `{ ...; exit 1; }` are load-bearing: inside `( ... )` the exit
+# would leave a subshell, and as the last command of a loop body it would leave
+# the RUN's status to the final iteration - so a missing middle plugin would
+# build green.
+RUN set -eu \
+    && ls "${NXF_HOME}/framework/${NXF_VER}/" >/dev/null \
+    && ls "${NXF_ASSETS}/${PIPELINE_REPO}/.git" >/dev/null \
+    && ls "${NXF_ASSETS}/${QC_PIPELINE_REPO}/.git" >/dev/null \
+    && for p in ${NXF_PLUGINS}; do \
+           d=$(echo "$p" | tr '@' '-'); \
+           ls -d "${NXF_HOME}/plugins/${d}"* >/dev/null \
+               || { echo "ERROR: plugin $p not baked"; exit 1; }; \
+       done
 
 CMD ["/bin/bash"]

@@ -79,6 +79,7 @@ SELECT
     v.dna_change,
     v.aa_change,
     v.transcript_id,
+    v.pick_source,
     v.omim_inheritance_code
 FROM {{ mapping.starrocks_snv_staging_variant }} v
 LEFT SEMI JOIN tenant_loci tl ON tl.locus_id = v.locus_id

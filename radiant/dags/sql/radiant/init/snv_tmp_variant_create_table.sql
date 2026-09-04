@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_tmp_variant }}
     `locus_hash` varchar(64) NULL,
     `dna_change` varchar(2000),
     `aa_change` varchar(2000),
-    `transcript_id` varchar(100) COMMENT ""
+    `transcript_id` varchar(100) COMMENT "",
+    `pick_source` varchar(20) NULL COMMENT ""
 )
 ENGINE=OLAP
 PRIMARY KEY(`locus_id`)

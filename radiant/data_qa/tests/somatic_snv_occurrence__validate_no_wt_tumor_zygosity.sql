@@ -14,5 +14,5 @@ select
     tumor_seq_id,
     locus_id,
     tumor_zygosity
-from {{ source('radiant', 'somatic__snv__occurrence') }}
+from {{ source('tenant_db', 'somatic__snv__occurrence') }}
 where tumor_zygosity = 'WT'

@@ -155,3 +155,10 @@
              'NA', 'NRP', 'NRT', 'PD', 'PR', 'SMo', 'Smu',
              'XL', 'XLD', 'XLR', 'YL']) }}
 {% endmacro %}
+
+{% macro dict_transcript_source() %}
+  {# SJRA-1830. Not a portal facet yet — mirrors SOURCE_ENSEMBL / SOURCE_REFSEQ in
+     radiant/tasks/vcf/snv/consequence.py. If it becomes one, add it to facets.go and
+     i18n at the same time. #}
+  {{ return(['Ensembl', 'RefSeq']) }}
+{% endmacro %}

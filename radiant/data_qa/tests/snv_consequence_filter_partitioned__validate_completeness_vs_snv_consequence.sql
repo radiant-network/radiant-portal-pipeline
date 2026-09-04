@@ -11,12 +11,15 @@
 
   Locus grain on purpose: it targets the partition / semi-join logic without
   replaying the UNNEST + GROUP BY of the derivation.
+
 #}
+
+{{ config(tags=['tenant_health']) }}
 
 select
     o.part,
     o.locus_id
-from {{ source('radiant', 'germline__snv__occurrence') }} o
+from {{ source('tenant_db', 'germline__snv__occurrence') }} o
 join {{ source('radiant', 'snv__consequence') }} c
     on c.locus_id = o.locus_id
    and array_length(c.consequences) > 0

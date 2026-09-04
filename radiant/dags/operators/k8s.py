@@ -357,7 +357,7 @@ class CheckDataIntegrity:
     directly via KubernetesPodOperator."""
 
     @staticmethod
-    def get_run_dbt(run_results_s3_uri: str, junit_s3_uri: str) -> KubernetesPodOperator:
+    def get_run_dbt(run_results_s3_uri: str, junit_s3_uri: str, tenants: str) -> KubernetesPodOperator:
         return KubernetesPodOperator(
             task_id="run_dbt",
             task_display_name="[K8s] Run dbt data tests",
@@ -372,6 +372,8 @@ class CheckDataIntegrity:
             env_vars={
                 "RUN_RESULTS_S3_URI": run_results_s3_uri,
                 "JUNIT_S3_URI": junit_s3_uri,
+                # JSON list of {"code", "schema"}: one extra dbt pass per entry.
+                "TENANTS": tenants,
                 # We inject these for the local sandbox (like the other k8s operators).
                 # In prod (EKS), boto3 uses Pod Identity instead, so these resolve to empty.
                 "AWS_REGION": os.getenv("AWS_REGION"),
@@ -389,11 +391,40 @@ class CheckDataIntegrity:
         )
 
 
-# `cmds`/`arguments` are Jinja-templated fields, so nothing here may contain `{{` or
-# `{%`; per-run values arrive as env vars instead.
+class Toolbox:
+
+    @staticmethod
+    def get_run_command(extra_env: dict[str, str] | None = None) -> KubernetesPodOperator:
+        return KubernetesPodOperator(
+            task_id="run_toolbox_command",
+            task_display_name="[K8s] Run Toolbox Command",
+            name="radiant-toolbox",
+            namespace=os.getenv("RADIANT_TASK_OPERATOR_KUBERNETES_NAMESPACE"),
+            service_account_name=os.getenv("RADIANT_TASK_OPERATOR_SERVICE_ACCOUNT_NAME"),
+            image=os.getenv("RADIANT_TOOLBOX_OPERATOR_IMAGE"),
+            image_pull_policy="IfNotPresent",
+            cmds=["{{ params.command }}"],
+            arguments="{{ params.args }}",
+            env_vars=extra_env,
+            secrets=[
+                Secret("env", None, os.getenv("RADIANT_TOOLBOX_OPERATOR_SECRET_NAME", "radiant-toolbox-secret")),
+            ],
+            get_logs=True,
+            deferrable=False,
+            is_delete_operator_pod=True,
+        )
+
+
+# `cmds`/`arguments` are Jinja-templated fields, so nothing in these scripts may
+# contain `{{` or `{%`; per-run values arrive as env vars instead.
 #
 # The `cd` is load-bearing: Nextflow reads `.nextflow/cache` from the working
 # directory, so a launch dir keyed by RUN_TAG is what lets a retry `-resume`.
+#
+# Both scripts read their config from the same paths (`/etc/nextflow`,
+# `/etc/nextflow-params`) even though the two pipelines need different content --
+# it is the ConfigMap *names* that differ, not the mounts, which is what keeps the
+# scripts near-identical.
 _NEXTFLOW_DRIVER_SCRIPT = """
 set -euo pipefail
 LAUNCH="${NXF_WORKSPACE}/work/.nextflow-launchdir/${RUN_TAG}"
@@ -407,6 +438,59 @@ nextflow run "${NXF_HOME}/assets/Ferlab-Ste-Justine/Post-processing-Pipeline" \
     -params-file /etc/nextflow-params/params.json \
     --input "$NXF_INPUT" \
     --outdir "$OUTDIR"
+# Let the /outputs DRA flush the last file events to S3 before the pod terminates.
+sleep "${POST_RUN_DRAIN_SECONDS}"
+"""
+
+
+# `--dragen_metrics_dir` is what selects the pipeline's DRAGEN-metrics mode: with it
+# set, BAM_QC and VCF_QC are skipped and the report is built from DRAGEN's per-sample
+# CSVs. It is unconditional here because that is the only mode this DAG runs -- the
+# param is required, so the variable is never empty.
+#
+# The pipeline is run from a copy on the SHARED filesystem, not from the image's own
+# `${NXF_HOME}/assets/...`, and that is load-bearing rather than tidiness.
+#
+# This pipeline carries nf-core module resource scripts (`modules/local/multiqc_python/
+# resources/usr/bin/multiqc_report.py`). Nextflow puts those on PATH by exporting the
+# *projectDir* path into the task wrapper -- but the task runs in the module's own
+# container (biocontainers/multiqc), which mounts only ${NXF_WORKSPACE} and has no
+# /opt/nextflow. Run from the image path, MULTIQC_PYTHON dies with
+# `multiqc_report.py: command not found` (exit 127). Post-processing never hit this
+# because it has no module resource scripts.
+#
+# The copy is keyed by the asset's git commit, so a rebuilt image with a new pipeline
+# revision lands in a new directory instead of silently reusing a stale one. The
+# temp-dir-then-`mv -T` dance makes a concurrent driver racing on the same revision
+# harmless: whoever loses the rename just reuses the winner's directory.
+#
+# No `-r` on `nextflow run`: the source is a local directory whose revision is
+# whatever Dockerfile.nextflow.launcher pulled at build time.
+_NEXTFLOW_QC_DRIVER_SCRIPT = """
+set -euo pipefail
+SRC="${NXF_HOME}/assets/Ferlab-Ste-Justine/quality-control-pipeline"
+REV="$(git -C "$SRC" rev-parse --short HEAD)"
+PROJECT="${NXF_WORKSPACE}/pipelines/quality-control-pipeline-${REV}"
+if [ ! -d "$PROJECT" ]; then
+  mkdir -p "${NXF_WORKSPACE}/pipelines"
+  TMP="${PROJECT}.tmp.$$"
+  rm -rf "$TMP"
+  cp -a "$SRC" "$TMP"
+  mv -T "$TMP" "$PROJECT" 2>/dev/null || rm -rf "$TMP"
+fi
+echo ">> pipeline rev=$REV project=$PROJECT"
+LAUNCH="${NXF_WORKSPACE}/work/.nextflow-launchdir/${RUN_TAG}"
+OUTDIR="${NXF_OUTDIR:-${NXF_WORKSPACE}/outputs/qlin/${RUN_TAG}}"
+mkdir -p "$LAUNCH" && cd "$LAUNCH"
+echo ">> run_tag=$RUN_TAG input=$NXF_INPUT outdir=$OUTDIR dragen=$NXF_DRAGEN_METRICS_DIR"
+nextflow run "$PROJECT" \
+    -profile docker \
+    -c /etc/nextflow/nextflow.config \
+    -resume \
+    -params-file /etc/nextflow-params/params.json \
+    --input "$NXF_INPUT" \
+    --outdir "$OUTDIR" \
+    --dragen_metrics_dir "$NXF_DRAGEN_METRICS_DIR"
 # Let the /outputs DRA flush the last file events to S3 before the pod terminates.
 sleep "${POST_RUN_DRAIN_SECONDS}"
 """
@@ -434,132 +518,229 @@ echo ">> after:"; df -h "${NXF_WORKSPACE}" | tail -1
 """
 
 
+def _nextflow_image(*env_vars: str) -> str | None:
+    """First env var that is set wins.
+
+    Lets one pipeline be pointed at an ad-hoc image -- a locally built tag while a
+    revision is being tested -- without moving the other one with it. Returns None
+    when none is set, so a missing image fails loudly at pod creation rather than
+    silently pulling something unintended.
+    """
+    for name in env_vars:
+        value = os.getenv(name)
+        if value:
+            return value
+    return None
+
+
+def _nextflow_driver_operator(
+    *,
+    task_id: str,
+    task_display_name: str,
+    name: str,
+    script: str,
+    image: str | None,
+    env_vars: dict[str, str],
+    config_configmap: str,
+    params_configmap: str,
+) -> KubernetesPodOperator:
+    """The pod every Nextflow driver runs in, whichever pipeline it launches.
+
+    Unlike every other operator here a driver runs in the `nextflow` namespace under
+    the `nextflow` service account -- that SA carries the Pod Identity for S3 and the
+    RBAC to spawn workers -- and it is the only kind that mounts volumes.
+
+    Only the launch script, the pod name and the two ConfigMap *names* differ between
+    pipelines. Everything below is topology: which cluster, which filesystem, how long
+    to wait. Sharing it is what stops the two drivers drifting apart on the settings
+    that are about the deployment rather than about the pipeline.
+    """
+    workspace = os.getenv("NEXTFLOW_OPERATOR_WORKSPACE_PATH", "/workspace")
+    return KubernetesPodOperator(
+        task_id=task_id,
+        task_display_name=task_display_name,
+        name=name,
+        namespace=os.getenv("NEXTFLOW_OPERATOR_KUBERNETES_NAMESPACE", "nextflow"),
+        service_account_name=os.getenv("NEXTFLOW_OPERATOR_SERVICE_ACCOUNT_NAME", "nextflow"),
+        image=image,
+        image_pull_policy="IfNotPresent",
+        cmds=["/bin/bash", "-c"],
+        arguments=[script],
+        env_vars={
+            "NXF_WORKSPACE": workspace,
+            # ANSI progress redraws are unreadable once captured into a task log.
+            "NXF_ANSI_LOG": "false",
+            "POST_RUN_DRAIN_SECONDS": os.getenv("NEXTFLOW_OPERATOR_DRAIN_SECONDS", "30"),
+            # No AWS_* here, unlike the other operators: this pod has Pod Identity,
+            # and injecting empty credentials would break the chain.
+            #
+            # Callers add the per-run values, RUN_TAG among them. nextflow.config
+            # reads RUN_TAG via System.getenv too, for `workDir = /workspace/work/
+            # ${runTag}` -- so one tag stabilises both the work dir and the launch
+            # dir, which is what -resume needs.
+            **env_vars,
+        },
+        volumes=[
+            k8s.V1Volume(
+                name="workspace",
+                persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
+                    claim_name=os.getenv("NEXTFLOW_OPERATOR_PVC_NAME", "fsx-nextflow"),
+                ),
+            ),
+            k8s.V1Volume(
+                name="nextflow-cfg",
+                config_map=k8s.V1ConfigMapVolumeSource(name=config_configmap),
+            ),
+            k8s.V1Volume(
+                name="nextflow-params",
+                config_map=k8s.V1ConfigMapVolumeSource(name=params_configmap),
+            ),
+        ],
+        volume_mounts=[
+            k8s.V1VolumeMount(name="workspace", mount_path=workspace),
+            k8s.V1VolumeMount(name="nextflow-cfg", mount_path="/etc/nextflow", read_only=True),
+            k8s.V1VolumeMount(name="nextflow-params", mount_path="/etc/nextflow-params", read_only=True),
+        ],
+        # The nodepool is pinned to the FSx AZ; landing elsewhere means a cross-AZ
+        # Lustre mount. do-not-disrupt stops Karpenter consolidating the driver away.
+        node_selector={"nodepool": os.getenv("NEXTFLOW_OPERATOR_NODEPOOL", "qlin-nextflow")},
+        annotations={"karpenter.sh/do-not-disrupt": "true"},
+        container_resources=_nextflow_container_resources(),
+        get_logs=True,
+        # A WGS run takes hours, so the worker slot is released and the triggerer
+        # polls instead. Both run as the `airflow` SA, which needs RBAC in the
+        # `nextflow` namespace (see apps/nextflow/rbac.yaml in qlin-qa-infra).
+        deferrable=True,
+        poll_interval=float(os.getenv("NEXTFLOW_OPERATOR_POLL_INTERVAL", "30")),
+        # Without this a deferred pod's logs only surface once it finishes, so a
+        # multi-hour run looks silent in the UI.
+        logging_interval=int(os.getenv("NEXTFLOW_OPERATOR_LOGGING_INTERVAL", "600")),
+        # The provider default of 120s is short of a Karpenter cold start plus a
+        # multi-GB image pull on a fresh node.
+        startup_timeout_seconds=int(os.getenv("NEXTFLOW_OPERATOR_STARTUP_TIMEOUT_SECONDS", "1800")),
+        # Backstop: clearing a deferred task does not delete its pod, and a second
+        # driver against the same launch dir corrupts the resume cache.
+        active_deadline_seconds=int(os.getenv("NEXTFLOW_OPERATOR_ACTIVE_DEADLINE_SECONDS", "86400")),
+        # Keep a failed driver for inspection; clean up successful ones.
+        on_finish_action="delete_succeeded_pod",
+    )
+
+
+def _nextflow_cleanup_operator(run_tag: str, name: str, image: str | None) -> KubernetesPodOperator:
+    """Delete this run's Nextflow scratch after a successful pipeline.
+
+    A WGS run leaves ~200-280 GB in workDir plus the launch dir, and the
+    work-cleanup CronJob only sweeps launchdirs older than MAX_AGE_DAYS -- so
+    without this, a couple of runs fill the 1.2 TiB filesystem and the failure
+    surfaces as ENOSPC on whichever task happens to be writing.
+
+    Only ever wired downstream of a SUCCESSFUL run: the scratch is what `-resume`
+    needs, so deleting it after a failure would turn every Airflow retry into a
+    full re-run.
+
+    Shared by every Nextflow DAG. It deletes by RUN_TAG on a filesystem all of them
+    share, so keeping one copy keeps the `${RUN_TAG:?}` guard in one place too.
+    """
+    workspace = os.getenv("NEXTFLOW_OPERATOR_WORKSPACE_PATH", "/workspace")
+    return KubernetesPodOperator(
+        task_id="cleanup_work",
+        task_display_name="[K8s] Clean up Nextflow scratch",
+        name=name,
+        namespace=os.getenv("NEXTFLOW_OPERATOR_KUBERNETES_NAMESPACE", "nextflow"),
+        service_account_name=os.getenv("NEXTFLOW_OPERATOR_SERVICE_ACCOUNT_NAME", "nextflow"),
+        # Reuse the driver image: it is already cached on these nodes, so this
+        # adds no pull.
+        image=image,
+        image_pull_policy="IfNotPresent",
+        cmds=["/bin/bash", "-c"],
+        arguments=[_NEXTFLOW_CLEANUP_SCRIPT],
+        env_vars={"RUN_TAG": run_tag, "NXF_WORKSPACE": workspace},
+        volumes=[
+            k8s.V1Volume(
+                name="workspace",
+                persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
+                    claim_name=os.getenv("NEXTFLOW_OPERATOR_PVC_NAME", "fsx-nextflow"),
+                ),
+            ),
+        ],
+        volume_mounts=[k8s.V1VolumeMount(name="workspace", mount_path=workspace)],
+        node_selector={"nodepool": os.getenv("NEXTFLOW_OPERATOR_NODEPOOL", "qlin-nextflow")},
+        container_resources=_container_resources("NEXTFLOW_CLEANUP", cpu="500m", memory="512Mi", memory_limit="1Gi"),
+        get_logs=True,
+        deferrable=False,
+        on_finish_action="delete_succeeded_pod",
+    )
+
+
 class NextflowPostprocessing:
     """Runs the Ferlab Post-processing-Pipeline (VEP / slivar / Exomiser) as a
     Nextflow driver pod, which spawns its own worker pods via Nextflow's k8s executor.
-
-    Unlike every other operator here it runs in the `nextflow` namespace under the
-    `nextflow` service account -- that SA carries the Pod Identity for S3 and the RBAC
-    to spawn workers -- and it is the only one that mounts volumes.
     """
 
     @staticmethod
     def get_run_postprocessing(input_csv: str, outdir: str, run_tag: str) -> KubernetesPodOperator:
-        workspace = os.getenv("NEXTFLOW_OPERATOR_WORKSPACE_PATH", "/workspace")
-        return KubernetesPodOperator(
+        return _nextflow_driver_operator(
             task_id="run_postprocessing",
             task_display_name="[K8s] Run Nextflow Post-processing",
             name="nextflow-postprocessing-driver",
-            namespace=os.getenv("NEXTFLOW_OPERATOR_KUBERNETES_NAMESPACE", "nextflow"),
-            service_account_name=os.getenv("NEXTFLOW_OPERATOR_SERVICE_ACCOUNT_NAME", "nextflow"),
-            image=os.getenv("NEXTFLOW_OPERATOR_IMAGE"),
-            image_pull_policy="IfNotPresent",
-            cmds=["/bin/bash", "-c"],
-            arguments=[_NEXTFLOW_DRIVER_SCRIPT],
+            script=_NEXTFLOW_DRIVER_SCRIPT,
+            image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
             env_vars={
-                # nextflow.config also reads RUN_TAG via System.getenv, for
-                # `workDir = /workspace/work/${runTag}` -- so one tag stabilises both
-                # the work dir and the launch dir, which is what -resume needs.
                 "RUN_TAG": run_tag,
                 "NXF_INPUT": input_csv,
                 "NXF_OUTDIR": outdir,
-                "NXF_WORKSPACE": workspace,
-                # ANSI progress redraws are unreadable once captured into a task log.
-                "NXF_ANSI_LOG": "false",
-                "POST_RUN_DRAIN_SECONDS": os.getenv("NEXTFLOW_OPERATOR_DRAIN_SECONDS", "30"),
-                # No AWS_* here, unlike the other operators: this pod has Pod Identity,
-                # and injecting empty credentials would break the chain.
             },
-            volumes=[
-                k8s.V1Volume(
-                    name="workspace",
-                    persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
-                        claim_name=os.getenv("NEXTFLOW_OPERATOR_PVC_NAME", "fsx-nextflow"),
-                    ),
-                ),
-                k8s.V1Volume(
-                    name="nextflow-cfg",
-                    config_map=k8s.V1ConfigMapVolumeSource(
-                        name=os.getenv("NEXTFLOW_OPERATOR_CONFIG_CONFIGMAP", "nextflow-cfg"),
-                    ),
-                ),
-                k8s.V1Volume(
-                    name="nextflow-params",
-                    config_map=k8s.V1ConfigMapVolumeSource(
-                        name=os.getenv("NEXTFLOW_OPERATOR_PARAMS_CONFIGMAP", "nextflow-params"),
-                    ),
-                ),
-            ],
-            volume_mounts=[
-                k8s.V1VolumeMount(name="workspace", mount_path=workspace),
-                k8s.V1VolumeMount(name="nextflow-cfg", mount_path="/etc/nextflow", read_only=True),
-                k8s.V1VolumeMount(name="nextflow-params", mount_path="/etc/nextflow-params", read_only=True),
-            ],
-            # The nodepool is pinned to the FSx AZ; landing elsewhere means a cross-AZ
-            # Lustre mount. do-not-disrupt stops Karpenter consolidating the driver away.
-            node_selector={"nodepool": os.getenv("NEXTFLOW_OPERATOR_NODEPOOL", "qlin-nextflow")},
-            annotations={"karpenter.sh/do-not-disrupt": "true"},
-            container_resources=_nextflow_container_resources(),
-            get_logs=True,
-            # A WGS run takes hours, so the worker slot is released and the triggerer
-            # polls instead. Both run as the `airflow` SA, which needs RBAC in the
-            # `nextflow` namespace (see apps/nextflow/rbac.yaml in qlin-qa-infra).
-            deferrable=True,
-            poll_interval=float(os.getenv("NEXTFLOW_OPERATOR_POLL_INTERVAL", "30")),
-            # Without this a deferred pod's logs only surface once it finishes, so a
-            # multi-hour run looks silent in the UI.
-            logging_interval=int(os.getenv("NEXTFLOW_OPERATOR_LOGGING_INTERVAL", "600")),
-            # The provider default of 120s is short of a Karpenter cold start plus a
-            # multi-GB image pull on a fresh node.
-            startup_timeout_seconds=int(os.getenv("NEXTFLOW_OPERATOR_STARTUP_TIMEOUT_SECONDS", "1800")),
-            # Backstop: clearing a deferred task does not delete its pod, and a second
-            # driver against the same launch dir corrupts the resume cache.
-            active_deadline_seconds=int(os.getenv("NEXTFLOW_OPERATOR_ACTIVE_DEADLINE_SECONDS", "86400")),
-            # Keep a failed driver for inspection; clean up successful ones.
-            on_finish_action="delete_succeeded_pod",
+            config_configmap=os.getenv("NEXTFLOW_OPERATOR_CONFIG_CONFIGMAP", "nextflow-cfg"),
+            params_configmap=os.getenv("NEXTFLOW_OPERATOR_PARAMS_CONFIGMAP", "nextflow-params"),
         )
 
     @staticmethod
     def get_cleanup_work(run_tag: str) -> KubernetesPodOperator:
-        """Delete this run's Nextflow scratch after a successful pipeline.
-
-        A WGS run leaves ~200-280 GB in workDir plus the launch dir, and the
-        work-cleanup CronJob only sweeps launchdirs older than MAX_AGE_DAYS -- so
-        without this, a couple of runs fill the 1.2 TiB filesystem and the failure
-        surfaces as ENOSPC on whichever task happens to be writing.
-
-        Only ever wired downstream of a SUCCESSFUL run: the scratch is what `-resume`
-        needs, so deleting it after a failure would turn every Airflow retry into a
-        full re-run.
-        """
-        workspace = os.getenv("NEXTFLOW_OPERATOR_WORKSPACE_PATH", "/workspace")
-        return KubernetesPodOperator(
-            task_id="cleanup_work",
-            task_display_name="[K8s] Clean up Nextflow scratch",
+        return _nextflow_cleanup_operator(
+            run_tag,
             name="nextflow-postprocessing-cleanup",
-            namespace=os.getenv("NEXTFLOW_OPERATOR_KUBERNETES_NAMESPACE", "nextflow"),
-            service_account_name=os.getenv("NEXTFLOW_OPERATOR_SERVICE_ACCOUNT_NAME", "nextflow"),
-            # Reuse the driver image: it is already cached on these nodes, so this
-            # adds no pull.
-            image=os.getenv("NEXTFLOW_OPERATOR_IMAGE"),
-            image_pull_policy="IfNotPresent",
-            cmds=["/bin/bash", "-c"],
-            arguments=[_NEXTFLOW_CLEANUP_SCRIPT],
-            env_vars={"RUN_TAG": run_tag, "NXF_WORKSPACE": workspace},
-            volumes=[
-                k8s.V1Volume(
-                    name="workspace",
-                    persistent_volume_claim=k8s.V1PersistentVolumeClaimVolumeSource(
-                        claim_name=os.getenv("NEXTFLOW_OPERATOR_PVC_NAME", "fsx-nextflow"),
-                    ),
-                ),
-            ],
-            volume_mounts=[k8s.V1VolumeMount(name="workspace", mount_path=workspace)],
-            node_selector={"nodepool": os.getenv("NEXTFLOW_OPERATOR_NODEPOOL", "qlin-nextflow")},
-            container_resources=_container_resources(
-                "NEXTFLOW_CLEANUP", cpu="500m", memory="512Mi", memory_limit="1Gi"
-            ),
-            get_logs=True,
-            deferrable=False,
-            on_finish_action="delete_succeeded_pod",
+            image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
+        )
+
+
+class NextflowQualityControl:
+    """Runs the Ferlab quality-control-pipeline in its DRAGEN-metrics mode as a
+    Nextflow driver pod, which spawns its own worker pods via Nextflow's k8s executor.
+
+    It shares the driver image, the FSx workspace and the node pool with
+    `NextflowPostprocessing`, but not its configuration: the post-processing
+    `nextflow.config` references `params.save_genotyped` and `params.tools`, and a
+    param referenced from a `-c` config but absent from the `-params-file` kills the
+    run at config parse. Hence a separate ConfigMap pair.
+    """
+
+    @staticmethod
+    def get_run_quality_control(
+        input_csv: str, outdir: str, dragen_metrics_dir: str, run_tag: str
+    ) -> KubernetesPodOperator:
+        return _nextflow_driver_operator(
+            task_id="run_quality_control",
+            task_display_name="[K8s] Run Nextflow Quality Control",
+            name="nextflow-quality-control-driver",
+            script=_NEXTFLOW_QC_DRIVER_SCRIPT,
+            # Both pipelines are baked into one image, so the shared var is the norm.
+            # NEXTFLOW_QC_OPERATOR_IMAGE exists to pin QC to an ad-hoc build while a
+            # pipeline revision is being tested, without moving post-processing too.
+            image=_nextflow_image("NEXTFLOW_QC_OPERATOR_IMAGE", "NEXTFLOW_OPERATOR_IMAGE"),
+            env_vars={
+                "RUN_TAG": run_tag,
+                "NXF_INPUT": input_csv,
+                "NXF_OUTDIR": outdir,
+                "NXF_DRAGEN_METRICS_DIR": dragen_metrics_dir,
+            },
+            config_configmap=os.getenv("NEXTFLOW_QC_OPERATOR_CONFIG_CONFIGMAP", "nextflow-qc-cfg"),
+            params_configmap=os.getenv("NEXTFLOW_QC_OPERATOR_PARAMS_CONFIGMAP", "nextflow-qc-params"),
+        )
+
+    @staticmethod
+    def get_cleanup_work(run_tag: str) -> KubernetesPodOperator:
+        return _nextflow_cleanup_operator(
+            run_tag,
+            name="nextflow-quality-control-cleanup",
+            image=_nextflow_image("NEXTFLOW_QC_OPERATOR_IMAGE", "NEXTFLOW_OPERATOR_IMAGE"),
         )

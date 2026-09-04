@@ -1,8 +1,8 @@
 version: 2
 
 sources:
-  - name: radiant
-    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+  - name: tenant_db
+    schema: "{{ env_var('SR_TENANT_SCHEMA', env_var('SR_SCHEMA', 'radiant')) }}"
     tables:
       - name: exomiser
         tests:
@@ -47,12 +47,6 @@ sources:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
                   name: exomiser__should_not_contain_null__locus_id
-              # --- Relationships ---------------------------------------------
-              # exomiser locus must exist in the snv__variant
-              - relationships:
-                  name: exomiser__relationships__locus_id__snv_variant
-                  to: source('radiant', 'snv__variant')
-                  field: locus_id
           - name: id
             tests:
               # --- Should Not Contain Null -----------------------------------

@@ -23,6 +23,10 @@ _TENANT_A, _TENANT_B = TENANT_CODES
 # have no tenant), so it proves the insert restricts to the loci the tenant actually carries.
 _STAGING_LOCI = (1, 2, 3, 4)
 
+# Locus 2 is the one both tenants carry, so giving it the odd value proves pick_source travels with
+# its own row rather than being broadcast.
+_STAGING_PICK_SOURCE = {1: "Ensembl", 2: "RefSeq", 3: "Ensembl", 4: "Ensembl"}
+
 # locus_id -> (pc_wgs, pn_wgs). `pn_*` is the tenant's whole cohort, broadcast onto every row by
 # germline_snv_variant_frequency_insert.sql.
 _GERMLINE_FREQ = {
@@ -54,6 +58,9 @@ _CATALOG_COLUMNS = (
     "somatic_pc_to_wxs",
     "somatic_pn_to_wxs",
     "somatic_pf_to_wxs",
+    # SJRA-1833. Not a frequency, but it sits next to `transcript_id` in the middle of the positional
+    # projection, so a wrong ordinal there surfaces here rather than as a silent column swap.
+    "pick_source",
 )
 
 
@@ -81,8 +88,8 @@ def test_snv_variant_is_isolated_per_tenant(starrocks_session, mapping_conf, sta
         _seed(
             cursor,
             base_mapping["starrocks_snv_staging_variant"],
-            ("locus_id", "chromosome", "start", "reference", "alternate"),
-            [(locus_id, "1", 1000 + locus_id, "A", "T") for locus_id in _STAGING_LOCI],
+            ("locus_id", "chromosome", "start", "reference", "alternate", "pick_source"),
+            [(locus_id, "1", 1000 + locus_id, "A", "T", _STAGING_PICK_SOURCE[locus_id]) for locus_id in _STAGING_LOCI],
         )
 
         for tenant, mapping in mappings.items():
@@ -148,3 +155,9 @@ def test_snv_variant_is_isolated_per_tenant(starrocks_session, mapping_conf, sta
     ) == (0, 0, 0)
     assert {row["somatic_pc_to_wgs"] for row in catalogs[_TENANT_B].values()} == {0}
     assert {row["somatic_pn_to_wgs"] for row in catalogs[_TENANT_B].values()} == {0}
+
+    # pick_source is copied from the shared staging catalog, per row (SJRA-1833).
+    assert catalogs[_TENANT_A][1]["pick_source"] == "Ensembl"
+    assert catalogs[_TENANT_A][2]["pick_source"] == "RefSeq"
+    assert catalogs[_TENANT_B][2]["pick_source"] == "RefSeq"
+    assert catalogs[_TENANT_B][3]["pick_source"] == "Ensembl"

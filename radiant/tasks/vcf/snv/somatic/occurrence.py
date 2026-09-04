@@ -196,36 +196,49 @@ def process_occurrence(
     tumor_exp = experiments[tumor_index]
     normal_exp = experiments[normal_index] if normal_index is not None else None
 
+    # Every cyvcf2 `gt_*` property and `format(...)` call re-decodes the FORMAT matrix for
+    # *all* samples and allocates a fresh array, so each one is read exactly once per record
+    # here instead of once per value-or-None expression per sample.
+    fmt = record.FORMAT
+    dp_arr = record.format("DP") if "DP" in fmt else None
+    sq_arr = record.format("SQ") if "SQ" in fmt else None
+    gt_ref_depths = record.gt_ref_depths
+    gt_alt_depths = record.gt_alt_depths
+    gt_types = record.gt_types
+    gt_depths = record.gt_depths
+    gt_alt_freqs = record.gt_alt_freqs
+    gt_phases = record.gt_phases
+
     # Tumor FORMAT
-    t_dp = record.format("DP")[tumor_index][0] if "DP" in record.FORMAT else 0
-    t_ad_ref = record.gt_ref_depths[tumor_index] if record.gt_ref_depths[tumor_index] > 0 else None
-    t_ad_alt = record.gt_alt_depths[tumor_index] if record.gt_alt_depths[tumor_index] > 0 else None
+    t_dp = dp_arr[tumor_index][0] if dp_arr is not None else 0
+    t_ad_ref = gt_ref_depths[tumor_index] if gt_ref_depths[tumor_index] > 0 else None
+    t_ad_alt = gt_alt_depths[tumor_index] if gt_alt_depths[tumor_index] > 0 else None
     t_calls = calls_without_phased(record, tumor_index)
-    t_calls, t_zygosity = adjust_somatic_calls_and_zygosity(t_calls, record.gt_types[tumor_index], t_ad_alt)
+    t_calls, t_zygosity = adjust_somatic_calls_and_zygosity(t_calls, gt_types[tumor_index], t_ad_alt)
     t_has_alt = 1 in t_calls
-    t_ad_total = record.gt_depths[tumor_index] if record.gt_depths[tumor_index] > 0 else None
-    t_ad_ratio = record.gt_alt_freqs[tumor_index] if record.gt_alt_freqs[tumor_index] > 0 else None
+    t_ad_total = gt_depths[tumor_index] if gt_depths[tumor_index] > 0 else None
+    t_ad_ratio = gt_alt_freqs[tumor_index] if gt_alt_freqs[tumor_index] > 0 else None
     t_af = t_ad_ratio
-    t_phased = record.gt_phases[tumor_index]
-    t_sq = record.format("SQ")[tumor_index][0] if "SQ" in record.FORMAT else None
+    t_phased = gt_phases[tumor_index]
+    t_sq = sq_arr[tumor_index][0] if sq_arr is not None else None
 
     # Normal FORMAT — absent for a tumor-only analysis
     if normal_index is None:
         n_dp = n_ad_ref = n_ad_alt = n_calls = n_has_alt = None
         n_ad_total = n_ad_ratio = n_af = n_zygosity = n_phased = n_sq = None
     else:
-        n_dp = record.format("DP")[normal_index][0] if "DP" in record.FORMAT else 0
+        n_dp = dp_arr[normal_index][0] if dp_arr is not None else 0
         n_dp = n_dp if n_dp > 0 else None
-        n_ad_ref = record.gt_ref_depths[normal_index] if record.gt_ref_depths[normal_index] > 0 else None
-        n_ad_alt = record.gt_alt_depths[normal_index] if record.gt_alt_depths[normal_index] > 0 else None
+        n_ad_ref = gt_ref_depths[normal_index] if gt_ref_depths[normal_index] > 0 else None
+        n_ad_alt = gt_alt_depths[normal_index] if gt_alt_depths[normal_index] > 0 else None
         n_calls = calls_without_phased(record, normal_index)
-        n_calls, n_zygosity = adjust_somatic_calls_and_zygosity(n_calls, record.gt_types[normal_index], n_ad_alt)
+        n_calls, n_zygosity = adjust_somatic_calls_and_zygosity(n_calls, gt_types[normal_index], n_ad_alt)
         n_has_alt = 1 in n_calls if n_calls is not None else None
-        n_ad_total = record.gt_depths[normal_index] if record.gt_depths[normal_index] > 0 else None
-        n_ad_ratio = record.gt_alt_freqs[normal_index] if record.gt_alt_freqs[normal_index] > 0 else None
+        n_ad_total = gt_depths[normal_index] if gt_depths[normal_index] > 0 else None
+        n_ad_ratio = gt_alt_freqs[normal_index] if gt_alt_freqs[normal_index] > 0 else None
         n_af = n_ad_ratio
-        n_phased = record.gt_phases[normal_index]
-        n_sq = record.format("SQ")[normal_index][0] if "SQ" in record.FORMAT else None
+        n_phased = gt_phases[normal_index]
+        n_sq = sq_arr[normal_index][0] if sq_arr is not None else None
 
     occurrences[tumor_exp.seq_id] = {
         # common

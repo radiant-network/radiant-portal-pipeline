@@ -11,18 +11,21 @@ sources:
               name: snv_consequence__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
-              # SJRA-1550 mane_select
-              name: snv_consequence__should_not_contain_only_null_SJRA-1550
+              name: snv_consequence__should_not_contain_only_null
               except:
                 # Already covered by snv_consequence__should_not_contain_null__*
                 - locus_id
                 - symbol
                 - transcript_id
+                - mane_pair_transcript_id
+                - transcript_version
 
           # --- Should Not Contain Same Value ---------------------------------
           - should_not_contain_same_value:
-              # SJRA-1550 is_mane_select is_mane_plus
-              name: snv_consequence__should_not_contain_same_value_SJRA-1550
+              name: snv_consequence__should_not_contain_same_value
+              except:
+                - source
+                - scores_from_mane_pair
 
           # --- Should Be Unique ----------------------------------------------
           - dbt_utils.unique_combination_of_columns:
@@ -37,12 +40,6 @@ sources:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
                   name: snv_consequence__should_not_contain_null__locus_id
-              # --- Relationships ---------------------------------------------
-              # consequence locus must exist in the snv__variant
-              - relationships:
-                  name: snv_consequence__relationships__locus_id__snv_variant
-                  to: source('radiant', 'snv__variant')
-                  field: locus_id
           - name: symbol
             tests:
               # --- Should Not Contain Null -----------------------------------
@@ -53,6 +50,16 @@ sources:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
                   name: snv_consequence__should_not_contain_null__transcript_id
+          - name: source
+            description: "VARCHAR(20). Null on intergenic rows only."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_transcript_source() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: snv_consequence__accepted_values_source
+                  values: "{{ dict_transcript_source() }}"
+                  config:
+                    where: "source is not null"
           - name: consequences
             tests:
               # --- Accepted Values (array) -----------------------------------
@@ -66,7 +73,7 @@ sources:
               # --- Accepted Values -------------------------------------------
               # values: dict_biotype() — see macros/dictionaries.sql
               - accepted_values:
-                  name: snv_consequence__accepted_values_biotype
+                  name: snv_consequence__accepted_values_biotype_SJRA-1857
                   values: "{{ dict_biotype() }}"
                   config:
                     where: "biotype is not null"

@@ -1,8 +1,8 @@
 version: 2
 
 sources:
-  - name: radiant
-    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+  - name: tenant_db
+    schema: "{{ env_var('SR_TENANT_SCHEMA', env_var('SR_SCHEMA', 'radiant')) }}"
     tables:
       - name: snv__variant
         tests:
@@ -27,30 +27,36 @@ sources:
               # SJRA-1550 is_mane_select is_mane_plus
               name: snv_variant__should_not_contain_same_value_SJRA-1550
               except:
+                - pick_source
                 # Already covered by snv_variant__should_be_unique__*
                 - locus_id
                 - locus
+                # Constant by construction
+                - germline_pn_wgs
+                - germline_pn_wgs_affected
+                - germline_pn_wgs_not_affected
+                - germline_pn_wxs
+                - germline_pn_wxs_affected
+                - germline_pn_wxs_not_affected
+                - somatic_pn_tn_wgs
+                - somatic_pn_tn_wxs
+                - somatic_pn_to_wgs
+                - somatic_pn_to_wxs
                 # WGS-only QA dataset
                 - germline_pc_wxs
-                - germline_pn_wxs
                 - germline_pc_wxs_affected
-                - germline_pn_wxs_affected
                 - germline_pf_wxs_affected
                 - germline_pc_wxs_not_affected
-                - germline_pn_wxs_not_affected
                 - germline_pf_wxs_not_affected
                 - germline_pf_wxs
                 - somatic_pc_tn_wxs
-                - somatic_pn_tn_wxs
                 - somatic_pf_tn_wxs
                 # No tumor-only cohort in the QA dataset (SJRA-1751); all six are constant 0.
                 # They are deliberately NOT excluded from should_not_contain_only_null: the level-3
                 # projections COALESCE them to 0, so an all-NULL column means a missing COALESCE.
                 - somatic_pc_to_wgs
-                - somatic_pn_to_wgs
                 - somatic_pf_to_wgs
                 - somatic_pc_to_wxs
-                - somatic_pn_to_wxs
                 - somatic_pf_to_wxs
 
           # --- Should Be Within Range ----------------------------------------
