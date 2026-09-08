@@ -193,6 +193,9 @@ other use anywhere in this pipeline.
 - Separately, the update process still grabs the pool slot for `import_part` to ensure no `import_part` run
   is in flight at the same time — that pool problem is single-task-scoped per partition, so a plain pool is
   the right tool there.
+- **Note:** actual write contention with re-annotation is in `import_part`, not `import_radiant` — `import_radiant`
+  only fetches delta + triggers partitions, no Iceberg/StarRocks writes. Lock acquire/release belong in
+  `import_part` (first/last task of each triggered partition run), not `import_radiant`.
 
 
 ```mermaid
