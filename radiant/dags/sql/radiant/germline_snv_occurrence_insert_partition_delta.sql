@@ -3,6 +3,8 @@ SELECT
     o.seq_id,
     o.task_id,
     v.locus_id,
+    o.chromosome,
+    o.start,
     ad_ratio,
     gq,
     dp,

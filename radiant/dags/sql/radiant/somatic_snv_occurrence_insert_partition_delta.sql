@@ -3,6 +3,8 @@ SELECT
     o.task_id,
     o.tumor_seq_id,
     v.locus_id,
+    o.chromosome,
+    o.start,
     o.normal_seq_id,
     o.quality,
     o.filter,

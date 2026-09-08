@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_occurrence }} (
     seq_id INT NOT NULL,
     task_id INT NOT NULL,
     locus_id bigint(20) NOT NULL,
+    chromosome varchar(20) NULL COMMENT "",
+    start int(11) NULL COMMENT "",
     ad_ratio FLOAT,
     gq INT,
     dp INT,
