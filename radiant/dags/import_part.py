@@ -690,10 +690,7 @@ def import_part():
     checkpoint_cnv >> [delete_sequencing_experiments, update_sequencing_experiments]
 
     # Release only if every task above succeeded (default trigger_rule=ALL_SUCCESS): a failed or
-    # skipped run must leave the lock held, so a genuinely inconsistent state can't be picked up by
-    # a concurrent re-annotation run. Nothing clears it automatically after that -- an abandoned
-    # lock only comes free through the toolbox DAG's `check-lock` command, run manually by an
-    # operator once they've confirmed it's safe to clear.
+    # skipped run must leave the lock held.
     [delete_sequencing_experiments, update_sequencing_experiments] >> _release_import_lock
 
 

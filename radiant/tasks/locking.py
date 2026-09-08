@@ -1,23 +1,3 @@
-"""S3-backed mutual-exclusion lock.
-
-See design/SJRA-1811-opendatalake-integration.md §4 (Decision 2): an Airflow pool caps
-concurrent *task* count, it can't express "this whole run must finish before that run starts".
-This lock is a single object under `_locks/` in the Airflow DAGs bucket, acquired with a
-conditional `PutObject` (`IfNoneMatch="*"`) that only one caller can win, and released with a
-plain `DeleteObject`.
-
-`acquire_lock` never deletes anything -- a run that fails leaves its lock in place, on purpose:
-`import_part` failures are routine and get restarted by an operator, and an automatic reclaim
-would let that restart race whatever else is running. Clearing an abandoned lock is a deliberate,
-separate action (the toolbox DAG's `check-lock` command), gated on `check_lock` reporting it expired
-*and* an operator explicitly asking for the delete.
-
-Note that MinIO does not honor the `*` wildcard for `If-None-Match`
-(https://github.com/minio/minio/issues/20346, open), so the conditional-write behavior this
-module depends on can only be exercised against real S3, not the `USE_DOCKER_FIXTURES=true`
-MinIO fixture.
-"""
-
 import dataclasses
 import datetime
 import logging
@@ -39,8 +19,6 @@ class LockHeldError(Exception):
 
 @dataclasses.dataclass(frozen=True)
 class LockStatus:
-    """Point-in-time read of a lock, for reporting -- never acted on automatically."""
-
     held: bool
     holder: str | None = None
     age: datetime.timedelta | None = None
@@ -52,12 +30,6 @@ def _lock_key(name: str) -> str:
 
 
 def acquire_lock(bucket: str, name: str, holder: str) -> None:
-    """Acquire a named mutex via a conditional S3 write.
-
-    Raises:
-        LockHeldError: another run already holds the lock (live or abandoned -- this
-            function never deletes an existing lock to find out which).
-    """
     s3 = boto3.client("s3")
     key = _lock_key(name)
 
@@ -71,12 +43,6 @@ def acquire_lock(bucket: str, name: str, holder: str) -> None:
 
 
 def release_lock(bucket: str, name: str) -> None:
-    """Delete a named mutex. A no-op if the lock object is already gone.
-
-    The only two callers that should ever exist: the DAG that holds the lock, releasing it
-    on its own successful completion, and an operator clearing a lock `check_lock` reported
-    as expired.
-    """
     s3 = boto3.client("s3")
     key = _lock_key(name)
     s3.delete_object(Bucket=bucket, Key=key)
@@ -84,7 +50,6 @@ def release_lock(bucket: str, name: str) -> None:
 
 
 def check_lock(bucket: str, name: str, stale_after: datetime.timedelta = STALE_LOCK_MAX_AGE) -> LockStatus:
-    """Report a lock's holder/age/expiry without ever modifying it."""
     s3 = boto3.client("s3")
     key = _lock_key(name)
 
@@ -101,13 +66,6 @@ def check_lock(bucket: str, name: str, stale_after: datetime.timedelta = STALE_L
 
 
 def describe_lock_status(status: LockStatus, delete_if_expired: bool) -> tuple[str, bool]:
-    """Report a lock's status in one line and decide whether it should be deleted.
-
-    Returns:
-        (message, should_delete) -- `should_delete` is only ever True when the lock is both
-        expired and `delete_if_expired` was explicitly set; a live lock is never deleted,
-        regardless of the flag.
-    """
     if not status.held:
         return "No lock currently held.", False
 
