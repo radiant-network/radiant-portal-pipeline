@@ -120,6 +120,24 @@ def import_part():
     _acquire_import_lock = acquire_import_lock()
     _release_import_lock = release_import_lock()
 
+    @task(
+        task_id="acquire_import_lock",
+        task_display_name="[PyOp] Acquire Import Lock",
+    )
+    def acquire_import_lock():
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        holder = f"{context['dag'].dag_id}:{context['run_id']}"
+        acquire_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME, holder=holder)
+
+    @task(task_id="release_import_lock", task_display_name="[PyOp] Release Import Lock")
+    def release_import_lock():
+        release_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME)
+
+    _acquire_import_lock = acquire_import_lock()
+    _release_import_lock = release_import_lock()
+
     fetch_sequencing_experiment_delta = RadiantStarRocksOperator(
         task_id="fetch_sequencing_experiment_delta",
         sql="./sql/radiant/sequencing_experiment_partition_select.sql",
@@ -691,6 +709,13 @@ def import_part():
 
     # Release only if every task above succeeded (default trigger_rule=ALL_SUCCESS): a failed or
     # skipped run must leave the lock held.
+    [delete_sequencing_experiments, update_sequencing_experiments] >> _release_import_lock
+
+    # Release only if every task above succeeded (default trigger_rule=ALL_SUCCESS): a failed or
+    # skipped run must leave the lock held, so a genuinely inconsistent state can't be picked up by
+    # a concurrent re-annotation run. Nothing clears it automatically after that -- an abandoned
+    # lock only comes free through the toolbox DAG's `check-lock` command, run manually by an
+    # operator once they've confirmed it's safe to clear.
     [delete_sequencing_experiments, update_sequencing_experiments] >> _release_import_lock
 
 
