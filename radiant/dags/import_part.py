@@ -12,8 +12,9 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
-from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, ECSEnv, get_namespace, load_docs_md
+from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, RADIANT_LOCK_S3_BUCKET, ECSEnv, get_namespace, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_radiant_mapping
+from radiant.tasks.locking import IMPORT_MUTEX_LOCK_NAME, acquire_lock, release_lock
 from radiant.tasks.starrocks.operator import (
     RadiantLoadExomiserOperator,
     RadiantStarRocksOperator,
@@ -100,6 +101,24 @@ std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=1
 )
 def import_part():
     start = EmptyOperator(task_id="start", task_display_name="[ --- CHECKPOINT: PHASE 1 --- ] Before Setup")
+
+    @task(
+        task_id="acquire_import_lock",
+        task_display_name="[PyOp] Acquire Import Lock",
+    )
+    def acquire_import_lock():
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        holder = f"{context['dag'].dag_id}:{context['run_id']}"
+        acquire_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME, holder=holder)
+
+    @task(task_id="release_import_lock", task_display_name="[PyOp] Release Import Lock")
+    def release_import_lock():
+        release_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME)
+
+    _acquire_import_lock = acquire_import_lock()
+    _release_import_lock = release_import_lock()
 
     fetch_sequencing_experiment_delta = RadiantStarRocksOperator(
         task_id="fetch_sequencing_experiment_delta",
@@ -629,7 +648,7 @@ def import_part():
     # --- DAG Flow ---
 
     # Phase 1: Setup
-    start >> namespace_task >> fetch_sequencing_experiment_delta >> checkpoint_setup
+    _acquire_import_lock >> start >> namespace_task >> fetch_sequencing_experiment_delta >> checkpoint_setup
 
     # Phase 2: VCF Imports
     checkpoint_setup >> vcf_imports >> checkpoint_imports
@@ -669,6 +688,13 @@ def import_part():
 
     # Final Phase: Update Sequencing Experiments (deletions and updates)
     checkpoint_cnv >> [delete_sequencing_experiments, update_sequencing_experiments]
+
+    # Release only if every task above succeeded (default trigger_rule=ALL_SUCCESS): a failed or
+    # skipped run must leave the lock held, so a genuinely inconsistent state can't be picked up by
+    # a concurrent re-annotation run. Nothing clears it automatically after that -- an abandoned
+    # lock only comes free through the toolbox DAG's `check-lock` command, run manually by an
+    # operator once they've confirmed it's safe to clear.
+    [delete_sequencing_experiments, update_sequencing_experiments] >> _release_import_lock
 
 
 import_part()

@@ -179,6 +179,8 @@ def test_dag_contains_all_tasks(dag_bag):
     task_ids = [task.task_id for task in dag.tasks]
     expected_tasks = [
         "start",
+        "acquire_import_lock",
+        "release_import_lock",
         "get_iceberg_namespace",
         "get_tables_to_refresh",
         "fetch_sequencing_experiment_delta",
@@ -283,3 +285,10 @@ def test_dag_task_dependencies_are_valid(dag_bag):
     all_tenants_downstream = dag.get_task("extract_all_tenants").downstream_task_ids
     assert "snv_consequence.render_snv_consequence_filter_part_sql" in all_tenants_downstream
     assert not any(task_id.startswith("snv_variant.") for task_id in all_tenants_downstream)
+
+    # S3 mutex lock (design/SJRA-1811-opendatalake-integration.md)
+    assert dag.get_task("acquire_import_lock").downstream_task_ids == {"start"}
+    release_lock_task = dag.get_task("release_import_lock")
+    assert release_lock_task.upstream_task_ids == {"delete_sequencing_experiments", "update_sequencing_experiment"}
+    assert release_lock_task.trigger_rule == TriggerRule.ALL_SUCCESS
+    assert release_lock_task.downstream_task_ids == set()
