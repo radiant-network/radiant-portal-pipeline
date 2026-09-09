@@ -1,9 +1,16 @@
+-- OpenDataLake publishes no `locus_hash`: recomputed here, byte-identical to the VCF ingest path
+-- (radiant/tasks/vcf/snv/common.py) and to raw_exomiser's generated column. It is computed once, in a
+-- subquery, so the join key and the projected column share a single evaluation instead of the two
+-- separate projections StarRocks would otherwise plan. The GET_VARIANT_ID filter sits inside that
+-- subquery so only the variants that need a surrogate id are hashed at all.
 INSERT INTO {{ mapping.starrocks_variant_lookup }}(`locus_hash`)
-SELECT
-    `locus_hash`
-FROM {{ mapping.iceberg_spliceai }} s
-LEFT ANTI JOIN {{ mapping.starrocks_variant_lookup }} vd ON vd.locus_hash=s.locus_hash
-WHERE GET_VARIANT_ID(s.chromosome, s.start, s.reference, s.alternate) IS NULL
-AND s.chromosome in
-    ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20',
-    '21', '22', 'X', 'Y', 'M');
+SELECT h.locus_hash
+FROM (
+    SELECT sha2(concat_ws('-', src.chromosome, src.start, src.reference, src.alternate), 256) AS locus_hash
+    FROM {{ mapping.iceberg_spliceai }} src
+    WHERE GET_VARIANT_ID(src.chromosome, src.start, src.reference, src.alternate) IS NULL
+      AND src.chromosome in
+        ('1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17',
+        '18', '19', '20', '21', '22', 'X', 'Y', 'M')
+) h
+LEFT ANTI JOIN {{ mapping.starrocks_variant_lookup }} vd ON vd.locus_hash = h.locus_hash;

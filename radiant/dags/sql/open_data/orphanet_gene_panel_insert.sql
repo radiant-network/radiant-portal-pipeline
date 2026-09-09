@@ -19,6 +19,6 @@ SELECT gene_symbol as symbol,
                                                   end
                ),
       x -> x is not null) as inheritance_code
-FROM {{ mapping.iceberg_orphanet_gene_set }}
+FROM {{ mapping.iceberg_orphanet_gene_set }} o
 ;
 

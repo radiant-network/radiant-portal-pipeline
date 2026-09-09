@@ -196,6 +196,9 @@ This ensure that they have the right environment when they start. The current va
 | `PYICEBERG_CATALOG__DEFAULT__TYPE`      | Set to `glue` for PyIceberg catalog type. |
 | `RADIANT_ICEBERG_NAMESPACE`             | Icerberg namespace for Radiant (ex: `radiant_qa`). |
 | `RADIANT_LOCK_S3_BUCKET`                | Bucket backing the `import_part` S3 mutex (design/SJRA-1811-opendatalake-integration.md §4). Must be set to the Airflow DAGs bucket (`<organization>-airflow-<environment>`, provisioned by terraform) -- NOT the data-lake bucket. Defaults to `warehouse`, the local/CI MinIO bucket, which does not exist in AWS. |
+| `RADIANT_OPEN_DATA_CATALOG`             | StarRocks external catalog pointing at the OpenDataLake Iceberg warehouse (design/SJRA-1811-opendatalake-integration.md). Defaults to `opendatalake_catalog`. |
+| `RADIANT_OPEN_DATA_DATABASE`            | Iceberg database inside that catalog. Per-environment (ex: `opendatalake_qa`), so every deployment must set it -- the default, `reference`, is the name OpenDataLake uses locally. |
+| `RADIANT_OPEN_DATA_REF`                 | Iceberg ref every open-data read is pinned to. Defaults to `latest`, the tag OpenDataLake moves onto each publish. OpenDataLake keeps `main` permanently empty, so an unpinned read returns no rows. Set it to a `dataset_version` to pin one release. |
 | `RADIANT_TASK_OPERATOR_TASK_DEFINITION` | ECS task definition for Radiant operator. |
 | `RADIANT_TASK_OPERATOR_LOG_GROUP`       | CloudWatch log group  for Radiant operator. |
 | `RADIANT_TASK_OPERATOR_LOG_REGION`      | AWS region  for radiant operator logs | 

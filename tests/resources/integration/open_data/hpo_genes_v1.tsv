@@ -1,4 +1,4 @@
-symbol	hpo_term_name	hpo_term_id
+gene_symbol	hpo_name	hpo_id
 TP53	Short stature	HP:0004322
 BRCA1	Seizures	HP:0001250
 EGFR	Hearing loss	HP:0000365

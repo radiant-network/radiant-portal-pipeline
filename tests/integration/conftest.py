@@ -538,6 +538,11 @@ def mapping_conf(
         RadiantConfigKeys.ICEBERG_NAMESPACE.value[0]: starrocks_iceberg_catalog.database,
         RadiantConfigKeys.CLINICAL_CATALOG.value[0]: starrocks_jdbc_catalog.catalog,
         RadiantConfigKeys.CLINICAL_DATABASE.value[0]: starrocks_jdbc_catalog.database,
+        # In a deployment the OpenDataLake tables sit in their own catalog and database; the fixtures put
+        # them in the single test catalog, under the contract names and tagged with the same ref.
+        RadiantConfigKeys.OPEN_DATA_CATALOG.value[0]: starrocks_iceberg_catalog.catalog,
+        RadiantConfigKeys.OPEN_DATA_DATABASE.value[0]: starrocks_iceberg_catalog.database,
+        RadiantConfigKeys.OPEN_DATA_REF.value[0]: RadiantConfigKeys.OPEN_DATA_REF.default,
     }
 
 

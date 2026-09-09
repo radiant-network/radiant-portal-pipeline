@@ -11,6 +11,9 @@ class RadiantConfigKeys(Enum):
     RADIANT_TENANT_DB_TEMPLATE = ("RADIANT_TENANT_DB_TEMPLATE", "{tenant}_tenant")
     CLINICAL_CATALOG = ("RADIANT_CLINICAL_CATALOG", "radiant_jdbc")
     CLINICAL_DATABASE = ("RADIANT_CLINICAL_DATABASE", "public")
+    OPEN_DATA_CATALOG = ("RADIANT_OPEN_DATA_CATALOG", "opendatalake_catalog")
+    OPEN_DATA_DATABASE = ("RADIANT_OPEN_DATA_DATABASE", "reference")
+    OPEN_DATA_REF = ("RADIANT_OPEN_DATA_REF", "latest")
 
     @property
     def env_key(self):
@@ -58,25 +61,28 @@ ICEBERG_RADIANT_MAPPING = {
     "iceberg_somatic_snv_occurrence": "somatic_snv_occurrence",
 }
 
-ICEBERG_OPEN_DATA_MAPPING = {
-    "iceberg_1000_genomes": "1000_genomes",
-    "iceberg_clinvar": "clinvar",
-    "iceberg_dbnsfp": "dbnsfp",
-    "iceberg_dbsnp": "dbsnp",
-    "iceberg_gnomad_genomes_v3": "gnomad_genomes_v3",
-    "iceberg_spliceai": "spliceai_enriched",
-    "iceberg_topmed_bravo": "topmed_bravo",
-    "iceberg_gnomad_constraint": "gnomad_constraint_v_2_1_1",
-    "iceberg_omim_gene_set": "omim_gene_set",
-    "iceberg_hpo_gene_set": "hpo_gene_set",
+ICEBERG_OPEN_DATA_CONTRACT_MAPPING = {
+    "iceberg_1000_genomes": "1000_genomes_v1",
+    "iceberg_clinvar": "clinvar_v1",
+    "iceberg_dbnsfp": "dbnsfp_v1",
+    "iceberg_dbsnp": "dbsnp_v1",
+    "iceberg_ddd_gene_set": "ddd_v1",
+    "iceberg_gnomad_constraint": "gnomad_constraint_v1",
+    "iceberg_gnomad_joint": "gnomad_joint_v1",
+    "iceberg_gnomad_sv": "gnomad_sv_v1",
+    "iceberg_hpo_gene_set": "hpo_genes_v1",
+    "iceberg_hpo_term": "hpo_terms_v1",
+    "iceberg_mondo_term": "mondo_v1",
+    "iceberg_omim_gene_set": "omim_v1",
+    "iceberg_orphanet_gene_set": "orphanet_v1",
+    "iceberg_spliceai": "spliceai_v1",
+    "iceberg_topmed_bravo": "topmed_bravo_v1",
+}
+
+ICEBERG_OPEN_DATA_LEGACY_MAPPING = {
     "iceberg_ensembl_gene": "ensembl_gene",
     "iceberg_ensembl_exon_by_gene": "ensembl_exon_by_gene",
-    "iceberg_orphanet_gene_set": "orphanet_gene_set",
     "iceberg_cosmic_gene_set": "cosmic_gene_set",
-    "iceberg_ddd_gene_set": "ddd_gene_set",
-    "iceberg_mondo_term": "mondo_term",
-    "iceberg_hpo_term": "hpo_term",
-    "iceberg_gnomad_sv": "gnomad_sv",
 }
 
 ICEBERG_CATALOG_DATABASE = {
@@ -150,10 +156,34 @@ def get_iceberg_radiant_mapping(conf=None) -> dict:
     return {key: f"{_catalog}.{_database}.{value}" for key, value in ICEBERG_RADIANT_MAPPING.items()}
 
 
+def _open_data_relation(catalog: str, database: str, table: str, ref: str) -> str:
+    # StarRocks puts the temporal clause between the table and its alias, so this composes directly with
+    # the callers' `FROM {{ mapping.iceberg_x }} <alias>`. Verified on 4.0.13: the reverse order,
+    # `<table> <alias> VERSION AS OF '<ref>'`, is a syntax error. An empty ref disables time travel.
+    qualified = f"{catalog}.{database}.{table}"
+    if not ref:
+        return qualified
+    return f"{qualified} VERSION AS OF '{ref}'"
+
+
 def get_iceberg_open_data_mapping(conf=None) -> dict:
-    _catalog = get_config_value(conf, RadiantConfigKeys.ICEBERG_CATALOG)
-    _database = get_config_value(conf, RadiantConfigKeys.ICEBERG_NAMESPACE)
-    return {key: f"{_catalog}.{_database}.{value}" for key, value in ICEBERG_OPEN_DATA_MAPPING.items()}
+    _legacy_catalog = get_config_value(conf, RadiantConfigKeys.ICEBERG_CATALOG)
+    _legacy_database = get_config_value(conf, RadiantConfigKeys.ICEBERG_NAMESPACE)
+    _catalog = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_CATALOG)
+    _database = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_DATABASE)
+    _ref = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_REF)
+
+    mapping = {
+        key: _open_data_relation(_catalog, _database, value, _ref)
+        for key, value in ICEBERG_OPEN_DATA_CONTRACT_MAPPING.items()
+    }
+    mapping.update(
+        {
+            key: f"{_legacy_catalog}.{_legacy_database}.{value}"
+            for key, value in ICEBERG_OPEN_DATA_LEGACY_MAPPING.items()
+        }
+    )
+    return mapping
 
 
 def get_iceberg_tables(conf=None) -> dict:
