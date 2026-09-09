@@ -153,7 +153,7 @@ def test_describe_lock_status_held_and_expired_without_flag_does_not_delete():
 
     message, should_delete = describe_lock_status(status, delete_if_expired=False)
     assert "EXPIRED" in message
-    assert '-delete-if-expired' in message
+    assert "-delete-if-expired" in message
     assert should_delete is False
 
 
