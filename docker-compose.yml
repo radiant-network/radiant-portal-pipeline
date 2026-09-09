@@ -65,7 +65,7 @@ x-airflow-common:
     PYICEBERG_CATALOG__DEFAULT__CREDENTIAL: root:password
     PYICEBERG_CATALOG__DEFAULT__HEADER__Polaris-Realm: radiant
     RADIANT_ICEBERG_NAMESPACE: radiant_iceberg_namespace
-    RADIANT_LOCK_S3_BUCKET: dags
+    RADIANT_LOCK_S3_BUCKET: warehouse
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:postgres@postgres/airflow

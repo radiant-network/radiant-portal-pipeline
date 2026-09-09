@@ -23,6 +23,7 @@ class LockStatus:
     holder: str | None = None
     age: datetime.timedelta | None = None
     expired: bool = False
+    stale_after: datetime.timedelta = STALE_LOCK_MAX_AGE
 
 
 def _lock_key(name: str) -> str:
@@ -62,7 +63,7 @@ def check_lock(bucket: str, name: str, stale_after: datetime.timedelta = STALE_L
 
     holder = obj["Body"].read().decode()
     age = datetime.datetime.now(datetime.UTC) - obj["LastModified"]
-    return LockStatus(held=True, holder=holder, age=age, expired=age > stale_after)
+    return LockStatus(held=True, holder=holder, age=age, expired=age > stale_after, stale_after=stale_after)
 
 
 def describe_lock_status(status: LockStatus, delete_if_expired: bool) -> tuple[str, bool]:
@@ -70,7 +71,7 @@ def describe_lock_status(status: LockStatus, delete_if_expired: bool) -> tuple[s
         return "No lock currently held.", False
 
     if not status.expired:
-        ttl_remaining = STALE_LOCK_MAX_AGE - status.age
+        ttl_remaining = status.stale_after - status.age
         return (
             f"Lock held by {status.holder!r}, age={status.age}, TTL remaining={ttl_remaining}. "
             "Not expired -- not deleting.",
@@ -81,7 +82,8 @@ def describe_lock_status(status: LockStatus, delete_if_expired: bool) -> tuple[s
         return f"Lock held by {status.holder!r}, age={status.age} -- EXPIRED. Deleting.", True
 
     return (
-        f"Lock held by {status.holder!r}, age={status.age} -- EXPIRED (max age {STALE_LOCK_MAX_AGE}). "
-        "delete_if_expired=False -- not deleting. Re-run with delete_if_expired=True to clear it.",
+        f"Lock held by {status.holder!r}, age={status.age} -- EXPIRED (max age {status.stale_after}). "
+        "-delete-if-expired=False -- not deleting. Re-run the toolbox `check-lock` command with "
+        'args=["-delete-if-expired"] to clear it.',
         False,
     )
