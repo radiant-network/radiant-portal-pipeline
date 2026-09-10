@@ -99,7 +99,7 @@ std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=1
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def import_part():
-    start = EmptyOperator(task_id="start", task_display_name="[Start]")
+    start = EmptyOperator(task_id="start", task_display_name="[ --- CHECKPOINT: PHASE 1 --- ] Before Setup")
 
     fetch_sequencing_experiment_delta = RadiantStarRocksOperator(
         task_id="fetch_sequencing_experiment_delta",
@@ -587,30 +587,31 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    # Checkpoint objects
+    # Checkpoint objects. Each one closes a phase and names the phase it opens, so the phase numbers in the
+    # DAG-flow block at the bottom of this file can be found in the task list.
     checkpoint_setup = EmptyOperator(
         task_id="checkpoint_after_setup",
-        task_display_name="[ --- CHECKPOINT --- ] Before VCF Imports",
+        task_display_name="[ --- CHECKPOINT: PHASE 2 --- ] Before VCF Imports",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_imports = EmptyOperator(
         task_id="checkpoint_after_vcf_imports",
-        task_display_name="[ --- CHECKPOINT --- ] Before Post-VCF Processing",
+        task_display_name="[ --- CHECKPOINT: PHASE 3 --- ] Before Post-VCF Processing",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_after_exomiser = EmptyOperator(
         task_id="checkpoint_after_exomiser",
-        task_display_name="[ --- CHECKPOINT --- ] Before Occurrence, Variant, Consequence Insertions",
+        task_display_name="[ --- CHECKPOINT: PHASE 4 --- ] Before SNV Occurrence, Variant, Consequence Insertions",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_variants = EmptyOperator(
         task_id="checkpoint_after_variants",
-        task_display_name="[ --- CHECKPOINT --- ] Before CNV Occurrence Insertions",
+        task_display_name="[ --- CHECKPOINT: PHASE 5 --- ] Before CNV Occurrence Insertions",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_cnv = EmptyOperator(
         task_id="checkpoint_after_cnv",
-        task_display_name="[ --- CHECKPOINT --- ] Before Sequencing Experiment Updates",
+        task_display_name="[ --- CHECKPOINT: FINAL PHASE --- ] Before Sequencing Experiment Updates",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
