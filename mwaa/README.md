@@ -195,6 +195,7 @@ This ensure that they have the right environment when they start. The current va
 | `IS_AWS`                                | Set to `true` to indicate running in AWS environment. |
 | `PYICEBERG_CATALOG__DEFAULT__TYPE`      | Set to `glue` for PyIceberg catalog type. |
 | `RADIANT_ICEBERG_NAMESPACE`             | Icerberg namespace for Radiant (ex: `radiant_qa`). |
+| `RADIANT_LOCK_S3_BUCKET`                | Bucket backing the `import_part` S3 mutex (design/SJRA-1811-opendatalake-integration.md §4). Must be set to the Airflow DAGs bucket (`<organization>-airflow-<environment>`, provisioned by terraform) -- NOT the data-lake bucket. Defaults to `warehouse`, the local/CI MinIO bucket, which does not exist in AWS. |
 | `RADIANT_TASK_OPERATOR_TASK_DEFINITION` | ECS task definition for Radiant operator. |
 | `RADIANT_TASK_OPERATOR_LOG_GROUP`       | CloudWatch log group  for Radiant operator. |
 | `RADIANT_TASK_OPERATOR_LOG_REGION`      | AWS region  for radiant operator logs | 

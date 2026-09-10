@@ -18,6 +18,8 @@ DOCS_DIR = pathlib.Path(DAGS_DIR / "docs")
 
 IS_AWS = os.environ.get("IS_AWS", "false").lower() == "true"
 
+RADIANT_LOCK_S3_BUCKET = os.getenv("RADIANT_LOCK_S3_BUCKET", "warehouse")
+
 
 def parse_list(env_val):
     return [v.strip() for v in env_val.split(",") if v.strip()]

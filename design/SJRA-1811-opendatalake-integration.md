@@ -149,13 +149,13 @@ for the whole run.
 
 - Option A: A lock row in Airflow's own Postgres metadata DB (`INSERT ... ON CONFLICT DO NOTHING`).
 - Option B: A dedicated DynamoDB table with a conditional `PutItem`.
-- Option C: An S3 conditional write (`If-None-Match: *`) on a lock object in the data lake bucket this
-  pipeline already writes every Iceberg table to.
+- Option C: An S3 conditional write (`If-None-Match: *`) on a lock object in the Airflow DAGs bucket
+  (`dags/`, `plugins/`, `startup/`) already provisioned for this environment.
 
 **Recommendation Option C**:
 
-- No new infra to provision or get signed off — reuses the bucket already backing every Iceberg table,
-  just one more key under it (e.g. `s3://<airflow-dags-bucket>/_locks/import_mutex`).
+- No new infra to provision or get signed off — reuses the bucket already backing this Airflow
+  environment, just one more key under it (e.g. `s3://<airflow-dags-bucket>/_locks/import_mutex`).
 - Native atomic guarantee: `PutObject` with header `If-None-Match: *` only succeeds if the key doesn't
   already exist, otherwise `412 PreconditionFailed` — no extra round trip to fake the check.
 - Cost: local/CI integration tests (`USE_DOCKER_FIXTURES=true`) run against MinIO, and MinIO's conditional
@@ -181,21 +181,24 @@ other use anywhere in this pipeline.
 
 **Mechanics**:
 
-- **Acquire** — first task of each DAG: `PutObject(key="_locks/import_mutex", IfNoneMatch="*")`. A
-  `412 PreconditionFailed` means the other side holds it → fail/retry with backoff until free.
-- **Release** — last task of each DAG must release. Specific conditions per DAG must be fulfilled. Because occasional
-  failures can occur in `import_radiant`, the completion condition must be that all task have suceeded, to signify we are not in an
-  inconsistent state at the moment or releasing the lock.
- - **Stale-lock guard** — before the conditional put, `HeadObject` the key; if it exists and `LastModified`
-   is older than e.g. 6 hours, delete it first, so a killed run can't deadlock the lock forever.
-- `import_radiant` acquires/releases around its own full run (delta fetch → partition assign → insert new
-  experiments); the re-annotation DAG acquires/releases around its full run (P1 through P4).
-- Separately, the update process still grabs the pool slot for `import_part` to ensure no `import_part` run
-  is in flight at the same time — that pool problem is single-task-scoped per partition, so a plain pool is
-  the right tool there.
-- **Note:** actual write contention with re-annotation is in `import_part`, not `import_radiant` — `import_radiant`
-  only fetches delta + triggers partitions, no Iceberg/StarRocks writes. Lock acquire/release belong in
-  `import_part` (first/last task of each triggered partition run), not `import_radiant`.
+- **Acquire** — first task of `import_part` (per triggered partition run) and of the re-annotation DAG:
+  `PutObject(key="_locks/import_mutex", IfNoneMatch="*")`. A `412 PreconditionFailed` means the other
+  side holds it → the task fails outright (no retry). Lock acquire/release belongs in `import_part`, not
+  `import_radiant`: `import_radiant` only fetches the delta and triggers partitions, it holds no
+  Iceberg/StarRocks writes itself — the writes that must not race the re-annotation DAG happen in
+  `import_part`. `import_part` already runs one partition at a time (pool `import_part`, a single slot
+  held by `import_radiant`'s trigger task for the whole partition run), so this adds only the missing
+  piece: exclusion against the re-annotation DAG's whole multi-task run, which a pool can't express.
+- **Release** — the last task of each DAG releases, gated on that DAG's own completion condition being
+  all-success (`import_part`: both final sequencing-experiment update tasks; re-annotation: P4). A failed
+  or partially-skipped run does not release — the lock stays held.
+- **No automatic reclaim.** Acquire never deletes an existing lock, however old. `import_part` failures
+  are routine and get restarted by an operator; an automatic stale-lock reclaim would let that restart
+  race whatever legitimately still holds the lock. Clearing an abandoned lock is instead a deliberate,
+  separate action: the toolbox DAG's `check-lock` command reports the current lock's holder and age, and only
+  deletes it when the operator explicitly passes `-delete-if-expired` (via toolbox's `args` param)
+  *and* the lock is past its 6h TTL — never automatically, and never for a lock still within its
+  TTL regardless of the flag.
 
 
 ```mermaid

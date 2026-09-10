@@ -5,14 +5,15 @@ import pendulum
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 
-from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, ECSEnv, load_docs_md
+from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, RADIANT_LOCK_S3_BUCKET, ECSEnv, load_docs_md
+from radiant.tasks.locking import IMPORT_MUTEX_LOCK_NAME, check_lock, describe_lock_status, release_lock
 
 if IS_AWS:
     from radiant.dags.operators import ecs as operators
 else:
     from radiant.dags.operators import k8s as operators
 
-TOOLBOX_COMMANDS = ["create-tenant", "create-user", "refresh-tenants"]
+TOOLBOX_COMMANDS = ["create-tenant", "create-user", "refresh-tenants", "check-lock"]
 
 _KV_ITEMS = {
     "type": "object",
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 def _resolve_env_vars(env_vars: list[dict]) -> dict[str, str]:
     return {item["name"]: item["value"] for item in env_vars}
+
+
+def _delete_if_expired(args: list[str]) -> bool:
+    return "-delete-if-expired" in args
 
 
 def _generate_user_password(command: str, token_urlsafe=secrets.token_urlsafe) -> str:
@@ -57,7 +62,7 @@ def _generate_user_password(command: str, token_urlsafe=secrets.token_urlsafe) -
             type="string",
             enum=TOOLBOX_COMMANDS,
             title="Command",
-            description="Toolbox binary to run.",
+            description="Toolbox command to run.",
         ),
         "args": Param(
             [],
@@ -66,7 +71,11 @@ def _generate_user_password(command: str, token_urlsafe=secrets.token_urlsafe) -
             title="Arguments",
             description=(
                 "CLI flags passed verbatim to the command, e.g. "
-                '["-code", "demo", "-name", "Demo Hospital"] for create-tenant.'
+                '["-code", "demo", "-name", "Demo Hospital"] for create-tenant. For check-lock, '
+                'the only recognized flag is "-delete-if-expired": if the import_mutex lock is '
+                "held and past its TTL, delete it. Has no effect on a lock that is still within "
+                "its TTL -- run without it first to see the lock's status before deciding whether "
+                "to clear it."
             ),
         ),
         "env_vars": Param(
@@ -100,6 +109,25 @@ def toolbox():
 
     password = generate_user_password(command="{{ params.command }}")
 
+    @task.branch(task_id="select_execution_path", task_display_name="[PyOp] Select Execution Path")
+    def select_execution_path(command: str) -> str:
+        if command == "check-lock":
+            return "check_import_lock"
+        return "build_ecs_environment" if IS_AWS else "resolve_env_vars"
+
+    branch = select_execution_path(command="{{ params.command }}")
+
+    @task(task_id="check_import_lock", task_display_name="[PyOp] Check Import Lock")
+    def check_import_lock(args: list[str]):
+        status = check_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME)
+        message, should_delete = describe_lock_status(status, _delete_if_expired(args))
+        logger.info(message)
+        if should_delete:
+            release_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME)
+
+    check_lock_task = check_import_lock(args="{{ params.args }}")
+    branch >> check_lock_task
+
     if IS_AWS:
 
         @task(task_id="build_ecs_environment", task_display_name="[PyOp] Build ECS Environment")
@@ -110,6 +138,7 @@ def toolbox():
             return environment
 
         environment = build_ecs_environment(env_vars="{{ params.env_vars }}", password=password)
+        branch >> environment
         operators.Toolbox.get_run_command(ecs_env=ECSEnv(), extra_env=environment)
     else:
 
@@ -121,6 +150,7 @@ def toolbox():
             return resolved
 
         extra_env = resolve_env_vars(env_vars="{{ params.env_vars }}", password=password)
+        branch >> extra_env
         operators.Toolbox.get_run_command(extra_env=extra_env)
 
 
