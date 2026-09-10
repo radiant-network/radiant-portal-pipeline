@@ -1,4 +1,5 @@
 import pytest
+from airflow.exceptions import ParamValidationError
 
 DAG_ID = "radiant-nextflow-postprocessing"
 
@@ -34,7 +35,8 @@ def test_input_is_required_and_outdir_is_not(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     # outdir defaults to empty, which the driver reads as "derive from the run tag".
     assert dag.params["outdir"] == ""
-    with pytest.raises(Exception):
+    # `input` has no default, so validating the whole set is what surfaces it as missing.
+    with pytest.raises(ParamValidationError):
         dag.params.validate()
 
 

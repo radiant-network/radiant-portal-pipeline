@@ -15,7 +15,7 @@ def create_and_append_table(iceberg_client, namespace, table_name, file_path, js
 
 
 @pytest.fixture(scope="session")
-def open_data_iceberg_tables(iceberg_client, iceberg_namespace, resources_dir, random_test_id):
+def open_data_iceberg_tables(s3_fs, iceberg_client, iceberg_namespace, resources_dir, random_test_id):
     # Json fields are required for certain .tsv files to properly handle types
     tables = {
         "1000_genomes": None,

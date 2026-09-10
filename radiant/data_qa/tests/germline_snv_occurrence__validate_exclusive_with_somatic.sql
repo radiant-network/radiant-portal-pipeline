@@ -7,7 +7,7 @@
 select
     g.locus_id,
     g.seq_id
-from {{ source('radiant', 'germline__snv__occurrence') }} g
-join {{ source('radiant', 'somatic__snv__occurrence') }} s
+from {{ source('tenant_db', 'germline__snv__occurrence') }} g
+join {{ source('tenant_db', 'somatic__snv__occurrence') }} s
     on s.locus_id = g.locus_id
    and s.tumor_seq_id = g.seq_id

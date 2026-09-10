@@ -8,5 +8,5 @@ select
     chromosome,
     start,
     `end`
-from {{ source('radiant', 'somatic__cnv__occurrence') }}
+from {{ source('tenant_db', 'somatic__cnv__occurrence') }}
 where start > `end`

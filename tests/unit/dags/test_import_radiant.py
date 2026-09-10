@@ -43,3 +43,15 @@ def test_dag_task_dependencies_are_correct(dag_bag):
     assert assign_priority in fetch_exp.get_direct_relatives(upstream=False)
     assert import_part in assign_priority.get_direct_relatives(upstream=False)
     assert "data_integrity_checks" in import_part.downstream_task_ids
+
+
+def test_data_integrity_checks_scoped_to_this_batch_tenants(dag_bag):
+    """QA only tests the tenants this run touched, not every tenant on the platform.
+
+    prepare_tenants_tables returns sorted(tenants); the DAG renders templates as native
+    objects, so this reaches the QA DAG as a real list rather than a repr.
+    """
+    dag = dag_bag.get_dag("radiant-import")
+    qa = dag.get_task("data_integrity_checks")
+    assert qa.conf == {"tenants": "{{ ti.xcom_pull(task_ids='prepare_tenants_tables') }}"}
+    assert dag.render_template_as_native_obj is True

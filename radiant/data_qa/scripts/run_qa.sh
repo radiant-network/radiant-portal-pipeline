@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 # Reusable QA core — assumes StarRocks is already reachable (local tunnel,
-# VPN, or in-cluster runner). Runs dbt test and converts the results to
+# VPN, or in-cluster runner). Runs the dbt tests and converts the results to
 # JUnit XML. Reused verbatim in CI: no tunnel or scheduling logic here.
+#
+# This script owns only the environment (venv, .env, profiles dir). The run
+# itself lives in scripts/run_qa.py, which invokes dbt once for the shared
+# tables and once per tenant listed in $TENANTS, then merges the artifacts.
+# Set TENANTS to test per-tenant tables; without it only the shared pass runs.
 #
 # Exit 0 when the JUnit report was produced (data-test failures are encoded
 # in the XML, not treated as a mechanism failure). Exit non-zero only when
@@ -25,15 +30,6 @@ export DBT_PROFILES_DIR="${DBT_PROFILES_DIR:-$DATA_QA_DIR}"
 
 mkdir -p reports
 
-# Force a fresh artifact so a hard connection failure is detectable below.
-rm -f target/run_results.json
-
-# Don't abort on test failures — we still want to build the report.
-dbt test || true
-
-if [[ ! -f target/run_results.json ]]; then
-  echo "ERROR: dbt produced no run_results.json — likely a connection/setup failure." >&2
-  exit 1
-fi
-
-python scripts/run_results_to_junit.py target/run_results.json reports/junit.xml
+# Runs dbt 1+N times, merges the artifacts and writes the JUnit report. Owns the
+# stale-artifact deletion and the exit codes this script used to handle inline.
+python scripts/run_qa.py

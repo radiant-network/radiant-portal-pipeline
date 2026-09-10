@@ -1,4 +1,4 @@
-"""Row fixtures shaped like what `sql/clinical/case_members_select.sql` returns."""
+"""Row fixtures shaped like what `sql/clinical/pending_annotation_select.sql` returns."""
 
 import pytest
 
@@ -27,8 +27,10 @@ def member_row(case_id=1072, submitter_case_id="1KGP-1463", role="proband", **ov
         "seq_id": 500,
         "aliquot": "NA12878",
         "strategy": "wgs",
+        "alignment_task_id": 900,
         "gvcf_url": f"{GVCF_BUCKET}/individuals/NA12878/NA12878.hard-filtered.gvcf.gz",
         "gvcf_matches": 1,
+        "exclusion_reason": None,
     }
     row.update(overrides)
     return row
@@ -47,6 +49,7 @@ def trio_rows():
             sample_id=sample,
             aliquot=sample,
             seq_id=500 + index,
+            alignment_task_id=900 + index,
             gvcf_url=f"{GVCF_BUCKET}/individuals/{sample}/{sample}.hard-filtered.gvcf.gz",
         )
         for index, (role, affected, patient_id, sex, sample) in enumerate(_TRIO)
@@ -66,6 +69,7 @@ def singleton_rows():
             sample_id="HG00096",
             aliquot="HG00096",
             seq_id=600,
+            alignment_task_id=910,
             strategy="wxs",
             gvcf_url=f"{GVCF_BUCKET}/individuals/HG00096/HG00096.hard-filtered.gvcf.gz",
         )

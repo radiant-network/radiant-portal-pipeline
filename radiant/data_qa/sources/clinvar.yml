@@ -41,7 +41,7 @@ sources:
                   name: clinvar__should_not_contain_null__locus_id
               # --- Should Be Unique ------------------------------------------
               - unique:
-                  name: clinvar__should_be_unique__locus_id_SJRA-1581
+                  name: clinvar__should_be_unique__locus_id
           - name: chromosome
             tests:
               # --- Should Not Contain Null -----------------------------------

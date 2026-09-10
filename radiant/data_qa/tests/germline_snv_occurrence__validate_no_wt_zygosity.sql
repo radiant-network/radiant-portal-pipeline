@@ -14,5 +14,5 @@ select
     task_id,
     locus_id,
     zygosity
-from {{ source('radiant', 'germline__snv__occurrence') }}
+from {{ source('tenant_db', 'germline__snv__occurrence') }}
 where zygosity = 'WT'

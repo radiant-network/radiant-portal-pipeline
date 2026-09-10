@@ -12,8 +12,9 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
-from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, ECSEnv, get_namespace, load_docs_md
+from radiant.dags import DEFAULT_ARGS, IS_AWS, NAMESPACE, RADIANT_LOCK_S3_BUCKET, ECSEnv, get_namespace, load_docs_md
 from radiant.tasks.data.radiant_tables import get_iceberg_radiant_mapping
+from radiant.tasks.locking import IMPORT_MUTEX_LOCK_NAME, acquire_lock, release_lock
 from radiant.tasks.starrocks.operator import (
     RadiantLoadExomiserOperator,
     RadiantStarRocksOperator,
@@ -99,7 +100,25 @@ std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=1
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def import_part():
-    start = EmptyOperator(task_id="start", task_display_name="[Start]")
+    start = EmptyOperator(task_id="start", task_display_name="[ --- CHECKPOINT: PHASE 1 --- ] Before Setup")
+
+    @task(
+        task_id="acquire_import_lock",
+        task_display_name="[PyOp] Acquire Import Lock",
+    )
+    def acquire_import_lock():
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        holder = f"{context['dag'].dag_id}:{context['run_id']}"
+        acquire_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME, holder=holder)
+
+    @task(task_id="release_import_lock", task_display_name="[PyOp] Release Import Lock")
+    def release_import_lock():
+        release_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME)
+
+    _acquire_import_lock = acquire_import_lock()
+    _release_import_lock = release_import_lock()
 
     fetch_sequencing_experiment_delta = RadiantStarRocksOperator(
         task_id="fetch_sequencing_experiment_delta",
@@ -185,18 +204,12 @@ def import_part():
     def extract_all_tenants() -> list[str]:
         # Every tenant known to the platform (not just this batch). The shared consequence filter
         # pools loci across all of these, so it reflects the current state of all tenants.
-        from airflow.hooks.base import BaseHook
         from airflow.operators.python import get_current_context
 
-        from radiant.tasks.data.radiant_tables import get_radiant_mapping
+        from radiant.tasks.data.tenants import list_all_tenants
 
         context = get_current_context()
-        dag_conf = context["dag_run"].conf or {}
-        table = get_radiant_mapping(dag_conf)["starrocks_staging_sequencing_experiment"]
-        conn = BaseHook.get_connection("starrocks_conn")
-        with conn.get_hook().get_conn().cursor() as cursor:
-            cursor.execute(f"SELECT DISTINCT tenant_code FROM {table}")
-            return sorted({row[0] for row in cursor.fetchall() if row[0]})
+        return list_all_tenants(context["dag_run"].conf or {})
 
     all_tenants = extract_all_tenants()
 
@@ -236,6 +249,7 @@ def import_part():
             task_id="sanity_check_cnvs",
             task_display_name="[PyOp] Sanity Check Germline CNVs",
             ignore_downstream_trigger_rules=False,
+            trigger_rule=TriggerRule.NONE_FAILED,
         )
         def sanity_check_cnvs(tasks: Any) -> Any:
             has_cnv = any(t.get("task_type") == ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK for t in tasks)
@@ -592,25 +606,31 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    # Checkpoint objects
+    # Checkpoint objects. Each one closes a phase and names the phase it opens, so the phase numbers in the
+    # DAG-flow block at the bottom of this file can be found in the task list.
     checkpoint_setup = EmptyOperator(
         task_id="checkpoint_after_setup",
-        task_display_name="[ --- CHECKPOINT --- ] Before VCF Imports",
+        task_display_name="[ --- CHECKPOINT: PHASE 2 --- ] Before VCF Imports",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_imports = EmptyOperator(
         task_id="checkpoint_after_vcf_imports",
-        task_display_name="[ --- CHECKPOINT --- ] Before Post-VCF Processing",
+        task_display_name="[ --- CHECKPOINT: PHASE 3 --- ] Before Post-VCF Processing",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_after_exomiser = EmptyOperator(
         task_id="checkpoint_after_exomiser",
-        task_display_name="[ --- CHECKPOINT --- ] Before Occurrence, Variant, Consequence Insertions",
+        task_display_name="[ --- CHECKPOINT: PHASE 4 --- ] Before SNV Occurrence, Variant, Consequence Insertions",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_variants = EmptyOperator(
         task_id="checkpoint_after_variants",
-        task_display_name="[ --- CHECKPOINT --- ] Before Sequencing Experiment Updates",
+        task_display_name="[ --- CHECKPOINT: PHASE 5 --- ] Before CNV Occurrence Insertions",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_cnv = EmptyOperator(
+        task_id="checkpoint_after_cnv",
+        task_display_name="[ --- CHECKPOINT: FINAL PHASE --- ] Before Sequencing Experiment Updates",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
@@ -628,7 +648,7 @@ def import_part():
     # --- DAG Flow ---
 
     # Phase 1: Setup
-    start >> namespace_task >> fetch_sequencing_experiment_delta >> checkpoint_setup
+    _acquire_import_lock >> start >> namespace_task >> fetch_sequencing_experiment_delta >> checkpoint_setup
 
     # Phase 2: VCF Imports
     checkpoint_setup >> vcf_imports >> checkpoint_imports
@@ -638,15 +658,13 @@ def import_part():
         checkpoint_imports
         >> load_exomiser
         >> refresh_iceberg_tables
-        >> tg_germline_cnv_occurrence_per_tenant
-        >> tg_somatic_cnv_occurrence_per_tenant
         >> insert_hashes
         >> overwrite_snv_tmp_variants
         >> insert_exomiser_per_tenant
         >> checkpoint_after_exomiser
     )
 
-    # Phase 4: Occurrence, Variants, Consequences, and Frequencies Insertions
+    # Phase 4: SNV Occurrence, Variants, Consequences, and Frequencies Insertions
     (
         checkpoint_after_exomiser
         >> tg_germline_snv_occurrence_per_tenant
@@ -659,8 +677,21 @@ def import_part():
     # tenants in the system to be loaded before importing consequences.
     checkpoint_after_exomiser >> all_tenants >> tg_consequences
 
+    # Phase 5: CNV Occurrence Insertions
+    # CNVs rely on SNVs, therefore they need to run after
+    (
+        checkpoint_variants
+        >> tg_germline_cnv_occurrence_per_tenant
+        >> tg_somatic_cnv_occurrence_per_tenant
+        >> checkpoint_cnv
+    )
+
     # Final Phase: Update Sequencing Experiments (deletions and updates)
-    checkpoint_variants >> [delete_sequencing_experiments, update_sequencing_experiments]
+    checkpoint_cnv >> [delete_sequencing_experiments, update_sequencing_experiments]
+
+    # Release only if every task above succeeded (default trigger_rule=ALL_SUCCESS): a failed or
+    # skipped run must leave the lock held.
+    [delete_sequencing_experiments, update_sequencing_experiments] >> _release_import_lock
 
 
 import_part()

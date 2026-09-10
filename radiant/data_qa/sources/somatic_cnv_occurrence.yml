@@ -1,17 +1,17 @@
 version: 2
 
 sources:
-  - name: radiant
-    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+  - name: tenant_db
+    schema: "{{ env_var('SR_TENANT_SCHEMA', env_var('SR_SCHEMA', 'radiant')) }}"
     tables:
       - name: somatic__cnv__occurrence
         tests:
           # --- Should Not Be Empty -------------------------------------------
           - should_not_be_empty:
-              name: somatic_cnv_occurrence__should_not_be_empty
+              name: somatic_cnv_occurrence__should_not_be_empty_SJRA-1860
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
-              name: somatic_cnv_occurrence__should_not_contain_only_null
+              name: somatic_cnv_occurrence__should_not_contain_only_null_SJRA-1860
               except:
                 # Already covered by somatic_cnv_occurrence__should_not_contain_null__*
                 - part

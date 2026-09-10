@@ -9,7 +9,7 @@ OUTDIR = "s3://qlin-nextflow-outputs/manual__2026-08-21T12-00-00"
 
 @pytest.fixture
 def body(trio_rows, phenotype_rows):
-    families = resolve_families(trio_rows, phenotype_rows, [1072])
+    families = resolve_families(trio_rows, phenotype_rows)
     listing = dict.fromkeys(expected_keys("CA1072").values(), 4096)
     return build_patch_body(families, collect(families, listing, OUTDIR))
 

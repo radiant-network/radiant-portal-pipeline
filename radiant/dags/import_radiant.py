@@ -194,6 +194,10 @@ def import_radiant():
         trigger_dag_id=f"{NAMESPACE}-data-integrity-starrocks",
         reset_dag_run=True,
         wait_for_completion=True,
+        # Only test the tenants this run actually touched. Renders to a real list because the
+        # DAG sets render_template_as_native_obj. prepare_tenants_tables is a short_circuit, so
+        # a run with no tenants never reaches this task.
+        conf={"tenants": "{{ ti.xcom_pull(task_ids='prepare_tenants_tables') }}"},
     )
 
     (

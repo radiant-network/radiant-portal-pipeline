@@ -1,0 +1,41 @@
+{
+  "biosample": {
+    "id": "GM232700"
+  },
+  "qc_metrics": {
+    "aln_metrics": {
+      "yield_bp_q30": 184182628489,
+      "pct_reads_mapped": 99.1,
+      "pct_reads_properly_paired": 97.43,
+      "mean_insert_size": null,
+      "insert_size_std_deviation": null,
+      "mean_autosome_coverage": null,
+      "pct_autosomes_15x": null,
+      "mad_autosome_coverage": null,
+      "cross_contamination_rate": null,
+      "total_reads": 1356280068.0,
+      "mapped_reads": 1344028612.0,
+      "duplicate_reads": 213647620.0
+    },
+    "variant_metrics": {
+      "count_snvs": 4070461,
+      "count_het_snvs": null,
+      "count_hom_snvs": null,
+      "count_insertions": 468226,
+      "count_deletions": 465463,
+      "count_het_indels": null,
+      "count_hom_indels": null,
+      "ratio_transitions_transversions_snv": 1.97,
+      "ratio_insertion_deletion": 1.005936024990171,
+      "ratio_heterozygous_homozygous_snv": 1.7960368441695989,
+      "ratio_heterozygous_homozygous_indel": null
+    }
+  },
+  "pedigree": {
+    "family_id": "CA1132",
+    "pedigree_sex": "1",
+    "inferred_sex": 1.0,
+    "sex_check": "pass",
+    "pedigree_validation": "pass"
+  }
+}

@@ -10,7 +10,7 @@ select
     `end`,
     type,
     alternate
-from {{ source('radiant', 'somatic__cnv__occurrence') }}
+from {{ source('tenant_db', 'somatic__cnv__occurrence') }}
 where (type = 'GAIN' and alternate != '<DUP>')
    or (type = 'LOSS' and alternate != '<DEL>')
    or (type in ('CNLOH', 'GAINLOH') and alternate != '<LOH>')

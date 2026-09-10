@@ -20,6 +20,7 @@ Dependencies:
 import logging
 import re
 from collections import Counter
+from typing import NamedTuple
 
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
@@ -91,25 +92,50 @@ SCHEMA = merge_schemas(
 )
 
 
-def get_csq_field(csq_fields, fields, field_name):
+class CsqIndexes(NamedTuple):
+    """Column indexes of the CSQ fields `process_consequence` reads, None when absent.
+
+    Names are lowercased, which is what makes the lookup case-insensitive: VEP does not
+    spell its CSQ column names consistently across versions and plugins (`SOURCE` vs
+    `Source`), and a lookup under the wrong spelling would silently yield None.
     """
-    Safely retrieves a field from CSQ annotation by name, ignoring case.
 
-    VEP does not spell its CSQ column names consistently across versions and plugins
-    (`SOURCE` vs `Source`), and a lookup under the wrong spelling silently yields None.
-    Matching on the lowercased name removes that failure mode.
+    exon: int | None
+    impact: int | None
+    hgvsg: int | None
+    hgvsp: int | None
+    hgvsc: int | None
+    pick: int | None
+    feature: int | None
+    gene: int | None
+    mane: int | None
+    mane_select: int | None
+    variant_class: int | None
+    symbol: int | None
+    source: int | None
+    biotype: int | None
+    strand: int | None
+    consequence: int | None
+    canonical: int | None
 
-    Args:
-        csq_fields (dict): Mapping of lowercased CSQ field names to indexes, as
-            returned by `parse_csq_header`.
-        fields (list): Parsed CSQ annotation fields from a single transcript.
-        field_name (str): Name of the CSQ field to retrieve, in any case.
 
-    Returns:
-        str or None: Value of the CSQ field or None if not found.
+def resolve_csq_indexes(csq_fields: dict[str, int]) -> CsqIndexes:
+    """Resolve the CSQ column indexes once, from a lowercased name → index mapping."""
+    return CsqIndexes(**{name: csq_fields.get(name) for name in CsqIndexes._fields})
+
+
+class CsqHeader(dict):
+    """Mapping of lowercased CSQ column names to indexes, with the columns
+    `process_consequence` reads pre-resolved into ``indexes``.
+
+    Resolving once per file is deliberate: the per-annotation-block loop used to repeat a
+    case-insensitive name lookup for each of ~20 columns, per block, per record — hundreds
+    of millions of redundant lookups over one WGS trio.
     """
-    index = csq_fields.get(field_name.lower())
-    return fields[index] if index is not None else None
+
+    def __init__(self, mapping: dict[str, int]):
+        super().__init__(mapping)
+        self.indexes = resolve_csq_indexes(self)
 
 
 def strip_transcript_version(value: str | None) -> str | None:
@@ -236,13 +262,17 @@ def resolve_source(source: str | None, transcript_id: str | None, gene_id: str |
     return None
 
 
-def process_consequence(record: Variant, csq_fields: dict[str, int], common: Common) -> tuple[dict, list[dict]]:
+def process_consequence(
+    record: Variant, csq_fields: CsqHeader | dict[str, int], common: Common
+) -> tuple[dict, list[dict]]:
     """
     Processes VEP CSQ annotations from a VCF record and builds structured consequence data.
 
     Args:
         record (Variant): A cyvcf2 Variant object.
-        csq_fields (dict[str, int]): Field name to index mapping from CSQ header.
+        csq_fields (CsqHeader | dict[str, int]): Lowercased field name to index mapping, as
+            returned by `parse_csq_header`. A plain dict also works, at the cost of
+            re-resolving the column indexes on every call.
         common (Common): Shared metadata (e.g. position, allele info).
 
     Returns:
@@ -254,28 +284,51 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
     consequences = []
     pick_consequence = None
     if csq:
+        # Column indexes were resolved once per file by `parse_csq_header`; the fallback
+        # covers a caller that hands in a plain mapping. Unpacked into locals because this
+        # loop runs per annotation block per record — tens of millions of times per VCF.
+        indexes = csq_fields.indexes if isinstance(csq_fields, CsqHeader) else resolve_csq_indexes(csq_fields)
+        (
+            i_exon,
+            i_impact,
+            i_hgvsg,
+            i_hgvsp,
+            i_hgvsc,
+            i_pick,
+            i_feature,
+            i_gene,
+            i_mane,
+            i_mane_select,
+            i_variant_class,
+            i_symbol,
+            i_source,
+            i_biotype,
+            i_strand,
+            i_consequence,
+            i_canonical,
+        ) = indexes
         csq_data = csq.split(",")
         for c in csq_data:
             fields = c.split("|")
-            exon_field = get_csq_field(csq_fields, fields, "EXON")
+            exon_field = fields[i_exon] if i_exon is not None else None
             exon = exon_field.split("/") if exon_field else []
-            vep_impact = get_csq_field(csq_fields, fields, "IMPACT")
-            hgvsg = get_csq_field(csq_fields, fields, "HGVSg")
-            hgvsp = get_csq_field(csq_fields, fields, "HGVSp")
-            hgvsc = get_csq_field(csq_fields, fields, "HGVSc")
-            picked = get_csq_field(csq_fields, fields, "PICK") == "1"
+            vep_impact = fields[i_impact] if i_impact is not None else None
+            hgvsg = fields[i_hgvsg] if i_hgvsg is not None else None
+            hgvsp = fields[i_hgvsp] if i_hgvsp is not None else None
+            hgvsc = fields[i_hgvsc] if i_hgvsc is not None else None
+            picked = (fields[i_pick] if i_pick is not None else None) == "1"
             # Split rather than stored raw: `transcript_id` is a primary-key column and must
             # mean the same thing on both catalogues. See `strip_transcript_version`.
-            feature = get_csq_field(csq_fields, fields, "Feature")
+            feature = fields[i_feature] if i_feature is not None else None
             transcript_id = strip_transcript_version(feature)
             # `Gene` is read only to resolve the source; it is not part of the schema.
-            gene_id = get_csq_field(csq_fields, fields, "Gene")
+            gene_id = fields[i_gene] if i_gene is not None else None
             # `MANE` carries the flag (`MANE_Select` / `MANE_Plus_Clinical`), `MANE_SELECT`
             # carries the paired transcript in the other catalogue. Deliberately kept
             # independent: files that emit `MANE_SELECT` but no `MANE` column still yield a
             # usable pair, which is what the score borrowing downstream joins on.
-            mane = get_csq_field(csq_fields, fields, "MANE")
-            mane_select = get_csq_field(csq_fields, fields, "MANE_SELECT")
+            mane = fields[i_mane] if i_mane is not None else None
+            mane_select = fields[i_mane_select] if i_mane_select is not None else None
             consequence = {
                 "task_id": common.task_id,
                 "locus": common.locus,
@@ -285,19 +338,19 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
                 "end": common.end,
                 "reference": common.reference,
                 "alternate": common.alternate,
-                "variant_class": get_csq_field(csq_fields, fields, "VARIANT_CLASS"),
+                "variant_class": fields[i_variant_class] if i_variant_class is not None else None,
                 "hgvsg": hgvsg,
                 "hgvsp": hgvsp,
                 "hgvsc": hgvsc,
-                "symbol": get_csq_field(csq_fields, fields, "SYMBOL"),
+                "symbol": fields[i_symbol] if i_symbol is not None else None,
                 "transcript_id": transcript_id,
                 "transcript_version": extract_transcript_version(feature),
-                "source": resolve_source(get_csq_field(csq_fields, fields, "SOURCE"), transcript_id, gene_id),
-                "biotype": get_csq_field(csq_fields, fields, "BIOTYPE"),
-                "strand": get_csq_field(csq_fields, fields, "STRAND"),
+                "source": resolve_source(fields[i_source] if i_source is not None else None, transcript_id, gene_id),
+                "biotype": fields[i_biotype] if i_biotype is not None else None,
+                "strand": fields[i_strand] if i_strand is not None else None,
                 "exon": {"rank": str(exon[0]), "total": str(exon[1])} if len(exon) == 2 else None,
                 "vep_impact": vep_impact,
-                "consequences": get_csq_field(csq_fields, fields, "Consequence").split("&"),
+                "consequences": (fields[i_consequence] if i_consequence is not None else None).split("&"),
                 "mane_select": mane_select,
                 # Null on MANE Plus Clinical rows: VEP only fills `MANE_SELECT` on the Select
                 # transcript, so those rows have no 1:1 pointer to borrow scores through.
@@ -305,7 +358,7 @@ def process_consequence(record: Variant, csq_fields: dict[str, int], common: Com
                 "is_mane_select": mane == MANE_SELECT_FLAG,
                 "is_mane_plus": mane == MANE_PLUS_CLINICAL_FLAG,
                 "is_picked": picked,
-                "is_canonical": get_csq_field(csq_fields, fields, "CANONICAL") == "YES",
+                "is_canonical": (fields[i_canonical] if i_canonical is not None else None) == "YES",
                 "aa_change": hgvsp.split(":")[-1] if hgvsp else None,
                 "dna_change": hgvsc.split(":")[-1] if hgvsc else None,
                 "impact_score": IMPACT_SCORE.get(vep_impact, 0),
@@ -349,7 +402,7 @@ def log_source_counts(source_counts: Counter, task_id: int, vcf_filepath: str) -
         )
 
 
-def parse_csq_header(vcf):
+def parse_csq_header(vcf) -> CsqHeader:
     """
     Parses the CSQ header from a VCF and extracts field name to index mapping.
 
@@ -357,13 +410,14 @@ def parse_csq_header(vcf):
         vcf: A cyvcf2.VCF reader object.
 
     Returns:
-        dict[str, int]: Mapping from lowercased CSQ field names to their indexes.
+        CsqHeader: Mapping from lowercased CSQ field names to their indexes, with the
+            columns `process_consequence` reads pre-resolved.
     """
     info_csq = vcf.get_header_type(CSQ_FORMAT_FIELD)
     csq_meta = info_csq.get("Description", "")
     csq_meta = csq_meta.split("Format:")[-1].strip(' "')
     csq_fields = csq_meta.split("|") if csq_meta else []
-    return {f.lower(): i for i, f in enumerate(csq_fields)}
+    return CsqHeader({f.lower(): i for i, f in enumerate(csq_fields)})
 
 
 IMPACT_SCORE = {"HIGH": 4, "MODERATE": 3, "LOW": 2, "MODIFIER": 1}

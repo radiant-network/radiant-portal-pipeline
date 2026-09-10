@@ -1,8 +1,8 @@
 version: 2
 
 sources:
-  - name: radiant
-    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+  - name: tenant_db
+    schema: "{{ env_var('SR_TENANT_SCHEMA', env_var('SR_SCHEMA', 'radiant')) }}"
     tables:
       - name: germline__cnv__occurrence
         tests:

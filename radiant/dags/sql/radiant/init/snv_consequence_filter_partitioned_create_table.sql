@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_consequence_filter_partitioned }} (
-  `part` tinyint(4) NOT NULL COMMENT "",
+  `part` INT NOT NULL COMMENT "",
   `locus_id` bigint(20) NULL COMMENT "",
   `is_deleterious` boolean NOT NULL COMMENT "",
   `impact_score` tinyint(4) NULL COMMENT "",
