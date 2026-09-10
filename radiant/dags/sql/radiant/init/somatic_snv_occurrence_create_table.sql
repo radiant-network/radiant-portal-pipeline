@@ -3,8 +3,6 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_occurrence }} (
     task_id          INT NOT NULL,
     tumor_seq_id     INT NOT NULL,
     locus_id         BIGINT NOT NULL,
-    chromosome       VARCHAR(20) NULL COMMENT "",
-    start            INT(11) NULL COMMENT "",
     normal_seq_id    INT,
     quality          FLOAT,
     filter           VARCHAR(255),
