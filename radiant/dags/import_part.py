@@ -99,7 +99,7 @@ std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=1
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def import_part():
-    start = EmptyOperator(task_id="start", task_display_name="[Start]")
+    start = EmptyOperator(task_id="start", task_display_name="[ --- CHECKPOINT: PHASE 1 --- ] Before Setup")
 
     fetch_sequencing_experiment_delta = RadiantStarRocksOperator(
         task_id="fetch_sequencing_experiment_delta",
@@ -230,6 +230,7 @@ def import_part():
             task_id="sanity_check_cnvs",
             task_display_name="[PyOp] Sanity Check Germline CNVs",
             ignore_downstream_trigger_rules=False,
+            trigger_rule=TriggerRule.NONE_FAILED,
         )
         def sanity_check_cnvs(tasks: Any) -> Any:
             has_cnv = any(t.get("task_type") == ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK for t in tasks)
@@ -586,25 +587,31 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
-    # Checkpoint objects
+    # Checkpoint objects. Each one closes a phase and names the phase it opens, so the phase numbers in the
+    # DAG-flow block at the bottom of this file can be found in the task list.
     checkpoint_setup = EmptyOperator(
         task_id="checkpoint_after_setup",
-        task_display_name="[ --- CHECKPOINT --- ] Before VCF Imports",
+        task_display_name="[ --- CHECKPOINT: PHASE 2 --- ] Before VCF Imports",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_imports = EmptyOperator(
         task_id="checkpoint_after_vcf_imports",
-        task_display_name="[ --- CHECKPOINT --- ] Before Post-VCF Processing",
+        task_display_name="[ --- CHECKPOINT: PHASE 3 --- ] Before Post-VCF Processing",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_after_exomiser = EmptyOperator(
         task_id="checkpoint_after_exomiser",
-        task_display_name="[ --- CHECKPOINT --- ] Before Occurrence, Variant, Consequence Insertions",
+        task_display_name="[ --- CHECKPOINT: PHASE 4 --- ] Before SNV Occurrence, Variant, Consequence Insertions",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     checkpoint_variants = EmptyOperator(
         task_id="checkpoint_after_variants",
-        task_display_name="[ --- CHECKPOINT --- ] Before Sequencing Experiment Updates",
+        task_display_name="[ --- CHECKPOINT: PHASE 5 --- ] Before CNV Occurrence Insertions",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_cnv = EmptyOperator(
+        task_id="checkpoint_after_cnv",
+        task_display_name="[ --- CHECKPOINT: FINAL PHASE --- ] Before Sequencing Experiment Updates",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
@@ -632,15 +639,13 @@ def import_part():
         checkpoint_imports
         >> load_exomiser
         >> refresh_iceberg_tables
-        >> tg_germline_cnv_occurrence_per_tenant
-        >> tg_somatic_cnv_occurrence_per_tenant
         >> insert_hashes
         >> overwrite_snv_tmp_variants
         >> insert_exomiser_per_tenant
         >> checkpoint_after_exomiser
     )
 
-    # Phase 4: Occurrence, Variants, Consequences, and Frequencies Insertions
+    # Phase 4: SNV Occurrence, Variants, Consequences, and Frequencies Insertions
     (
         checkpoint_after_exomiser
         >> tg_germline_snv_occurrence_per_tenant
@@ -653,8 +658,17 @@ def import_part():
     # tenants in the system to be loaded before importing consequences.
     checkpoint_after_exomiser >> all_tenants >> tg_consequences
 
+    # Phase 5: CNV Occurrence Insertions
+    # CNVs rely on SNVs, therefore they need to run after
+    (
+        checkpoint_variants
+        >> tg_germline_cnv_occurrence_per_tenant
+        >> tg_somatic_cnv_occurrence_per_tenant
+        >> checkpoint_cnv
+    )
+
     # Final Phase: Update Sequencing Experiments (deletions and updates)
-    checkpoint_variants >> [delete_sequencing_experiments, update_sequencing_experiments]
+    checkpoint_cnv >> [delete_sequencing_experiments, update_sequencing_experiments]
 
 
 import_part()

@@ -12,16 +12,16 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
                  AND o.tenant_code = %(tenant_code)s
                GROUP BY o.name, o.seq_id),
      -- Somatic segments are counted against somatic SNVs: germline SNVs inside a tumour segment would be a
-     -- meaningless number. The somatic occurrence table spells its sample columns `tumor_*`, hence the
-     -- `tumor_seq_id` / `tumor_has_alt` names here rather than germline's `seq_id` / `has_alt`.
-     snv AS (SELECT o.name, o.seq_id, COUNT(1) AS nb_snv
+     -- meaningless number. COUNT(DISTINCT locus_id) because a tumour sample analysed both tumour-only and
+     -- tumour-normal holds each locus under two task_ids. See SJRA-1811 Decision 3 for the join.
+     snv AS (SELECT o.name, o.seq_id, COUNT(DISTINCT s.locus_id) AS nb_snv
              FROM {{ mapping.iceberg_somatic_cnv_occurrence }} o
-             JOIN {{ mapping.iceberg_somatic_snv_occurrence }} s ON s.chromosome = o.chromosome AND s.start <= o.end
-                    AND s.start >= o.start AND o.seq_id = s.tumor_seq_id
-             WHERE COALESCE(s.tumor_has_alt, FALSE) AND s.tumor_seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s
-               AND s.part={{ partition }}
-               AND o.tenant_code = %(tenant_code)s -- CNV
-               AND s.tenant_code = %(tenant_code)s -- SNV
+             JOIN {{ mapping.starrocks_somatic_snv_occurrence }} s ON s.tumor_seq_id = o.seq_id
+                    AND s.part = {{ partition }}
+             JOIN {{ mapping.starrocks_snv_variant }} v ON v.locus_id = s.locus_id
+                    AND v.chromosome = o.chromosome AND v.start <= o.end AND v.start >= o.start
+             WHERE s.tumor_seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s
+               AND o.tenant_code = %(tenant_code)s
              GROUP BY o.name, o.seq_id),
     gnomad_overlaps AS (
         SELECT

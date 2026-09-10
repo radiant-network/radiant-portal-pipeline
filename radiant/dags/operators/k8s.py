@@ -392,7 +392,6 @@ class CheckDataIntegrity:
 
 
 class Toolbox:
-
     @staticmethod
     def get_run_command(extra_env: dict[str, str] | None = None) -> KubernetesPodOperator:
         return KubernetesPodOperator(

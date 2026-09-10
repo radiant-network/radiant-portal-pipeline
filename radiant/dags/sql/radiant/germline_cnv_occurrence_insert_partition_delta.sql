@@ -11,13 +11,14 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
                WHERE o.seq_id IN %(seq_ids)s
                  AND o.tenant_code = %(tenant_code)s
                GROUP BY o.name, o.seq_id),
-     snv AS (SELECT o.name, o.seq_id, COUNT(1) AS nb_snv
+     snv AS (SELECT o.name, o.seq_id, COUNT(DISTINCT s.locus_id) AS nb_snv
              FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
-             JOIN {{ mapping.iceberg_germline_snv_occurrence }} s ON s.chromosome = o.chromosome AND s.start <= o.end
-                    AND s.start >= o.start AND o.seq_id = s.seq_id
-             WHERE s.has_alt = true AND s.seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s AND s.part={{ partition }}
-               AND o.tenant_code = %(tenant_code)s -- CNV
-               AND s.tenant_code = %(tenant_code)s -- SNV
+             JOIN {{ mapping.starrocks_germline_snv_occurrence }} s ON s.seq_id = o.seq_id
+                    AND s.part = {{ partition }}
+             JOIN {{ mapping.starrocks_snv_variant }} v ON v.locus_id = s.locus_id
+                    AND v.chromosome = o.chromosome AND v.start <= o.end AND v.start >= o.start
+             WHERE s.seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s
+               AND o.tenant_code = %(tenant_code)s
              GROUP BY o.name, o.seq_id),
     gnomad_overlaps AS (
         SELECT

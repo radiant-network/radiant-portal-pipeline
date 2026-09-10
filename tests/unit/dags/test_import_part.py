@@ -223,6 +223,7 @@ def test_dag_contains_all_tasks(dag_bag):
         "snv_consequence.import_snv_consequence_filter",
         "snv_consequence.insert_snv_consequence_filter_part",
         "checkpoint_after_variants",
+        "checkpoint_after_cnv",
         "delete_sequencing_experiments",
         "update_sequencing_experiment",
     ]
@@ -247,8 +248,31 @@ def test_dag_task_dependencies_are_valid(dag_bag):
     )
     assert dag.get_task("somatic_cnv_occurrence.sanity_check_somatic_cnvs").trigger_rule == TriggerRule.NONE_FAILED
 
-    # What keeps `insert_variant_hashes` (NONE_FAILED_MIN_ONE_SUCCESS) alive when both CNV groups skip:
-    # `parameters` is a template field, so the `extract_task_ids` XComArg is a real, successful upstream.
+    # Phase 5 opens once Phase 4 is fully complete, so both CNV groups sit behind every SNV group --
+    # `nb_snv` needs the occurrences and `snv__staging_variant`, and the rest is for legibility.
+    assert "germline_cnv_occurrence.sanity_check_cnvs" in dag.get_task("checkpoint_after_variants").downstream_task_ids
+    upstream_ids = {
+        t.task_id for t in dag.get_task("germline_cnv_occurrence.sanity_check_cnvs").get_flat_relatives(upstream=True)
+    }
+    assert "germline_snv_occurrence.insert_germline_snv_occurrence" in upstream_ids
+    assert "somatic_snv_occurrence.insert_somatic_snv_occurrences" in upstream_ids
+    assert "snv_variant.insert_snv_staging_variant" in upstream_ids
+    assert "snv_consequence.insert_snv_consequence_filter_part" in upstream_ids
+
+    # Defensive here, load-bearing on the somatic side: `checkpoint_after_variants` already absorbs the
+    # skips of an SNV-less part, so Phase 5's direct upstream succeeds either way.
+    assert dag.get_task("germline_cnv_occurrence.sanity_check_cnvs").trigger_rule == TriggerRule.NONE_FAILED
+
+    # Phase 5 closes the run: its checkpoint gates the sequencing-experiment updates.
+    assert (
+        "checkpoint_after_cnv"
+        in dag.get_task("somatic_cnv_occurrence.insert_somatic_cnv_occurrences").downstream_task_ids
+    )
+    checkpoint_cnv_downstream = dag.get_task("checkpoint_after_cnv").downstream_task_ids
+    assert {"delete_sequencing_experiments", "update_sequencing_experiment"} == checkpoint_cnv_downstream
+
+    # What keeps `insert_variant_hashes` alive is an implicit edge: `parameters` is a template field, so the
+    # `extract_task_ids` XComArg is a real upstream.
     assert "insert_variant_hashes" in dag.get_task("extract_task_ids").downstream_task_ids
 
     # `compute_parts` is only referenced through `.partial(parameters=...)`; the edge exists because

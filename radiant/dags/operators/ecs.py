@@ -258,7 +258,6 @@ class ImportPart(RadiantTaskECSOperator):
 
 
 class Toolbox:
-
     @staticmethod
     def get_run_command(ecs_env: ECSEnv, extra_env: list[dict] | None = None) -> ecs.EcsRunTaskOperator:
         return ecs.EcsRunTaskOperator(

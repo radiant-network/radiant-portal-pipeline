@@ -136,12 +136,6 @@ CREATE TABLE IF NOT EXISTS "case_category"
     "name_en" TEXT NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS "resolution_status"
-(
-    "code"    TEXT PRIMARY KEY,
-    "name_en" TEXT NOT NULL
-);
-
 CREATE TABLE IF NOT EXISTS "sequencing_read_technology"
 (
     "code"    TEXT PRIMARY KEY,
@@ -219,7 +213,6 @@ CREATE TABLE IF NOT EXISTS "cases"
     "case_type_code"            TEXT REFERENCES "case_type"("code"),
     "case_category_code"        TEXT REFERENCES "case_category"("code"),
     "condition_code_system"     TEXT,
-    "resolution_status_code"    TEXT REFERENCES "resolution_status"("code"),
     "ordering_physician"        TEXT,
     "ordering_organization_code" TEXT,
     "submitter_case_id"         TEXT NOT NULL,
@@ -391,11 +384,6 @@ INSERT INTO "case_category" ("code", "name_en") VALUES
     ('prenatal', 'Prenatal'),
     ('postnatal', 'postnatal');
 
-INSERT INTO "resolution_status" ("code", "name_en") VALUES
-    ('solved', 'Solved'),
-    ('unsolved', 'Unsolved'),
-    ('inconclusive', 'Inconclusive');
-
 INSERT INTO "sequencing_read_technology" ("code", "name_en") VALUES
     ('short_read', 'Short Read'),
     ('long_read', 'Long Read');
@@ -478,15 +466,20 @@ VALUES ('heriditary_single', 'Hereditary Disease - Single Case'),
        ('tumor', 'Tumor Case')
 ON CONFLICT (code) DO NOTHING;
 
+-- Mirrors public.status after API migrations 000030/000031: the resolution dimension collapsed
+-- into these codes, and 'unknown'/'draft'/'incomplete' (-> 'submitted') and 'revoke' (-> 'revoked')
+-- were retired. Keep in sync with backend/scripts/init-sql/migrations in radiant-portal.
 INSERT INTO "status" ("code", "name_en")
-VALUES ('unknown', 'Unknown'),
-       ('draft', 'Draft'),
+VALUES ('submitted', 'Pending'),
+       ('processing', 'Processing'),
        ('in_progress', 'In Progress'),
-       ('revoke', 'Revoke'),
-       ('completed', 'Completed'),
-       ('on-hold', 'On-hold'),
-       ('incomplete', 'Incomplete'),
-       ('submitted', 'Submitted')
+       ('in_review', 'In Review'),
+       ('completed', 'Closed'),
+       ('reopened', 'Reopened'),
+       ('revoked', 'Cancelled'),
+       ('resolved', 'Resolved'),
+       ('unresolved', 'Unresolved'),
+       ('inconclusive', 'Inconclusive')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO "priority" ("code", "name_en")
