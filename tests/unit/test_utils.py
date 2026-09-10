@@ -77,6 +77,9 @@ def test_download_s3_file_propagates_error_with_s3_path():
         download_s3_file(s3_path, "/tmp/dest")
 
     assert s3_path in str(exc_info.value)
+    # The cause must be in the message, not only on __cause__: callers log `str(e)`,
+    # so a path-only message cannot distinguish AccessDenied from a missing key.
+    assert "AccessDenied" in str(exc_info.value)
     assert exc_info.value.__cause__ is original
 
 

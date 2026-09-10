@@ -78,7 +78,9 @@ def download_s3_file(s3_path, dest_dir, randomize_filename=False):
     try:
         s3_client.download_file(bucket_name, object_key, local_path)
     except (BotoCoreError, ClientError, Boto3Error, OSError) as e:
-        raise S3DownloadError(f"Failed to download S3 file {s3_path}") from e
+        # Inline the cause: callers log `str(e)`, so without it AccessDenied, 404 and
+        # "unable to locate credentials" are indistinguishable in a task log.
+        raise S3DownloadError(f"Failed to download S3 file {s3_path}: {e}") from e
     return local_path
 
 
