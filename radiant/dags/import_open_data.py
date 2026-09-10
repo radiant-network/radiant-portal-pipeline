@@ -1,6 +1,7 @@
 import logging
 
 from airflow import DAG
+from airflow.decorators import task
 from airflow.models import Param
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
@@ -81,6 +82,22 @@ with DAG(
             )
         )
 
+    @task.short_circuit(
+        task_id="has_raw_rcv_filepaths",
+        task_display_name="[PyOp] RCV Summary Filepaths Provided?",
+        ignore_downstream_trigger_rules=False,
+    )
+    def has_raw_rcv_filepaths(params: dict | None = None) -> bool:
+        return bool((params or {}).get("raw_rcv_filepaths"))
+
+    @task.short_circuit(
+        task_id="has_cytoband_filepath",
+        task_display_name="[PyOp] Cytoband Filepath Provided?",
+        ignore_downstream_trigger_rules=False,
+    )
+    def has_cytoband_filepath(params: dict | None = None) -> bool:
+        return bool((params or {}).get("cytoband_filepath"))
+
     load_raw_clinvar_rcv_summary = RadiantStarrocksLoadOperator(
         task_id="load_raw_clinvar_rcv_summary",
         task_display_name="[StarRocks] Load Raw ClinVar RCV Summary",
@@ -108,4 +125,7 @@ with DAG(
         parameters={"tsv_filepath": "{{ params.cytoband_filepath }}"},
     )
 
-    chain(start, *data_tasks, load_raw_clinvar_rcv_summary, insert_clinvar_rcv_summary, load_cytoband)
+    chain(start, *data_tasks)
+
+    data_tasks[-1] >> has_raw_rcv_filepaths() >> load_raw_clinvar_rcv_summary >> insert_clinvar_rcv_summary
+    data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband

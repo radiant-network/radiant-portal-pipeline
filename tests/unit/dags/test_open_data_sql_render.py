@@ -58,7 +58,11 @@ def test_every_mapping_key_used_in_sql_exists():
     assert referenced & known
 
 
-@pytest.mark.parametrize("path", _open_data_sql_files(), ids=lambda p: p.name)
+def _contract_reading_sql_files():
+    return sorted(_open_data_sql_files()) + sorted(_RADIANT_SQL.glob("*.sql"))
+
+
+@pytest.mark.parametrize("path", _contract_reading_sql_files(), ids=lambda p: p.name)
 def test_contract_tables_are_always_read_through_a_ref(path):
     """OpenDataLake leaves `main` empty, so a read that names no ref returns zero rows."""
     sql = _render(path)
