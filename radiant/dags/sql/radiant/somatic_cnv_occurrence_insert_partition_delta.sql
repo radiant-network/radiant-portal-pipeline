@@ -18,7 +18,7 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
              FROM {{ mapping.iceberg_somatic_cnv_occurrence }} o
              JOIN {{ mapping.starrocks_somatic_snv_occurrence }} s ON s.tumor_seq_id = o.seq_id
                     AND s.part = {{ partition }}
-             JOIN {{ mapping.starrocks_snv_staging_variant }} v ON v.locus_id = s.locus_id
+             JOIN {{ mapping.starrocks_snv_variant }} v ON v.locus_id = s.locus_id
                     AND v.chromosome = o.chromosome AND v.start <= o.end AND v.start >= o.start
              WHERE s.tumor_seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s
                AND o.tenant_code = %(tenant_code)s

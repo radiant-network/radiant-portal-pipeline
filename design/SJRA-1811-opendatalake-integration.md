@@ -240,12 +240,20 @@ from them in the StarRocks' Variant, Consequence and Occurrence tables and for b
   `DISTRIBUTED BY HASH(locus_id) BUCKETS 10` but sit in different databases (tenant vs base), and
   StarRocks scopes colocate groups per database, so they are not colocated and the planner shuffles
 
-The variant table is **`snv__staging_variant`**, not the per-tenant `snv__variant`. `snv__staging_variant`
-holds every locus ever imported, because it is upserted from `snv__tmp_variant` — the same table the
-occurrence insert resolves its `locus_id` through, so an occurrence row can never reference a locus missing
-from it. `snv__variant` is narrower: it keeps only loci that reached a frequency table, which filters on
-`gq >= 20`, `filter = 'PASS'` and `ad_alt > 3`. Reading it would have quietly turned `nb_snv` into a count
-of *qualifying* SNVs and dropped the rest.
+The variant table is the per-tenant **`snv__variant`**, and this narrows what `nb_snv` means — accepted
+deliberately. `snv__variant` is restricted, via `LEFT SEMI JOIN tenant_loci` in `snv_variant_insert.sql`,
+to loci that reached a frequency table, and those are built with `gq >= 20`, `filter = 'PASS'` and
+`ad_alt > 3` (germline) or `filter = 'PASS'` and `tumor_ad_alt > 2` (somatic). So `nb_snv` counts the
+**quality-passing** SNVs inside a segment, not every SNV: an occurrence whose locus cleared none of those
+gates is absent from `snv__variant` and drops out of the join, and a segment whose only SNVs are
+non-qualifying now reports NULL rather than a count.
+
+The alternative was `snv__staging_variant`, which holds every locus ever imported — it is upserted from
+`snv__tmp_variant`, the same table the occurrence insert resolves its `locus_id` through, so an occurrence
+row can never reference a locus missing from it. That preserves the old count exactly. It was rejected on
+provenance rather than correctness: it is a base-database, cross-tenant table whose name reads as
+transient, and a per-tenant CNV load reading it couples the two. Counting only variants the platform
+considers real was judged the better contract.
 
 Step 3b stays parallel to 3a in the re-annotation DAG: `locus_id`, `chromosome` and `start` are carried
 through re-annotation unchanged, so the CNV rebuild does not care whether the SNV rebuild has run. Only the
@@ -259,7 +267,7 @@ flowchart LR
         EG["ensembl_gene<br/><i>absent upstream — SJRA-1803</i>"]
     end
     SNVO["snv__occurrence<br/><i>supplies nb_snv — which sample<br/>carries which locus_id</i>"]
-    SV["snv__staging_variant<br/><i>supplies the coordinates<br/>joined on locus_id</i>"]
+    SV["snv__variant<br/><i>supplies the coordinates<br/>joined on locus_id</i>"]
     OCC["cnv__occurrence<br/><i>partition swap · tenant × part</i>"]
     GSV --> OCC
     CB --> OCC
@@ -400,7 +408,7 @@ Frequencies are **not** recomputed: they derive from occurrences, never from ope
 |---|----------|--------|-----|
 | 1 | Resolving the latest OpenDataLake table version (§2) | **A** — implement `latest` snapshot tagging in the OpenDataLake ETL | Deterministic even if an older version is re-updated; no need to guard against picking up the `audit_%` branch |
 | 2 | Mutual exclusion between the re-annotation DAG and `import_radiant` (§4) | **C** — S3 conditional write (`If-None-Match: *`) on a lock object | No new infra to provision; native atomic guarantee. A Postgres metadata-DB row (A) is blocked on MWAA; DynamoDB (B) isn't justified for one mutex |
-| 3 | Source for the CNV re-annotation's SNV coordinate join (§5) | **C** — join `snv__occurrence` to `snv__staging_variant` on `locus_id` | Drops the Iceberg-retention dependency with no schema change and no re-import; SNV and CNV re-annotation stay independent; costs one ordering edge in `import_part` |
+| 3 | Source for the CNV re-annotation's SNV coordinate join (§5) | **C** — join `snv__occurrence` to the per-tenant `snv__variant` on `locus_id` | Drops the Iceberg-retention dependency with no schema change and no re-import; keeps the read inside the tenant database; costs one ordering edge in `import_part`, and narrows `nb_snv` to quality-passing SNVs |
 | 4 | How re-derived values reach the portal-facing SNV tables (§5) | **A** — upsert in place | Fewer moving pieces; mirrors the existing staging-variant build query; no extra swap table to maintain |
 
 

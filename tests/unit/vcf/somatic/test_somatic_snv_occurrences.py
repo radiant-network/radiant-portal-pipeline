@@ -432,9 +432,8 @@ def test_tumor_only__every_normal_field_is_none(tumor_only_experiments, common):
 
     normal_fields = {key: value for key, value in result.items() if key.startswith("normal_")}
     assert normal_fields, "expected the occurrence row to carry normal_* columns"
-    assert all(value is None for value in normal_fields.values()), (
-        f"expected every normal_* field to be None, got { ({k: v for k, v in normal_fields.items() if v is not None}) }"
-    )
+    populated = {key: value for key, value in normal_fields.items() if value is not None}
+    assert not populated, f"expected every normal_* field to be None, got {populated}"
 
 
 def test_tumor_only__tumor_fields_are_populated(tumor_only_experiments, common):

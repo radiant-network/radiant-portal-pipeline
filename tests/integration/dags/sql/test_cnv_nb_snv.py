@@ -1,4 +1,4 @@
-"""SJRA-1811 -- `nb_snv` counts the part's SNV occurrences, coordinates joined from `snv__staging_variant`.
+"""SJRA-1811 -- `nb_snv` counts the part's SNV occurrences, coordinates joined from `snv__variant`.
 
 A mismatched join key fails silently: no rows, every `nb_snv` NULL, indistinguishable from a part with no
 SNVs. `EXPLAIN` plans that happily, so the values are asserted here, with a row on each side of the
@@ -42,11 +42,13 @@ _AFTER = 1811106
 _OTHER_CHROMOSOME = 1811107
 _OTHER_SAMPLE = 1811108
 _WRONG_PART = 1811109
-# No `snv__staging_variant` row: pins the INNER JOIN's behaviour, drop the row rather than fail.
+# An occurrence whose locus is absent from `snv__variant`. Routine, not exotic: that table is restricted to
+# loci which reached a frequency table, so anything failing gq/filter/ad_alt is missing and drops out of the
+# INNER JOIN. This is what makes nb_snv a count of quality-passing SNVs.
 _NO_VARIANT_ROW = 1811110
 
 # (locus_id, chromosome, start) -- the only source of coordinates; the occurrence row has none.
-_STAGING_VARIANTS = [
+_VARIANTS = [
     (_INSIDE, "1", 1500),
     (_AT_START, "1", _CNV_START),
     (_AT_END, "1", _CNV_END),
@@ -148,7 +150,7 @@ def _seed(starrocks_session, iceberg_client, namespace, mapping, *, flavour):
 
     # Truncated because this test seeds them in full. `cytoband` and `ensembl_gene` are only created --
     # they feed columns nothing here asserts.
-    for table in (f"{flavour}_cnv_occurrence", occurrence_table, "snv_staging_variant"):
+    for table in (f"{flavour}_cnv_occurrence", occurrence_table, "snv_variant"):
         _create_table(starrocks_session, "radiant", table, mapping, truncate=True)
     for table in ("cytoband", "ensembl_gene"):
         _create_table(starrocks_session, "open_data", table, mapping, truncate=False)
@@ -157,9 +159,9 @@ def _seed(starrocks_session, iceberg_client, namespace, mapping, *, flavour):
 
     _insert_rows(
         starrocks_session,
-        mapping["starrocks_snv_staging_variant"],
+        mapping["starrocks_snv_variant"],
         ("locus_id", "chromosome", "start"),
-        _STAGING_VARIANTS,
+        _VARIANTS,
     )
 
     occurrence_columns = ["part", sample_column, "task_id", "locus_id"]

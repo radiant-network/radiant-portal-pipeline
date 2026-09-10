@@ -544,7 +544,7 @@ Phase 3, ahead of `tg_germline_cnv_occurrence_per_tenant`. So there is no orderi
 one germline CNV already satisfies.
 
 > **Superseded by SJRA-1811 (Decision 3).** `nb_snv` no longer reads Iceberg: it counts the StarRocks
-> occurrence table and takes coordinates from `snv__staging_variant`, so the ordering constraint the
+> occurrence table and takes coordinates from `snv__variant`, so the ordering constraint the
 > paragraph above rules out now applies. Both CNV groups moved into a Phase 5 of their own, opening on
 > `checkpoint_after_variants` once Phase 4 is complete and closing on `checkpoint_after_cnv`. Only
 > `tg_variants` is a real dependency — `nb_snv` reads no consequence — but the phase waits for all of
