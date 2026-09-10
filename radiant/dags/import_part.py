@@ -230,6 +230,7 @@ def import_part():
             task_id="sanity_check_cnvs",
             task_display_name="[PyOp] Sanity Check Germline CNVs",
             ignore_downstream_trigger_rules=False,
+            trigger_rule=TriggerRule.NONE_FAILED,
         )
         def sanity_check_cnvs(tasks: Any) -> Any:
             has_cnv = any(t.get("task_type") == ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK for t in tasks)
@@ -604,6 +605,11 @@ def import_part():
     )
     checkpoint_variants = EmptyOperator(
         task_id="checkpoint_after_variants",
+        task_display_name="[ --- CHECKPOINT --- ] Before CNV Occurrence Insertions",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+    checkpoint_cnv = EmptyOperator(
+        task_id="checkpoint_after_cnv",
         task_display_name="[ --- CHECKPOINT --- ] Before Sequencing Experiment Updates",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
@@ -632,15 +638,13 @@ def import_part():
         checkpoint_imports
         >> load_exomiser
         >> refresh_iceberg_tables
-        >> tg_germline_cnv_occurrence_per_tenant
-        >> tg_somatic_cnv_occurrence_per_tenant
         >> insert_hashes
         >> overwrite_snv_tmp_variants
         >> insert_exomiser_per_tenant
         >> checkpoint_after_exomiser
     )
 
-    # Phase 4: Occurrence, Variants, Consequences, and Frequencies Insertions
+    # Phase 4: SNV Occurrence, Variants, Consequences, and Frequencies Insertions
     (
         checkpoint_after_exomiser
         >> tg_germline_snv_occurrence_per_tenant
@@ -653,8 +657,17 @@ def import_part():
     # tenants in the system to be loaded before importing consequences.
     checkpoint_after_exomiser >> all_tenants >> tg_consequences
 
+    # Phase 5: CNV Occurrence Insertions
+    # CNVs rely on SNVs, therefore they need to run after
+    (
+        checkpoint_variants
+        >> tg_germline_cnv_occurrence_per_tenant
+        >> tg_somatic_cnv_occurrence_per_tenant
+        >> checkpoint_cnv
+    )
+
     # Final Phase: Update Sequencing Experiments (deletions and updates)
-    checkpoint_variants >> [delete_sequencing_experiments, update_sequencing_experiments]
+    checkpoint_cnv >> [delete_sequencing_experiments, update_sequencing_experiments]
 
 
 import_part()

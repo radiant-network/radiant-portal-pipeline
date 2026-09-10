@@ -535,6 +535,7 @@ Wired into `import_part.py` as a new TaskGroup mirroring `germline_cnv_occurrenc
 `RadiantStarRocksPartitionSwapOperator.partial(...).expand_kwargs(tenant_params)`.
 
 **Placement — resolved while implementing SJRA-1775: it sits next to the germline CNV group, in Phase 3.**
+(Phase 3 no longer holds: see the SJRA-1811 note below. It still sits next to the germline CNV group.)
 The worry was that `nb_snv` would force the somatic CNV load after `tg_somatic_snv_occurrence_per_tenant`
 in Phase 4. It does not: `nb_snv` counts rows in the **Iceberg** `somatic_snv_occurrence` table, exactly as
 germline counts `iceberg_germline_snv_occurrence` — not the StarRocks `somatic__snv__occurrence`. Those
@@ -542,13 +543,22 @@ Iceberg rows are written in Phase 2 by `import_snv_vcf`, and `refresh_iceberg_ta
 Phase 3, ahead of `tg_germline_cnv_occurrence_per_tenant`. So there is no ordering constraint beyond the
 one germline CNV already satisfies.
 
+> **Superseded by SJRA-1811 (Decision 3).** `nb_snv` no longer reads Iceberg: it counts the StarRocks
+> occurrence table and takes coordinates from `snv__staging_variant`, so the ordering constraint the
+> paragraph above rules out now applies. Both CNV groups moved into a Phase 5 of their own, opening on
+> `checkpoint_after_variants` once Phase 4 is complete and closing on `checkpoint_after_cnv`. Only
+> `tg_variants` is a real dependency — `nb_snv` reads no consequence — but the phase waits for all of
+> Phase 4 so the flow stays serial and reads in order. The two CNV groups stay next to each other and in
+> the same order, so only the phase around them changed. The reasoning here still records why Phase 3 was
+> correct for the Iceberg-based join.
+
 The enrichment carries over, with **one substantive change**:
 
 | Annotation | Somatic |
 |---|---|
 | `cytoband` | same — join `starrocks_cytoband` on overlap |
 | `symbol` / `nb_genes` | same — join `starrocks_ensembl_gene` on overlap |
-| `nb_snv` | **must join `iceberg_somatic_snv_occurrence`, not the germline one** |
+| `nb_snv` | **must join the somatic SNV occurrences, not the germline ones** (`iceberg_somatic_snv_occurrence` as designed here; `somatic__snv__occurrence` since SJRA-1811) |
 | `gnomad_af/sc/sn/sf/sc_hom/sc_het` | **kept**, same 80% reciprocal-overlap logic, but the join moves off `alternate` — see below |
 
 ### The gnomAD-SV join keys on `type`, not `alternate`
@@ -609,7 +619,7 @@ count is the cost, not any single item. The reasoning for each lives in the refe
 5. **[SJRA-1776](https://d3b.atlassian.net/browse/SJRA-1776) — Orchestration.** `import_part.py`,
    `operators/{k8s,ecs}.py`, `scripts/ecs/import_somatic_cnv_vcf.py` and the Dockerfile copy path.
    *Done.* The Dockerfile turned out to need nothing (§6). The `somatic_cnv_occurrence` group is
-   chained serially after `germline_cnv_occurrence` in Phase 3 rather than run in parallel with it,
+   chained serially after `germline_cnv_occurrence` (Phase 3 then, Phase 5 since SJRA-1811) rather than run in parallel with it,
    so the StarRocks insert concurrency stays capped as it is elsewhere in the DAG; that chaining is
    what makes `trigger_rule=NONE_FAILED` on `sanity_check_somatic_cnvs` load-bearing — a
    germline-only part skips the germline insert upstream, and an `ALL_SUCCESS` root would be skipped

@@ -229,12 +229,27 @@ from them in the StarRocks' Variant, Consequence and Occurrence tables and for b
 
 - Option A: Add `chromosome` + `start` to the SNV occurrence tables at import, making step 3b StarRocks-only.
 - Option B: Keep reading the Iceberg occurrence tables, widening `seq_ids` to the whole part.
+- Option C: Take the coordinates from a variant table, joined to the SNV occurrences on `locus_id`.
 
-**Recommendation Option A**:
-- Removes the Iceberg retention dependency
-- Keeps SNVs and CNVs annotation independent
-- Only 2 additional columns to store in the Occurrences
-- Cost: needs re-importing the existing data to add the extra columns
+**Chosen: Option C**:
+- Removes the Iceberg retention dependency, exactly as A does
+- No schema change and no re-import: the coordinates are already stored, one join away
+- Cost: in `import_part` the CNV load becomes its own Phase 5, running once Phase 4 is complete. Only
+  `tg_variants` is a real dependency; waiting for the whole phase keeps the flow serial and easy to follow
+- Cost: one extra join per CNV load. Not yet measured — the two tables are both
+  `DISTRIBUTED BY HASH(locus_id) BUCKETS 10` but sit in different databases (tenant vs base), and
+  StarRocks scopes colocate groups per database, so they are not colocated and the planner shuffles
+
+The variant table is **`snv__staging_variant`**, not the per-tenant `snv__variant`. `snv__staging_variant`
+holds every locus ever imported, because it is upserted from `snv__tmp_variant` — the same table the
+occurrence insert resolves its `locus_id` through, so an occurrence row can never reference a locus missing
+from it. `snv__variant` is narrower: it keeps only loci that reached a frequency table, which filters on
+`gq >= 20`, `filter = 'PASS'` and `ad_alt > 3`. Reading it would have quietly turned `nb_snv` into a count
+of *qualifying* SNVs and dropped the rest.
+
+Step 3b stays parallel to 3a in the re-annotation DAG: `locus_id`, `chromosome` and `start` are carried
+through re-annotation unchanged, so the CNV rebuild does not care whether the SNV rebuild has run. Only the
+ingest DAG gains an ordering edge, because that is where the two tables are first written.
 
 ```mermaid
 flowchart LR
@@ -243,19 +258,23 @@ flowchart LR
         CB["cytoband<br/><i>S3 broker load — never OpenDataLake</i>"]
         EG["ensembl_gene<br/><i>absent upstream — SJRA-1803</i>"]
     end
-    SNVO["snv__occurrence<br/><i>supplies nb_snv — the reason<br/>chromosome + start are needed</i>"]
+    SNVO["snv__occurrence<br/><i>supplies nb_snv — which sample<br/>carries which locus_id</i>"]
+    SV["snv__staging_variant<br/><i>supplies the coordinates<br/>joined on locus_id</i>"]
     OCC["cnv__occurrence<br/><i>partition swap · tenant × part</i>"]
     GSV --> OCC
     CB --> OCC
     EG --> OCC
     SNVO -->|"Decision 3"| OCC
+    SV -->|"Decision 3"| OCC
     style GSV fill:#cfe8cf,color:#000
     style SNVO fill:#ffe0b2,color:#000
+    style SV fill:#ffe0b2,color:#000
 ```
 
 `nb_snv` counts the SNVs falling inside each CNV's interval, so the CNV statement has to join SNV occurrences
-on coordinates. That join is the whole reason Decision 3 exists: today it reads them from Iceberg, and
-`chromosome` + `start` are what let it read them from StarRocks instead.
+on coordinates. That join is the whole reason Decision 3 exists: today it reads them from Iceberg, which is
+the dependency to remove. The occurrence tables store no coordinates, only `locus_id` — so the coordinates
+come from the variant table that `locus_id` points into, and both sides of the join live in StarRocks.
 
 Query example for re-annotation variants:
 
@@ -381,7 +400,7 @@ Frequencies are **not** recomputed: they derive from occurrences, never from ope
 |---|----------|--------|-----|
 | 1 | Resolving the latest OpenDataLake table version (§2) | **A** — implement `latest` snapshot tagging in the OpenDataLake ETL | Deterministic even if an older version is re-updated; no need to guard against picking up the `audit_%` branch |
 | 2 | Mutual exclusion between the re-annotation DAG and `import_radiant` (§4) | **C** — S3 conditional write (`If-None-Match: *`) on a lock object | No new infra to provision; native atomic guarantee. A Postgres metadata-DB row (A) is blocked on MWAA; DynamoDB (B) isn't justified for one mutex |
-| 3 | Source for the CNV re-annotation's SNV coordinate join (§5) | **A** — add `chromosome` + `start` to the SNV occurrence tables at import | Drops the Iceberg-retention dependency; keeps SNV and CNV re-annotation independent; only 2 extra columns |
+| 3 | Source for the CNV re-annotation's SNV coordinate join (§5) | **C** — join `snv__occurrence` to `snv__staging_variant` on `locus_id` | Drops the Iceberg-retention dependency with no schema change and no re-import; SNV and CNV re-annotation stay independent; costs one ordering edge in `import_part` |
 | 4 | How re-derived values reach the portal-facing SNV tables (§5) | **A** — upsert in place | Fewer moving pieces; mirrors the existing staging-variant build query; no extra swap table to maintain |
 
 
