@@ -23,7 +23,6 @@ _BASE_TABLES = [
     "staging_exomiser",
     "germline_snv_staging_variant_frequency",
     "somatic_snv_staging_variant_frequency",
-    "open_data_release",
 ]
 
 

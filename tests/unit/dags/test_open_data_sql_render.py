@@ -160,11 +160,9 @@ def test_hpo_gene_panel_reads_the_upstream_column_names():
         assert column not in sql
 
 
-_CNV_SQL = [
-    f"{kind}_cnv_occurrence_{suffix}.sql"
-    for kind in ("germline", "somatic")
-    for suffix in ("insert_partition_delta", "reannotate_partition")
-]
+# Discovered from the tree rather than listed by name, so a statement that moves to another branch
+# cannot leave a parametrisation pointing at nothing, and a new one is covered automatically.
+_CNV_SQL = sorted(p.name for p in _RADIANT_SQL.glob("*.sql") if "mapping.iceberg_gnomad_sv" in p.read_text())
 
 
 @pytest.mark.parametrize("name", _CNV_SQL)
