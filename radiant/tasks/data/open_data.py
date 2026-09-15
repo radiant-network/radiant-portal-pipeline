@@ -43,3 +43,39 @@ def list_iceberg_source_tables(conf: dict | None = None, keys: Iterable[str] | N
     if unknown:
         raise KeyError(f"not open-data mapping keys: {unknown}. Known: {sorted(tables)}")
     return sorted(tables[key] for key in keys)
+
+
+def list_missing_open_data_tables(conf: dict | None = None) -> dict[str, list[str]]:
+    """Every table the open-data refresh needs and StarRocks cannot see, grouped by cause.
+
+    Returns a mapping of group label to sorted, fully-qualified names. An empty mapping means
+    everything the refresh reads and writes is present.
+    """
+    from radiant.tasks.data.radiant_tables import (
+        STARROCKS_OPEN_DATA_MAPPING,
+        RadiantConfigKeys,
+        get_config_value,
+    )
+
+    groups = _iceberg_groups(conf) | {
+        "StarRocks target tables": (
+            get_config_value(conf, RadiantConfigKeys.RADIANT_DATABASE),
+            set(STARROCKS_OPEN_DATA_MAPPING.values()),
+        ),
+    }
+
+    missing = {}
+    for label, (schema, expected) in groups.items():
+        absent = expected - _tables_in(schema)
+        if absent:
+            missing[label] = sorted(f"{schema}.{table}" for table in absent)
+    return missing
+
+
+def format_missing_tables(missing: dict[str, list[str]]) -> str:
+    """A message an operator can act on: what is absent, grouped by what would fix it."""
+    lines = [f"{sum(len(tables) for tables in missing.values())} table(s) the open-data refresh needs are missing:"]
+    for label, tables in missing.items():
+        lines.append(f"  {label}:")
+        lines.extend(f"    - {table}" for table in tables)
+    return "\n".join(lines)

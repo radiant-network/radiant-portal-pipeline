@@ -124,6 +124,9 @@ STARROCKS_RADIANT_BASE_MAPPING = {
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
     "starrocks_variant_lookup": "variant_lookup",
+    # Audit log of which OpenDataLake release each re-annotation ran against (SJRA-1811 P4).
+    # Shared, like the open-data tables it describes.
+    "starrocks_open_data_release": "open_data_release",
     "starrocks_snv_consequence": "snv__consequence",
     "starrocks_snv_consequence_filter": "snv__consequence_filter",
     "starrocks_snv_consequence_filter_partitioned": "snv__consequence_filter_partitioned",
