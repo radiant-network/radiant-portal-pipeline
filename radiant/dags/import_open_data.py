@@ -67,6 +67,7 @@ with DAG(
         task_id="refresh_iceberg_tables",
         task_display_name="[StarRocks] Refresh Iceberg Metadata Cache",
         sql="REFRESH EXTERNAL TABLE {{ params.table }}",
+        map_index_template="{{ params.table }}",
     ).expand(params=_tables_to_refresh)
 
     data_tasks = []
