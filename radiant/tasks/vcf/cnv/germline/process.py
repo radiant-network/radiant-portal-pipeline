@@ -94,14 +94,16 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
                 continue
 
             attempted += 1
-            logger.info(f"Downloading VCF and index files from {task['cnv_vcf_filepath']} to a temporary directory")
+            # No index is fetched, unlike SNV: the whole file is iterated, never queried by region.
+            logger.info(f"Downloading VCF from {task['cnv_vcf_filepath']} to a temporary directory")
             try:
                 cnv_vcf_local = download_s3_file(task["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
             except S3DownloadError as e:
                 skipped += 1
                 logger.warning(
                     f"Failed to download CNV VCF for task [{task.get('task_id')}] "
-                    f"from {task['cnv_vcf_filepath']}, skipping: {e}"
+                    f"from {task['cnv_vcf_filepath']}, skipping: {e}",
+                    exc_info=True,
                 )
                 continue
             logger.info(f"Downloaded CNV VCF to {cnv_vcf_local}")
