@@ -52,6 +52,23 @@ with DAG(
 ) as dag:
     start = EmptyOperator(task_id="start")
 
+    @task(task_id="get_tables_to_refresh", task_display_name="[PyOp] Iceberg Tables to Refresh")
+    def get_tables_to_refresh() -> list[dict[str, str]]:
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.data.open_data import list_iceberg_source_tables
+
+        conf = get_current_context()["dag_run"].conf or {}
+        return [{"table": table} for table in list_iceberg_source_tables(conf)]
+
+    _tables_to_refresh = get_tables_to_refresh()
+
+    refresh_iceberg_tables = RadiantStarRocksOperator.partial(
+        task_id="refresh_iceberg_tables",
+        task_display_name="[StarRocks] Refresh Iceberg Metadata Cache",
+        sql="REFRESH EXTERNAL TABLE {{ params.table }}",
+    ).expand(params=_tables_to_refresh)
+
     data_tasks = []
     for group in variant_group_ids:
         data_tasks.append(
@@ -125,7 +142,8 @@ with DAG(
         parameters={"tsv_filepath": "{{ params.cytoband_filepath }}"},
     )
 
-    chain(start, *data_tasks)
+    start >> _tables_to_refresh
+    chain(refresh_iceberg_tables, *data_tasks)
 
     data_tasks[-1] >> has_raw_rcv_filepaths() >> load_raw_clinvar_rcv_summary >> insert_clinvar_rcv_summary
     data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband

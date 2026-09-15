@@ -14,6 +14,7 @@ class RadiantConfigKeys(Enum):
     OPEN_DATA_CATALOG = ("RADIANT_OPEN_DATA_CATALOG", "opendatalake_catalog")
     OPEN_DATA_DATABASE = ("RADIANT_OPEN_DATA_DATABASE", "reference")
     OPEN_DATA_REF = ("RADIANT_OPEN_DATA_REF", "latest")
+    OPEN_DATA_USE_LEGACY_TABLES = ("RADIANT_OPEN_DATA_USE_LEGACY_TABLES", "")
 
     @property
     def env_key(self):
@@ -84,6 +85,32 @@ ICEBERG_OPEN_DATA_LEGACY_MAPPING = {
     "iceberg_ensembl_exon_by_gene": "ensembl_exon_by_gene",
     "iceberg_cosmic_gene_set": "cosmic_gene_set",
 }
+
+ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING = {
+    "iceberg_1000_genomes": "1000_genomes",
+    "iceberg_clinvar": "clinvar",
+    "iceberg_dbnsfp": "dbnsfp",
+    "iceberg_dbsnp": "dbsnp",
+    "iceberg_ddd_gene_set": "ddd_gene_set",
+    "iceberg_gnomad_constraint": "gnomad_constraint_v_2_1_1",
+    "iceberg_gnomad_joint": "gnomad_genomes_v3",
+    "iceberg_gnomad_sv": "gnomad_sv",
+    "iceberg_hpo_gene_set": "hpo_gene_set",
+    "iceberg_hpo_term": "hpo_term",
+    "iceberg_mondo_term": "mondo_term",
+    "iceberg_omim_gene_set": "omim_gene_set",
+    "iceberg_orphanet_gene_set": "orphanet_gene_set",
+    "iceberg_spliceai": "spliceai_enriched",
+    "iceberg_topmed_bravo": "topmed_bravo",
+}
+
+IS_CONTRACT_SUFFIX = "_is_contract"
+
+
+def contract_table_prefix(table: str) -> str:
+    """`ddd_v1` -> `ddd`. The name OpenDataLake's `contracts.yml` calls the source."""
+    return table.rsplit("_v", 1)[0]
+
 
 ICEBERG_CATALOG_DATABASE = {
     "iceberg_catalog": os.getenv("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog"),
@@ -167,21 +194,57 @@ def _open_data_relation(catalog: str, database: str, table: str, ref: str) -> st
     return f"{qualified} VERSION AS OF '{ref}'"
 
 
+def _open_data_source_aliases() -> dict[str, str]:
+    aliases = {contract_table_prefix(table): key for key, table in ICEBERG_OPEN_DATA_CONTRACT_MAPPING.items()}
+    aliases.update({table: key for key, table in ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING.items()})
+    return aliases
+
+
+def get_open_data_legacy_keys(conf=None) -> set[str]:
+    from radiant.dags import parse_list
+
+    names = parse_list(get_config_value(conf, RadiantConfigKeys.OPEN_DATA_USE_LEGACY_TABLES))
+    if not names:
+        return set()
+
+    aliases = _open_data_source_aliases()
+    unknown = sorted({name for name in names if name not in aliases})
+    if unknown:
+        raise ValueError(
+            f"{RadiantConfigKeys.OPEN_DATA_USE_LEGACY_TABLES.env_key} names unknown sources: {unknown}. "
+            f"Known: {sorted(set(aliases))}"
+        )
+    return {aliases[name] for name in names}
+
+
+def get_open_data_contract_keys(conf=None) -> set[str]:
+    return set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING) - get_open_data_legacy_keys(conf)
+
+
 def get_iceberg_open_data_mapping(conf=None) -> dict:
     _legacy_catalog = get_config_value(conf, RadiantConfigKeys.ICEBERG_CATALOG)
     _legacy_database = get_config_value(conf, RadiantConfigKeys.ICEBERG_NAMESPACE)
     _catalog = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_CATALOG)
     _database = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_DATABASE)
     _ref = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_REF)
+    _contract_keys = get_open_data_contract_keys(conf)
+
+    def _legacy(table: str) -> str:
+        return f"{_legacy_catalog}.{_legacy_database}.{table}"
 
     mapping = {
-        key: _open_data_relation(_catalog, _database, value, _ref)
+        key: (
+            _open_data_relation(_catalog, _database, value, _ref)
+            if key in _contract_keys
+            else _legacy(ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING[key])
+        )
         for key, value in ICEBERG_OPEN_DATA_CONTRACT_MAPPING.items()
     }
+    mapping.update({key: _legacy(value) for key, value in ICEBERG_OPEN_DATA_LEGACY_MAPPING.items()})
     mapping.update(
         {
-            key: f"{_legacy_catalog}.{_legacy_database}.{value}"
-            for key, value in ICEBERG_OPEN_DATA_LEGACY_MAPPING.items()
+            f"{key}{IS_CONTRACT_SUFFIX}": ("true" if key in _contract_keys else "")
+            for key in ICEBERG_OPEN_DATA_CONTRACT_MAPPING
         }
     )
     return mapping

@@ -38,9 +38,14 @@ SELECT
     c.locus,
     c.locus_hash
 FROM (
+{% if mapping.iceberg_clinvar_is_contract %}
     SELECT src.*,
            concat_ws('-', src.chromosome, src.start, src.reference, src.alternate) AS locus,
            sha2(concat_ws('-', src.chromosome, src.start, src.reference, src.alternate), 256) AS locus_hash
     FROM {{ mapping.iceberg_clinvar }} src
+{% else %}
+    SELECT src.*
+    FROM {{ mapping.iceberg_clinvar }} src
+{% endif %}
 ) c
 LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON v.locus_hash = c.locus_hash

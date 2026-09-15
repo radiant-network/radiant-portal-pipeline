@@ -25,6 +25,17 @@ _REF = RadiantConfigKeys.OPEN_DATA_REF.default
 
 # The sources OpenDataLake does not publish a `locus_hash` for, so Radiant recomputes it. dbnsfp is
 # deliberately absent: it is the one contract that does publish the column.
+# The `table_prefix` each of these is named by in RADIANT_OPEN_DATA_USE_LEGACY_TABLES -- `gnomad` is the
+# SQL file stem, `gnomad_joint` the source.
+_SOURCE_NAMES = {
+    "clinvar": "clinvar",
+    "dbsnp": "dbsnp",
+    "spliceai": "spliceai",
+    "1000_genomes": "1000_genomes",
+    "topmed_bravo": "topmed_bravo",
+    "gnomad": "gnomad_joint",
+}
+
 _RECOMPUTES_LOCUS_HASH = (
     "clinvar",
     "dbsnp",
@@ -33,6 +44,13 @@ _RECOMPUTES_LOCUS_HASH = (
     "topmed_bravo",
     "gnomad",
 )
+
+
+def _statement(sql: str) -> str:
+    """Rendered SQL with its comments stripped -- these files quote table and column names in their
+    rationale, so matching against the raw text would pass on a comment."""
+    sql = re.sub(r"/\*(?!\+).*?\*/", " ", sql, flags=re.DOTALL)
+    return "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))
 
 
 def _render(path) -> str:
@@ -80,7 +98,7 @@ def _contract_relation_aliases(sql: str) -> list[str]:
 
 
 @pytest.mark.parametrize("source", _RECOMPUTES_LOCUS_HASH)
-def test_locus_hash_is_recomputed_not_read(source):
+def test_locus_hash_is_recomputed_when_read_from_opendatalake(source):
     for name in (f"{source}_insert.sql", f"{source}_insert_hashes.sql"):
         sql = _render(_OPEN_DATA_SQL / name)
         assert "sha2(concat_ws('-'" in sql, f"{name} does not recompute locus_hash"
@@ -92,6 +110,18 @@ def test_locus_hash_is_recomputed_not_read(source):
             assert not re.search(rf"(?<![\w.]){re.escape(alias)}\.locus_hash", sql), (
                 f"{name} reads {alias}.locus_hash, which the contract does not publish"
             )
+
+
+@pytest.mark.parametrize("source", _RECOMPUTES_LOCUS_HASH)
+def test_locus_hash_is_read_not_recomputed_when_the_source_is_held_back(source):
+    """The pre-contract tables store `locus_hash`. Hashing every row again would be the same value at
+    the cost of a SHA-256 per row -- on `1000_genomes` and `dbsnp` that is the whole table."""
+    legacy = {**_CONF, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": _SOURCE_NAMES[source]}
+    for name in (f"{source}_insert.sql", f"{source}_insert_hashes.sql"):
+        text = (_OPEN_DATA_SQL / name).read_text()
+        sql = _statement(jinja2.Template(text).render(mapping=get_radiant_mapping(legacy), partition=5))
+        assert "sha2(" not in sql, f"{name} still hashes a source that already stores locus_hash"
+        assert ".locus_hash" in sql
 
 
 @pytest.mark.parametrize("path", _open_data_sql_files(), ids=lambda p: p.name)
@@ -130,9 +160,28 @@ def test_hpo_gene_panel_reads_the_upstream_column_names():
         assert column not in sql
 
 
-@pytest.mark.parametrize("kind", ("germline", "somatic"))
-def test_cnv_enrichment_does_not_filter_on_gnomad_sv_filters(kind):
-    """`gnomad_sv_v1` publishes PASS rows only and drops the column, so the predicate cannot be kept."""
-    sql = (_RADIANT_SQL / f"{kind}_cnv_occurrence_insert_partition_delta.sql").read_text()
-    assert "gnomad.filters" not in sql
-    assert "gnomad_sv_v1" in _render(_RADIANT_SQL / f"{kind}_cnv_occurrence_insert_partition_delta.sql")
+_CNV_SQL = [
+    f"{kind}_cnv_occurrence_{suffix}.sql"
+    for kind in ("germline", "somatic")
+    for suffix in ("insert_partition_delta", "reannotate_partition")
+]
+
+
+@pytest.mark.parametrize("name", _CNV_SQL)
+def test_cnv_enrichment_filters_gnomad_sv_only_when_it_is_held_back(name):
+    """`gnomad_sv_v1` publishes PASS rows only and drops `filters`, so the contract side must not
+    filter. The pre-contract table still carries every call, so a source held back via
+    RADIANT_OPEN_DATA_USE_LEGACY_TABLES has to filter as it always did -- otherwise it would quietly
+    annotate against non-PASS calls."""
+    path = _RADIANT_SQL / name
+    contract = jinja2.Template(path.read_text()).render(mapping=get_radiant_mapping(_CONF), partition=5)
+    # Assert on the resolved relation, not the bare table name: the rationale comment quotes it too.
+    assert "gnomad.filters" not in _statement(contract)
+    assert "JOIN opendatalake_catalog.reference.gnomad_sv_v1" in contract
+
+    held_back = jinja2.Template(path.read_text()).render(
+        mapping=get_radiant_mapping({**_CONF, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "gnomad_sv"}),
+        partition=5,
+    )
+    assert "AND gnomad.filters = 'PASS'" in _statement(held_back)
+    assert "JOIN radiant_iceberg_catalog.radiant.gnomad_sv" in held_back

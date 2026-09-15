@@ -24,7 +24,19 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "mondo_term",
         "hpo_term",
     ]
-    assert len(dag.tasks) == 6 + len(gene_group_ids) + len(variant_group_ids) * 2
+    # start + the metadata-refresh pair + 3 file-driven load/insert tasks + 2 short-circuit gates
+    assert len(dag.tasks) == 8 + len(gene_group_ids) + len(variant_group_ids) * 2
+
+
+def test_metadata_cache_is_refreshed_before_any_source_is_read(dag_bag):
+    """`latest` is a tag OpenDataLake moves on each publish, and StarRocks caches external-catalog
+    metadata -- so a stale cache makes the refresh re-import the previous release (SJRA-1811 §4, P1)."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    refresh = dag.get_task("refresh_iceberg_tables")
+    assert refresh.upstream_task_ids == {"get_tables_to_refresh"}
+    # Gates the whole chain: the first source load hangs off the refresh, not off `start`.
+    assert refresh.downstream_task_ids == {"insert_hashes_1000_genomes"}
+    assert dag.get_task("start").downstream_task_ids == {"get_tables_to_refresh"}
 
 
 def test_file_driven_loads_are_gated_on_their_params(dag_bag):
