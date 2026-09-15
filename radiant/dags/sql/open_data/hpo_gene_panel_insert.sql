@@ -3,8 +3,8 @@
 -- (symbol / hpo_term_name / hpo_term_id). Renamed here, on the consumer side, by design
 -- (radiant-open-datalake spark/doc/release-notes/hpo_genes/v1.md).
 --
--- The branch covers the case where RADIANT_OPEN_DATA_CONTRACT_TABLES leaves `hpo_genes` out and the
--- source falls back to the pre-contract `hpo_gene_set`, which already uses the Radiant names.
+-- The fallback arm below runs when `hpo_genes` is listed in RADIANT_OPEN_DATA_USE_LEGACY_TABLES and the
+-- source is held back on the pre-contract `hpo_gene_set`, which already uses the Radiant names.
 INSERT OVERWRITE {{ mapping.starrocks_hpo_gene_panel }}
 {% if mapping.iceberg_hpo_gene_set_is_contract %}
 SELECT distinct h.gene_symbol AS symbol,

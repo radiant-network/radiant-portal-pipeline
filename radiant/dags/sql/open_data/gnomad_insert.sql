@@ -4,13 +4,14 @@
 -- (design/SJRA-1811-opendatalake-integration.md, decision on the callset).
 --
 -- The branch below is the only place a source's column *names* differ between the two sides, so it is
--- the only statement that has to know which one it is reading. It matters when
--- RADIANT_OPEN_DATA_CONTRACT_TABLES leaves `gnomad_joint` out and the source falls back to the
+-- the only statement that has to know which one it is reading. The fallback arm below runs when
+-- `gnomad_joint` is listed in RADIANT_OPEN_DATA_USE_LEGACY_TABLES and the source is held back on the
 -- pre-contract `gnomad_genomes_v3`, whose columns are already unsuffixed.
 --
--- OpenDataLake publishes no `locus_hash`: recomputed here, byte-identical to the VCF ingest
--- path (radiant/tasks/vcf/snv/common.py) and to raw_exomiser's generated column. The recomputation is
--- correct on both sides -- the pre-contract table stores the same hash over the same four columns.
+-- OpenDataLake publishes no `locus_hash`, so the contract side recomputes it -- byte-identical to the
+-- VCF ingest path (radiant/tasks/vcf/snv/common.py) and to raw_exomiser's generated column. The
+-- pre-contract table stores the column, so a held-back source reads it instead of paying a SHA-256
+-- over every row.
 INSERT OVERWRITE {{ mapping.starrocks_gnomad_genomes_v3 }}
 SELECT
     COALESCE(GET_VARIANT_ID(t.chromosome, t.start, t.reference, t.alternate), v.locus_id) as locus_id,
