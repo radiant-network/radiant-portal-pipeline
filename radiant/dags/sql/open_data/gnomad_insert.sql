@@ -1,17 +1,3 @@
--- Reads OpenDataLake's `gnomad_joint_v1` (gnomAD v4.1 joint callset), which suffixes every frequency
--- column by callset and publishes no unsuffixed one. The `joint` callset is gnomAD's recommended
--- default. The StarRocks target keeps its historical `gnomad_genomes_v3` name and unsuffixed columns
--- (design/SJRA-1811-opendatalake-integration.md, decision on the callset).
---
--- The branch below is the only place a source's column *names* differ between the two sides, so it is
--- the only statement that has to know which one it is reading. The fallback arm below runs when
--- `gnomad_joint` is listed in RADIANT_OPEN_DATA_USE_LEGACY_TABLES and the source is held back on the
--- pre-contract `gnomad_genomes_v3`, whose columns are already unsuffixed.
---
--- OpenDataLake publishes no `locus_hash`, so the contract side recomputes it -- byte-identical to the
--- VCF ingest path (radiant/tasks/vcf/snv/common.py) and to raw_exomiser's generated column. The
--- pre-contract table stores the column, so a held-back source reads it instead of paying a SHA-256
--- over every row.
 INSERT OVERWRITE {{ mapping.starrocks_gnomad_genomes_v3 }}
 SELECT
     COALESCE(GET_VARIANT_ID(t.chromosome, t.start, t.reference, t.alternate), v.locus_id) as locus_id,
@@ -27,4 +13,4 @@ SELECT
     t.nhomalt
 {% endif %}
 FROM {{ mapping.iceberg_gnomad_joint }} t
-LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON v.locus_hash = {% if mapping.iceberg_gnomad_joint_is_contract %}sha2(concat_ws('-', t.chromosome, t.start, t.reference, t.alternate), 256){% else %}t.locus_hash{% endif %}
+LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON v.locus_hash = t.locus_hash

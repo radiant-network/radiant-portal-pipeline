@@ -49,7 +49,38 @@ No `latest` pointer exists today, in SJRA-1546 §2.2 designs snapshot tagging, b
 
 ## 3. Coverage
 
-Of the 20 tables Radiant consumes: **12 can move, 8 cannot.**
+Of the 20 tables Radiant consumes: **15 can move, 5 cannot.**
+
+_Reconciled against `radiant-open-datalake` `spark/src/main/resources/contracts.yml` and
+`airflow/opendatalake/lib/domain/model/sources.py`. Every source Radiant maps in
+`ICEBERG_OPEN_DATA_CONTRACT_MAPPING` now has a published contract; what still varies is whether the
+upstream version is discovered automatically._
+
+### ✅ Join key — `locus_hash`, published upstream
+
+Every variant source joins `variant_lookup` on `locus_hash` to resolve the surrogate `locus_id` for loci
+`GET_VARIANT_ID` cannot encode. The pre-contract Radiant tables carried that column; the first cut of the
+contracts did not, so Radiant recomputed it in SQL — a `{% if %}` per source and a SHA-256 over every row,
+twice per source, since each is scanned by both its `_insert` and its `_insert_hashes` statement.
+
+`radiant-open-datalake` now publishes it (contract MINOR `1.1`, additive, table names unchanged), and every
+environment has republished. Radiant reads it as-is. `clinvar_v1` also publishes `locus`, which the
+StarRocks `clinvar` table stores.
+
+**The invariant that makes it work**, identical on both producers:
+
+```
+locus_hash = sha2(concat_ws('-', chromosome, start, reference, alternate), 256)
+```
+
+with `start` the 1-based VCF `POS` and `chromosome` carrying no `chr` prefix — matching
+`radiant/tasks/vcf/snv/common.py` (`locus = f"{chrom}-{pos}-{ref}-{alt}"`, `pos = record.POS`) and the
+generated column on `sql/radiant/init/staging_exomiser_create_table.sql`. A divergence here does not error:
+the join simply misses and `locus_id` falls back to NULL.
+
+Useful consequence for `RADIANT_OPEN_DATA_USE_LEGACY_TABLES`: both the contract and the pre-contract
+table expose the same column under the same name, so holding a source back needs no branching in the SQL.
+`tests/unit/dags/test_open_data_sql_render.py` pins that — no statement may contain `sha2(`.
 
 ### ✅ Ready — 6
 
@@ -73,18 +104,32 @@ served straight to the portal from that table and are joined by no pipeline SQL.
 Useful consequence: for ClinVar, most of a refresh is live the moment phase 1 lands. Only `clinvar_name` and
 `clinvar_interpretation` need phase 2 to reach the portal's variant tables.
 
-### ✅ℹ️ Ready but manual — 4
+### ✅ℹ️ Ready but manual — 7
 
 Contract-backed and shape-compatible, but `UpdateMode.MANUAL`: no discovery task, so **they advance only when
 a human triggers them**. Left alone they never update, which is the same stale-annotation problem this ticket
 exists to remove — so someone has to own triggering them.
 
-| Radiant        | OpenDataLake      | Where its version comes from                                            |
-|----------------|-------------------|-------------------------------------------------------------------------|
-| `dbnsfp`       | `dbnsfp_v1`       | `version` + `download_url` typed in at trigger time                     |
-| `spliceai`     | `spliceai_v1`     | ETag pair of two fixed BaseSpace files — not a published release number |
-| `1000_genomes` | `1000_genomes_v1` | fixed phase-3 URL, no checksum published                                |
-| `gnomad_sv`    | `gnomad_sv_v1`    | the constant `4.1` in the producer's `gnomad.py`                        |
+| Radiant             | OpenDataLake          | Where its version comes from                                            |
+|---------------------|-----------------------|-------------------------------------------------------------------------|
+| `dbnsfp`            | `dbnsfp_v1`           | `version` + `download_url` typed in at trigger time                     |
+| `spliceai`          | `spliceai_v1`         | ETag pair of two fixed BaseSpace files — not a published release number |
+| `1000_genomes`      | `1000_genomes_v1`     | fixed phase-3 URL, no checksum published                                |
+| `gnomad_sv`         | `gnomad_sv_v1`        | the constant `4.1` in the producer's `gnomad.py`                        |
+| `topmed_bravo`      | `topmed_bravo_v1`     | operator supplies it (`source_configs/topmed.py`)                       |
+| `omim_gene_set`     | `omim_v1`             | `genemap2.txt` release typed in at trigger time                         |
+| `gnomad_constraint` | `gnomad_constraint_v1`| pinned in the producer's `gnomad.py`                                    |
+
+The last three were blocked when this was written — `topmed_bravo` and `omim_gene_set` on licensing
+validation (SJRA-1794, SJRA-1802), `gnomad_constraint` unimplemented. All three have shipped since
+(contracts dated 2026-08-10, 2026-08-13 and 2026-09-01), and each is a pure table rename: every column
+`topmed_bravo_insert.sql`, `omim_gene_panel_insert.sql` and `gnomad_constraint_insert.sql` reads is present
+upstream under the same name.
+
+**`gnomad_sv` is the one exception to "shape-compatible" here.** `gnomad_sv_v1` publishes PASS rows only and
+drops the `filters` column, so the two CNV occurrence statements keep a
+`{% if not mapping.iceberg_gnomad_sv_is_contract %}` around their `filters = 'PASS'` predicate — without it,
+a source held back on the pre-contract table would quietly annotate against non-PASS calls.
 
 ### 🔧 Shape mismatch — 2
 
@@ -105,17 +150,20 @@ so its columns carry the upstream names rather than the platform's. A pure 3-col
 | `hpo_term_name`                   | `hpo_name`              |
 | `hpo_term_id`                     | `hpo_id`                |
 
-### ❌ Missing or unversioned — 8
+### ❌ Missing or unversioned — 4
+
+No contract upstream, so these stay on `radiant_iceberg_catalog` (`ICEBERG_OPEN_DATA_LEGACY_MAPPING`) or,
+for the last two, on their S3 broker loads.
 
 | Radiant                   | Status                              | Ticket              |
 |---------------------------|-------------------------------------|---------------------|
-| `topmed_bravo`            | On hold, licensing validation       | SJRA-1794 *On Hold* |
-| `omim_gene_set`           | On hold, licensing validation       | SJRA-1802 *On Hold* |
 | `ensembl_gene`            | Not implemented yet (need analysis) | SJRA-1803 *Backlog* |
 | `ensembl_exon_by_gene`    | Not implemented yet (need analysis) | SJRA-1803 *Backlog* |
-| `gnomad_constraint`       | Not implemented yet                 | none                |
-| `cytoband`                | Not implemented yet                 | none                |
-| `raw_clinvar_rcv_summary` | Not implemented yet                 | none                |
+| `cytoband`                | Not implemented yet — broker load   | none                |
+| `raw_clinvar_rcv_summary` | Not implemented yet — broker load   | none                |
+
+`cytoband` and `raw_clinvar_rcv_summary` are file-driven: `import_open_data` skips both unless the caller
+passes `cytoband_filepath` / `raw_rcv_filepaths`, so they are not part of the weekly refresh at all.
 
 
 ### ⛔️Won't do

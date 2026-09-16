@@ -1,10 +1,3 @@
--- `hpo_genes_v1` stays faithful to the HPO source file, so it carries the upstream column names
--- (gene_symbol / hpo_name / hpo_id) rather than the ones the legacy Radiant table used
--- (symbol / hpo_term_name / hpo_term_id). Renamed here, on the consumer side, by design
--- (radiant-open-datalake spark/doc/release-notes/hpo_genes/v1.md).
---
--- The fallback arm below runs when `hpo_genes` is listed in RADIANT_OPEN_DATA_USE_LEGACY_TABLES and the
--- source is held back on the pre-contract `hpo_gene_set`, which already uses the Radiant names.
 INSERT OVERWRITE {{ mapping.starrocks_hpo_gene_panel }}
 {% if mapping.iceberg_hpo_gene_set_is_contract %}
 SELECT distinct h.gene_symbol AS symbol,

@@ -1,8 +1,3 @@
--- OpenDataLake publishes no `locus_hash`: recomputed here, byte-identical to the VCF ingest path
--- (radiant/tasks/vcf/snv/common.py) and to raw_exomiser's generated column. It is computed once, in a
--- subquery, so the join key and the projected column share a single evaluation instead of the two
--- separate projections StarRocks would otherwise plan. The GET_VARIANT_ID filter sits inside that
--- subquery so only the variants that need a surrogate id are hashed at all.
 INSERT OVERWRITE {{ mapping.starrocks_clinvar }}
 SELECT
     COALESCE(GET_VARIANT_ID(c.chromosome, c.start, c.reference, c.alternate), v.locus_id) as locus_id,
@@ -37,15 +32,5 @@ SELECT
     c.inheritance,
     c.locus,
     c.locus_hash
-FROM (
-{% if mapping.iceberg_clinvar_is_contract %}
-    SELECT src.*,
-           concat_ws('-', src.chromosome, src.start, src.reference, src.alternate) AS locus,
-           sha2(concat_ws('-', src.chromosome, src.start, src.reference, src.alternate), 256) AS locus_hash
-    FROM {{ mapping.iceberg_clinvar }} src
-{% else %}
-    SELECT src.*
-    FROM {{ mapping.iceberg_clinvar }} src
-{% endif %}
-) c
+FROM {{ mapping.iceberg_clinvar }} c
 LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON v.locus_hash = c.locus_hash

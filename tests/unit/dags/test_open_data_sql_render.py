@@ -1,8 +1,8 @@
 """Render checks for the OpenDataLake-backed open-data SQL (SJRA-1811).
 
-These assert the two things the migration to OpenDataLake changed and that nothing in CI would otherwise
-catch: every contract table is read through an Iceberg ref, and the columns whose names differ upstream are
-read under the upstream name.
+These assert the three things the migration to OpenDataLake changed and that nothing in CI would otherwise
+catch: every contract table is read through an Iceberg ref, the columns whose names differ upstream are read
+under the upstream name, and `locus_hash` is read as published rather than recomputed.
 """
 
 import re
@@ -23,27 +23,18 @@ _RADIANT_SQL = DAGS_DIR / "sql" / "radiant"
 _CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
 _REF = RadiantConfigKeys.OPEN_DATA_REF.default
 
-# The sources OpenDataLake does not publish a `locus_hash` for, so Radiant recomputes it. dbnsfp is
-# deliberately absent: it is the one contract that does publish the column.
-# The `table_prefix` each of these is named by in RADIANT_OPEN_DATA_USE_LEGACY_TABLES -- `gnomad` is the
-# SQL file stem, `gnomad_joint` the source.
-_SOURCE_NAMES = {
-    "clinvar": "clinvar",
-    "dbsnp": "dbsnp",
-    "spliceai": "spliceai",
+# Every variant source, keyed by SQL file stem and mapped to the name it answers to in
+# RADIANT_OPEN_DATA_USE_LEGACY_TABLES -- `gnomad` is the file stem, `gnomad_joint` the source.
+# Each has an `_insert.sql` / `_insert_hashes.sql` pair that joins `variant_lookup` on `locus_hash`.
+_VARIANT_SOURCES = {
     "1000_genomes": "1000_genomes",
-    "topmed_bravo": "topmed_bravo",
+    "clinvar": "clinvar",
+    "dbnsfp": "dbnsfp",
+    "dbsnp": "dbsnp",
     "gnomad": "gnomad_joint",
+    "spliceai": "spliceai",
+    "topmed_bravo": "topmed_bravo",
 }
-
-_RECOMPUTES_LOCUS_HASH = (
-    "clinvar",
-    "dbsnp",
-    "spliceai",
-    "1000_genomes",
-    "topmed_bravo",
-    "gnomad",
-)
 
 
 def _statement(sql: str) -> str:
@@ -97,47 +88,39 @@ def _contract_relation_aliases(sql: str) -> list[str]:
     return re.findall(r"VERSION AS OF '[^']*'\s+(\w+)", sql)
 
 
-@pytest.mark.parametrize("source", _RECOMPUTES_LOCUS_HASH)
-def test_locus_hash_is_recomputed_when_read_from_opendatalake(source):
+@pytest.mark.parametrize("path", _open_data_sql_files(), ids=lambda p: p.name)
+def test_locus_hash_is_never_recomputed(path):
+    """Both sides publish `locus_hash`, so no statement should hash anything. Recomputing would be the
+    same value at the cost of a SHA-256 per row -- on `dbsnp` and `gnomad_joint` that is the whole table,
+    twice, since each source is scanned by both its `_insert` and its `_insert_hashes` statement."""
+    assert "sha2(" not in _render(path), f"{path.name} recomputes a locus hash the source already stores"
+
+
+@pytest.mark.parametrize("source", sorted(_VARIANT_SOURCES), ids=lambda s: s)
+def test_variant_sources_read_the_published_locus_hash(source):
+    """The contract publishes `locus_hash` (`Locus.withLocus` upstream, byte-identical to the VCF ingest
+    path), and so does the pre-contract table -- so both arms read the same column off the source
+    relation and neither branches."""
     for name in (f"{source}_insert.sql", f"{source}_insert_hashes.sql"):
+        text = (_OPEN_DATA_SQL / name).read_text()
+        # A branch elsewhere in the file is fine -- gnomad still switches on the frequency column names.
+        branched = [ln for ln in text.splitlines() if "_is_contract" in ln and "locus_hash" in ln]
+        assert not branched, f"{name} still branches on the locus hash: {branched}"
+
         sql = _render(_OPEN_DATA_SQL / name)
-        assert "sha2(concat_ws('-'" in sql, f"{name} does not recompute locus_hash"
         aliases = _contract_relation_aliases(sql)
         assert aliases, f"{name} binds no alias to its contract relation"
         for alias in aliases:
             # Left-anchored: the lookup alias `vd` ends in `d`, so a plain substring test would
             # read `vd.locus_hash` as the source alias `d`'s.
-            assert not re.search(rf"(?<![\w.]){re.escape(alias)}\.locus_hash", sql), (
-                f"{name} reads {alias}.locus_hash, which the contract does not publish"
+            assert re.search(rf"(?<![\w.]){re.escape(alias)}\.locus_hash", sql), (
+                f"{name} never reads {alias}.locus_hash off the source relation"
             )
 
-
-@pytest.mark.parametrize("source", _RECOMPUTES_LOCUS_HASH)
-def test_locus_hash_is_read_not_recomputed_when_the_source_is_held_back(source):
-    """The pre-contract tables store `locus_hash`. Hashing every row again would be the same value at
-    the cost of a SHA-256 per row -- on `1000_genomes` and `dbsnp` that is the whole table."""
-    legacy = {**_CONF, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": _SOURCE_NAMES[source]}
-    for name in (f"{source}_insert.sql", f"{source}_insert_hashes.sql"):
-        text = (_OPEN_DATA_SQL / name).read_text()
-        sql = _statement(jinja2.Template(text).render(mapping=get_radiant_mapping(legacy), partition=5))
-        assert "sha2(" not in sql, f"{name} still hashes a source that already stores locus_hash"
-        assert ".locus_hash" in sql
-
-
-@pytest.mark.parametrize("path", _open_data_sql_files(), ids=lambda p: p.name)
-def test_locus_hash_is_computed_at_most_once_per_statement(path):
-    """StarRocks plans the join key and the projected column as two separate projections and does not
-    reuse the expression between them, so a second `sha2(...)` in a statement is a second SHA-256 over
-    every row. Where the hash is needed twice it belongs in a subquery."""
-    assert _render(path).count("sha2(") <= 1, f"{path.name} evaluates the locus hash more than once"
-
-
-def test_dbnsfp_still_reads_the_locus_hash_it_publishes():
-    """dbnsfp is the one contract that publishes `locus_hash`, and OpenDataLake pins it byte-identical to
-    the StarRocks form, so recomputing it here would only cost a hash per row."""
-    sql = _render(_OPEN_DATA_SQL / "dbnsfp_insert.sql")
-    assert "d.locus_hash" in sql
-    assert "sha2(" not in sql
+        legacy = {**_CONF, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": _VARIANT_SOURCES[source]}
+        held_back = _statement(jinja2.Template(text).render(mapping=get_radiant_mapping(legacy), partition=5))
+        assert "sha2(" not in held_back
+        assert ".locus_hash" in held_back
 
 
 def test_gnomad_reads_the_joint_callset_columns():
