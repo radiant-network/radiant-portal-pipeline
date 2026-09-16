@@ -51,37 +51,6 @@ No `latest` pointer exists today, in SJRA-1546 §2.2 designs snapshot tagging, b
 
 Of the 20 tables Radiant consumes: **15 can move, 5 cannot.**
 
-_Reconciled against `radiant-open-datalake` `spark/src/main/resources/contracts.yml` and
-`airflow/opendatalake/lib/domain/model/sources.py`. Every source Radiant maps in
-`ICEBERG_OPEN_DATA_CONTRACT_MAPPING` now has a published contract; what still varies is whether the
-upstream version is discovered automatically._
-
-### ✅ Join key — `locus_hash`, published upstream
-
-Every variant source joins `variant_lookup` on `locus_hash` to resolve the surrogate `locus_id` for loci
-`GET_VARIANT_ID` cannot encode. The pre-contract Radiant tables carried that column; the first cut of the
-contracts did not, so Radiant recomputed it in SQL — a `{% if %}` per source and a SHA-256 over every row,
-twice per source, since each is scanned by both its `_insert` and its `_insert_hashes` statement.
-
-`radiant-open-datalake` now publishes it (contract MINOR `1.1`, additive, table names unchanged), and every
-environment has republished. Radiant reads it as-is. `clinvar_v1` also publishes `locus`, which the
-StarRocks `clinvar` table stores.
-
-**The invariant that makes it work**, identical on both producers:
-
-```
-locus_hash = sha2(concat_ws('-', chromosome, start, reference, alternate), 256)
-```
-
-with `start` the 1-based VCF `POS` and `chromosome` carrying no `chr` prefix — matching
-`radiant/tasks/vcf/snv/common.py` (`locus = f"{chrom}-{pos}-{ref}-{alt}"`, `pos = record.POS`) and the
-generated column on `sql/radiant/init/staging_exomiser_create_table.sql`. A divergence here does not error:
-the join simply misses and `locus_id` falls back to NULL.
-
-Useful consequence for `RADIANT_OPEN_DATA_USE_LEGACY_TABLES`: both the contract and the pre-contract
-table expose the same column under the same name, so holding a source back needs no branching in the SQL.
-`tests/unit/dags/test_open_data_sql_render.py` pins that — no statement may contain `sha2(`.
-
 ### ✅ Ready — 6
 
 Contract table, auto-discovered upstream, and every payload column Radiant reads is present under the same name.
