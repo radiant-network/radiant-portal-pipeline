@@ -17,7 +17,7 @@ RESOURCES_DIR = CURRENT_DIR.parent / "resources" / "integration"
 RADIANT_DIR = CURRENT_DIR.parent.parent / "radiant"
 
 # Constants
-MINIO_IMAGE = "minio/minio:latest"
+MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
 
 ICEBERG_REST_IMAGE = "apache/polaris:1.3.0-incubating"
 ICEBERG_INIT_IMAGE = "apache/polaris-admin-tool:1.3.0-incubating"
@@ -25,6 +25,8 @@ ICEBERG_INIT_IMAGE = "apache/polaris-admin-tool:1.3.0-incubating"
 STARROCKS_FE_HOSTNAME = "radiant-starrocks-fe"
 STARROCKS_ALLIN1_HOSTNAME = "radiant-starrocks-allin1"
 STARROCKS_IMAGE = "starrocks/allin1-ubuntu:4.0.13"
+
+POSTGRES_IMAGE = "postgres:13"
 
 
 @pytest.fixture(scope="session")
@@ -174,7 +176,7 @@ def starrocks_instance(network):
 @pytest.fixture(scope="session")
 def postgres_instance(network, random_test_id):
     pg_container = (
-        DockerContainer("postgres:latest")
+        DockerContainer(POSTGRES_IMAGE)
         .with_name("radiant-postgres")
         .with_env("POSTGRES_USER", "postgres")
         .with_env("POSTGRES_PASSWORD", "postgres")
