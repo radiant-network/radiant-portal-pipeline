@@ -5,6 +5,7 @@ from radiant.dags import NAMESPACE
 
 OPEN_DATA_ALL_LEGACY = "*"  # "*" targets all tables
 
+
 class RadiantConfigKeys(Enum):
     ICEBERG_CATALOG = ("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog")
     ICEBERG_NAMESPACE = ("RADIANT_ICEBERG_NAMESPACE", "radiant")
