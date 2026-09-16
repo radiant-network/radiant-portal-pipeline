@@ -91,10 +91,21 @@ def test_legacy_tables_stay_on_the_radiant_catalog_with_no_ref():
         assert "VERSION AS OF" not in mapping[key]
 
 
-def test_an_empty_ref_reads_the_table_with_no_time_travel():
-    # The escape hatch for a deployment that pins nothing; every other value names a tag or a branch.
-    mapping = get_iceberg_open_data_mapping({**_OPEN_DATA, "RADIANT_OPEN_DATA_REF": ""})
-    assert mapping["iceberg_clinvar"] == "odl_catalog.opendatalake_qa.clinvar_v1"
+def test_an_empty_ref_is_refused():
+    """An unpinned read is not "the current version": OpenDataLake leaves `main` empty, so it is zero
+    rows on every contract source at once, and the INSERT OVERWRITE downstream would empty the
+    StarRocks target. Failing to build the mapping is the loud version of that."""
+    with pytest.raises(ValueError, match="RADIANT_OPEN_DATA_REF is empty"):
+        get_iceberg_open_data_mapping({**_OPEN_DATA, "RADIANT_OPEN_DATA_REF": ""})
+
+
+def test_an_empty_ref_is_harmless_when_nothing_reads_opendatalake():
+    # Held-back sources resolve through the Radiant catalog, which does publish on `main` -- so an
+    # unconfigured environment (the `*` default) is not tripped by a ref it never uses.
+    mapping = get_iceberg_open_data_mapping(
+        {**_OPEN_DATA, "RADIANT_OPEN_DATA_REF": "", "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "*"}
+    )
+    assert mapping["iceberg_clinvar"] == f"{_LEGACY}.clinvar"
 
 
 def test_a_dataset_version_can_be_pinned_instead_of_latest():

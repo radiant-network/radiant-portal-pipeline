@@ -186,13 +186,15 @@ def get_iceberg_radiant_mapping(conf=None) -> dict:
 
 
 def _open_data_relation(catalog: str, database: str, table: str, ref: str) -> str:
-    # StarRocks puts the temporal clause between the table and its alias, so this composes directly with
-    # the callers' `FROM {{ mapping.iceberg_x }} <alias>`. Verified on 4.0.13: the reverse order,
-    # `<table> <alias> VERSION AS OF '<ref>'`, is a syntax error. An empty ref disables time travel.
-    qualified = f"{catalog}.{database}.{table}"
     if not ref:
-        return qualified
-    return f"{qualified} VERSION AS OF '{ref}'"
+        # An undefined `ref` defaults to `main`, which should never be used
+        raise ValueError(
+            f"{RadiantConfigKeys.OPEN_DATA_REF.env_key} is empty. OpenDataLake publishes on refs and leaves "
+            f"`main` empty, so an unpinned read of `{table}` returns no rows. Set it to a ref "
+            f"(`{RadiantConfigKeys.OPEN_DATA_REF.default}`, or a dataset_version to pin one release), or "
+            f"hold the source back with {RadiantConfigKeys.OPEN_DATA_USE_LEGACY_TABLES.env_key}."
+        )
+    return f"{catalog}.{database}.{table} VERSION AS OF '{ref}'"
 
 
 def _open_data_source_aliases() -> dict[str, str]:
