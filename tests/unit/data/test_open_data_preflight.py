@@ -12,6 +12,7 @@ from radiant.tasks.data import open_data
 from radiant.tasks.data.radiant_tables import (
     ICEBERG_OPEN_DATA_CONTRACT_MAPPING,
     ICEBERG_OPEN_DATA_LEGACY_MAPPING,
+    ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING,
     STARROCKS_OPEN_DATA_MAPPING,
 )
 
@@ -21,6 +22,7 @@ _CONF = {
     "RADIANT_ICEBERG_NAMESPACE": "radiant",
     "RADIANT_OPEN_DATA_CATALOG": "odl_catalog",
     "RADIANT_OPEN_DATA_DATABASE": "opendatalake_qa",
+    "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "",
 }
 
 _ODL = "odl_catalog.opendatalake_qa"
@@ -81,6 +83,21 @@ def test_contract_tables_are_looked_up_by_their_bare_name(tables_in):
     open_data.list_missing_open_data_tables(_CONF)
 
     assert [call.args[0] for call in tables_in.call_args_list] == [_ODL, _LEGACY, "radiant"]
+
+
+def test_held_back_sources_are_looked_for_under_their_pre_contract_name(tables_in):
+    """The `*` default, and any partial hold-back: the refresh reads those sources in the Radiant
+    catalog, so a check against the contract names would report a whole catalog as missing."""
+    conf = _CONF | {"RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "*"}
+    present = {
+        _LEGACY: set(ICEBERG_OPEN_DATA_LEGACY_MAPPING.values()) | set(ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING.values()),
+        "radiant": set(STARROCKS_OPEN_DATA_MAPPING.values()),
+    }
+    tables_in.side_effect = lambda schema: present[schema]
+
+    assert open_data.list_missing_open_data_tables(conf) == {}
+    # The ODL catalog is not read at all -- an environment that holds everything back need not have one.
+    assert [call.args[0] for call in tables_in.call_args_list] == [_LEGACY, "radiant"]
 
 
 def test_an_unreachable_catalog_propagates_rather_than_reading_as_missing(tables_in):
