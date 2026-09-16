@@ -45,12 +45,8 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (cnv.end - cnv.start)
         AND
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (gnomad.end - gnomad.start)
-        /* `gnomad_sv_v1` publishes PASS rows only and drops the column
-           (radiant-open-datalake spark/doc/release-notes/gnomad_sv/v1.md), so the contract side needs no
-           predicate. The pre-contract table still carries every call and its `filters` column, so holding
-           `gnomad_sv` back via RADIANT_OPEN_DATA_USE_LEGACY_TABLES has to filter as it always did --
-           without this, a held-back source would quietly annotate against non-PASS calls. */
 {% if not mapping.iceberg_gnomad_sv_is_contract %}
+		/* `gnomad_sv_v1` Contract table filters the rows, but not the legacy table  */
         AND gnomad.filters = 'PASS'
 {% endif %}
         AND cnv.seq_id IN %(seq_ids)s
