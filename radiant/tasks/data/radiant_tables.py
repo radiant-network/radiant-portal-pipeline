@@ -3,6 +3,7 @@ from enum import Enum
 
 from radiant.dags import NAMESPACE
 
+OPEN_DATA_ALL_LEGACY = "*"  # "*" targets all tables
 
 class RadiantConfigKeys(Enum):
     ICEBERG_CATALOG = ("RADIANT_ICEBERG_CATALOG", "radiant_iceberg_catalog")
@@ -14,7 +15,7 @@ class RadiantConfigKeys(Enum):
     OPEN_DATA_CATALOG = ("RADIANT_OPEN_DATA_CATALOG", "opendatalake_catalog")
     OPEN_DATA_DATABASE = ("RADIANT_OPEN_DATA_DATABASE", "reference")
     OPEN_DATA_REF = ("RADIANT_OPEN_DATA_REF", "latest")
-    OPEN_DATA_USE_LEGACY_TABLES = ("RADIANT_OPEN_DATA_USE_LEGACY_TABLES", "")
+    OPEN_DATA_USE_LEGACY_TABLES = ("RADIANT_OPEN_DATA_USE_LEGACY_TABLES", OPEN_DATA_ALL_LEGACY)
 
     @property
     def env_key(self):
@@ -202,7 +203,11 @@ def _open_data_source_aliases() -> dict[str, str]:
 def get_open_data_legacy_keys(conf=None) -> set[str]:
     from radiant.dags import parse_list
 
-    names = parse_list(get_config_value(conf, RadiantConfigKeys.OPEN_DATA_USE_LEGACY_TABLES))
+    raw = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_USE_LEGACY_TABLES)
+    if raw.strip() == OPEN_DATA_ALL_LEGACY:
+        return set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING)
+
+    names = parse_list(raw)
     if not names:
         return set()
 

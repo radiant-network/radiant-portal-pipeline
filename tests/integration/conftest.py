@@ -543,6 +543,7 @@ def mapping_conf(
         RadiantConfigKeys.OPEN_DATA_CATALOG.value[0]: starrocks_iceberg_catalog.catalog,
         RadiantConfigKeys.OPEN_DATA_DATABASE.value[0]: starrocks_iceberg_catalog.database,
         RadiantConfigKeys.OPEN_DATA_REF.value[0]: RadiantConfigKeys.OPEN_DATA_REF.default,
+        RadiantConfigKeys.OPEN_DATA_USE_LEGACY_TABLES.value[0]: "",
     }
 
 

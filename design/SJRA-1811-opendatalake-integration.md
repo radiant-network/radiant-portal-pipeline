@@ -137,7 +137,50 @@ Both have a contract table holding the data Radiant needs, under different colum
 
 #### 1. `gnomad_genomes_v3` → `gnomad_joint_v1`
 
-This will be addressed by adding a new source if necessary. 
+**These are not the same dataset.** The move changes the gnomAD release *and* the callset at once:
+
+|             | `gnomad_genomes_v3` (legacy) | `gnomad_joint_v1` (contract)                |
+|-------------|------------------------------|---------------------------------------------|
+| Release     | v3.x                         | **v4.1**                                    |
+| Callset     | genomes only                 | **joint — exomes + genomes**                |
+| Individuals | 76,156 genomes               | **730,947 exomes + 76,215 genomes = 807,162** |
+
+(`spark/doc/release-notes/gnomad_joint/v1.md`; `source_configs/gnomad.py:9` pins `JOINT_VERSION = "4.1"`.)
+
+So the `{% if %}` in `gnomad_insert.sql` is not choosing between two spellings of one number — it is choosing
+between two different population frequencies. Allele frequencies move for essentially every variant, ~10.6×
+more individuals contribute, and the variant set itself differs.
+
+**The names downstream are now wrong.** The StarRocks target keeps the name `gnomad_genomes_v3` with
+unsuffixed columns, `snv_staging_variant_insert.sql:4` writes `g.af AS gnomad_v3_af`, and the portal renders
+that field with the literal label **"gnomAD Genome 3.1.2"** (`frontend/translations/common/{en,fr}.json`).
+A clinician would be reading v4.1 joint frequencies under a v3.1.2 heading.
+
+The contract publishes three frequency families — `*_joint`, `*_genomes` and `*_exomes` — so continuity is
+available as well as the upgrade.
+
+**Decision 5 choices**:
+
+- Option A: Read `*_joint`, keep the `gnomad_v3_af` field name, and fix the user-facing label only.
+- Option B: Read `*_genomes` — v4.1 genomes only, 76,215 against v3.1's 76,156, i.e. the same statistic on a
+  refreshed cohort.
+- Option C: Read `*_joint` and rename end to end — StarRocks table, column, API field, facet key, i18n.
+
+**Recommendation Option A**:
+
+- The joint callset is gnomAD's recommended default for population allele frequency, and for coding variants
+  it is roughly an order of magnitude more powered than genomes alone. Option B trades away the main reason
+  to migrate.
+- The defect is the label, not the data. `gnomad_v3_af` is an identifier; "gnomAD Genome 3.1.2" is a claim.
+  Fixing the claim is ~6 strings in `en.json` / `fr.json`; renaming the identifier is ~120 references across
+  three repos plus a breaking API change and a migration for saved filters that reference the facet key.
+- Option C is the right end state, but it belongs to its own ticket rather than riding on this migration.
+
+**Caveat to carry into Option A:** in the joint callset `AN` varies by region — exomes do not cover
+non-coding positions, so only the ~76k genomes contribute there. Today this is latent: `gnomad_insert.sql`
+loads `af`, `ac`, `an` and `nhomalt`, but only `af` propagates (`snv_staging_variant_insert.sql:4`), and
+nothing filters on `AN`. Anything that later surfaces `AN` or assumes a stable denominator has to account
+for it.
 
 #### 2. `hpo_gene_set` → `hpo_genes_v1`
 
@@ -261,6 +304,28 @@ flowchart TB
     B --> P3B --> P4
     style B fill:#ffe0b2,color:#000
 ```
+
+### Rollout — the cutover is a config change, not a deploy
+
+`RADIANT_OPEN_DATA_USE_LEGACY_TABLES` defaults to `*`: **every** contract source held back on its
+pre-contract Radiant Iceberg table. An environment that upgrades to this wheel without being configured
+for OpenDataLake therefore reads exactly what it read before. Migrating is then one explicit step per
+environment — set the variable to `""` for all 15 sources, or to a shorter list to move part way — and
+rolling back is the same step in reverse, with no code change.
+
+The sentinel is spelled `*` rather than a literal list of the 15 names so that a table added to
+`ICEBERG_OPEN_DATA_CONTRACT_MAPPING` later cannot default to OpenDataLake by omission. It is honoured only
+as the whole value; `*` mixed into a list is rejected as an unknown source, like any other typo.
+
+### Metadata-cache refresh — both DAGs that read open data
+
+`latest` is a tag OpenDataLake moves on each publish and StarRocks caches external-catalog metadata, so
+every DAG that reads a contract table must refresh it first (P1). `import-open-data` refreshes all 18
+open-data tables, but it is `schedule=None`. `import_part` reads one of them on its own schedule — the CNV
+enrichment joins `gnomad_sv_v1` straight from Iceberg — so it refreshes that source too, rather than
+relying on a manual DAG having been run. Its `get_tables_to_refresh` names that source inline; a unit test
+reads both that `keys=` list and every `mapping.iceberg_*` reference under `sql/radiant/`, so a newly
+referenced open-data source cannot be left unrefreshed.
 
 ---
 

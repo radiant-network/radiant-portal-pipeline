@@ -20,7 +20,10 @@ from radiant.tasks.data.radiant_tables import (
 
 _OPEN_DATA_SQL = DAGS_DIR / "sql" / "open_data"
 _RADIANT_SQL = DAGS_DIR / "sql" / "radiant"
-_CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
+# `RADIANT_OPEN_DATA_USE_LEGACY_TABLES` defaults to `*` -- every source held back -- so that a deploy
+# never performs the cutover by itself. These render checks are about the OpenDataLake side, so they
+# opt in the way a migrated environment does.
+_CONF = {"RADIANT_TABLES_DATABASE": "radiant", "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": ""}
 _REF = RadiantConfigKeys.OPEN_DATA_REF.default
 
 # Every variant source, keyed by SQL file stem and mapped to the name it answers to in

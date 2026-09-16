@@ -69,7 +69,11 @@ _OPEN_DATA = {
     "RADIANT_OPEN_DATA_CATALOG": "odl_catalog",
     "RADIANT_OPEN_DATA_DATABASE": "opendatalake_qa",
     "RADIANT_OPEN_DATA_REF": "latest",
+    # The default is `*` (every source held back); a migrated environment opts in with an empty list.
+    "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "",
 }
+
+_LEGACY = "radiant_iceberg_catalog.radiant"
 
 
 def test_contract_tables_resolve_to_the_open_data_catalog_pinned_to_the_ref():
@@ -117,10 +121,25 @@ _SUBSET = {
 }
 
 
-def test_opendatalake_is_the_default_for_every_contract_table():
-    # The target state: an empty override list means nothing is held back.
+def test_an_unconfigured_environment_reads_nothing_from_opendatalake():
+    """Deploying the wheel must not perform the cutover on its own: with the variable unset, every
+    source still resolves to the pre-contract Radiant table it resolved to before this feature."""
+    unset = {key: value for key, value in _OPEN_DATA.items() if key != "RADIANT_OPEN_DATA_USE_LEGACY_TABLES"}
+    assert get_open_data_legacy_keys(unset) == set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING)
+    assert get_open_data_contract_keys(unset) == set()
+    assert get_iceberg_open_data_mapping(unset)["iceberg_clinvar"] == f"{_LEGACY}.clinvar"
+
+
+def test_opendatalake_is_opted_into_with_an_empty_list():
+    # The target state, and an explicit config change rather than a default.
     assert get_open_data_legacy_keys(_OPEN_DATA) == set()
     assert get_open_data_contract_keys(_OPEN_DATA) == set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING)
+
+
+def test_the_all_legacy_sentinel_is_whole_value_only():
+    # `*` alongside real names is a typo, not "all": it has to be rejected like any unknown source.
+    with pytest.raises(ValueError, match=r"unknown sources.*\*"):
+        get_open_data_legacy_keys({**_OPEN_DATA, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "*,clinvar"})
 
 
 def test_named_sources_are_held_back_and_the_rest_still_come_from_opendatalake():
