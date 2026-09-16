@@ -33,4 +33,4 @@ SELECT
     c.locus,
     c.locus_hash
 FROM {{ mapping.iceberg_clinvar }} c
-LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON v.locus_hash = c.locus_hash
+LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON c.locus_hash = v.locus_hash

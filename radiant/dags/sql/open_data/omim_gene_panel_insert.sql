@@ -6,6 +6,6 @@ SELECT
     phenotype.inheritance as inheritance,
     omim_gene_id as omim_gene_id,
     phenotype.omim_id as omim_phenotype_id
-FROM {{ mapping.iceberg_omim_gene_set }} o, unnest(o.symbols)
+FROM {{ mapping.iceberg_omim_gene_set }}, unnest(symbols)
 WHERE phenotype is not null;
 

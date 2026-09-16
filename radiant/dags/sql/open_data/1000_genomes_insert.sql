@@ -5,4 +5,4 @@ SELECT
     tg.ac,
     tg.an
 FROM {{ mapping.iceberg_1000_genomes }} tg
-LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON v.locus_hash = tg.locus_hash;
+LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON tg.locus_hash = v.locus_hash;

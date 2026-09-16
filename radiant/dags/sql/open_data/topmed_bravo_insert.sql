@@ -6,4 +6,4 @@ SELECT
     t.an,
     t.homozygotes
 FROM {{ mapping.iceberg_topmed_bravo }} t
-LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON v.locus_hash = t.locus_hash
+LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON t.locus_hash = v.locus_hash
