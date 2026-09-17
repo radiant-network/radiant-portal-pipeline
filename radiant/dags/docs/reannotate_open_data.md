@@ -3,33 +3,37 @@
 Weekly refresh of the open-data reference tables, followed by a re-annotation of everything derived from
 them. Design: `design/SJRA-1811-opendatalake-integration.md` (§4 and §5).
 
-Runs **Saturday 00:00**. A missed or failed run is not re-run — the next week catches up. An operator can
-trigger it by hand at any time.
+Designed to run **Saturday 00:00**, and currently held at **manual trigger only** — every phase is wired,
+but the schedule is not turned on yet. Flip `schedule` in `reannotate_open_data.py` and drop the `manual`
+tag to start it. Once weekly, a missed or failed run is not re-run: the next week catches up.
 
 ## Flow
 
 ```
-acquire_import_lock
+preflight_tables_exist
+  → acquire_import_lock
   → P1  reference_load            (triggers radiant-import-open-data, waits)
   → CHECKPOINT: all sources loaded
   → P2  reannotate_accumulators   snv__staging_variant · snv__consequence   (upsert in place)
   → P3a snv_variant chain         snv__variant → snv__variant_partitioned
         snv_consequence chain     snv__consequence_filter → …_partitioned
-    P3b cnv_occurrence            germline then somatic, per tenant × part
+  → P3b cnv_occurrence            germline then somatic, per tenant × part
+  → CHECKPOINT: every rebuild done
   → P4  record_open_data_release
   → release_import_lock
 ```
 
-P3a and P3b run in parallel. Inside P3a the two chains are independent of each other, but each chain is
-serial: a partitioned table is a partitioned copy of the unpartitioned one above it, so the copy has to
-be rebuilt first.
+Inside P3a the two chains are independent of each other, but each chain is serial: a partitioned table is
+a partitioned copy of the unpartitioned one above it, so the copy has to be rebuilt first.
+
+P3b waits on `snv__variant` — both CNV statements join it to count the quality-passing SNVs inside each
+segment (`nb_snv`), and P3a rebuilds that table with `INSERT OVERWRITE`. It does not wait on the
+consequence chain, which reads nothing the CNV statements touch.
 
 ## Mutual exclusion with the import
 
-> **Currently disabled.** The lock tasks are commented out so the DAG can run on the Minikube sandbox,
-> whose MinIO accepts conditional writes only against an exact ETag, never the `If-None-Match: *`
-> wildcard `acquire_lock` sends. Safe for now because the mutex exists to separate this DAG from
-> `import_part`, and this DAG is not live. It must be restored before it is.
+> Atomic on every stack, the local one included: MinIO enforces the `If-None-Match: *` precondition
+> `acquire_lock` sends from `RELEASE.2024-09-13T20-26-02Z`, older than the images this repo pins.
 
 The whole run holds the `import_mutex` S3 lock that `import_part` also takes. This is why P1–P4 live in
 one DAG: an Airflow pool releases its slot when a *task* ends, so only a lock held for the length of the
