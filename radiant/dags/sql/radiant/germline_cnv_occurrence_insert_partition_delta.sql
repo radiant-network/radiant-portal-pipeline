@@ -45,7 +45,10 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (cnv.end - cnv.start)
         AND
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (gnomad.end - gnomad.start)
+{% if not mapping.iceberg_gnomad_sv_is_contract %}
+		/* `gnomad_sv_v1` Contract table filters the rows, but not the legacy table  */
         AND gnomad.filters = 'PASS'
+{% endif %}
         AND cnv.seq_id IN %(seq_ids)s
         AND cnv.tenant_code = %(tenant_code)s
     ),
@@ -83,7 +86,8 @@ SELECT o.part,
        o.ciend,
        o.cipos,
        o.phased,
-       cytoband.cytoband, genes.symbol, array_length(genes.symbol) AS nb_genes, nb_snv,
+       cytoband.cytoband, genes.symbol, array_length(genes.symbol) AS nb_genes,
+       snv.nb_snv,
        gnomad_ranked.af AS gnomad_af,
        gnomad_ranked.sc AS gnomad_sc,
        gnomad_ranked.sn AS gnomad_sn,

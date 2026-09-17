@@ -1,6 +1,7 @@
 import logging
 
 from airflow import DAG
+from airflow.decorators import task
 from airflow.models import Param
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
@@ -51,6 +52,24 @@ with DAG(
 ) as dag:
     start = EmptyOperator(task_id="start")
 
+    @task(task_id="get_tables_to_refresh", task_display_name="[PyOp] Iceberg Tables to Refresh")
+    def get_tables_to_refresh() -> list[dict[str, str]]:
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.data.open_data import list_iceberg_source_tables
+
+        conf = get_current_context()["dag_run"].conf or {}
+        return [{"table": table} for table in list_iceberg_source_tables(conf)]
+
+    _tables_to_refresh = get_tables_to_refresh()
+
+    refresh_iceberg_tables = RadiantStarRocksOperator.partial(
+        task_id="refresh_iceberg_tables",
+        task_display_name="[StarRocks] Refresh Iceberg Metadata Cache",
+        sql="REFRESH EXTERNAL TABLE {{ params.table }}",
+        map_index_template="{{ params.table }}",
+    ).expand(params=_tables_to_refresh)
+
     data_tasks = []
     for group in variant_group_ids:
         data_tasks.append(
@@ -81,6 +100,22 @@ with DAG(
             )
         )
 
+    @task.short_circuit(
+        task_id="has_raw_rcv_filepaths",
+        task_display_name="[PyOp] RCV Summary Filepaths Provided?",
+        ignore_downstream_trigger_rules=False,
+    )
+    def has_raw_rcv_filepaths(params: dict | None = None) -> bool:
+        return bool((params or {}).get("raw_rcv_filepaths"))
+
+    @task.short_circuit(
+        task_id="has_cytoband_filepath",
+        task_display_name="[PyOp] Cytoband Filepath Provided?",
+        ignore_downstream_trigger_rules=False,
+    )
+    def has_cytoband_filepath(params: dict | None = None) -> bool:
+        return bool((params or {}).get("cytoband_filepath"))
+
     load_raw_clinvar_rcv_summary = RadiantStarrocksLoadOperator(
         task_id="load_raw_clinvar_rcv_summary",
         task_display_name="[StarRocks] Load Raw ClinVar RCV Summary",
@@ -108,4 +143,8 @@ with DAG(
         parameters={"tsv_filepath": "{{ params.cytoband_filepath }}"},
     )
 
-    chain(start, *data_tasks, load_raw_clinvar_rcv_summary, insert_clinvar_rcv_summary, load_cytoband)
+    start >> _tables_to_refresh
+    chain(refresh_iceberg_tables, *data_tasks)
+
+    data_tasks[-1] >> has_raw_rcv_filepaths() >> load_raw_clinvar_rcv_summary >> insert_clinvar_rcv_summary
+    data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband

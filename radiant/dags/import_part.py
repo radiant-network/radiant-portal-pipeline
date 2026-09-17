@@ -342,10 +342,16 @@ def import_part():
     def get_tables_to_refresh():
         from airflow.operators.python import get_current_context
 
+        from radiant.tasks.data.open_data import list_iceberg_source_tables
+
         context = get_current_context()
         dag_conf = context["dag_run"].conf or {}
 
-        return [{"table": v} for v in get_iceberg_radiant_mapping(dag_conf).values()]
+        tables = list(get_iceberg_radiant_mapping(dag_conf).values())
+
+        # We refresh gnomad SV here because it's required for CNVs
+        tables += list_iceberg_source_tables(dag_conf, keys=["iceberg_gnomad_sv"])
+        return [{"table": v} for v in tables]
 
     refresh_iceberg_tables = RadiantStarRocksOperator.partial(
         task_id="refresh_iceberg_tables",
