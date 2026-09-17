@@ -1,6 +1,15 @@
 from collections.abc import Iterable
 
 
+def resolve_iceberg_source_tables(conf: dict | None = None) -> dict[str, str]:
+    from radiant.tasks.data.radiant_tables import (
+        ICEBERG_OPEN_DATA_CONTRACT_MAPPING,
+        ICEBERG_OPEN_DATA_LEGACY_MAPPING,
+        ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING,
+        RadiantConfigKeys,
+        get_config_value,
+        get_open_data_contract_keys,
+    )
 def _iceberg_schemas(conf: dict | None) -> tuple[str, str]:
     """The OpenDataLake and legacy Radiant schemas, each as `catalog.database`."""
     from radiant.tasks.data.radiant_tables import RadiantConfigKeys, get_config_value
