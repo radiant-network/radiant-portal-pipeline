@@ -42,12 +42,21 @@ operator action: run the toolbox DAG's `check-lock` command to see the holder an
 
 ## Which release did it run against?
 
-P4 writes one row per contract table to `open_data_release`, but only once every rebuild above it
+P4 writes one row per open-data source to `open_data_release`, but only once every rebuild above it
 succeeded — so a row there means the portal-facing tables really were rebuilt against that release.
 
-It is a PRIMARY KEY table keyed on `table_name`, so it always shows the current state: the latest run
-wins per table, and a retried P4 upserts rather than adding a second copy. No release history is kept
-here.
+Each row names the schema the source was **actually** read from, resolved the same way the statements
+themselves resolve it (`radiant.tasks.data.open_data.build_open_data_release_rows`). A source held back
+by `RADIANT_OPEN_DATA_USE_LEGACY_TABLES` is recorded against the Radiant Iceberg catalog under its
+pre-contract `table_name`, with `iceberg_ref` and `dataset_version` NULL — it is read without time
+travel, so there is no release to name. Stamping the OpenDataLake catalog and ref onto those rows would
+claim a release the refresh never saw.
+
+It is a PRIMARY KEY table keyed on `source_name`, so it always shows the current state: the latest run
+wins per source, and a retried P4 upserts rather than adding a second copy. No release history is kept
+here. The key is the source rather than `table_name` because the table name is exactly what changes
+when a source flips from its pre-contract name to `{source}_v{MAJOR}` — keying on it would leave the
+old name behind as a stale second row.
 
 `dataset_version` is filled only when `RADIANT_OPEN_DATA_REF` pins a concrete OpenDataLake release. On the
 default `latest` it stays NULL: `latest` is a tag that moves with each publish, and resolving it back to a

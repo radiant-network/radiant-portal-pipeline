@@ -110,7 +110,10 @@ def test_cnv_reannotation_overwrites_exactly_one_partition(kind):
 
 
 def test_open_data_release_is_current_state_not_history():
-    """One row per contract table, latest run wins, retry-safe.
+    """One row per source, latest run wins, retry-safe.
+
+    Keyed on `source_name` rather than `table_name`: a held-back source is read under its pre-contract
+    name, so a table-name key would leave a stale row behind the first time one flips to the contract.
 
     Two StarRocks rules make this fragile to edit: a PRIMARY KEY must be the table's leading column, and
     the declared length of the key columns is capped (128 bytes), which is why catalog and database are
@@ -118,11 +121,11 @@ def test_open_data_release_is_current_state_not_history():
     """
     ddl = (_RADIANT_SQL / "init" / "open_data_release_create_table.sql").read_text()
     body = ddl[ddl.index("(") + 1 :]
-    first_column = next(line.split()[0] for line in body.splitlines() if line.strip().startswith("table_name"))
+    first_column = next(line.split()[0] for line in body.splitlines() if line.strip())
 
-    assert "PRIMARY KEY(table_name)" in ddl
+    assert "PRIMARY KEY(source_name)" in ddl
     assert "DUPLICATE KEY" not in ddl
-    assert first_column == "table_name", "the primary key must be the leading column"
+    assert first_column == "source_name", "the primary key must be the leading column"
 
 
 def test_open_data_release_insert_upserts_every_column_by_name():
@@ -132,9 +135,10 @@ def test_open_data_release_insert_upserts_every_column_by_name():
     assert "INSERT INTO" in sql
     columns = re.search(r"INSERT INTO[^(]*\(([^)]*)\)", sql, re.DOTALL).group(1)
     assert [c.strip() for c in columns.split(",")] == [
-        "table_name",
+        "source_name",
         "recorded_at",
         "dag_run_id",
+        "table_name",
         "catalog_name",
         "database_name",
         "iceberg_ref",

@@ -49,16 +49,19 @@ _MOCK_PARAMS = {
 # `open_data_release_insert.sql` builds its VALUES from a row list; with none it renders `VALUES ;`.
 _MOCK_RELEASES = [
     {
+        "source_name": "clinvar",
         "table_name": "clinvar_v1",
         "catalog_name": "open_data_catalog",
         "database_name": "open_data",
         "iceberg_ref": "main",
         "dataset_version": "2026-09-01",
     },
+    # A held-back source: read from the Radiant catalog under its pre-contract name, no ref.
     {
-        "table_name": "dbsnp_v1",
-        "catalog_name": "open_data_catalog",
-        "database_name": "open_data",
+        "source_name": "dbsnp",
+        "table_name": "dbsnp",
+        "catalog_name": "radiant_iceberg_catalog",
+        "database_name": "radiant",
         "iceberg_ref": None,
         "dataset_version": None,
     },

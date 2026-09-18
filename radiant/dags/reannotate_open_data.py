@@ -268,28 +268,9 @@ def reannotate_open_data():
     def build_release_rows() -> list[dict[str, str]]:
         from airflow.operators.python import get_current_context
 
-        from radiant.tasks.data.radiant_tables import (
-            ICEBERG_OPEN_DATA_CONTRACT_MAPPING,
-            RadiantConfigKeys,
-            get_config_value,
-        )
+        from radiant.tasks.data.open_data import build_open_data_release_rows
 
-        conf = get_current_context()["dag_run"].conf or {}
-        catalog = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_CATALOG)
-        database = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_DATABASE)
-        ref = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_REF)
-
-        dataset_version = "" if ref in ("", "latest") else ref
-        return [
-            {
-                "catalog_name": catalog,
-                "database_name": database,
-                "table_name": table,
-                "iceberg_ref": ref,
-                "dataset_version": dataset_version,
-            }
-            for table in sorted(ICEBERG_OPEN_DATA_CONTRACT_MAPPING.values())
-        ]
+        return build_open_data_release_rows(get_current_context()["dag_run"].conf or {})
 
     @task(task_id="render_release_sql", task_display_name="[PyOp] Render Release SQL")
     def render_release_sql(releases: list[dict[str, str]]) -> str:

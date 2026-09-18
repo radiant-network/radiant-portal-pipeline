@@ -51,6 +51,30 @@ def list_iceberg_source_tables(conf: dict | None = None, keys: Iterable[str] | N
     return sorted(tables[key] for key in keys)
 
 
+def build_open_data_release_rows(conf: dict | None = None) -> list[dict[str, str]]:
+    from radiant.tasks.data.radiant_tables import RadiantConfigKeys, get_config_value
+
+    odl_schema, _ = _iceberg_schemas(conf)
+    ref = get_config_value(conf, RadiantConfigKeys.OPEN_DATA_REF)
+
+    rows = []
+    for key, relation in resolve_iceberg_source_tables(conf).items():
+        schema, _, table = relation.rpartition(".")
+        catalog, _, database = schema.partition(".")
+        from_contract = schema == odl_schema
+        rows.append(
+            {
+                "source_name": key.removeprefix("iceberg_"),
+                "table_name": table,
+                "catalog_name": catalog,
+                "database_name": database,
+                "iceberg_ref": ref if from_contract else "LEGACY",
+                "dataset_version": ref if from_contract and ref not in ("", "latest") else "LEGACY",
+            }
+        )
+    return sorted(rows, key=lambda row: row["source_name"])
+
+
 def _tables_in(schema: str) -> set[str]:
     from airflow.hooks.base import BaseHook
 
