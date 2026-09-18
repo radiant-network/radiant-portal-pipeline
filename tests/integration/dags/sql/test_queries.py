@@ -46,6 +46,27 @@ _MOCK_PARAMS = {
     "tenant_code": "chusj",
 }
 
+# `open_data_release_insert.sql` builds its VALUES from a row list; with none it renders `VALUES ;`.
+_MOCK_RELEASES = [
+    {
+        "source_name": "clinvar",
+        "table_name": "clinvar_v1",
+        "catalog_name": "open_data_catalog",
+        "database_name": "open_data",
+        "iceberg_ref": "main",
+        "dataset_version": "2026-09-01",
+    },
+    # A held-back source: read from the Radiant catalog under its pre-contract name, no ref.
+    {
+        "source_name": "dbsnp",
+        "table_name": "dbsnp",
+        "catalog_name": "radiant_iceberg_catalog",
+        "database_name": "radiant",
+        "iceberg_ref": None,
+        "dataset_version": None,
+    },
+]
+
 
 def _execute_query(cursor, query, args=None):
     try:
@@ -107,6 +128,9 @@ def _explain_insert(starrocks_session, sql_dir):
                         "tenants": _MOCK_PARAMS["tenants"],
                         "per_tenant_mapping": lambda _t: get_radiant_mapping(),
                         "partition": _MOCK_PARAMS["part"],
+                        # `reannotate_open_data.render_release_sql` renders these three Airflow-side.
+                        "releases": _MOCK_RELEASES,
+                        "dag_run_id": "manual__2026-09-01T00:00:00+00:00",
                     }
                 )
             _execute_query(cursor, f"EXPLAIN {rendered_sql}", args=_MOCK_PARAMS)
@@ -215,6 +239,7 @@ def test_queries_are_valid(
             "somatic_snv_staging_variant_frequency",
             "germline_cnv_occurrence",
             "somatic_cnv_occurrence",
+            "open_data_release",
         ],
         views=["staging_external_sequencing_experiment", "staging_sequencing_experiment_delta"],
         udfs=["variant_id", "cnv_id"],
