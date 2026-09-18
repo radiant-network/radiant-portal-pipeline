@@ -32,9 +32,6 @@ consequence chain, which reads nothing the CNV statements touch.
 
 ## Mutual exclusion with the import
 
-> Atomic on every stack, the local one included: MinIO enforces the `If-None-Match: *` precondition
-> `acquire_lock` sends from `RELEASE.2024-09-13T20-26-02Z`, older than the images this repo pins.
-
 The whole run holds the `import_mutex` S3 lock that `import_part` also takes. This is why P1–P4 live in
 one DAG: an Airflow pool releases its slot when a *task* ends, so only a lock held for the length of the
 run can keep `import_part` out of the middle of a re-annotation.
