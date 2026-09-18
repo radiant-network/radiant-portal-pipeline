@@ -75,8 +75,8 @@ def reannotate_open_data():
     _acquire_import_lock = acquire_import_lock()
     _release_import_lock = release_import_lock()
 
-    @task(task_id="ensure_tables_exist", task_display_name="[PyOp] Preflight: Tables Exist?")
-    def ensure_tables_exist():
+    @task(task_id="preflight_tables_exist", task_display_name="[PyOp] Preflight: Tables Exist?")
+    def preflight_tables_exist():
         from airflow.exceptions import AirflowFailException
         from airflow.operators.python import get_current_context
 
@@ -87,7 +87,7 @@ def reannotate_open_data():
         if missing:
             raise AirflowFailException(format_missing_tables(missing))
 
-    _ensure_tables_exist = ensure_tables_exist()
+    _preflight_tables_exist = preflight_tables_exist()
 
     reference_load = TriggerDagRunOperator(
         task_id="reference_load",
@@ -326,7 +326,7 @@ def reannotate_open_data():
     )
 
     # --- Flow --------------------------------------------------------------------------------------
-    _ensure_tables_exist >> _acquire_import_lock >> reference_load >> sources_loaded
+    _preflight_tables_exist >> _acquire_import_lock >> reference_load >> sources_loaded
 
     sources_loaded >> [all_tenants, all_parts, tenant_parts]
     sources_loaded >> tg_accumulators
