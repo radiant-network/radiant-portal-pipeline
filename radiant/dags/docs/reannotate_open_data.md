@@ -58,6 +58,11 @@ here. The key is the source rather than `table_name` because the table name is e
 when a source flips from its pre-contract name to `{source}_v{MAJOR}` — keying on it would leave the
 old name behind as a stale second row.
 
+`recorded_at` is `NOW()`, evaluated by StarRocks when P4 executes — so it is the moment the rebuilds
+finished, not the moment the statement was built. The rows and the statement are assembled at the top of
+the run (they need nothing the rebuilds produce, and building them early surfaces a config error before
+the expensive phases), which is hours earlier.
+
 `dataset_version` is filled only when `RADIANT_OPEN_DATA_REF` pins a concrete OpenDataLake release. On the
 default `latest` it stays NULL: `latest` is a tag that moves with each publish, and resolving it back to a
 `dataset_version` needs Iceberg ref metadata this pipeline has no client for.

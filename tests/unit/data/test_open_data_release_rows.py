@@ -46,6 +46,19 @@ def test_a_contract_source_records_the_opendatalake_schema():
     }
 
 
+def test_a_contract_source_on_a_moving_tag_is_not_marked_legacy():
+    """`LEGACY` is about *where* a source was read, never about whether the ref pinned a release.
+
+    A contract source on the default `latest` pins nothing, so its `dataset_version` is empty -- but it
+    still came from OpenDataLake, and a row claiming otherwise would send an operator hunting for a
+    hold-back that was never configured.
+    """
+    for ref in ("latest", "", "2026-09-01"):
+        row = _by_source(_CONF | {"RADIANT_OPEN_DATA_REF": ref})["clinvar"]
+        assert row["iceberg_ref"] != "LEGACY", ref
+        assert row["dataset_version"] != "LEGACY", ref
+
+
 def test_a_held_back_source_records_the_radiant_schema_it_was_really_read_from():
     """The bug this guards: stamping the ODL catalog and ref onto a source the refresh never read
     there makes the row claim a release that was not used."""
@@ -55,9 +68,10 @@ def test_a_held_back_source_records_the_radiant_schema_it_was_really_read_from()
     assert row["table_name"] == "gnomad_sv"  # the pre-contract name, not gnomad_sv_v1
     assert row["catalog_name"] == "radiant_iceberg_catalog"
     assert row["database_name"] == "radiant"
-    # Held back means read without time travel, so there is no ref to record.
-    assert row["iceberg_ref"] == ""
-    assert row["dataset_version"] == ""
+    # Held back means read without time travel. The sentinel says so outright; NULL would read as a
+    # value someone forgot to fill in.
+    assert row["iceberg_ref"] == "LEGACY"
+    assert row["dataset_version"] == "LEGACY"
 
     # Its neighbours are untouched.
     assert _by_source(conf)["clinvar"]["catalog_name"] == "odl_catalog"
@@ -69,7 +83,7 @@ def test_holding_everything_back_records_no_opendatalake_row():
 
     assert rows, "the sources are still read, just from elsewhere"
     assert {row["catalog_name"] for row in rows} == {"radiant_iceberg_catalog"}
-    assert not any(row["iceberg_ref"] for row in rows)
+    assert {row["iceberg_ref"] for row in rows} == {"LEGACY"}
 
 
 def test_legacy_only_sources_carry_no_ref():
@@ -77,7 +91,7 @@ def test_legacy_only_sources_carry_no_ref():
     row = _by_source()["ensembl_gene"]
     assert row["table_name"] == "ensembl_gene"
     assert row["catalog_name"] == "radiant_iceberg_catalog"
-    assert row["iceberg_ref"] == ""
+    assert row["iceberg_ref"] == "LEGACY"
 
 
 @pytest.mark.parametrize(

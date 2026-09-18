@@ -146,6 +146,33 @@ def test_open_data_release_insert_upserts_every_column_by_name():
     ]
 
 
+def test_open_data_release_is_stamped_at_insert_time_not_at_render_time():
+    """`render_release_sql` runs at the top of the run, hours before the rebuilds it certifies finish.
+
+    A `{{ recorded_at }}` literal there would record the start of the run while the DDL calls the column
+    "once every rebuild had succeeded", so the timestamp has to come from the database at execution.
+    """
+    rendered = jinja2.Template(_text("open_data_release_insert.sql")).render(
+        mapping={"starrocks_open_data_release": "radiant.open_data_release"},
+        releases=[
+            {
+                "source_name": "clinvar",
+                "table_name": "clinvar_v1",
+                "catalog_name": "odl_catalog",
+                "database_name": "opendatalake_qa",
+                "iceberg_ref": "latest",
+                "dataset_version": "",
+            }
+        ],
+        dag_run_id="manual__2026-09-01T00:00:00+00:00",
+    )
+
+    assert "NOW()" in rendered
+    # Jinja's default Undefined renders a dropped `recorded_at` as an empty literal, which StarRocks
+    # would reject only at execution -- long after the run has taken the lock.
+    assert "''" not in rendered
+
+
 @pytest.mark.parametrize("kind", ("germline", "somatic"))
 def test_cnv_reannotation_projects_every_target_column(kind):
     """Positional insert: the projection has to match the DDL column-for-column, and the somatic and

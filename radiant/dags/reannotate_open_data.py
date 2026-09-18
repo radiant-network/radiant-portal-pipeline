@@ -286,7 +286,6 @@ def reannotate_open_data():
         return jinja2.Template(text).render(
             mapping=get_radiant_mapping(conf),
             releases=releases,
-            recorded_at=datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%d %H:%M:%S"),
             dag_run_id=context["run_id"],
         )
 

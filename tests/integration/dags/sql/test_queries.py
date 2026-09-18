@@ -130,7 +130,6 @@ def _explain_insert(starrocks_session, sql_dir):
                         "partition": _MOCK_PARAMS["part"],
                         # `reannotate_open_data.render_release_sql` renders these three Airflow-side.
                         "releases": _MOCK_RELEASES,
-                        "recorded_at": "2026-09-01 00:00:00",
                         "dag_run_id": "manual__2026-09-01T00:00:00+00:00",
                     }
                 )

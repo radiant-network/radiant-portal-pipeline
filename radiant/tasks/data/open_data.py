@@ -61,15 +61,21 @@ def build_open_data_release_rows(conf: dict | None = None) -> list[dict[str, str
     for key, relation in resolve_iceberg_source_tables(conf).items():
         schema, _, table = relation.rpartition(".")
         catalog, _, database = schema.partition(".")
-        from_contract = schema == odl_schema
+
+        if schema == odl_schema:
+            iceberg_ref = ref
+            dataset_version = "" if ref in ("", "latest") else ref
+        else:
+            iceberg_ref = dataset_version = "LEGACY"
+
         rows.append(
             {
                 "source_name": key.removeprefix("iceberg_"),
                 "table_name": table,
                 "catalog_name": catalog,
                 "database_name": database,
-                "iceberg_ref": ref if from_contract else "LEGACY",
-                "dataset_version": ref if from_contract and ref not in ("", "latest") else "LEGACY",
+                "iceberg_ref": iceberg_ref,
+                "dataset_version": dataset_version,
             }
         )
     return sorted(rows, key=lambda row: row["source_name"])
