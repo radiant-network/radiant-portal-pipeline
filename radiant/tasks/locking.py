@@ -30,6 +30,13 @@ def _lock_key(name: str) -> str:
     return f"{LOCK_KEY_PREFIX}/{name}"
 
 
+def _read_holder(s3, bucket: str, key: str) -> str | None:
+    try:
+        return s3.get_object(Bucket=bucket, Key=key)["Body"].read().decode()
+    except ClientError:
+        return None
+
+
 def acquire_lock(bucket: str, name: str, holder: str) -> None:
     s3 = boto3.client("s3")
     key = _lock_key(name)
@@ -37,15 +44,23 @@ def acquire_lock(bucket: str, name: str, holder: str) -> None:
     try:
         s3.put_object(Bucket=bucket, Key=key, Body=holder.encode(), IfNoneMatch="*")
     except ClientError as e:
-        if e.response["Error"]["Code"] in ("412", "PreconditionFailed"):
-            raise LockHeldError(f"Lock {key} is already held by another run.") from e
-        raise
+        if e.response["Error"]["Code"] not in ("412", "PreconditionFailed"):
+            raise
+        current = _read_holder(s3, bucket, key)
+        raise LockHeldError(f"Lock {key} is already held by {current or 'another run'}.") from e
     logger.info(f"Acquired lock {key} for {holder}.")
 
 
-def release_lock(bucket: str, name: str) -> None:
+def release_lock(bucket: str, name: str, holder: str | None = None) -> None:
     s3 = boto3.client("s3")
     key = _lock_key(name)
+
+    if holder is not None:
+        current = _read_holder(s3, bucket, key)
+        if current != holder:
+            logger.info(f"Not releasing {key}: held by {current or 'nobody'}, not {holder}.")
+            return
+
     s3.delete_object(Bucket=bucket, Key=key)
     logger.info(f"Released lock {key}.")
 
@@ -66,15 +81,25 @@ def check_lock(bucket: str, name: str, stale_after: datetime.timedelta = STALE_L
     return LockStatus(held=True, holder=holder, age=age, expired=age > stale_after, stale_after=stale_after)
 
 
-def describe_lock_status(status: LockStatus, delete_if_expired: bool) -> tuple[str, bool]:
+def describe_lock_status(status: LockStatus, delete_if_expired: bool, force_delete: bool = False) -> tuple[str, bool]:
     if not status.held:
         return "No lock currently held.", False
+
+    if force_delete:
+        return (
+            f"Lock held by {status.holder!r}, age={status.age} (max age {status.stale_after}) -- "
+            "FORCE DELETING. -force-delete ignores the TTL, so this may be clearing a lock a live run "
+            "still holds. If that run is still going, the next import can now write to StarRocks and "
+            "Iceberg alongside it. Confirm the holder above has actually finished.",
+            True,
+        )
 
     if not status.expired:
         ttl_remaining = status.stale_after - status.age
         return (
             f"Lock held by {status.holder!r}, age={status.age}, TTL remaining={ttl_remaining}. "
-            "Not expired -- not deleting.",
+            "Not expired -- not deleting. -delete-if-expired will not clear this one either; only "
+            "-force-delete will, and only do that once you know the holder above is finished.",
             False,
         )
 

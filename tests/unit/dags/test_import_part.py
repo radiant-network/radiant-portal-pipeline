@@ -290,5 +290,22 @@ def test_dag_task_dependencies_are_valid(dag_bag):
     assert dag.get_task("acquire_import_lock").downstream_task_ids == {"start"}
     release_lock_task = dag.get_task("release_import_lock")
     assert release_lock_task.upstream_task_ids == {"delete_sequencing_experiments", "update_sequencing_experiment"}
-    assert release_lock_task.trigger_rule == TriggerRule.ALL_SUCCESS
+    # ALL_DONE, not ALL_SUCCESS: this DAG runs once per partition and fails routinely, and holding the
+    # mutex through a failure took every partition behind it down too. The re-annotation DAG is the
+    # opposite case and still holds on failure. Safe only because `release_lock` is holder-checked --
+    # ALL_DONE also fires when `acquire_import_lock` failed, and an unconditional delete there would
+    # free the lock whichever run actually holds it. See `test_locking.py`.
+    assert release_lock_task.trigger_rule == TriggerRule.ALL_DONE
     assert release_lock_task.downstream_task_ids == set()
+
+
+def test_only_one_partition_imports_at_a_time(dag_bag):
+    """The `import_mutex` lock is the backstop, not the scheduler -- two concurrent runs race it and the
+    loser fails outright.
+
+    Pinned on the DAG rather than left to the caller's `import_part` pool: that pool sits on the mapped
+    trigger in `import_radiant`, so it does nothing for a manual or API-triggered run, and nothing at all
+    while the trigger is deferred (a deferred task holds no pool slot unless the pool has
+    `include_deferred` -- apache/airflow#40528). See `radiant/dags/docs/import_part.md`.
+    """
+    assert dag_bag.get_dag(f"{NAMESPACE}-import-part").max_active_runs == 1

@@ -1,4 +1,9 @@
-from radiant.dags.toolbox import _delete_if_expired, _generate_user_password, _resolve_env_vars
+from radiant.dags.toolbox import (
+    _delete_if_expired,
+    _force_delete,
+    _generate_user_password,
+    _resolve_env_vars,
+)
 
 DAG_ID = "radiant-toolbox"
 
@@ -71,3 +76,19 @@ def test_delete_if_expired_true_when_flag_present():
 def test_delete_if_expired_false_when_flag_absent():
     assert _delete_if_expired([]) is False
     assert _delete_if_expired(["-code", "demo"]) is False
+
+
+def test_force_delete_true_when_flag_present():
+    assert _force_delete(["-force-delete"]) is True
+
+
+def test_force_delete_false_when_flag_absent():
+    assert _force_delete([]) is False
+    assert _force_delete(["-delete-if-expired"]) is False
+
+
+def test_the_two_delete_flags_are_independent():
+    # -force-delete is deliberately not a superset of -delete-if-expired: only the former can clear a
+    # lock a live run still holds, so passing one must never imply the other.
+    assert _delete_if_expired(["-force-delete"]) is False
+    assert _force_delete(["-delete-if-expired"]) is False

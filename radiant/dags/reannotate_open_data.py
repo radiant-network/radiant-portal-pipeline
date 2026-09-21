@@ -74,7 +74,11 @@ def reannotate_open_data():
 
     @task(task_id="release_import_lock", task_display_name="[PyOp] Release Import Lock")
     def release_import_lock():
-        release_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME)
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        holder = f"{context['dag'].dag_id}:{context['run_id']}"
+        release_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME, holder=holder)
 
     _acquire_import_lock = acquire_import_lock()
     _release_import_lock = release_import_lock()

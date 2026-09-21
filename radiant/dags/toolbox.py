@@ -32,6 +32,10 @@ def _delete_if_expired(args: list[str]) -> bool:
     return "-delete-if-expired" in args
 
 
+def _force_delete(args: list[str]) -> bool:
+    return "-force-delete" in args
+
+
 def _generate_user_password(command: str, token_urlsafe=secrets.token_urlsafe) -> str:
     """A `create-user` run needs a fresh password every time -- unlike the deployment's
     baked DB/PG/Ranger/Keycloak-admin credentials, this can't live in the task
@@ -71,11 +75,13 @@ def _generate_user_password(command: str, token_urlsafe=secrets.token_urlsafe) -
             title="Arguments",
             description=(
                 "CLI flags passed verbatim to the command, e.g. "
-                '["-code", "demo", "-name", "Demo Hospital"] for create-tenant. For check-lock, '
-                'the only recognized flag is "-delete-if-expired": if the import_mutex lock is '
-                "held and past its TTL, delete it. Has no effect on a lock that is still within "
-                "its TTL -- run without it first to see the lock's status before deciding whether "
-                "to clear it."
+                '["-code", "demo", "-name", "Demo Hospital"] for create-tenant. For check-lock, two '
+                'flags are recognized. "-delete-if-expired": if the import_mutex lock is held and '
+                "past its TTL, delete it; no effect on a lock still within its TTL. "
+                '"-force-delete": delete it whatever its age and whoever holds it -- the only way to '
+                "clear a lock a live run still holds, so confirm that run has finished first, or two "
+                "imports can write to StarRocks and Iceberg at once. Run without flags to see the "
+                "lock's holder and age before deciding."
             ),
         ),
         "env_vars": Param(
@@ -120,7 +126,9 @@ def toolbox():
     @task(task_id="check_import_lock", task_display_name="[PyOp] Check Import Lock")
     def check_import_lock(args: list[str]):
         status = check_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME)
-        message, should_delete = describe_lock_status(status, _delete_if_expired(args))
+        message, should_delete = describe_lock_status(
+            status, _delete_if_expired(args), force_delete=_force_delete(args)
+        )
         logger.info(message)
         if should_delete:
             release_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME)
