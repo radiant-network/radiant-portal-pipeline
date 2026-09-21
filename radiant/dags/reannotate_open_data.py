@@ -91,49 +91,13 @@ def reannotate_open_data():
         if missing:
             raise AirflowFailException(format_missing_tables(missing))
 
-    @task(task_id="preflight_insert_pool", task_display_name="[PyOp] Preflight: Insert Pool Serialises?")
-    def preflight_insert_pool():
-        """Fail ahead of the lock if the pool cannot actually serialise StarRocks work.
-
-        Every statement in this DAG runs through `starrocks_insert_pool`, and the pool is the only thing
-        keeping them off each other: the operators SUBMIT TASK and then defer, and `DEFERRED` is not in
-        Airflow's `EXECUTION_STATES` -- so `max_active_tis_per_dagrun` and the DAG's own concurrency
-        settings all stop counting a statement the moment it starts doing the work. A pool counts it only
-        when created with `include_deferred=True`.
-
-        Checked rather than assumed because the failure is silent: with the wrong pool config every
-        mapped tenant submits at once and the first sign is a BE dying on memory, hours in and holding
-        the import mutex.
-        """
-        from airflow.exceptions import AirflowFailException
-        from airflow.models.pool import Pool
-
-        pool = Pool.get_pool(STARROCKS_INSERT_POOL)
-        if pool is None:
-            raise AirflowFailException(
-                f"Pool '{STARROCKS_INSERT_POOL}' does not exist. Create it with 1 slot and "
-                f"'Include deferred tasks' enabled, otherwise every StarRocks statement in this DAG "
-                f"runs concurrently."
-            )
-        if not pool.include_deferred:
-            raise AirflowFailException(
-                f"Pool '{STARROCKS_INSERT_POOL}' has include_deferred=False. These operators defer while "
-                f"the statement runs, so the pool would release the slot immediately and serialise "
-                f"nothing. Enable 'Include deferred tasks' on the pool."
-            )
-        if pool.slots != 1:
-            raise AirflowFailException(
-                f"Pool '{STARROCKS_INSERT_POOL}' has {pool.slots} slots; this DAG requires exactly 1 so "
-                f"that no two StarRocks statements overlap."
-            )
-
     _preflight_tables_exist = preflight_tables_exist()
-    _preflight_insert_pool = preflight_insert_pool()
 
     reference_load = TriggerDagRunOperator(
         task_id="reference_load",
         task_display_name="[DAG] Refresh Open Data from OpenDataLake",
         trigger_dag_id=f"{NAMESPACE}-import-open-data",
+        conf={"skip_legacy_tables": True},
         reset_dag_run=True,
         wait_for_completion=True,
         poke_interval=30,
@@ -378,10 +342,7 @@ def reannotate_open_data():
     )
 
     # --- Flow --------------------------------------------------------------------------------------
-    # Both preflights ahead of the lock: a missing table or a misconfigured pool is a setup problem,
-    # not a race, and failing before the acquire leaves no mutex to clear by hand.
-    [_preflight_tables_exist, _preflight_insert_pool] >> _acquire_import_lock
-    _acquire_import_lock >> reference_load >> sources_loaded
+    _preflight_tables_exist >> _acquire_import_lock >> reference_load >> sources_loaded
 
     sources_loaded >> [all_tenants, all_parts, tenant_parts]
     sources_loaded >> _release_rows

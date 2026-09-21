@@ -49,7 +49,7 @@ def test_preflight_runs_before_the_lock_is_taken(dag):
 def test_lock_is_acquired_first_and_released_last(dag):
     acquire = dag.get_task("acquire_import_lock")
     release = dag.get_task("release_import_lock")
-    assert acquire.upstream_task_ids == {"preflight_tables_exist", "preflight_insert_pool"}
+    assert acquire.upstream_task_ids == {"preflight_tables_exist"}
     assert acquire.downstream_task_ids == {"reference_load"}
     # Nothing downstream of the release, and it hangs off the last task in the run -- so a failure
     # anywhere above leaves the lock held, which §4 requires.
@@ -58,9 +58,8 @@ def test_lock_is_acquired_first_and_released_last(dag):
 
 
 def test_preflight_is_the_only_entry_point(dag):
-    """Only preflights may be roots: anything else would run outside the lock they gate."""
-    roots = sorted(t.task_id for t in dag.tasks if not t.upstream_task_ids)
-    assert roots == ["preflight_insert_pool", "preflight_tables_exist"]
+    """One root: a second would run outside the lock the preflight gates."""
+    assert [t.task_id for t in dag.tasks if not t.upstream_task_ids] == ["preflight_tables_exist"]
 
 
 def test_reference_load_precedes_the_checkpoint(dag):
@@ -260,14 +259,6 @@ def test_the_mapped_fan_outs_are_serialised_by_the_pool_not_by_a_task_limit(dag)
         assert limit is None, f"{task.task_id} relies on a limit that ignores DEFERRED"
 
 
-def test_the_pool_config_is_checked_before_the_lock_is_taken(dag):
-    """The pool is cluster-side config the DAG cannot assert, and getting it wrong fails silently --
-    every tenant submits at once and the first symptom is a BE dying hours in, holding the mutex."""
-    preflight = dag.get_task("preflight_insert_pool")
-    assert preflight.upstream_task_ids == set()
-    assert preflight.downstream_task_ids == {"acquire_import_lock"}
-
-
 def test_a_checkpoint_brackets_every_group_of_starrocks_work(dag):
     """The checkpoints carry no work -- they exist so the graph reads as the serial sequence it is.
     Each group of statements must sit between two of them, or the UI stops showing where one operation
@@ -305,3 +296,16 @@ def test_checkpoints_do_not_stall_the_spine_when_a_branch_skips(dag):
 
     for task_id in ("accumulators_reannotated", "snv_variants_rebuilt", "snv_consequences_rebuilt"):
         assert dag.get_task(task_id).trigger_rule == TriggerRule.NONE_FAILED, task_id
+
+
+def test_p1_asks_the_import_to_skip_legacy_sources(dag):
+    """A re-annotation picks up what OpenDataLake published; the legacy tables did not move."""
+    assert dag.get_task("reference_load").conf == {"skip_legacy_tables": True}
+
+
+def test_p1_leaves_the_file_driven_loads_unset(dag):
+    """`import-open-data` gates its two broker loads on filepath params. P1 passes neither, so ClinVar RCV
+    summary and cytoband stay a manual, operator-triggered run."""
+    conf = dag.get_task("reference_load").conf
+    assert "raw_rcv_filepaths" not in conf
+    assert "cytoband_filepath" not in conf

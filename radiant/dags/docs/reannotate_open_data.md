@@ -43,8 +43,10 @@ deliberate serialisation and can be reordered, as long as nothing starts running
 ## Required setup: the `starrocks_insert_pool`
 
 **This DAG does not run correctly without a pool named `starrocks_insert_pool`, with exactly 1 slot and
-"Include deferred tasks" enabled.** `preflight_insert_pool` checks all three before the lock is taken and
-fails the run with an explanation if any is wrong.
+"Include deferred tasks" enabled.** The DAG assumes all three and does not verify them — nothing fails
+fast if the pool is missing or misconfigured. The run simply stops being serial: every mapped tenant
+submits at once, and the first symptom is a BE dying on memory, hours in and holding the import mutex. If
+you see that, check the pool before reading anything into the query.
 
 Edges serialise the *groups*, but a tenant/part fan-out is N statements inside one mapped task, and no
 edge separates those. The obvious control, `max_active_tis_per_dagrun=1`, does not work here and is

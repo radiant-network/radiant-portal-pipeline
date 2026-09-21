@@ -27,7 +27,32 @@ gene_group_ids = [
     "hpo_term",
 ]
 
+# The `mapping.iceberg_*` key each group reads, for the six that are not simply `iceberg_{group}`.
+source_keys = {
+    "gnomad": "iceberg_gnomad_joint",
+    "cosmic_gene_panel": "iceberg_cosmic_gene_set",
+    "ddd_gene_panel": "iceberg_ddd_gene_set",
+    "hpo_gene_panel": "iceberg_hpo_gene_set",
+    "omim_gene_panel": "iceberg_omim_gene_set",
+    "orphanet_gene_panel": "iceberg_orphanet_gene_set",
+}
+
+
+def skip_legacy(group: str) -> str:
+    key = source_keys.get(group, f"iceberg_{group}")
+    return f"{{{{ params.skip_legacy_tables and not mapping.get('{key}_is_contract') }}}}"
+
+
 dag_params = {
+    "skip_legacy_tables": Param(
+        default=False,
+        description=(
+            "Import only the OpenDataLake sources, skipping every table still read from the legacy Radiant "
+            "Iceberg catalog. Those do not move when OpenDataLake publishes, so a refresh-driven run has "
+            "nothing new to read for them. Set by the re-annotation DAG; leave False for a full import."
+        ),
+        type="boolean",
+    ),
     "raw_rcv_filepaths": Param(
         default=None,
         description="RCV filepaths to load into the raw ClinVar RCV Summary table.",
@@ -79,6 +104,7 @@ with DAG(
                 sql=f"./sql/open_data/{group}_insert_hashes.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
                 trigger_rule="none_failed",
+                skip_if=skip_legacy(group),
             )
         )
         data_tasks.append(
@@ -87,6 +113,8 @@ with DAG(
                 task_display_name=f"{group} Insert Data",
                 sql=f"./sql/open_data/{group}_insert.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+                trigger_rule="none_failed",
+                skip_if=skip_legacy(group),
             )
         )
 
@@ -97,6 +125,8 @@ with DAG(
                 task_display_name=f"{group} Insert Data",
                 sql=f"./sql/open_data/{group}_insert.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+                trigger_rule="none_failed",
+                skip_if=skip_legacy(group),
             )
         )
 
