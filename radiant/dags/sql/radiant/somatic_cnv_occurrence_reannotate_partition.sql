@@ -13,9 +13,6 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
                     AND g.end >= o.start
                WHERE o.part = %(part)s
                GROUP BY o.name, o.seq_id),
-     -- Somatic segments are counted against somatic SNVs: germline SNVs inside a tumour segment would be a
-     -- meaningless number. COUNT(DISTINCT locus_id) because a tumour sample analysed both tumour-only and
-     -- tumour-normal holds each locus under two task_ids. See SJRA-1811 Decision 3 for the join.
      snv AS (SELECT o.name, o.seq_id, COUNT(DISTINCT s.locus_id) AS nb_snv
              FROM {{ mapping.starrocks_somatic_cnv_occurrence }} o
              JOIN {{ mapping.starrocks_somatic_snv_occurrence }} s ON s.tumor_seq_id = o.seq_id
@@ -36,10 +33,6 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
             (gnomad.n_het + gnomad.n_homalt) / gnomad.n_bi_genos as sf
         FROM {{ mapping.starrocks_somatic_cnv_occurrence }} cnv
         JOIN {{ mapping.iceberg_gnomad_sv }} gnomad
-        /* Key on `type`, not `alternate`: an LOH event stores `<LOH>`, which matches no gnomAD svtype.
-           The CASE says what the join actually means -- same copy-number direction -- so GAINLOH matches
-           DUP and CNLOH (copy-neutral) matches nothing, keeping its gnomad_* columns NULL. It also yields
-           only 'DUP', 'DEL' or NULL, which is why no separate `svtype IN ('DUP','DEL')` filter is needed. */
         ON cnv.chromosome = gnomad.chromosome
         AND gnomad.svtype = CASE WHEN cnv.type IN ('GAIN', 'GAINLOH') THEN 'DUP'
                                  WHEN cnv.type = 'LOSS'               THEN 'DEL' END
@@ -48,11 +41,6 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (cnv.end - cnv.start)
         AND
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (gnomad.end - gnomad.start)
-        /* `gnomad_sv_v1` publishes PASS rows only and drops the column
-           (radiant-open-datalake spark/doc/release-notes/gnomad_sv/v1.md), so the contract side needs no
-           predicate. The pre-contract table still carries every call and its `filters` column, so holding
-           `gnomad_sv` back via RADIANT_OPEN_DATA_USE_LEGACY_TABLES has to filter as it always did --
-           without this, a held-back source would quietly annotate against non-PASS calls. */
 {% if not mapping.iceberg_gnomad_sv_is_contract %}
         AND gnomad.filters = 'PASS'
 {% endif %}
@@ -67,8 +55,6 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
         ) AS rn
         FROM gnomad_overlaps o
     )
--- Column order follows somatic_cnv_occurrence_create_table.sql, which differs from germline's: `cn` sits in
--- the ASCN block after `phased` rather than between `bc` and `pe`. This is a positional insert.
 SELECT o.part,
        o.seq_id,
        o.task_id,

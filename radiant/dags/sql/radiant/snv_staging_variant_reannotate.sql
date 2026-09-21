@@ -6,11 +6,6 @@
 --      platform has ever imported, and the accumulator is the table that holds them.
 --   2. No `task_ids` predicate, for the same reason.
 --
--- `INSERT INTO` on a PRIMARY KEY table is an upsert, so the 22 carried-through columns are rewritten with
--- the values they already hold and the 7 open-data columns (gnomad_v3_af, topmed_af, tg_af, clinvar_name,
--- clinvar_interpretation, rsnumber, omim_inheritance_code) pick up the refreshed reference tables.
--- Self-referencing: StarRocks fixes the read snapshot at plan time, so the scan is not affected by the
--- rows this statement writes.
 INSERT INTO {{ mapping.starrocks_snv_staging_variant }}
 SELECT
     v.locus_id,

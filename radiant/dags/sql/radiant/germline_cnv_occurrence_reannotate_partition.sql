@@ -10,11 +10,6 @@
 --   4. `cnv_id` is read back rather than recomputed. It is derived from columns this statement carries
 --      through untouched, so GET_CNV_ID would return the value already stored.
 --
--- `dynamic_overwrite` replaces only the partitions the result set actually contains. Every row here
--- carries `part = %(part)s`, so exactly one partition is swapped and the rest of the table is untouched.
--- Reading the same table the statement overwrites is safe for the same reason `INSERT OVERWRITE` is
--- atomic: StarRocks stages into temporary partitions and swaps at commit, against a read snapshot fixed
--- at plan time.
 INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_germline_cnv_occurrence }}
 WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
                   FROM {{ mapping.starrocks_germline_cnv_occurrence }} o
@@ -27,9 +22,6 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
                     AND g.end >= o.start
                WHERE o.part = %(part)s
                GROUP BY o.name, o.seq_id),
-     -- Decision 3 Option C: the coordinates come from `snv__variant`, joined to the SNV occurrences on
-     -- `locus_id`. Both sides live in StarRocks, so this counts the quality-passing SNVs inside a segment
-     -- -- see §5 for why that narrowing is deliberate.
      snv AS (SELECT o.name, o.seq_id, COUNT(DISTINCT s.locus_id) AS nb_snv
              FROM {{ mapping.starrocks_germline_cnv_occurrence }} o
              JOIN {{ mapping.starrocks_germline_snv_occurrence }} s ON s.seq_id = o.seq_id
@@ -61,11 +53,6 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (cnv.end - cnv.start)
         AND
             GREATEST(0, LEAST(cnv.end, gnomad.end) - GREATEST(cnv.start, gnomad.start)) >= 0.8 * (gnomad.end - gnomad.start)
-        /* `gnomad_sv_v1` publishes PASS rows only and drops the column
-           (radiant-open-datalake spark/doc/release-notes/gnomad_sv/v1.md), so the contract side needs no
-           predicate. The pre-contract table still carries every call and its `filters` column, so holding
-           `gnomad_sv` back via RADIANT_OPEN_DATA_USE_LEGACY_TABLES has to filter as it always did --
-           without this, a held-back source would quietly annotate against non-PASS calls. */
 {% if not mapping.iceberg_gnomad_sv_is_contract %}
         AND gnomad.filters = 'PASS'
 {% endif %}

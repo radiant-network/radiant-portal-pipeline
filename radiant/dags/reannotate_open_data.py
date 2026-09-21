@@ -199,9 +199,6 @@ def reannotate_open_data():
             submit_task_options=std_submit_task_opts,
             pool=STARROCKS_INSERT_POOL,
         )
-
-        # Serial, not because one reads the other -- they are independent upserts -- but because both scan
-        # a whole accumulator. Run together they compete for the same disk and spill budget.
         reannotate_staging_variant >> reannotate_consequence
 
     with TaskGroup(group_id="snv_variant") as tg_variants:
@@ -304,11 +301,8 @@ def reannotate_open_data():
     _release_rows = build_release_rows()
     _release_sql = render_release_sql(_release_rows)
 
-    # One checkpoint between each group of StarRocks statements. They carry no work -- they are there so
-    # the graph reads as the serial sequence it is, with each group bracketed by a marker rather than the
-    # reader having to trace edges between two fan-outs to see where one operation ends and the next
-    # begins. `NONE_FAILED` throughout, matching `rebuilds_complete`: a short-circuited branch skips
-    # rather than stalling the spine behind it.
+    # Checkpoints
+
     accumulators_reannotated = EmptyOperator(
         task_id="accumulators_reannotated",
         task_display_name="[ --- CHECKPOINT: PHASE 3A --- ] Accumulators Re-annotated",

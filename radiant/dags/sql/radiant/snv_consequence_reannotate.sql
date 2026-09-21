@@ -13,9 +13,6 @@
 -- directly; that would silently drop every RefSeq row's scores and flip `scores_from_mane_pair`, so the
 -- ingest rule wins.
 --
--- `INSERT INTO` on a PRIMARY KEY table is an upsert: the 16 carried-through columns are rewritten as-is
--- and the 18 open-data columns pick up the refreshed reference tables. Self-referencing: StarRocks fixes
--- the read snapshot at plan time, so the scan is not affected by the rows this statement writes.
 INSERT INTO {{ mapping.starrocks_snv_consequence }}
 SELECT
     c.locus_id,

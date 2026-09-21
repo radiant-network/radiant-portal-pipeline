@@ -43,21 +43,7 @@ deliberate serialisation and can be reordered, as long as nothing starts running
 ## Required setup: the `starrocks_insert_pool`
 
 **This DAG does not run correctly without a pool named `starrocks_insert_pool`, with exactly 1 slot and
-"Include deferred tasks" enabled.** The DAG assumes all three and does not verify them — nothing fails
-fast if the pool is missing or misconfigured. The run simply stops being serial: every mapped tenant
-submits at once, and the first symptom is a BE dying on memory, hours in and holding the import mutex. If
-you see that, check the pool before reading anything into the query.
-
-Edges serialise the *groups*, but a tenant/part fan-out is N statements inside one mapped task, and no
-edge separates those. The obvious control, `max_active_tis_per_dagrun=1`, does not work here and is
-deliberately not used: the scheduler counts only `EXECUTION_STATES` = `{RUNNING, QUEUED}`, and these
-operators `SUBMIT TASK` and then defer — so a mapped instance stops being counted the moment its
-statement actually starts running, and the scheduler immediately releases the next one. Every tenant ends
-up submitting at once.
-
-A pool is the only Airflow limit that counts a `DEFERRED` task, and only when created with
-`include_deferred=True`. Hence the pool, and hence the preflight: the misconfiguration is invisible until
-a BE dies on memory, hours into a run that is holding the import mutex.
+"Include deferred tasks" enabled.**
 
 ## Mutual exclusion with the import
 
