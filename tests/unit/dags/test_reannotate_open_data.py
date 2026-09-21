@@ -49,7 +49,7 @@ def test_preflight_runs_before_the_lock_is_taken(dag):
 def test_lock_is_acquired_first_and_released_last(dag):
     acquire = dag.get_task("acquire_import_lock")
     release = dag.get_task("release_import_lock")
-    assert acquire.upstream_task_ids == {"preflight_tables_exist"}
+    assert acquire.upstream_task_ids == {"preflight_tables_exist", "preflight_insert_pool"}
     assert acquire.downstream_task_ids == {"reference_load"}
     # Nothing downstream of the release, and it hangs off the last task in the run -- so a failure
     # anywhere above leaves the lock held, which §4 requires.
@@ -58,8 +58,9 @@ def test_lock_is_acquired_first_and_released_last(dag):
 
 
 def test_preflight_is_the_only_entry_point(dag):
-    """One root: a second would run outside the lock the preflight gates."""
-    assert [t.task_id for t in dag.tasks if not t.upstream_task_ids] == ["preflight_tables_exist"]
+    """Only preflights may be roots: anything else would run outside the lock they gate."""
+    roots = sorted(t.task_id for t in dag.tasks if not t.upstream_task_ids)
+    assert roots == ["preflight_insert_pool", "preflight_tables_exist"]
 
 
 def test_reference_load_precedes_the_checkpoint(dag):
@@ -89,16 +90,18 @@ def test_the_ui_lists_the_phases_in_order(dag):
     assert positions == sorted(positions), dict(zip(landmarks, positions, strict=True))
 
 
-def test_phase_3a_chains_are_independent_of_each_other(dag):
-    """§5: top row and bottom row are independent; left-to-right inside a row is not."""
+def test_each_3a_chain_still_comes_after_the_accumulator_it_reads(dag):
+    """§5 had these two chains running in parallel. They are serialised now -- StarRocks I/O, not data --
+    so the data dependency is satisfied transitively rather than by a direct edge. Assert the dependency,
+    which is the thing that must not break, not the edge, which is free to move.
+    """
     variant = dag.get_task("snv_variant.insert_snv_variant")
     consequence = dag.get_task("snv_consequence.insert_snv_consequence_filter")
+    staging = dag.get_task("reannotate_accumulators.reannotate_snv_staging_variant")
+    cons_acc = dag.get_task("reannotate_accumulators.reannotate_snv_consequence")
 
-    assert "reannotate_accumulators.reannotate_snv_staging_variant" in variant.upstream_task_ids
-    assert "reannotate_accumulators.reannotate_snv_consequence" not in variant.upstream_task_ids
-
-    assert "reannotate_accumulators.reannotate_snv_consequence" in consequence.upstream_task_ids
-    assert "reannotate_accumulators.reannotate_snv_staging_variant" not in consequence.upstream_task_ids
+    assert _reaches(dag, staging, variant)
+    assert _reaches(dag, cons_acc, consequence)
 
 
 def test_partitioned_copies_come_after_the_tables_they_copy(dag):
@@ -117,21 +120,22 @@ def test_cnv_rebuild_waits_for_the_variant_table_it_counts(dag):
     re-annotation unchanged. True of the values, not of the row set the count depends on.
     """
     germline_cnv = dag.get_task("cnv_occurrence.reannotate_germline_cnv_occurrence")
-    assert "snv_variant.insert_snv_variant" in germline_cnv.upstream_task_ids
-
-    # The partitioned copy is not what they read, and no CNV statement touches a consequence table --
-    # neither is made a predecessor, so the consequence chain still runs beside 3b.
-    for upstream in germline_cnv.upstream_task_ids:
-        assert upstream != "snv_variant.insert_snv_variant_part", upstream
-        assert not upstream.startswith("snv_consequence."), upstream
+    assert _reaches(dag, dag.get_task("snv_variant.insert_snv_variant"), germline_cnv)
 
 
 def test_release_is_recorded_only_after_every_rebuild(dag):
-    """All three rebuild groups fan into the final checkpoint, and the release hangs off that."""
-    upstream = dag.get_task("rebuilds_complete").upstream_task_ids
-    assert "snv_variant.insert_snv_variant_part" in upstream
-    assert "snv_consequence.insert_snv_consequence_filter_part" in upstream
-    assert "cnv_occurrence.reannotate_somatic_cnv_occurrence" in upstream
+    """Every rebuild precedes the final checkpoint, and the release hangs off that.
+
+    The groups reach it down the serial spine rather than fanning into it directly, so assert
+    reachability -- the invariant -- not the edges, which move whenever the spine is reordered.
+    """
+    rebuilds_complete = dag.get_task("rebuilds_complete")
+    for task_id in (
+        "snv_variant.insert_snv_variant_part",
+        "snv_consequence.insert_snv_consequence_filter_part",
+        "cnv_occurrence.reannotate_somatic_cnv_occurrence",
+    ):
+        assert _reaches(dag, dag.get_task(task_id), rebuilds_complete), task_id
 
     assert "rebuilds_complete" in dag.get_task("record_open_data_release").upstream_task_ids
 
@@ -183,3 +187,121 @@ def test_cnv_params_are_one_per_existing_pair_not_the_cross_product():
         {"tenant_code": "CHOP", "parameters": {"part": 1}},
         {"tenant_code": "SJ", "parameters": {"part": 3}},
     ]
+
+
+def _starrocks_tasks(dag):
+    """Every task that runs a statement on StarRocks, mapped ones included."""
+    from airflow.models.mappedoperator import MappedOperator
+
+    from radiant.tasks.starrocks.operator import RadiantStarRocksOperator
+
+    out = []
+    for task in dag.tasks:
+        cls = task.operator_class if isinstance(task, MappedOperator) else type(task)
+        if isinstance(cls, type) and issubclass(cls, RadiantStarRocksOperator):
+            out.append(task)
+    return out
+
+
+def _reaches(dag, a, b, seen=None):
+    seen = seen if seen is not None else set()
+    if a.task_id in seen:
+        return False
+    seen.add(a.task_id)
+    if b.task_id in a.downstream_task_ids:
+        return True
+    return any(_reaches(dag, dag.get_task(t), b, seen) for t in a.downstream_task_ids)
+
+
+def test_no_two_starrocks_inserts_can_run_at_the_same_time(dag):
+    """Every re-annotation statement is a whole-table scan. Two at once contend for the same disk and
+    spill budget, so the DAG must leave no pair of them concurrent.
+
+    Asserted over the reachability closure rather than over the edges written in the Flow section: an
+    edge list can look serial while a pair is still concurrent through some other path.
+    """
+    inserts = _starrocks_tasks(dag)
+    assert len(inserts) >= 8, f"expected every StarRocks statement, found {len(inserts)}"
+
+    concurrent = [
+        (a.task_id, b.task_id)
+        for i, a in enumerate(inserts)
+        for b in inserts[i + 1 :]
+        if not _reaches(dag, a, b) and not _reaches(dag, b, a)
+    ]
+    assert concurrent == [], f"these StarRocks inserts can overlap: {concurrent}"
+
+
+def test_the_accumulators_are_serial_with_each_other(dag):
+    """They are independent upserts -- nothing but I/O contention orders them, so the edge is easy to
+    drop by accident."""
+    consequence = dag.get_task("reannotate_accumulators.reannotate_snv_consequence")
+    assert "reannotate_accumulators.reannotate_snv_staging_variant" in consequence.upstream_task_ids
+
+
+def test_the_mapped_fan_outs_are_serialised_by_the_pool_not_by_a_task_limit(dag):
+    """A tenant/part fan-out is N statements, and edges between groups say nothing about them.
+
+    `max_active_tis_per_dagrun=1` looks like the answer and is not: the scheduler counts only
+    `EXECUTION_STATES` = {RUNNING, QUEUED}, and these operators SUBMIT TASK then defer -- so every mapped
+    instance stops being counted the moment its statement starts running, and the next one is released.
+    A pool is the only limit that counts a deferred task, and only with `include_deferred=True`.
+    """
+    from radiant.tasks.starrocks.operator import STARROCKS_INSERT_POOL
+
+    for task in _starrocks_tasks(dag):
+        pool = task.partial_kwargs.get("pool") if hasattr(task, "partial_kwargs") else task.pool
+        assert pool == STARROCKS_INSERT_POOL, task.task_id
+        limit = (
+            task.partial_kwargs.get("max_active_tis_per_dagrun")
+            if hasattr(task, "partial_kwargs")
+            else task.max_active_tis_per_dagrun
+        )
+        assert limit is None, f"{task.task_id} relies on a limit that ignores DEFERRED"
+
+
+def test_the_pool_config_is_checked_before_the_lock_is_taken(dag):
+    """The pool is cluster-side config the DAG cannot assert, and getting it wrong fails silently --
+    every tenant submits at once and the first symptom is a BE dying hours in, holding the mutex."""
+    preflight = dag.get_task("preflight_insert_pool")
+    assert preflight.upstream_task_ids == set()
+    assert preflight.downstream_task_ids == {"acquire_import_lock"}
+
+
+def test_a_checkpoint_brackets_every_group_of_starrocks_work(dag):
+    """The checkpoints carry no work -- they exist so the graph reads as the serial sequence it is.
+    Each group of statements must sit between two of them, or the UI stops showing where one operation
+    ends and the next begins."""
+    checkpoints = [
+        "sources_loaded",
+        "accumulators_reannotated",
+        "snv_variants_rebuilt",
+        "snv_consequences_rebuilt",
+        "rebuilds_complete",
+    ]
+    for task_id in checkpoints:
+        task = dag.get_task(task_id)
+        assert type(task).__name__ == "EmptyOperator", f"{task_id} should carry no work"
+        assert "CHECKPOINT" in task.task_display_name, task_id
+
+    # Consecutive, in this order, down the one spine.
+    for earlier, later in zip(checkpoints, checkpoints[1:], strict=False):
+        assert _reaches(dag, dag.get_task(earlier), dag.get_task(later)), f"{earlier} -> {later}"
+        assert not _reaches(dag, dag.get_task(later), dag.get_task(earlier)), f"{later} -> {earlier}"
+
+    # Every StarRocks statement but the final release sits strictly between two checkpoints.
+    for task in _starrocks_tasks(dag):
+        if task.task_id == "record_open_data_release":
+            continue
+        before = [c for c in checkpoints if _reaches(dag, dag.get_task(c), task)]
+        after = [c for c in checkpoints if _reaches(dag, task, dag.get_task(c))]
+        assert before and after, f"{task.task_id} is not bracketed by checkpoints"
+
+
+def test_checkpoints_do_not_stall_the_spine_when_a_branch_skips(dag):
+    """Tenant/part discovery short-circuits. A checkpoint left on the default ALL_SUCCESS would skip with
+    the branch and take the whole spine -- including the lock release -- down with it."""
+    from airflow.utils.trigger_rule import TriggerRule
+
+    for task_id in ("accumulators_reannotated", "snv_variants_rebuilt", "snv_consequences_rebuilt"):
+        assert dag.get_task(task_id).trigger_rule == TriggerRule.NONE_FAILED, task_id

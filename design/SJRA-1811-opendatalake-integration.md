@@ -479,6 +479,23 @@ flowchart LR
 
 Top row and bottom row are independent; left-to-right inside a row is not.
 
+**Corrected during implementation — the two rows are run serially anyway.** The independence above is a
+statement about *data*, and it still holds: nothing in the consequence chain reads anything the variant
+chain writes. It does not follow that they should run at the same time. Every statement in both rows is a
+whole-table scan rather than a batch, so running two concurrently puts them in contention for the same
+disk and spill budget on the StarRocks cluster, and that costs more than the overlap wins. The
+re-annotation DAG therefore chains all of P2, P3a and P3b into one serial spine, and each mapped fan-out
+carries `max_active_tis_per_dagrun=1` so a tenant/part expansion cannot parallelise from the inside
+either.
+
+Note this is wired with DAG edges, not with the `starrocks_insert_pool` constant that exists in
+`operator.py`. A pool cannot express it: these operators `SUBMIT TASK` and then defer, so the statement is
+running while the Airflow task sits in `DEFERRED` — and a deferred task occupies a pool slot only when the
+pool was created with `include_deferred=True` (Airflow 2.10 `Pool.get_occupied_states`). That is
+cluster-side configuration the DAG cannot assert, and a pool created without it would serialise only the
+brief submit while every query still overlapped, with nothing to show that it had failed to work. This is
+the same trap as §4's pool-versus-lock argument, one layer down.
+
 `snv_variant_part_insert_part.sql:2-6` is literally `SELECT %(variant_part)s AS part, v.* FROM
 {{ mapping.starrocks_snv_variant }} v`, and `snv_consequence_filter_insert.sql:78` reads
 `{{ mapping.starrocks_snv_consequence }}`. So 3a parallelises **across** the two chains and within each chain's

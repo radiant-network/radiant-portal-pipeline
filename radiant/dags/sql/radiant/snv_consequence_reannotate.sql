@@ -13,10 +13,6 @@
 -- directly; that would silently drop every RefSeq row's scores and flip `scores_from_mane_pair`, so the
 -- ingest rule wins.
 --
--- The join hints are carried over unchanged. They are load-bearing, not tuning -- see the comments in
--- `snv_consequence_insert.sql`. The re-annotation scans are strictly larger than the ingest ones (no
--- batch predicate), so the plans they guard against are more likely here, not less.
---
 -- `INSERT INTO` on a PRIMARY KEY table is an upsert: the 16 carried-through columns are rewritten as-is
 -- and the 18 open-data columns pick up the refreshed reference tables. Self-referencing: StarRocks fixes
 -- the read snapshot at plan time, so the scan is not affected by the rows this statement writes.
@@ -70,10 +66,10 @@ FROM (
         END AS score_transcript_id
     FROM {{ mapping.starrocks_snv_consequence }} con
 ) c
-LEFT JOIN [BROADCAST] {{ mapping.starrocks_dbnsfp }} d
+LEFT JOIN {{ mapping.starrocks_dbnsfp }} d
     ON d.locus_id = c.locus_id
    AND d.ensembl_transcript_id = c.score_transcript_id
-LEFT JOIN [BROADCAST] {{ mapping.starrocks_spliceai }} sp
+LEFT JOIN {{ mapping.starrocks_spliceai }} sp
     ON sp.locus_id = c.locus_id AND sp.symbol = c.symbol
 LEFT JOIN [BROADCAST] {{ mapping.starrocks_gnomad_constraint }} gc
     ON gc.transcript_id = c.score_transcript_id

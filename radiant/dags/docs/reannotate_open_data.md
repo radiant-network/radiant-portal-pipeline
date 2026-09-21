@@ -14,21 +14,48 @@ preflight_tables_exist
   → acquire_import_lock
   → P1  reference_load            (triggers radiant-import-open-data, waits)
   → CHECKPOINT: all sources loaded
-  → P2  reannotate_accumulators   snv__staging_variant · snv__consequence   (upsert in place)
-  → P3a snv_variant chain         snv__variant → snv__variant_partitioned
-        snv_consequence chain     snv__consequence_filter → …_partitioned
+  → P2  reannotate_accumulators   snv__staging_variant → snv__consequence   (upsert in place)
+  → CHECKPOINT: accumulators re-annotated
+  → P3a snv_variant               snv__variant → snv__variant_partitioned
+  → CHECKPOINT: SNV variants rebuilt
+  → P3a snv_consequence           snv__consequence_filter → …_partitioned
+  → CHECKPOINT: SNV consequences rebuilt
   → P3b cnv_occurrence            germline then somatic, per tenant × part
   → CHECKPOINT: every rebuild done
   → P4  record_open_data_release
   → release_import_lock
 ```
 
-Inside P3a the two chains are independent of each other, but each chain is serial: a partitioned table is
-a partitioned copy of the unpartitioned one above it, so the copy has to be rebuilt first.
+A checkpoint sits between every group of StarRocks work. They run nothing — they are there so the graph
+reads as the serial sequence it is, with each group bracketed by a marker rather than the reader having
+to trace edges between two fan-outs to see where one operation ends and the next begins.
 
-P3b waits on `snv__variant` — both CNV statements join it to count the quality-passing SNVs inside each
-segment (`nb_snv`), and P3a rebuilds that table with `INSERT OVERWRITE`. It does not wait on the
-consequence chain, which reads nothing the CNV statements touch.
+**Every StarRocks statement in this DAG is serial — there is no parallelism anywhere in the arrow chain
+above.** Each one is a whole-table scan rather than a batch, so two at once contend for the same disk and
+spill budget on the cluster, and the contention costs more than the overlap wins. The tenant/part
+fan-outs are serialised the same way from the inside, by `max_active_tis_per_dagrun=1`.
+
+Only some of that order is a data dependency: each 3a chain reads the accumulator above it, a partitioned
+table is a partitioned copy of the unpartitioned one above it, and P3b joins `snv__variant` to count the
+quality-passing SNVs in each segment (`nb_snv`) — which P3a rebuilds with `INSERT OVERWRITE`. The rest is
+deliberate serialisation and can be reordered, as long as nothing starts running two statements at once.
+
+## Required setup: the `starrocks_insert_pool`
+
+**This DAG does not run correctly without a pool named `starrocks_insert_pool`, with exactly 1 slot and
+"Include deferred tasks" enabled.** `preflight_insert_pool` checks all three before the lock is taken and
+fails the run with an explanation if any is wrong.
+
+Edges serialise the *groups*, but a tenant/part fan-out is N statements inside one mapped task, and no
+edge separates those. The obvious control, `max_active_tis_per_dagrun=1`, does not work here and is
+deliberately not used: the scheduler counts only `EXECUTION_STATES` = `{RUNNING, QUEUED}`, and these
+operators `SUBMIT TASK` and then defer — so a mapped instance stops being counted the moment its
+statement actually starts running, and the scheduler immediately releases the next one. Every tenant ends
+up submitting at once.
+
+A pool is the only Airflow limit that counts a `DEFERRED` task, and only when created with
+`include_deferred=True`. Hence the pool, and hence the preflight: the misconfiguration is invisible until
+a BE dies on memory, hours into a run that is holding the import mutex.
 
 ## Mutual exclusion with the import
 

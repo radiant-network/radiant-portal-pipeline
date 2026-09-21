@@ -10,7 +10,11 @@ from airflow.utils.trigger_rule import TriggerRule
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE, RADIANT_LOCK_S3_BUCKET, load_docs_md
 from radiant.tasks.locking import IMPORT_MUTEX_LOCK_NAME, acquire_lock, release_lock
-from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
+from radiant.tasks.starrocks.operator import (
+    STARROCKS_INSERT_POOL,
+    RadiantStarRocksOperator,
+    SubmitTaskOptions,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -87,7 +91,44 @@ def reannotate_open_data():
         if missing:
             raise AirflowFailException(format_missing_tables(missing))
 
+    @task(task_id="preflight_insert_pool", task_display_name="[PyOp] Preflight: Insert Pool Serialises?")
+    def preflight_insert_pool():
+        """Fail ahead of the lock if the pool cannot actually serialise StarRocks work.
+
+        Every statement in this DAG runs through `starrocks_insert_pool`, and the pool is the only thing
+        keeping them off each other: the operators SUBMIT TASK and then defer, and `DEFERRED` is not in
+        Airflow's `EXECUTION_STATES` -- so `max_active_tis_per_dagrun` and the DAG's own concurrency
+        settings all stop counting a statement the moment it starts doing the work. A pool counts it only
+        when created with `include_deferred=True`.
+
+        Checked rather than assumed because the failure is silent: with the wrong pool config every
+        mapped tenant submits at once and the first sign is a BE dying on memory, hours in and holding
+        the import mutex.
+        """
+        from airflow.exceptions import AirflowFailException
+        from airflow.models.pool import Pool
+
+        pool = Pool.get_pool(STARROCKS_INSERT_POOL)
+        if pool is None:
+            raise AirflowFailException(
+                f"Pool '{STARROCKS_INSERT_POOL}' does not exist. Create it with 1 slot and "
+                f"'Include deferred tasks' enabled, otherwise every StarRocks statement in this DAG "
+                f"runs concurrently."
+            )
+        if not pool.include_deferred:
+            raise AirflowFailException(
+                f"Pool '{STARROCKS_INSERT_POOL}' has include_deferred=False. These operators defer while "
+                f"the statement runs, so the pool would release the slot immediately and serialise "
+                f"nothing. Enable 'Include deferred tasks' on the pool."
+            )
+        if pool.slots != 1:
+            raise AirflowFailException(
+                f"Pool '{STARROCKS_INSERT_POOL}' has {pool.slots} slots; this DAG requires exactly 1 so "
+                f"that no two StarRocks statements overlap."
+            )
+
     _preflight_tables_exist = preflight_tables_exist()
+    _preflight_insert_pool = preflight_insert_pool()
 
     reference_load = TriggerDagRunOperator(
         task_id="reference_load",
@@ -184,6 +225,7 @@ def reannotate_open_data():
             task_display_name="[StarRocks] Re-annotate Staging SNV Variants",
             sql="./sql/radiant/snv_staging_variant_reannotate.sql",
             submit_task_options=std_submit_task_opts,
+            pool=STARROCKS_INSERT_POOL,
         )
 
         reannotate_consequence = RadiantStarRocksOperator(
@@ -191,7 +233,12 @@ def reannotate_open_data():
             task_display_name="[StarRocks] Re-annotate SNV Consequences",
             sql="./sql/radiant/snv_consequence_reannotate.sql",
             submit_task_options=std_submit_task_opts,
+            pool=STARROCKS_INSERT_POOL,
         )
+
+        # Serial, not because one reads the other -- they are independent upserts -- but because both scan
+        # a whole accumulator. Run together they compete for the same disk and spill budget.
+        reannotate_staging_variant >> reannotate_consequence
 
     with TaskGroup(group_id="snv_variant") as tg_variants:
         insert_snv_variants = RadiantStarRocksOperator.partial(
@@ -201,7 +248,7 @@ def reannotate_open_data():
             map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
-            max_active_tis_per_dagrun=1,
+            pool=STARROCKS_INSERT_POOL,
         ).expand(tenant_code=all_tenants)
 
         insert_snv_variants_part = RadiantStarRocksOperator.partial(
@@ -211,7 +258,7 @@ def reannotate_open_data():
             map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
-            max_active_tis_per_dagrun=1,
+            pool=STARROCKS_INSERT_POOL,
         ).expand_kwargs(_variant_part_params)
 
         insert_snv_variants >> insert_snv_variants_part
@@ -227,6 +274,7 @@ def reannotate_open_data():
             task_display_name="[StarRocks] Insert SNV Consequences Filter",
             sql="./sql/radiant/snv_consequence_filter_insert.sql",
             submit_task_options=std_submit_task_opts,
+            pool=STARROCKS_INSERT_POOL,
             trigger_rule=TriggerRule.ALL_SUCCESS,
         )
 
@@ -236,7 +284,7 @@ def reannotate_open_data():
             sql=cons_filter_sql,
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
-            max_active_tis_per_dagrun=1,
+            pool=STARROCKS_INSERT_POOL,
         ).expand(parameters=_part_params)
 
         insert_consequence_filter >> insert_consequence_filter_part
@@ -249,7 +297,7 @@ def reannotate_open_data():
             map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
-            max_active_tis_per_dagrun=1,
+            pool=STARROCKS_INSERT_POOL,
         ).expand_kwargs(_cnv_params)
 
         reannotate_somatic_cnv = RadiantStarRocksOperator.partial(
@@ -259,7 +307,7 @@ def reannotate_open_data():
             map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
-            max_active_tis_per_dagrun=1,
+            pool=STARROCKS_INSERT_POOL,
         ).expand_kwargs(_cnv_params)
 
         reannotate_germline_cnv >> reannotate_somatic_cnv
@@ -292,6 +340,29 @@ def reannotate_open_data():
     _release_rows = build_release_rows()
     _release_sql = render_release_sql(_release_rows)
 
+    # One checkpoint between each group of StarRocks statements. They carry no work -- they are there so
+    # the graph reads as the serial sequence it is, with each group bracketed by a marker rather than the
+    # reader having to trace edges between two fan-outs to see where one operation ends and the next
+    # begins. `NONE_FAILED` throughout, matching `rebuilds_complete`: a short-circuited branch skips
+    # rather than stalling the spine behind it.
+    accumulators_reannotated = EmptyOperator(
+        task_id="accumulators_reannotated",
+        task_display_name="[ --- CHECKPOINT: PHASE 3A --- ] Accumulators Re-annotated",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+
+    snv_variants_rebuilt = EmptyOperator(
+        task_id="snv_variants_rebuilt",
+        task_display_name="[ --- CHECKPOINT: PHASE 3A (cont.) --- ] SNV Variants Rebuilt",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+
+    snv_consequences_rebuilt = EmptyOperator(
+        task_id="snv_consequences_rebuilt",
+        task_display_name="[ --- CHECKPOINT: PHASE 3B --- ] SNV Consequences Rebuilt",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+
     rebuilds_complete = EmptyOperator(
         task_id="rebuilds_complete",
         task_display_name="[ --- CHECKPOINT: FINAL PHASE --- ] Before Recording the Release",
@@ -303,24 +374,24 @@ def reannotate_open_data():
         task_display_name="[StarRocks] Record the Release",
         sql=_release_sql,
         trigger_rule=TriggerRule.NONE_FAILED,
+        pool=STARROCKS_INSERT_POOL,
     )
 
     # --- Flow --------------------------------------------------------------------------------------
-    _preflight_tables_exist >> _acquire_import_lock >> reference_load >> sources_loaded
+    # Both preflights ahead of the lock: a missing table or a misconfigured pool is a setup problem,
+    # not a race, and failing before the acquire leaves no mutex to clear by hand.
+    [_preflight_tables_exist, _preflight_insert_pool] >> _acquire_import_lock
+    _acquire_import_lock >> reference_load >> sources_loaded
 
     sources_loaded >> [all_tenants, all_parts, tenant_parts]
-    sources_loaded >> tg_accumulators
     sources_loaded >> _release_rows
 
-    reannotate_staging_variant >> insert_snv_variants
-    reannotate_consequence >> insert_consequence_filter
+    sources_loaded >> tg_accumulators >> accumulators_reannotated
+    accumulators_reannotated >> tg_variants >> snv_variants_rebuilt
+    snv_variants_rebuilt >> tg_consequences >> snv_consequences_rebuilt
+    snv_consequences_rebuilt >> tg_cnv >> rebuilds_complete
 
-    sources_loaded >> [tg_variants, tg_consequences]
-
-    insert_snv_variants >> tg_cnv
-
-    [tg_variants, tg_consequences, tg_cnv] >> rebuilds_complete >> record_release
-    record_release >> _release_import_lock
+    rebuilds_complete >> record_release >> _release_import_lock
 
 
 reannotate_open_data()
