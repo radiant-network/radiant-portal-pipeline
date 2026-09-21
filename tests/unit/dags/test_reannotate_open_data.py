@@ -309,3 +309,107 @@ def test_p1_leaves_the_file_driven_loads_unset(dag):
     conf = dag.get_task("reference_load").conf
     assert "raw_rcv_filepaths" not in conf
     assert "cytoband_filepath" not in conf
+
+
+# --- map index labels ---------------------------------------------------------------------------
+#
+# Airflow renders `map_index_template` after the task body, with the task context and the DAG's own
+# jinja env (`TaskInstance._render_map_index`). A mapped task without one -- or with one that resolves
+# to the same string for several map indexes -- shows up in the UI as `0, 1, 2, ...`, or worse as the
+# same label repeated, which is indistinguishable from a duplicate.
+
+_MAPPED_TASK_IDS = {
+    "snv_variant.insert_snv_variant",
+    "snv_variant.insert_snv_variant_part",
+    "snv_consequence.insert_snv_consequence_filter_part",
+    "cnv_occurrence.reannotate_germline_cnv_occurrence",
+    "cnv_occurrence.reannotate_somatic_cnv_occurrence",
+}
+
+# One tenant with several parts, one with a single part -- enough for a repeated label to collide.
+_TENANT_PARTS = [
+    {"tenant_code": "CHOP", "part": 0},
+    {"tenant_code": "CHOP", "part": 9},
+    {"tenant_code": "CHOP", "part": 10},
+    {"tenant_code": "SJ", "part": 3},
+]
+
+
+def _mapped_tasks(dag):
+    from airflow.models.mappedoperator import MappedOperator
+
+    return {task.task_id: task for task in dag.tasks if isinstance(task, MappedOperator)}
+
+
+def test_the_mapped_tasks_are_the_ones_we_think_they_are(dag):
+    """Guards the two tests below: a new fan-out added without a label would otherwise go unchecked."""
+    assert set(_mapped_tasks(dag)) == _MAPPED_TASK_IDS
+
+
+def test_every_mapped_task_labels_its_map_indexes(dag):
+    """Without a template the UI falls back to the integer map index, which says nothing about which
+    tenant or part a run covers -- the first thing you need when one of N fan-out tasks fails."""
+    unlabelled = [task_id for task_id, task in _mapped_tasks(dag).items() if not task.map_index_template]
+    assert unlabelled == []
+
+
+def _render(dag, task, expand_kwargs):
+    """Render a map index the way `TaskInstance._render_map_index` does, for one expanded task."""
+    import types
+
+    env = dag.get_template_env()
+    return str(env.from_string(task.map_index_template).render(task=types.SimpleNamespace(**expand_kwargs)))
+
+
+def test_map_index_labels_are_unique_across_the_fan_out(dag):
+    """A label that repeats is worse than the integer default: two rows claim the same work.
+
+    `insert_snv_variant_part` and both CNV fan-outs expand over pairs, so the tenant code alone is not
+    a key -- the part has to be in the label too.
+    """
+    from radiant.dags.reannotate_open_data import build_cnv_params, build_variant_part_params
+
+    tasks = _mapped_tasks(dag)
+    cnv_params = build_cnv_params(_TENANT_PARTS)
+    expansions = {
+        "snv_variant.insert_snv_variant": [{"tenant_code": t} for t in ("CHOP", "SJ")],
+        "snv_variant.insert_snv_variant_part": build_variant_part_params(_TENANT_PARTS),
+        "snv_consequence.insert_snv_consequence_filter_part": [
+            {"parameters": {"part": part}} for part in (0, 3, 9, 10)
+        ],
+        "cnv_occurrence.reannotate_germline_cnv_occurrence": cnv_params,
+        "cnv_occurrence.reannotate_somatic_cnv_occurrence": cnv_params,
+    }
+
+    for task_id, expand_kwargs in expansions.items():
+        labels = [_render(dag, tasks[task_id], kwargs) for kwargs in expand_kwargs]
+        assert len(set(labels)) == len(labels), f"{task_id} renders duplicate map indexes: {labels}"
+        # An all-digit label is the integer default wearing a template.
+        assert not any(label.isdigit() for label in labels), f"{task_id} renders a bare index: {labels}"
+
+
+def test_map_index_labels_name_the_tenant_and_the_part(dag):
+    """Pins the actual strings -- the point of the label is that a human reads it."""
+    from radiant.dags.reannotate_open_data import build_cnv_params, build_variant_part_params
+
+    tasks = _mapped_tasks(dag)
+
+    variant_parts = build_variant_part_params(_TENANT_PARTS)
+    assert [_render(dag, tasks["snv_variant.insert_snv_variant_part"], kw) for kw in variant_parts] == [
+        "CHOP variant_part=0",
+        "CHOP variant_part=1",
+        "SJ variant_part=0",
+    ]
+
+    cnv_params = build_cnv_params(_TENANT_PARTS)
+    assert [_render(dag, tasks["cnv_occurrence.reannotate_germline_cnv_occurrence"], kw) for kw in cnv_params] == [
+        "CHOP part=0",
+        "CHOP part=9",
+        "CHOP part=10",
+        "SJ part=3",
+    ]
+
+    filter_part = tasks["snv_consequence.insert_snv_consequence_filter_part"]
+    assert _render(dag, filter_part, {"parameters": {"part": 7}}) == "part=7"
+
+    assert _render(dag, tasks["snv_variant.insert_snv_variant"], {"tenant_code": "CHOP"}) == "CHOP"
