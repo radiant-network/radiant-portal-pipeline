@@ -442,21 +442,17 @@ sleep "${POST_RUN_DRAIN_SECONDS}"
 """
 
 
-# `--dragen_metrics_dir` is what selects the pipeline's DRAGEN-metrics mode: with it
-# set, BAM_QC and VCF_QC are skipped and the report is built from DRAGEN's per-sample
-# CSVs. It is unconditional here because that is the only mode this DAG runs -- the
-# param is required, so the variable is never empty.
+# Some pipelines are run from a copy on the SHARED filesystem, not from the image's
+# own `${NXF_HOME}/assets/...`, and that is load-bearing rather than tidiness.
 #
-# The pipeline is run from a copy on the SHARED filesystem, not from the image's own
-# `${NXF_HOME}/assets/...`, and that is load-bearing rather than tidiness.
-#
-# This pipeline carries nf-core module resource scripts (`modules/local/multiqc_python/
-# resources/usr/bin/multiqc_report.py`). Nextflow puts those on PATH by exporting the
-# *projectDir* path into the task wrapper -- but the task runs in the module's own
-# container (biocontainers/multiqc), which mounts only ${NXF_WORKSPACE} and has no
-# /opt/nextflow. Run from the image path, MULTIQC_PYTHON dies with
-# `multiqc_report.py: command not found` (exit 127). Post-processing never hit this
-# because it has no module resource scripts.
+# Those pipelines carry scripts under `bin/` or in nf-core module resources
+# (quality-control-pipeline: `modules/local/multiqc_python/resources/usr/bin/
+# multiqc_report.py`; cnv-post-processing: `bin/refine_genotypes.py`). Nextflow puts
+# those on PATH by exporting the *projectDir* path into the task wrapper -- but the
+# task runs in the module's own container, which mounts only ${NXF_WORKSPACE} and has
+# no /opt/nextflow. Run from the image path, the process dies with
+# `<script>: command not found` (exit 127). Post-processing never hit this because it
+# has no module resource scripts.
 #
 # The copy is keyed by the asset's git commit, so a rebuilt image with a new pipeline
 # revision lands in a new directory instead of silently reusing a stale one. The
@@ -465,11 +461,11 @@ sleep "${POST_RUN_DRAIN_SECONDS}"
 #
 # No `-r` on `nextflow run`: the source is a local directory whose revision is
 # whatever Dockerfile.nextflow.launcher pulled at build time.
-_NEXTFLOW_QC_DRIVER_SCRIPT = """
+_SHARED_PROJECT_DRIVER_SCRIPT = """
 set -euo pipefail
-SRC="${NXF_HOME}/assets/Ferlab-Ste-Justine/quality-control-pipeline"
+SRC="${NXF_HOME}/assets/Ferlab-Ste-Justine/__ASSET__"
 REV="$(git -C "$SRC" rev-parse --short HEAD)"
-PROJECT="${NXF_WORKSPACE}/pipelines/quality-control-pipeline-${REV}"
+PROJECT="${NXF_WORKSPACE}/pipelines/__ASSET__-${REV}"
 if [ ! -d "$PROJECT" ]; then
   mkdir -p "${NXF_WORKSPACE}/pipelines"
   TMP="${PROJECT}.tmp.$$"
@@ -481,18 +477,49 @@ echo ">> pipeline rev=$REV project=$PROJECT"
 LAUNCH="${NXF_WORKSPACE}/work/.nextflow-launchdir/${RUN_TAG}"
 OUTDIR="${NXF_OUTDIR:-${NXF_WORKSPACE}/outputs/qlin/${RUN_TAG}}"
 mkdir -p "$LAUNCH" && cd "$LAUNCH"
-echo ">> run_tag=$RUN_TAG input=$NXF_INPUT outdir=$OUTDIR dragen=$NXF_DRAGEN_METRICS_DIR"
+echo ">> run_tag=$RUN_TAG input=$NXF_INPUT outdir=$OUTDIR__EXTRA_ECHO__"
 nextflow run "$PROJECT" \
     -profile docker \
     -c /etc/nextflow/nextflow.config \
     -resume \
     -params-file /etc/nextflow-params/params.json \
     --input "$NXF_INPUT" \
-    --outdir "$OUTDIR" \
-    --dragen_metrics_dir "$NXF_DRAGEN_METRICS_DIR"
+    --outdir "$OUTDIR"__EXTRA_ARGS__
 # Let the /outputs DRA flush the last file events to S3 before the pod terminates.
 sleep "${POST_RUN_DRAIN_SECONDS}"
 """
+
+
+def _shared_project_driver_script(asset: str, *, extra_echo: str = "", extra_args: str = "") -> str:
+    """The launch script for a pipeline run from a copy on the shared filesystem.
+
+    `asset` is the repository name under `${NXF_HOME}/assets/Ferlab-Ste-Justine/`.
+    `extra_args` is appended to the `nextflow run` command line (each flag on its own
+    continuation line), `extra_echo` to the launch banner. Plain substitution rather
+    than str.format: the script is full of `${...}` bash expansions, and the result
+    still has to be free of `{{` for the Jinja-templated `arguments` field.
+    """
+    return (
+        _SHARED_PROJECT_DRIVER_SCRIPT.replace("__ASSET__", asset)
+        .replace("__EXTRA_ECHO__", extra_echo)
+        .replace("__EXTRA_ARGS__", extra_args)
+    )
+
+
+# `--dragen_metrics_dir` is what selects the pipeline's DRAGEN-metrics mode: with it
+# set, BAM_QC and VCF_QC are skipped and the report is built from DRAGEN's per-sample
+# CSVs. It is unconditional here because that is the only mode this DAG runs -- the
+# param is required, so the variable is never empty.
+_NEXTFLOW_QC_DRIVER_SCRIPT = _shared_project_driver_script(
+    "quality-control-pipeline",
+    extra_echo=" dragen=$NXF_DRAGEN_METRICS_DIR",
+    extra_args=' \\\n    --dragen_metrics_dir "$NXF_DRAGEN_METRICS_DIR"',
+)
+
+# The CNV post-processing pipeline takes nothing beyond the samplesheet and outdir on
+# the command line; reference data, VEP and Exomiser settings live in its params
+# ConfigMap.
+_NEXTFLOW_CNV_DRIVER_SCRIPT = _shared_project_driver_script("cnv-post-processing")
 
 
 # `${RUN_TAG:?}` is load-bearing, not defensive style: an empty RUN_TAG would expand
@@ -722,7 +749,7 @@ class NextflowQualityControl:
             task_display_name="[K8s] Run Nextflow Quality Control",
             name="nextflow-quality-control-driver",
             script=_NEXTFLOW_QC_DRIVER_SCRIPT,
-            # Both pipelines are baked into one image, so the shared var is the norm.
+            # Every pipeline is baked into one image, so the shared var is the norm.
             # NEXTFLOW_QC_OPERATOR_IMAGE exists to pin QC to an ad-hoc build while a
             # pipeline revision is being tested, without moving post-processing too.
             image=_nextflow_image("NEXTFLOW_QC_OPERATOR_IMAGE", "NEXTFLOW_OPERATOR_IMAGE"),
@@ -742,4 +769,44 @@ class NextflowQualityControl:
             run_tag,
             name="nextflow-quality-control-cleanup",
             image=_nextflow_image("NEXTFLOW_QC_OPERATOR_IMAGE", "NEXTFLOW_OPERATOR_IMAGE"),
+        )
+
+
+class NextflowCnvPostprocessing:
+    """Runs the Ferlab cnv-post-processing pipeline (normalize / truvari / mosdepth
+    refinement / VEP / Exomiser / slivar over germline CNV VCFs) as a Nextflow driver
+    pod, which spawns its own worker pods via Nextflow's k8s executor.
+
+    Same driver image, FSx workspace and node pool as the other two launchers; its own
+    ConfigMap pair, for the reason `NextflowQualityControl` gives: a `-c` config that
+    references a param the `-params-file` does not declare kills the run at parse.
+    Run from a copy on the shared filesystem because it ships `bin/refine_genotypes.py`
+    (see `_shared_project_driver_script`).
+    """
+
+    @staticmethod
+    def get_run_cnv_postprocessing(input_csv: str, outdir: str, run_tag: str) -> KubernetesPodOperator:
+        return _nextflow_driver_operator(
+            task_id="run_cnv_postprocessing",
+            task_display_name="[K8s] Run Nextflow CNV Post-processing",
+            name="nextflow-cnv-postprocessing-driver",
+            script=_NEXTFLOW_CNV_DRIVER_SCRIPT,
+            # All three pipelines are baked into one image, so the shared var is the
+            # norm; NEXTFLOW_CNV_OPERATOR_IMAGE pins this one to an ad-hoc build.
+            image=_nextflow_image("NEXTFLOW_CNV_OPERATOR_IMAGE", "NEXTFLOW_OPERATOR_IMAGE"),
+            env_vars={
+                "RUN_TAG": run_tag,
+                "NXF_INPUT": input_csv,
+                "NXF_OUTDIR": outdir,
+            },
+            config_configmap=os.getenv("NEXTFLOW_CNV_OPERATOR_CONFIG_CONFIGMAP", "nextflow-cnv-cfg"),
+            params_configmap=os.getenv("NEXTFLOW_CNV_OPERATOR_PARAMS_CONFIGMAP", "nextflow-cnv-params"),
+        )
+
+    @staticmethod
+    def get_cleanup_work(run_tag: str) -> KubernetesPodOperator:
+        return _nextflow_cleanup_operator(
+            run_tag,
+            name="nextflow-cnv-postprocessing-cleanup",
+            image=_nextflow_image("NEXTFLOW_CNV_OPERATOR_IMAGE", "NEXTFLOW_OPERATOR_IMAGE"),
         )

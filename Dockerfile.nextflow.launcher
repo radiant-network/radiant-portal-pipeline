@@ -14,7 +14,7 @@
 # waiting to happen. The consequence is that bumping either *_PIPELINE_REV
 # requires rebuilding this image.
 #
-# Two pipelines share this image, because they share a driver: same cluster,
+# Three pipelines share this image, because they share a driver: same cluster,
 # same FSx PVC, same node pool, so a second image would only add a second
 # multi-GB pull to cache on those nodes.
 
@@ -30,10 +30,18 @@ ARG PIPELINE_REV=v3.0.0
 ARG QC_PIPELINE_REPO=Ferlab-Ste-Justine/quality-control-pipeline
 ARG QC_PIPELINE_REV=v2.0.0
 
+# Same `-r` story (manifest says `master`). Pinned to a commit of the
+# feat/BIOINFO-214-expand-CNV-post-processing branch until the expanded pipeline
+# is tagged; `radiant/tasks/nextflow/cnv/batch.py::ANNOTATION_PIPELINE` records
+# the same revision on every task it registers -- bump both together.
+ARG CNV_PIPELINE_REPO=Ferlab-Ste-Justine/cnv-post-processing
+ARG CNV_PIPELINE_REV=6b9b2dd15ce2598bb7a083690307f40b0cee35f6
+
 # Keep in sync with each pipeline's own `plugins` block: Post-processing-Pipeline
 # v3.0.0 declares nf-schema@2.1.0 (v2.11.0 declared nf-validation@1.1.3 - a
-# different plugin, not a version bump), quality-control-pipeline v2.0.0 declares
-# nf-schema@2.3.0. Nextflow keeps versioned plugin directories side by side, so
+# different plugin, not a version bump), quality-control-pipeline v2.0.0 and
+# cnv-post-processing both declare nf-schema@2.3.0. Nextflow keeps versioned
+# plugin directories side by side, so
 # both resolve; a missing one fails at plugin resolution, offline, with no way to
 # recover at runtime.
 ARG NXF_PLUGINS="nf-schema@2.1.0 nf-schema@2.3.0 nf-amazon"
@@ -65,11 +73,12 @@ RUN curl -fsSL https://get.nextflow.io | NXF_VER=${NXF_VER} bash \
     && /usr/local/bin/nextflow -version \
     && /usr/local/bin/nextflow pull "${PIPELINE_REPO}" -r "${PIPELINE_REV}" \
     && /usr/local/bin/nextflow pull "${QC_PIPELINE_REPO}" -r "${QC_PIPELINE_REV}" \
+    && /usr/local/bin/nextflow pull "${CNV_PIPELINE_REPO}" -r "${CNV_PIPELINE_REV}" \
     && for p in ${NXF_PLUGINS}; do /usr/local/bin/nextflow plugin install "$p"; done
 
 WORKDIR /workspace
 
-# Sanity: confirm framework + both pipelines + every plugin are baked in, so a
+# Sanity: confirm framework + every pipeline + every plugin are baked in, so a
 # missing piece fails the build instead of the first production run.
 #
 # Each plugin is checked by name, not by one grep over the directory: `nf-schema`
@@ -86,6 +95,7 @@ RUN set -eu \
     && ls "${NXF_HOME}/framework/${NXF_VER}/" >/dev/null \
     && ls "${NXF_ASSETS}/${PIPELINE_REPO}/.git" >/dev/null \
     && ls "${NXF_ASSETS}/${QC_PIPELINE_REPO}/.git" >/dev/null \
+    && ls "${NXF_ASSETS}/${CNV_PIPELINE_REPO}/.git" >/dev/null \
     && for p in ${NXF_PLUGINS}; do \
            d=$(echo "$p" | tr '@' '-'); \
            ls -d "${NXF_HOME}/plugins/${d}"* >/dev/null \

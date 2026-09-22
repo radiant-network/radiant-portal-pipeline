@@ -549,7 +549,9 @@ VALUES ('alignment', 'Genome Alignment'),
        ('radiant_somatic_annotation', 'RADIANT Somatic Annotation'),
        ('exomiser', 'Exomiser'),
        ('rnaseq_analysis', 'RNAseq Analysis of Transcriptome Profiling and Gene Fusion Calling'),
-       ('quality_control_metrics', 'Quality Control Metrics')
+       ('quality_control_metrics', 'Quality Control Metrics'),
+       ('radiant_germline_cnv_annotation', 'RADIANT Germline CNV Annotation'),
+       ('exomiser_cnv', 'Exomiser (CNV)')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO "panel_type" ("code", "name_en")

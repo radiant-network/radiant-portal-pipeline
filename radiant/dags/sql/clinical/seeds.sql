@@ -992,7 +992,10 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (70, 'tumor_only_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- QC of case 1: the per-family MultiQC set. Case 1 is therefore *not* pending quality control,
     -- while every other aligned germline case is (SJRA-1879).
-    (71, 'quality_control_metrics', 'quality-control-pipeline', '2.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant');
+    (71, 'quality_control_metrics', 'quality-control-pipeline', '2.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    -- CNV post-processing of case 1, whose alignments (tasks 1-3) publish `gcnv` VCFs. Case 1 is
+    -- therefore *not* pending CNV annotation, while case 16 (below) is the seeded pending trio.
+    (72, 'radiant_germline_cnv_annotation', 'cnv-post-processing', '6b9b2dd', 'GRch38', '2021-10-12 13:08:00', 'radiant');
 
 TRUNCATE {{ params.clinical_task_context }} CASCADE;
 INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_experiment_id) VALUES
@@ -1076,7 +1079,10 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     -- Task 71 spans all three experiments of case 1, like the annotation task 63 does.
     (71, 1, 1),
     (71, 1, 2),
-    (71, 1, 3)
+    (71, 1, 3),
+    (72, 1, 1),
+    (72, 1, 2),
+    (72, 1, 3)
 ;
 
 
@@ -1153,6 +1159,14 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (69, 'FI0037775.S13235.cram', 'genomic', 'alignment', 'cram', 91600915005, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c660', 'radiant'),
     (70, 'FI0037775.S13235.cram.crai', 'genomic', 'alignment', 'crai', 2160066, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c661', 'radiant'),
     (71, 'FI0037776.S14757.cram', 'genomic', 'alignment', 'cram', 83021717831, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c662', 'radiant'),
+    -- Germline CNV VCFs of the case-16 trio (alignment tasks 44/45/46): the seeded case pending
+    -- CNV post-processing. Their CRAMs are documents 79-82 and 7-8 above.
+    (268, 'FI0037789.S14744.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1204055, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/FI0037789.S14744.cnv.vcf.gz', '5d41402abc4b2a76b9719d911017c900', 'radiant'),
+    (269, 'FI0037789.S14744.cnv.vcf.gz.tbi', 'genomic', 'gcnv', 'tbi', 12034, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/FI0037789.S14744.cnv.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c901', 'radiant'),
+    (270, 'FI0037798.S14745.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1188212, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/FI0037798.S14745.cnv.vcf.gz', '5d41402abc4b2a76b9719d911017c902', 'radiant'),
+    (271, 'FI0037798.S14745.cnv.vcf.gz.tbi', 'genomic', 'gcnv', 'tbi', 11987, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/FI0037798.S14745.cnv.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c903', 'radiant'),
+    (272, 'FI0037690.S14746.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1210930, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/FI0037690.S14746.cnv.vcf.gz', '5d41402abc4b2a76b9719d911017c904', 'radiant'),
+    (273, 'FI0037690.S14746.cnv.vcf.gz.tbi', 'genomic', 'gcnv', 'tbi', 12111, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/FI0037690.S14746.cnv.vcf.gz.tbi', '5d41402abc4b2a76b9719d911017c905', 'radiant'),
     (72, 'FI0037776.S14757.cram.crai', 'genomic', 'alignment', 'crai', 2443182, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c663', 'radiant'),
     (73, 'FI0037778.S14136.cram', 'genomic', 'alignment', 'cram', 64832531333, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c664', 'radiant'),
     (74, 'FI0037778.S14136.cram.crai', 'genomic', 'alignment', 'crai', 1960837, '{{ params.vcf_bucket_prefix }}/sarek/preprocessing/', '5d41402abc4b2a76b9719d911017c665', 'radiant'),
@@ -1528,14 +1542,20 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (44, 80, 'output'),
     (44, 157, 'output'),
     (44, 158, 'output'),
+    (44, 268, 'output'),
+    (44, 269, 'output'),
     (45, 81, 'output'),
     (45, 82, 'output'),
     (45, 139, 'output'),
     (45, 140, 'output'),
+    (45, 270, 'output'),
+    (45, 271, 'output'),
     (46, 7, 'output'),
     (46, 8, 'output'),
     (46, 133, 'output'),
     (46, 134, 'output'),
+    (46, 272, 'output'),
+    (46, 273, 'output'),
     (47, 63, 'output'),
     (47, 64, 'output'),
     (47, 123, 'output'),
