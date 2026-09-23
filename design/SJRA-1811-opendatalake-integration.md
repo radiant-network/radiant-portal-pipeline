@@ -218,12 +218,14 @@ for the whole run.
   environment, just one more key under it (e.g. `s3://<airflow-dags-bucket>/_locks/import_mutex`).
 - Native atomic guarantee: `PutObject` with header `If-None-Match: *` only succeeds if the key doesn't
   already exist, otherwise `412 PreconditionFailed` — no extra round trip to fake the check.
-- Cost: local/CI integration tests (`USE_DOCKER_FIXTURES=true`) run against MinIO, and MinIO's conditional
-  writes don't accept the `*` wildcard for `If-None-Match` — it requires a concrete ETag
-  ([minio/minio#20346](https://github.com/minio/minio/issues/20346), open). So the create-only-if-absent
-  call that's atomic on real S3 can't be exercised identically against the MinIO fixture; the concurrent-lock
-  behavior itself needs verifying against the `USE_DOCKER_FIXTURES=false` sandbox path (real S3), not just
-  the default docker-fixture test run.
+- No cost against the MinIO fixture. An earlier draft of this section claimed MinIO rejects the `*`
+  wildcard and requires a concrete ETag, citing [minio/minio#20346](https://github.com/minio/minio/issues/20346).
+  That issue is the stale framing: MinIO enforces put-if-absent from `RELEASE.2024-09-13T20-26-02Z`
+  (see [discussion #20318](https://github.com/minio/minio/discussions/20318)), and both images this repo
+  pins are newer — `RELEASE.2024-10-29T16-01-48Z` in `docker-compose.yml`, `RELEASE.2025-09-07T16-13-09Z`
+  in `tests/integration/fixtures_docker.py`. Verified directly against both: the second conditional put
+  returns `PreconditionFailed`. The create-only-if-absent call is therefore exercised identically on the
+  docker-fixture path and on real S3.
 
 **Why not Option A (Postgres metadata DB)?**
 
@@ -269,8 +271,7 @@ flowchart TB
     P3A["<b>3a — rebuild derived SNV</b><br/>fan out per target-table layout"]
     P3B["<b>3b — CNV occurrences</b><br/>partition swap, tenants × parts"]
     P4["<b>4</b> — record the release"]
-    P1 --> B --> P2 --> P3A --> P4
-    B --> P3B --> P4
+    P1 --> B --> P2 --> P3A --> P3B --> P4
     style B fill:#ffe0b2,color:#000
 ```
 
@@ -340,9 +341,16 @@ provenance rather than correctness: it is a base-database, cross-tenant table wh
 transient, and a per-tenant CNV load reading it couples the two. Counting only variants the platform
 considers real was judged the better contract.
 
-Step 3b stays parallel to 3a in the re-annotation DAG: `locus_id`, `chromosome` and `start` are carried
-through re-annotation unchanged, so the CNV rebuild does not care whether the SNV rebuild has run. Only the
-ingest DAG gains an ordering edge, because that is where the two tables are first written.
+**Corrected during implementation — step 3b runs after 3a's variant chain, not beside it.** The original
+argument was that `locus_id`, `chromosome` and `start` are carried through re-annotation unchanged, so the
+CNV rebuild does not care whether the SNV rebuild has run. That holds for those column *values*, but the
+join above produces `COUNT(DISTINCT s.locus_id)` — it depends on which **rows** `snv__variant` contains,
+and `snv_variant_insert.sql` rebuilds that table with `INSERT OVERWRITE`. In a pure re-annotation the row
+set does happen to be identical on both sides of the overwrite, since no new experiments arrived and the
+frequency tables the row set derives from are untouched; but nothing enforces that, and if it ever stops
+being true the CNV counts go stale silently, with no failure to notice. The re-annotation DAG therefore
+wires `insert_snv_variant >> cnv_occurrence`. It costs the 3a/3b overlap. The consequence chain still runs
+beside 3b — no CNV statement reads a consequence table.
 
 ```mermaid
 flowchart LR
@@ -470,6 +478,23 @@ flowchart LR
 ```
 
 Top row and bottom row are independent; left-to-right inside a row is not.
+
+**Corrected during implementation — the two rows are run serially anyway.** The independence above is a
+statement about *data*, and it still holds: nothing in the consequence chain reads anything the variant
+chain writes. It does not follow that they should run at the same time. Every statement in both rows is a
+whole-table scan rather than a batch, so running two concurrently puts them in contention for the same
+disk and spill budget on the StarRocks cluster, and that costs more than the overlap wins. The
+re-annotation DAG therefore chains all of P2, P3a and P3b into one serial spine, and each mapped fan-out
+carries `max_active_tis_per_dagrun=1` so a tenant/part expansion cannot parallelise from the inside
+either.
+
+Note this is wired with DAG edges, not with the `starrocks_insert_pool` constant that exists in
+`operator.py`. A pool cannot express it: these operators `SUBMIT TASK` and then defer, so the statement is
+running while the Airflow task sits in `DEFERRED` — and a deferred task occupies a pool slot only when the
+pool was created with `include_deferred=True` (Airflow 2.10 `Pool.get_occupied_states`). That is
+cluster-side configuration the DAG cannot assert, and a pool created without it would serialise only the
+brief submit while every query still overlapped, with nothing to show that it had failed to work. This is
+the same trap as §4's pool-versus-lock argument, one layer down.
 
 `snv_variant_part_insert_part.sql:2-6` is literally `SELECT %(variant_part)s AS part, v.* FROM
 {{ mapping.starrocks_snv_variant }} v`, and `snv_consequence_filter_insert.sql:78` reads

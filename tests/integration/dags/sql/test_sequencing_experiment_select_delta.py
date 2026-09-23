@@ -91,7 +91,11 @@ def test_sequencing_experiment_empty(
 
     assert results is not None, "Results should not be None"
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 15
+    # Whole-seed baseline: every (case, seq, task) the view emits. It moves whenever seeds.sql gains a
+    # document the view's WHERE clause accepts -- an SNV/CNV VCF on an annotation or calling task, or an
+    # exomiser tsv. SJRA-1928 took it 15 -> 18 by giving the case-16 trio (alignment tasks 44/45/46)
+    # their gcnv VCFs.
+    assert len(result_df) == 18
 
 
 def test_sequencing_experiment_delta_carries_tumor_only_tasks(
@@ -292,7 +296,9 @@ def test_sequencing_experiment_existing_wgs_task_partition(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 14
+    # The 18-row baseline less task 66, the only one of the two inserts that the view actually emits:
+    # seq 4 / task 4 matches no row in staging_external_sequencing_experiment, so it subtracts nothing.
+    assert len(result_df) == 17
 
 
 def test_sequencing_experiment_with_recently_updated_task(
@@ -336,7 +342,8 @@ def test_sequencing_experiment_with_recently_updated_task(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 14
+    # The 18-row baseline less task 66, which was just inserted into staging_sequencing_experiment.
+    assert len(result_df) == 17
 
     with (
         psycopg2.connect(
@@ -360,6 +367,6 @@ def test_sequencing_experiment_with_recently_updated_task(
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
-    # Should capture the updated experiment
+    # Should capture the updated experiment -- task 66 is back, so the full 18-row baseline again.
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 15
+    assert len(result_df) == 18

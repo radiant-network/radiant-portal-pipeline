@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
 
-from airflow.exceptions import AirflowException
+from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator, SQLExecuteQueryOperator
 
 from radiant.tasks.data.radiant_tables import get_radiant_mapping
@@ -164,9 +164,12 @@ class RadiantStarRocksOperator(RadiantStarRocksBaseOperator, SQLExecuteQueryOper
         submit_task_options (SubmitTaskOptions): Options for submitting the task.
     """
 
+    template_fields = SQLExecuteQueryOperator.template_fields + ("skip_if",)
+
     def __init__(
         self,
         submit_task_options: SubmitTaskOptions = None,
+        skip_if: bool | str | None = None,
         **kwargs,
     ):
         super().__init__(
@@ -174,6 +177,7 @@ class RadiantStarRocksOperator(RadiantStarRocksBaseOperator, SQLExecuteQueryOper
         )
 
         self.submit_task_options = submit_task_options
+        self.skip_if = skip_if
 
     def execute(self, context):
         """
@@ -182,6 +186,12 @@ class RadiantStarRocksOperator(RadiantStarRocksBaseOperator, SQLExecuteQueryOper
         Args:
             context (dict): The execution context.
         """
+        skip = self.skip_if
+        if isinstance(skip, str):
+            skip = skip.strip().lower() not in ("", "false", "none", "0")
+        if skip:
+            raise AirflowSkipException(f"skip_if resolved truthy ({self.skip_if!r}) -- nothing to execute.")
+
         if self.submit_task_options:
             self.submit_query(sql=self.sql, method_name="_is_complete", parameters=self.parameters)
             return None
