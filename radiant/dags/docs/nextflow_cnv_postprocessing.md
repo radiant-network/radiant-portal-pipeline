@@ -42,7 +42,7 @@ reason those two are separate: a param referenced from a `-c` config but absent 
 | Column | Required | Notes |
 |---|---|---|
 | `familyId` | yes | Groups rows into a family; names every family-level output. |
-| `sample` | yes | Sample id; must match the sample name in the VCF. |
+| `sample` | yes | The aliquot, which is the sample name in the VCF. Not the submitter sample id. |
 | `sequencingType` | yes | `WGS` or `WES`; selects the Exomiser analysis file. |
 | `caller` | yes | `DRAGEN` (per-sample VCF) or `DRAGEN_JOINT` (one family-level VCF). Only DRAGEN conventions are implemented. |
 | `vcf` | yes | The CNV VCF (`.vcf` / `.vcf.gz`). |

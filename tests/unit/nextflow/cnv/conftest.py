@@ -32,7 +32,8 @@ def member_row(case_id=1072, submitter_case_id="1KGP-1463", role="proband", aliq
         "patient_id": 100,
         "sex": "female",
         "submitter_patient_id": "PT-100",
-        "sample_id": aliquot,
+        # Deliberately not the aliquot: the pipeline must only ever see the aliquot.
+        "sample_id": f"S-{aliquot}",
         "seq_id": 500,
         "aliquot": aliquot,
         "strategy": "wgs",

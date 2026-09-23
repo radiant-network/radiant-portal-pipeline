@@ -21,9 +21,9 @@ def test_members_are_ordered_proband_first(trio_rows, phenotype_rows):
     """The PED and phenopacket writers read members positionally."""
     (family,) = resolve_families(_kept(trio_rows), phenotype_rows)
     assert [m.role for m in family.members] == ["proband", "father", "mother"]
-    assert family.proband.sample_id == "NA12878"
-    assert family.father.sample_id == "NA12891"
-    assert family.mother.sample_id == "NA12892"
+    assert family.proband.aliquot == "NA12878"
+    assert family.father.aliquot == "NA12891"
+    assert family.mother.aliquot == "NA12892"
 
 
 def test_family_id_is_ca_plus_the_case_id(trio_rows, phenotype_rows):

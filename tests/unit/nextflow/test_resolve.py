@@ -23,9 +23,9 @@ def test_members_are_ordered_proband_first(trio_rows, phenotype_rows):
     proband, and the parents are looked up by role."""
     (family,) = resolve_families(_kept(trio_rows), phenotype_rows)
     assert [m.role for m in family.members] == ["proband", "father", "mother"]
-    assert family.proband.sample_id == "NA12878"
-    assert family.father.sample_id == "NA12891"
-    assert family.mother.sample_id == "NA12892"
+    assert family.proband.aliquot == "NA12878"
+    assert family.father.aliquot == "NA12891"
+    assert family.mother.aliquot == "NA12892"
 
 
 def test_family_id_is_ca_plus_the_case_id(trio_rows, phenotype_rows):
@@ -88,10 +88,20 @@ def test_a_member_awaiting_sequencing_makes_the_case_wait(trio_rows):
 def test_a_case_without_exactly_one_proband_is_excluded(trio_rows):
     """After one experiment per member is selected this can only mean two different
     patients marked proband -- which is what the message now says."""
-    trio_rows.append(member_row(role="proband", patient_id=103, sample_id="NA12000", aliquot="NA12000"))
+    trio_rows.append(member_row(role="proband", patient_id=103, sample_id="S12000", aliquot="NA12000"))
     (excluded,) = select_cases(trio_rows).excluded
     assert excluded.reason == "proband_count"
     assert "two different patients are marked proband" in excluded.detail
+
+
+def test_a_member_without_an_aliquot_is_excluded_by_name(trio_rows):
+    """The aliquot is every id the pipeline sees. The query never leaves it null on a kept
+    member today; if that changes, the case is excluded here rather than writing `None` into
+    the PED and failing in Exomiser."""
+    trio_rows[1]["aliquot"] = None
+    (excluded,) = select_cases(trio_rows).excluded
+    assert excluded.reason == "missing_aliquot"
+    assert "patient 101" in excluded.detail
 
 
 def test_an_unsupported_strategy_is_excluded(singleton_rows):

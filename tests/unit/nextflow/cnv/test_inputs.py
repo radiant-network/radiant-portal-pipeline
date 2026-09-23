@@ -76,6 +76,14 @@ def test_a_vcf_outside_the_workspace_bucket_is_rejected(trio):
         build_samplesheet([trio], PREFIX_POD, INPUTS_ROOT, INPUTS_MOUNT)
 
 
+def test_ids_are_the_aliquot_not_the_submitter_sample_id(trio):
+    """Same rule as post-processing: the ids must match the VCF sample names."""
+    csv_text = build_samplesheet([trio], PREFIX_POD, INPUTS_ROOT, INPUTS_MOUNT)
+    for text in (csv_text, build_ped(trio), build_phenopacket(trio)):
+        assert "S-NA" not in text
+        assert "NA12878" in text
+
+
 def test_ped_and_phenopacket_are_the_post_processing_ones(trio):
     """`CnvFamily` is a `Family`, so the annotation DAG's writers apply unchanged."""
     assert build_ped(trio).splitlines() == [

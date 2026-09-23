@@ -170,6 +170,14 @@ Three constraints to encode:
 - **`familyId` keys the filenames too.** It is not only a column — the PED and phenopacket
   are named after it, and so are the pipeline's outputs, which is how §6 finds them again.
 - **`sequencingType`** is `WGS`/`WES` uppercase, from `experimental_strategy_code`.
+- **Every individual id is the aliquot**, not `submitter_sample_id`: the samplesheet's
+  `sample`, the PED ids, and the phenopacket's `subject.id` / `individualId` / `paternalId` /
+  `maternalId`. DRAGEN names the gVCF sample column after the aliquot (VCF ingestion already
+  matches on it in `radiant/tasks/vcf/pedigree.py`), and Exomiser refuses a phenopacket whose
+  ids are not among the VCF samples: *"Proband sample name 'S13224' is not found in the VCF
+  sample. Expected one of [NA12878, …]"*. The 1kGP prototype hid this because there the two
+  ids are the same string. Same rule as the QC samplesheet (SJRA-1879) and the CNV inputs
+  (SJRA-1928).
 
 The task should write to a **fresh** prefix per run, or delete the prefix first, so a
 regenerated set never sits beside a stale one.

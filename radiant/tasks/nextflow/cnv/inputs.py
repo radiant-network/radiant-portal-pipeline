@@ -64,7 +64,7 @@ def build_samplesheet(families: list[CnvFamily], input_prefix_pod: str, inputs_r
             writer.writerow(
                 {
                     "familyId": family.family_id,
-                    "sample": member.sample_id,
+                    "sample": member.aliquot,
                     "sequencingType": family.sequencing_type,
                     "caller": CALLER,
                     "vcf": to_mount(member.gcnv_url, inputs_root, inputs_mount),

@@ -49,7 +49,8 @@ def document_rows(
         "patient_id": patient_id,
         "sex": sex,
         "submitter_patient_id": f"PT-{patient_id}",
-        "sample_id": aliquot,
+        # Deliberately not the aliquot: the samplesheet must only ever carry the aliquot.
+        "sample_id": f"S-{aliquot}",
         "seq_id": seq_id,
         "aliquot": aliquot,
         "strategy": strategy,

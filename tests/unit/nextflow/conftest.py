@@ -4,10 +4,13 @@ import pytest
 
 GVCF_BUCKET = "s3://qlin-nextflow-inputs"
 
+# (role, affected, patient_id, sex, submitter sample id, aliquot). The two ids are deliberately
+# different strings: the pipeline must only ever see the aliquot, and a fixture where they
+# coincide (as they do in 1kGP data) cannot tell the two apart.
 _TRIO = [
-    ("proband", "affected", 100, "female", "NA12878"),
-    ("father", "affected", 101, "male", "NA12891"),
-    ("mother", "non_affected", 102, "female", "NA12892"),
+    ("proband", "affected", 100, "female", "S13224", "NA12878"),
+    ("father", "affected", 101, "male", "S13226", "NA12891"),
+    ("mother", "non_affected", 102, "female", "S13225", "NA12892"),
 ]
 
 
@@ -23,7 +26,7 @@ def member_row(case_id=1072, submitter_case_id="1KGP-1463", role="proband", **ov
         "patient_id": 100,
         "sex": "female",
         "submitter_patient_id": "PT-100",
-        "sample_id": "NA12878",
+        "sample_id": "S13224",
         "seq_id": 500,
         "aliquot": "NA12878",
         "strategy": "wgs",
@@ -46,13 +49,13 @@ def trio_rows():
             affected_status=affected,
             patient_id=patient_id,
             sex=sex,
-            sample_id=sample,
-            aliquot=sample,
+            sample_id=sample_id,
+            aliquot=aliquot,
             seq_id=500 + index,
             alignment_task_id=900 + index,
-            gvcf_url=f"{GVCF_BUCKET}/individuals/{sample}/{sample}.hard-filtered.gvcf.gz",
+            gvcf_url=f"{GVCF_BUCKET}/individuals/{aliquot}/{aliquot}.hard-filtered.gvcf.gz",
         )
-        for index, (role, affected, patient_id, sex, sample) in enumerate(_TRIO)
+        for index, (role, affected, patient_id, sex, sample_id, aliquot) in enumerate(_TRIO)
     ]
     return list(reversed(rows))
 
@@ -66,7 +69,7 @@ def singleton_rows():
             submitter_case_id="1KGP-HG00096",
             patient_id=200,
             sex="male",
-            sample_id="HG00096",
+            sample_id="S-HG00096",
             aliquot="HG00096",
             seq_id=600,
             alignment_task_id=910,

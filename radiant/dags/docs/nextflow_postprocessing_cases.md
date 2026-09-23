@@ -140,6 +140,11 @@ writing to S3 is enough for the pipeline to see the file, and this DAG needs no 
 **generate_inputs** clears the run's input prefix before writing, so a retry never leaves a
 regenerated samplesheet sitting beside a stale PED.
 
+Every individual id in those files -- the samplesheet's `sample`, the PED ids, the
+phenopacket's subject and pedigree ids -- is the **aliquot**, not the submitter sample id.
+The gVCF sample column is named after the aliquot, and Exomiser rejects a phenopacket whose
+ids are not found among the VCF samples.
+
 ---
 
 ## familyId is CA plus the case id

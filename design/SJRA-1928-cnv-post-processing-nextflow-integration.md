@@ -49,7 +49,8 @@ pair, a third pipeline baked into the launcher image. No change to the existing 
 `paths.py` (with `inputs_subdir="cnv-runs"`, `outputs_subdir="cnv"`), `portal.py`, `register.py`,
 `case_phenotypes_select.sql`, `_nextflow_driver_operator` / `_nextflow_cleanup_operator` /
 `_nextflow_image`, and — through `CnvFamily(Family)` / `CnvMember(CaseMember)` — the PED and
-phenopacket writers and `Family.proband/father/mother`. The `REL_ORDER`, `SEQUENCING_TYPES`,
+phenopacket writers and `Family.proband/father/mother` (so, like the CNV samplesheet's
+`sample`, every id they write is the aliquot: the VCF sample name). The `REL_ORDER`, `SEQUENCING_TYPES`,
 `ExcludedCase`, `CaseResolutionError`, `MissingOutputsError`, `GENOME_BUILD` and
 `EXOMISER_PIPELINE` constants come from the parent modules.
 

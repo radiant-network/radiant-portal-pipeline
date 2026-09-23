@@ -180,6 +180,14 @@ def _validate(case_id: int, members: list[CaseMember]) -> list[tuple[str, str]]:
             text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
             problems.append((member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}"))
 
+    # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket) because it is
+    # the gVCF sample name. The query only leaves it null on a member it has already excluded
+    # as `pending_sequencing`; this names the failure should that ever stop being true.
+    for member in members:
+        if not member.exclusion_reason and not member.aliquot:
+            detail = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
+            problems.append(("missing_aliquot", detail))
+
     probands = [m for m in members if m.role == "proband"]
     if len(probands) != 1:
         # Now means what it says. Before one experiment per member was selected, a

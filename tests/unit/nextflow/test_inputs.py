@@ -31,6 +31,7 @@ def test_samplesheet_references_pod_paths_not_s3_uris(trio):
     assert "s3://" not in csv
     row = csv.splitlines()[1].split(",")
     assert row[0] == "CA1072"
+    assert row[1] == "NA12878"
     assert row[2] == "WGS"
     assert row[3] == f"{INPUTS_MOUNT}/individuals/NA12878/NA12878.hard-filtered.gvcf.gz"
     assert row[4] == f"{PREFIX_POD}/phenotypes/CA1072.yml"
@@ -100,10 +101,20 @@ def test_phenopacket_keys_stay_in_the_formats_own_order(trio):
     assert list(yaml.safe_load(build_phenopacket(trio))) == ["id", "proband", "pedigree", "metaData"]
 
 
-def test_an_all_digit_sample_id_survives_as_a_string(trio):
+def test_ids_are_the_aliquot_not_the_submitter_sample_id(trio):
+    """Exomiser checks every phenopacket and PED id against the gVCF sample names, which
+    DRAGEN takes from the aliquot. A submitter sample id anywhere in these files is the
+    `Proband sample name 'S13224' is not found in the VCF sample` failure, hours in."""
+    csv = build_samplesheet([trio], PREFIX_POD, INPUTS_ROOT, INPUTS_MOUNT)
+    for text in (csv, build_ped(trio), build_phenopacket(trio)):
+        assert "S1322" not in text
+        assert "NA12878" in text
+
+
+def test_an_all_digit_aliquot_survives_as_a_string(trio):
     """Phenopacket ids are string fields. Unquoted, `1072` would load back as an int --
     which is the same coercion that makes a bare numeric familyId fail nf-schema."""
-    trio.members[0].sample_id = "1072"
+    trio.members[0].aliquot = "1072"
     doc = yaml.safe_load(build_phenopacket(trio))
     assert doc["proband"]["subject"]["id"] == "1072"
     assert doc["pedigree"]["persons"][0]["individualId"] == "1072"

@@ -9,6 +9,12 @@ The samplesheet references the PED and phenopacket by **pod path**, not S3 URI: 
 pipeline reads them off the FSx mount. Writing them to S3 is enough for them to appear
 there, which is what keeps `generate_inputs` a plain Airflow task instead of a pod with a
 PVC.
+
+Every individual id handed to the pipeline -- the samplesheet's `sample`, the PED ids, the
+phenopacket's subject and pedigree ids -- is the **aliquot**, not the submitter sample id.
+DRAGEN names the gVCF sample column after the aliquot, and Exomiser refuses a phenopacket
+whose ids are not found among the VCF samples. The 1kGP prototype hid this: there the two
+ids are the same string.
 """
 
 import csv
@@ -75,7 +81,7 @@ def build_samplesheet(families: list[Family], input_prefix_pod: str, inputs_root
             writer.writerow(
                 {
                     "familyId": family.family_id,
-                    "sample": member.sample_id,
+                    "sample": member.aliquot,
                     "sequencingType": family.sequencing_type,
                     "gvcf": to_mount(member.gvcf_url, inputs_root, inputs_mount),
                     "familyPheno": f"{input_prefix_pod}/{PHENO_DIR}/{family.family_id}.yml",
@@ -94,9 +100,9 @@ def build_ped(family: Family) -> str:
             "\t".join(
                 [
                     family.family_id,
-                    member.sample_id,
-                    father.sample_id if (is_proband and father) else "0",
-                    mother.sample_id if (is_proband and mother) else "0",
+                    member.aliquot,
+                    father.aliquot if (is_proband and father) else "0",
+                    mother.aliquot if (is_proband and mother) else "0",
                     PED_SEX[member.sex],
                     PED_AFFECTED[member.affected_status],
                 ]
@@ -112,7 +118,7 @@ def build_phenopacket(family: Family) -> str:
     format has a single `proband` block. The pedigree still lists every member.
     """
     proband = family.proband
-    proband_block = {"subject": {"id": proband.sample_id, "sex": PPKT_SEX[proband.sex]}}
+    proband_block = {"subject": {"id": proband.aliquot, "sex": PPKT_SEX[proband.sex]}}
 
     if family.phenotypes:
         # Observed terms first: Exomiser ranks on them, excluded ones only penalise.
@@ -152,12 +158,12 @@ def _feature(pheno: Phenotype) -> dict:
 
 
 def _person(family: Family, member: CaseMember) -> dict:
-    person = {"individualId": member.sample_id}
+    person = {"individualId": member.aliquot}
     if member.role == "proband":
         if family.father:
-            person["paternalId"] = family.father.sample_id
+            person["paternalId"] = family.father.aliquot
         if family.mother:
-            person["maternalId"] = family.mother.sample_id
+            person["maternalId"] = family.mother.aliquot
     person["sex"] = PPKT_SEX[member.sex]
     person["affectedStatus"] = PPKT_AFFECTED[member.affected_status]
     return person
