@@ -55,3 +55,20 @@ def test_data_integrity_checks_scoped_to_this_batch_tenants(dag_bag):
     qa = dag.get_task("data_integrity_checks")
     assert qa.conf == {"tenants": "{{ ti.xcom_pull(task_ids='prepare_tenants_tables') }}"}
     assert dag.render_template_as_native_obj is True
+
+
+def test_partition_triggers_are_serialised_and_bounded(dag_bag):
+    """The partition fan-out waits rather than races, and no wait is unbounded.
+
+    `import_part` is `max_active_runs=1`, so a trigger whose partition is not next in line sits on a
+    QUEUED run. Queued runs are promoted in `execution_date` order -- the instant each trigger ran --
+    so the 1-slot pool is what keeps `assign_priority`'s order; and the wait needs a deadline, or one
+    wedged partition holds every sibling trigger open forever.
+    """
+    from radiant.tasks.locking import STALE_LOCK_MAX_AGE
+
+    trigger = dag_bag.get_dag("radiant-import").get_task("import_part")
+    assert trigger.pool == "import_part"
+    assert trigger.execution_timeout == STALE_LOCK_MAX_AGE
+    # Bounded by the same constant the stale-lock reclaim uses, so the two cannot drift apart.
+    assert dag_bag.get_dag("radiant-import-part").max_active_runs == 1

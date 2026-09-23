@@ -248,12 +248,27 @@ other use anywhere in this pipeline.
   side holds it → the task fails outright (no retry). Lock acquire/release belongs in `import_part`, not
   `import_radiant`: `import_radiant` only fetches the delta and triggers partitions, it holds no
   Iceberg/StarRocks writes itself — the writes that must not race the re-annotation DAG happen in
-  `import_part`. `import_part` already runs one partition at a time (pool `import_part`, a single slot
-  held by `import_radiant`'s trigger task for the whole partition run), so this adds only the missing
-  piece: exclusion against the re-annotation DAG's whole multi-task run, which a pool can't express.
-- **Release** — the last task of each DAG releases, gated on that DAG's own completion condition being
-  all-success (`import_part`: both final sequencing-experiment update tasks; re-annotation: P4). A failed
-  or partially-skipped run does not release — the lock stays held.
+  `import_part`. This adds the piece a pool can't express: exclusion against the re-annotation DAG's
+  whole multi-task run.
+
+  > **Corrected 2026-09-21.** This paragraph used to claim `import_part` "already runs one partition at
+  > a time (pool `import_part`, a single slot held by `import_radiant`'s trigger task for the whole
+  > partition run)". It did not. The trigger holds that slot only while it is *running*; where
+  > `[operators] default_deferrable` is on it defers while waiting, and a deferred task holds no slot
+  > (`EXECUTION_STATES` is `{RUNNING, QUEUED}` — apache/airflow#40528), so the next partition started
+  > immediately and two runs raced the lock. The pool needs `include_deferred`, and the real constraint
+  > now lives on the DAG as `max_active_runs=1`, which also covers manual and API-triggered runs the
+  > caller's pool never saw. See `radiant/dags/docs/import_part.md`.
+- **Release** — the last task of each DAG releases: `import_part` after both final sequencing-experiment
+  update tasks, the re-annotation DAG after P4.
+
+  > **Amended 2026-09-21.** This used to read "A failed or partially-skipped run does not release — the
+  > lock stays held", for both DAGs. That now holds only for the re-annotation DAG, which is one long
+  > run whose half-finished state an operator should inspect before anything else writes. `import_part`
+  > releases on `ALL_DONE` instead: it runs once per partition and fails routinely, and holding the
+  > mutex on failure took every partition behind it down too. Because `ALL_DONE` fires even when
+  > `acquire_import_lock` itself failed, the release is holder-checked — a run that lost the race
+  > deletes nothing, rather than freeing the winner's lock.
 - **No automatic reclaim.** Acquire never deletes an existing lock, however old. `import_part` failures
   are routine and get restarted by an operator; an automatic stale-lock reclaim would let that restart
   race whatever legitimately still holds the lock. Clearing an abandoned lock is instead a deliberate,

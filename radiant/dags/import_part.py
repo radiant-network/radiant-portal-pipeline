@@ -90,6 +90,7 @@ std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=1
     start_date=datetime.datetime(2021, 1, 1),
     schedule=None,
     catchup=False,
+    max_active_runs=1,
     default_args=DEFAULT_ARGS,
     tags=["radiant", "scheduled"],
     dag_display_name="Radiant - Import for a partition",
@@ -113,9 +114,17 @@ def import_part():
         holder = f"{context['dag'].dag_id}:{context['run_id']}"
         acquire_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME, holder=holder)
 
-    @task(task_id="release_import_lock", task_display_name="[PyOp] Release Import Lock")
+    @task(
+        task_id="release_import_lock",
+        task_display_name="[PyOp] Release Import Lock",
+        trigger_rule=TriggerRule.ALL_DONE,
+    )
     def release_import_lock():
-        release_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME)
+        from airflow.operators.python import get_current_context
+
+        context = get_current_context()
+        holder = f"{context['dag'].dag_id}:{context['run_id']}"
+        release_lock(bucket=RADIANT_LOCK_S3_BUCKET, name=IMPORT_MUTEX_LOCK_NAME, holder=holder)
 
     _acquire_import_lock = acquire_import_lock()
     _release_import_lock = release_import_lock()

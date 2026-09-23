@@ -9,6 +9,7 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.task_group import TaskGroup
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE
+from radiant.tasks.locking import STALE_LOCK_MAX_AGE
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,7 @@ def import_radiant():
         wait_for_completion=True,
         poke_interval=30,
         pool="import_part",
+        execution_timeout=STALE_LOCK_MAX_AGE,
         map_index_template="Partition: {{ task.conf['part'] }}",
     ).expand(conf=priority)
 
