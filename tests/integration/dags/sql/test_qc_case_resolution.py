@@ -52,16 +52,18 @@ def test_a_trio_with_crams_and_no_qc_task_is_discovered(postgres_clinical_seeds,
 
 def test_every_alignment_output_comes_back_as_its_own_row(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     """The metrics probe needs the directory of every output, so the proband's alignment
-    (task 44: CRAM, index, CNV VCF, index) yields four rows that fold into one member."""
+    (task 44: CRAM, index, gVCF, index, germline CNV VCF, index) yields six rows that fold
+    into one member."""
     rows = _discover(starrocks_session, radiant_mapping, TRIO_CASE_ID)
     proband_rows = [r for r in rows if r["patient_id"] == 44]
-    assert len(proband_rows) == 4
+    assert len(proband_rows) == 6
     assert {(r["document_data_type"], r["document_format"]) for r in proband_rows} >= {
         ("alignment", "cram"),
         ("alignment", "crai"),
+        ("gcnv", "vcf"),
     }
-    # The seeds give every document of an alignment the same directory-only url, so the four
-    # rows fold into one distinct url; what matters is that folding keeps them all.
+    # The seeds give the CRAM/gVCF documents of an alignment one directory-only url and the
+    # CNV documents their own; what matters is that folding keeps every distinct url.
     proband = next(m for m in fold_rows(rows) if m.patient_id == 44)
     assert proband.document_urls == sorted({r["document_url"] for r in proband_rows})
 

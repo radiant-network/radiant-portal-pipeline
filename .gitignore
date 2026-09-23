@@ -187,3 +187,8 @@ logs
 .testquality
 .copilot
 tmp/
+
+# Editor swap/backup files
+*.swp
+*.swo
+*~
