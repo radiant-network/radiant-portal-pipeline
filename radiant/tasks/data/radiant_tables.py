@@ -70,6 +70,8 @@ ICEBERG_OPEN_DATA_CONTRACT_MAPPING = {
     "iceberg_dbnsfp": "dbnsfp_v1",
     "iceberg_dbsnp": "dbsnp_v1",
     "iceberg_ddd_gene_set": "ddd_v1",
+    "iceberg_ensembl_exon_by_gene": "ensembl_exon_by_gene_v1",
+    "iceberg_ensembl_gene": "ensembl_gene_v1",
     "iceberg_gnomad_constraint": "gnomad_constraint_v1",
     "iceberg_gnomad_joint": "gnomad_joint_v1",
     "iceberg_gnomad_sv": "gnomad_sv_v1",
@@ -82,17 +84,14 @@ ICEBERG_OPEN_DATA_CONTRACT_MAPPING = {
     "iceberg_topmed_bravo": "topmed_bravo_v1",
 }
 
-ICEBERG_OPEN_DATA_LEGACY_MAPPING = {
-    "iceberg_ensembl_gene": "ensembl_gene",
-    "iceberg_ensembl_exon_by_gene": "ensembl_exon_by_gene",
-}
-
 ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING = {
     "iceberg_1000_genomes": "1000_genomes",
     "iceberg_clinvar": "clinvar",
     "iceberg_dbnsfp": "dbnsfp",
     "iceberg_dbsnp": "dbsnp",
     "iceberg_ddd_gene_set": "ddd_gene_set",
+    "iceberg_ensembl_exon_by_gene": "ensembl_exon_by_gene",
+    "iceberg_ensembl_gene": "ensembl_gene",
     "iceberg_gnomad_constraint": "gnomad_constraint_v_2_1_1",
     "iceberg_gnomad_joint": "gnomad_genomes_v3",
     "iceberg_gnomad_sv": "gnomad_sv",
@@ -248,7 +247,6 @@ def get_iceberg_open_data_mapping(conf=None) -> dict:
         )
         for key, value in ICEBERG_OPEN_DATA_CONTRACT_MAPPING.items()
     }
-    mapping.update({key: _legacy(value) for key, value in ICEBERG_OPEN_DATA_LEGACY_MAPPING.items()})
     mapping.update(
         {
             f"{key}{IS_CONTRACT_SUFFIX}": ("true" if key in _contract_keys else "")

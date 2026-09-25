@@ -132,19 +132,20 @@ def test_a_skipped_group_does_not_cascade_down_the_chain(dag_bag):
         # Param off is a full import, whatever the catalog says.
         ("dbsnp", False, {"dbsnp": False, "clinvar": False, "ensembl_gene": False}),
         # Held back -> reads the Radiant catalog -> skipped. Its neighbours still import.
-        ("dbsnp", True, {"dbsnp": True, "clinvar": False, "gnomad": False, "ensembl_gene": True}),
+        ("dbsnp", True, {"dbsnp": True, "clinvar": False, "gnomad": False, "ensembl_gene": False}),
+        # ensembl is gated like any other source now that OpenDataLake publishes it.
+        ("ensembl_gene", True, {"dbsnp": False, "ensembl_gene": True, "ensembl_exon_by_gene": False}),
         # `*` is the default, so on an unmigrated environment this skips everything.
         ("*", True, {"dbsnp": True, "clinvar": True, "gnomad": True, "ensembl_exon_by_gene": True}),
-        # Fully migrated -- only the two with no upstream contract stay behind. These have no
-        # `_is_contract` key at all, so they are also the StrictUndefined regression case.
+        # Fully migrated -- nothing stays behind.
         (
             "",
             True,
             {
                 "dbsnp": False,
                 "clinvar": False,
-                "ensembl_gene": True,
-                "ensembl_exon_by_gene": True,
+                "ensembl_gene": False,
+                "ensembl_exon_by_gene": False,
             },
         ),
     ],
@@ -156,7 +157,8 @@ def test_skip_if_resolves_from_the_catalog_the_source_landed_on(held_back, flag,
     Rendered with `StrictUndefined` and native types because that is what Airflow does
     (`DAG(template_undefined=jinja2.StrictUndefined)`, plus `render_template_as_native_obj=True` on this
     DAG). A lenient environment turns a missing mapping key into a falsy Undefined and passes; Airflow
-    raises `UndefinedError` -- which is exactly how the three contract-less sources broke in production.
+    raises `UndefinedError` -- which is exactly how the then contract-less ensembl sources broke in
+    production before they had an `_is_contract` flag.
     """
     import jinja2
     from jinja2.nativetypes import NativeEnvironment

@@ -49,7 +49,8 @@ No `latest` pointer exists today, in SJRA-1546 §2.2 designs snapshot tagging, b
 
 ## 3. Coverage
 
-Of the 20 tables Radiant consumes: **15 can move, 5 cannot.**
+Of the 20 tables Radiant consumes: **17 can move, 3 cannot.** (The two ensembl tables moved after the
+initial cutover, once OpenDataLake published them under SJRA-1803; see the shape note below.)
 
 ### ✅ Ready — 6
 
@@ -100,9 +101,10 @@ drops the `filters` column, so the two CNV occurrence statements keep a
 `{% if not mapping.iceberg_gnomad_sv_is_contract %}` around their `filters = 'PASS'` predicate — without it,
 a source held back on the pre-contract table would quietly annotate against non-PASS calls.
 
-### 🔧 Shape mismatch — 2
+### 🔧 Shape mismatch — 3
 
-Both have a contract table holding the data Radiant needs, under different column names.
+Each has a contract table holding the data Radiant needs, under different column names or with columns
+Radiant's target table carries and the contract dropped.
 
 #### 1. `gnomad_genomes_v3` → `gnomad_joint_v1`
 
@@ -162,15 +164,26 @@ so its columns carry the upstream names rather than the platform's. A pure 3-col
 | `hpo_term_name`                   | `hpo_name`              |
 | `hpo_term_id`                     | `hpo_id`                |
 
-### ❌ Missing or unversioned — 4
+#### 3. `ensembl_exon_by_gene` → `ensembl_exon_by_gene_v1` (SJRA-1803)
 
-No contract upstream, so these stay on `radiant_iceberg_catalog` (`ICEBERG_OPEN_DATA_LEGACY_MAPPING`) or,
-for the last two, on their S3 broker loads.
+OpenDataLake publishes `ensembl_gene_v1`, `ensembl_exon_by_gene_v1`, `ensembl_exon_v1` and
+`ensembl_transcript_v1`. Radiant reads the first two; both now sit in `ICEBERG_OPEN_DATA_CONTRACT_MAPPING`
+and follow `RADIANT_OPEN_DATA_USE_LEGACY_TABLES` like every other source (the former
+`ICEBERG_OPEN_DATA_LEGACY_MAPPING` is gone).
+
+`ensembl_gene_v1` carries every column `ensembl_gene_insert.sql` reads, so that statement is unchanged.
+`ensembl_exon_by_gene_v1` drops five columns the StarRocks target still has — `phase`, `alias`,
+`description`, `external_name`, `logic_name` — so `ensembl_exon_by_gene_insert.sql` branches on
+`{% if mapping.iceberg_ensembl_exon_by_gene_is_contract %}` and NULL-fills them (typed `CAST(NULL AS ...)`)
+on the contract side. Nothing downstream reads those columns: the CNV statements join
+`ensembl_gene` only, on `chromosome`/`start`/`end`. The DDL is left as is rather than migrated.
+
+### ❌ Missing or unversioned — 2
+
+No contract upstream, so these stay on their S3 broker loads.
 
 | Radiant                   | Status                              | Ticket              |
 |---------------------------|-------------------------------------|---------------------|
-| `ensembl_gene`            | Not implemented yet (need analysis) | SJRA-1803 *Backlog* |
-| `ensembl_exon_by_gene`    | Not implemented yet (need analysis) | SJRA-1803 *Backlog* |
 | `cytoband`                | Not implemented yet — broker load   | none                |
 | `raw_clinvar_rcv_summary` | Not implemented yet — broker load   | none                |
 
@@ -295,17 +308,17 @@ flowchart TB
 `RADIANT_OPEN_DATA_USE_LEGACY_TABLES` defaults to `*`: **every** contract source held back on its
 pre-contract Radiant Iceberg table. An environment that upgrades to this wheel without being configured
 for OpenDataLake therefore reads exactly what it read before. Migrating is then one explicit step per
-environment — set the variable to `""` for all 15 sources, or to a shorter list to move part way — and
+environment — set the variable to `""` for all 17 sources, or to a shorter list to move part way — and
 rolling back is the same step in reverse, with no code change.
 
-The sentinel is spelled `*` rather than a literal list of the 15 names so that a table added to
+The sentinel is spelled `*` rather than a literal list of the 17 names so that a table added to
 `ICEBERG_OPEN_DATA_CONTRACT_MAPPING` later cannot default to OpenDataLake by omission. It is honoured only
 as the whole value; `*` mixed into a list is rejected as an unknown source, like any other typo.
 
 ### Metadata-cache refresh — both DAGs that read open data
 
 `latest` is a tag OpenDataLake moves on each publish and StarRocks caches external-catalog metadata, so
-every DAG that reads a contract table must refresh it first (P1). `import-open-data` refreshes all 18
+every DAG that reads a contract table must refresh it first (P1). `import-open-data` refreshes all 17
 open-data tables, but it is `schedule=None`. `import_part` reads one of them on its own schedule — the CNV
 enrichment joins `gnomad_sv_v1` straight from Iceberg — so it refreshes that source too, rather than
 relying on a manual DAG having been run. Its `get_tables_to_refresh` names that source inline; a unit test
@@ -372,7 +385,7 @@ flowchart LR
     subgraph SRC["inputs"]
         GSV["gnomad_sv<br/><i>the only one this refresh updates</i>"]
         CB["cytoband<br/><i>S3 broker load — never OpenDataLake</i>"]
-        EG["ensembl_gene<br/><i>absent upstream — SJRA-1803</i>"]
+        EG["ensembl_gene<br/><i>ensembl_gene_v1 since SJRA-1803 — not updated by this refresh</i>"]
     end
     SNVO["snv__occurrence<br/><i>supplies nb_snv — which sample<br/>carries which locus_id</i>"]
     SV["snv__variant<br/><i>supplies the coordinates<br/>joined on locus_id</i>"]

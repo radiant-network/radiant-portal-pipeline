@@ -11,7 +11,6 @@ import pytest
 from radiant.tasks.data import open_data
 from radiant.tasks.data.radiant_tables import (
     ICEBERG_OPEN_DATA_CONTRACT_MAPPING,
-    ICEBERG_OPEN_DATA_LEGACY_MAPPING,
     ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING,
     STARROCKS_OPEN_DATA_MAPPING,
 )
@@ -39,7 +38,7 @@ def tables_in():
 def _everything_present():
     return {
         _ODL: set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING.values()),
-        _LEGACY: set(ICEBERG_OPEN_DATA_LEGACY_MAPPING.values()),
+        _LEGACY: set(ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING.values()),
         "radiant": set(STARROCKS_OPEN_DATA_MAPPING.values()),
     }
 
@@ -52,13 +51,14 @@ def test_nothing_missing_returns_empty(tables_in):
 
 def test_reports_every_gap_at_once_not_just_the_first(tables_in):
     """The whole point: the serial reference load would surface these one run at a time."""
+    conf = _CONF | {"RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "ensembl_exon_by_gene"}
     present = _everything_present()
     present[_ODL] = present[_ODL] - {"omim_v1", "topmed_bravo_v1"}
     present[_LEGACY] = present[_LEGACY] - {"ensembl_exon_by_gene"}
     present["radiant"] = present["radiant"] - {"cytoband"}
     tables_in.side_effect = lambda schema: present[schema]
 
-    missing = open_data.list_missing_open_data_tables(_CONF)
+    missing = open_data.list_missing_open_data_tables(conf)
     assert missing == {
         "OpenDataLake contract tables": [f"{_ODL}.omim_v1", f"{_ODL}.topmed_bravo_v1"],
         "Legacy Iceberg tables": [f"{_LEGACY}.ensembl_exon_by_gene"],
@@ -82,7 +82,8 @@ def test_contract_tables_are_looked_up_by_their_bare_name(tables_in):
     tables_in.side_effect = lambda schema: present[schema]
     open_data.list_missing_open_data_tables(_CONF)
 
-    assert [call.args[0] for call in tables_in.call_args_list] == [_ODL, _LEGACY, "radiant"]
+    # Fully opted in, nothing is read from the legacy catalog, so it is not even queried.
+    assert [call.args[0] for call in tables_in.call_args_list] == [_ODL, "radiant"]
 
 
 def test_held_back_sources_are_looked_for_under_their_pre_contract_name(tables_in):
@@ -90,7 +91,7 @@ def test_held_back_sources_are_looked_for_under_their_pre_contract_name(tables_i
     catalog, so a check against the contract names would report a whole catalog as missing."""
     conf = _CONF | {"RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "*"}
     present = {
-        _LEGACY: set(ICEBERG_OPEN_DATA_LEGACY_MAPPING.values()) | set(ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING.values()),
+        _LEGACY: set(ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING.values()),
         "radiant": set(STARROCKS_OPEN_DATA_MAPPING.values()),
     }
     tables_in.side_effect = lambda schema: present[schema]
@@ -126,9 +127,9 @@ def test_iceberg_source_tables_are_bare_qualified_names(tables_in):
     tables = open_data.list_iceberg_source_tables(_CONF)
 
     assert f"{_ODL}.clinvar_v1" in tables
-    assert f"{_LEGACY}.ensembl_gene" in tables
+    assert f"{_ODL}.ensembl_gene_v1" in tables
     assert not any("VERSION AS OF" in table for table in tables)
     # Iceberg sources only: the StarRocks targets are not external tables and cannot be refreshed.
     assert not any(table.startswith("radiant.") for table in tables)
-    assert len(tables) == len(ICEBERG_OPEN_DATA_CONTRACT_MAPPING) + len(ICEBERG_OPEN_DATA_LEGACY_MAPPING)
+    assert len(tables) == len(ICEBERG_OPEN_DATA_CONTRACT_MAPPING)
     assert tables == sorted(tables)
