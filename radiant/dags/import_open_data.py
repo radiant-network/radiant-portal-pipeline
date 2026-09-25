@@ -71,6 +71,23 @@ dag_params = {
         ),
         type=["array", "null"],
     ),
+    "cosmic_mutation_set_filepath": Param(
+        default=None,
+        description=(
+            "COSMIC Mutation Census filepath (cmc_export.tsv.gz). When set, triggers "
+            "radiant-import-cosmic-mutation-set, which normalizes the variants against the reference and loads "
+            "cosmic_mutation_set."
+        ),
+        type=["string", "null"],
+    ),
+    "reference_fasta_filepath": Param(
+        default=None,
+        description=(
+            "GRCh38 reference FASTA the COSMIC Mutation Census normalization left-aligns against. Leave empty "
+            "to use the RADIANT_REFERENCE_FASTA_S3_URI default of radiant-import-cosmic-mutation-set."
+        ),
+        type=["string", "null"],
+    ),
 }
 
 with DAG(
@@ -205,9 +222,41 @@ with DAG(
 
         has_cosmic_gene_set_filepath() >> trigger_import_cosmic_gene_set
 
+    # Same hand-off for the Mutation Census: its own DAG owns the bcftools normalization step.
+    with TaskGroup(group_id="cosmic_mutation_set") as tg_cosmic_mutation_set:
+
+        @task.short_circuit(
+            task_id="has_cosmic_mutation_set_filepath",
+            task_display_name="[PyOp] COSMIC Mutation Set Filepath Provided?",
+            ignore_downstream_trigger_rules=False,
+        )
+        def has_cosmic_mutation_set_filepath(params: dict | None = None) -> bool:
+            return bool((params or {}).get("cosmic_mutation_set_filepath"))
+
+        @task(task_id="cosmic_mutation_set_conf", task_display_name="[PyOp] COSMIC Mutation Set Conf")
+        def cosmic_mutation_set_conf(params: dict | None = None) -> dict:
+            # Only forward the FASTA when given, so the triggered DAG's env-var default still applies.
+            conf = {"cosmic_mutation_set_filepath": (params or {})["cosmic_mutation_set_filepath"]}
+            if (params or {}).get("reference_fasta_filepath"):
+                conf["reference_fasta_filepath"] = params["reference_fasta_filepath"]
+            return conf
+
+        trigger_import_cosmic_mutation_set = TriggerDagRunOperator(
+            task_id="trigger_import_cosmic_mutation_set",
+            task_display_name="[DAG] Import COSMIC Mutation Set",
+            trigger_dag_id=f"{NAMESPACE}-import-cosmic-mutation-set",
+            conf="{{ ti.xcom_pull(task_ids='cosmic_mutation_set.cosmic_mutation_set_conf') }}",
+            reset_dag_run=True,
+            wait_for_completion=True,
+            poke_interval=30,
+        )
+
+        has_cosmic_mutation_set_filepath() >> cosmic_mutation_set_conf() >> trigger_import_cosmic_mutation_set
+
     start >> _tables_to_refresh
     chain(refresh_iceberg_tables, *data_tasks)
 
     data_tasks[-1] >> has_raw_rcv_filepaths() >> load_raw_clinvar_rcv_summary >> insert_clinvar_rcv_summary
     data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband
     data_tasks[-1] >> tg_cosmic_gene_set
+    data_tasks[-1] >> tg_cosmic_mutation_set

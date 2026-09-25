@@ -35,14 +35,20 @@ class Common:
     alternate: str
 
 
+def locus_and_hash(chrom: str, pos: int, ref: str, alt: str) -> tuple[str, str]:
+    """The pipeline-wide variant key: ``chrom-pos-ref-alt`` (chromosome without ``chr``, 1-based VCF POS,
+    VCF-style anchored alleles) and its SHA-256, which every source joins on as ``locus_hash``."""
+    locus = f"{chrom}-{pos}-{ref}-{alt}"
+    return locus, hashlib.sha256(locus.encode()).hexdigest()
+
+
 def process_common(record: Variant, task_id: int, part: int) -> Common:
     chrom = record.CHROM.replace("chr", "")
     pos = record.POS
     ref = record.REF
     alt = record.ALT[0]
     info_end = record.end
-    locus = f"{chrom}-{pos}-{ref}-{alt}"
-    locus_hash = hashlib.sha256(locus.encode()).hexdigest()
+    locus, locus_hash = locus_and_hash(chrom, pos, ref, alt)
     return Common(
         task_id=task_id,
         part=part,

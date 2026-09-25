@@ -527,6 +527,17 @@ def sample_cosmic_gene_set_tsv(s3_fs):
 
 
 @pytest.fixture(scope="session")
+def sample_cosmic_mutation_set_normalized_tsv(s3_fs):
+    """
+    Uploads a sample of the *normalized* COSMIC Mutation Census (the file the normalize task writes) to S3.
+    """
+    src_path = RESOURCES_DIR / "open_data" / "cosmic" / "cmc_export.normalized.tsv.gz"
+    dest_path = "opendata/cosmic/"
+    s3_fs.put(src_path, dest_path)
+    yield f"{dest_path}cmc_export.normalized.tsv.gz"
+
+
+@pytest.fixture(scope="session")
 def cytoband(s3_fs):
     """
     Uploads the cytoband data S3.

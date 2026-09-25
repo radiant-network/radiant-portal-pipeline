@@ -23,9 +23,9 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "mondo_term",
         "hpo_term",
     ]
-    # start + the metadata-refresh pair + 3 file-driven load/insert tasks + the COSMIC trigger
-    # + 3 short-circuit gates
-    assert len(dag.tasks) == 10 + len(gene_group_ids) + len(variant_group_ids) * 2
+    # start + the metadata-refresh pair + 3 file-driven load/insert tasks + the two COSMIC hand-offs
+    # (gate + trigger, and gate + conf + trigger) + 2 short-circuit gates
+    assert len(dag.tasks) == 13 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_metadata_cache_is_refreshed_before_any_source_is_read(dag_bag):
@@ -50,7 +50,12 @@ def test_file_driven_loads_are_gated_on_their_params(dag_bag):
     assert "load_cytoband" not in dag.get_task("insert_clinvar_rcv_summary").downstream_task_ids
     # Every file-driven branch hangs off the end of the source chain, independently of the others.
     last_source = dag.get_task("insert_hpo_term")
-    for gate in ("has_raw_rcv_filepaths", "has_cytoband_filepath", "cosmic_gene_set.has_cosmic_gene_set_filepath"):
+    for gate in (
+        "has_raw_rcv_filepaths",
+        "has_cytoband_filepath",
+        "cosmic_gene_set.has_cosmic_gene_set_filepath",
+        "cosmic_mutation_set.has_cosmic_mutation_set_filepath",
+    ):
         assert gate in last_source.downstream_task_ids
 
 
@@ -60,6 +65,7 @@ def test_file_driven_loads_are_gated_on_their_params(dag_bag):
         ("has_raw_rcv_filepaths", "raw_rcv_filepaths"),
         ("has_cytoband_filepath", "cytoband_filepath"),
         ("cosmic_gene_set.has_cosmic_gene_set_filepath", "cosmic_gene_set_filepath"),
+        ("cosmic_mutation_set.has_cosmic_mutation_set_filepath", "cosmic_mutation_set_filepath"),
     ],
 )
 def test_file_driven_gates_read_params_from_the_run_context(dag_bag, task_id, param):
@@ -89,6 +95,38 @@ def test_cosmic_is_handed_off_to_its_own_dag(dag_bag):
     assert trigger.conf == {"cosmic_gene_set_filepath": "{{ params.cosmic_gene_set_filepath }}"}
     assert trigger.wait_for_completion is True
     assert dag.params["cosmic_gene_set_filepath"] is None
+
+
+def test_cosmic_mutation_set_is_handed_off_to_its_own_dag(dag_bag):
+    """The Mutation Census needs a bcftools normalization pod before its load, which only
+    radiant-import-cosmic-mutation-set knows how to run; this DAG just gates and triggers it."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    assert {t.task_id for t in dag.task_group.get_child_by_label("cosmic_mutation_set")} == {
+        "cosmic_mutation_set.has_cosmic_mutation_set_filepath",
+        "cosmic_mutation_set.cosmic_mutation_set_conf",
+        "cosmic_mutation_set.trigger_import_cosmic_mutation_set",
+    }
+    assert dag.get_task("cosmic_mutation_set.has_cosmic_mutation_set_filepath").downstream_task_ids == {
+        "cosmic_mutation_set.cosmic_mutation_set_conf"
+    }
+    trigger = dag.get_task("cosmic_mutation_set.trigger_import_cosmic_mutation_set")
+    assert trigger.trigger_dag_id == f"{NAMESPACE}-import-cosmic-mutation-set"
+    assert trigger.conf == "{{ ti.xcom_pull(task_ids='cosmic_mutation_set.cosmic_mutation_set_conf') }}"
+    assert trigger.wait_for_completion is True
+    assert dag.params["cosmic_mutation_set_filepath"] is None
+    assert dag.params["reference_fasta_filepath"] is None
+
+    conf = dag.get_task("cosmic_mutation_set.cosmic_mutation_set_conf").python_callable
+    # The FASTA is only forwarded when given, so the triggered DAG's env-var default still applies.
+    assert conf(params={"cosmic_mutation_set_filepath": "s3://b/cmc.tsv.gz", "reference_fasta_filepath": None}) == {
+        "cosmic_mutation_set_filepath": "s3://b/cmc.tsv.gz"
+    }
+    assert conf(
+        params={"cosmic_mutation_set_filepath": "s3://b/cmc.tsv.gz", "reference_fasta_filepath": "s3://r/f.fa"}
+    ) == {
+        "cosmic_mutation_set_filepath": "s3://b/cmc.tsv.gz",
+        "reference_fasta_filepath": "s3://r/f.fa",
+    }
 
 
 def test_dag_has_all_group_tasks(dag_bag):
