@@ -43,12 +43,14 @@ def test_file_driven_loads_are_gated_on_their_params(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
     assert dag.get_task("has_raw_rcv_filepaths").downstream_task_ids == {"load_raw_clinvar_rcv_summary"}
     assert dag.get_task("has_cytoband_filepath").downstream_task_ids == {"load_cytoband"}
-    assert dag.get_task("has_cosmic_gene_set_filepath").downstream_task_ids == {"trigger_import_cosmic_gene_set"}
+    assert dag.get_task("cosmic_gene_set.has_cosmic_gene_set_filepath").downstream_task_ids == {
+        "cosmic_gene_set.trigger_import_cosmic_gene_set"
+    }
     # Separate branches: cytoband is not downstream of the RCV chain any more.
     assert "load_cytoband" not in dag.get_task("insert_clinvar_rcv_summary").downstream_task_ids
     # Every file-driven branch hangs off the end of the source chain, independently of the others.
     last_source = dag.get_task("insert_hpo_term")
-    for gate in ("has_raw_rcv_filepaths", "has_cytoband_filepath", "has_cosmic_gene_set_filepath"):
+    for gate in ("has_raw_rcv_filepaths", "has_cytoband_filepath", "cosmic_gene_set.has_cosmic_gene_set_filepath"):
         assert gate in last_source.downstream_task_ids
 
 
@@ -57,7 +59,7 @@ def test_file_driven_loads_are_gated_on_their_params(dag_bag):
     [
         ("has_raw_rcv_filepaths", "raw_rcv_filepaths"),
         ("has_cytoband_filepath", "cytoband_filepath"),
-        ("has_cosmic_gene_set_filepath", "cosmic_gene_set_filepath"),
+        ("cosmic_gene_set.has_cosmic_gene_set_filepath", "cosmic_gene_set_filepath"),
     ],
 )
 def test_file_driven_gates_read_params_from_the_run_context(dag_bag, task_id, param):
@@ -77,7 +79,12 @@ def test_cosmic_is_handed_off_to_its_own_dag(dag_bag):
     by radiant-import-cosmic-gene-set, which this DAG triggers with the filepath it was given."""
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
     assert "insert_cosmic_gene_panel" not in {t.task_id for t in dag.tasks}
-    trigger = dag.get_task("trigger_import_cosmic_gene_set")
+    # Self-contained group: the gate and the trigger are the only COSMIC tasks left in this DAG.
+    assert {t.task_id for t in dag.task_group.get_child_by_label("cosmic_gene_set")} == {
+        "cosmic_gene_set.has_cosmic_gene_set_filepath",
+        "cosmic_gene_set.trigger_import_cosmic_gene_set",
+    }
+    trigger = dag.get_task("cosmic_gene_set.trigger_import_cosmic_gene_set")
     assert trigger.trigger_dag_id == f"{NAMESPACE}-import-cosmic-gene-set"
     assert trigger.conf == {"cosmic_gene_set_filepath": "{{ params.cosmic_gene_set_filepath }}"}
     assert trigger.wait_for_completion is True

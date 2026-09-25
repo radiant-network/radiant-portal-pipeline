@@ -6,6 +6,7 @@ from airflow.models import Param
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.utils.task_group import TaskGroup
 
 from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import RadiantStarrocksLoadOperator, RadiantStarRocksOperator, SubmitTaskOptions
@@ -153,14 +154,6 @@ with DAG(
     def has_cytoband_filepath(params: dict | None = None) -> bool:
         return bool((params or {}).get("cytoband_filepath"))
 
-    @task.short_circuit(
-        task_id="has_cosmic_gene_set_filepath",
-        task_display_name="[PyOp] COSMIC Gene Set Filepath Provided?",
-        ignore_downstream_trigger_rules=False,
-    )
-    def has_cosmic_gene_set_filepath(params: dict | None = None) -> bool:
-        return bool((params or {}).get("cosmic_gene_set_filepath"))
-
     load_raw_clinvar_rcv_summary = RadiantStarrocksLoadOperator(
         task_id="load_raw_clinvar_rcv_summary",
         task_display_name="[StarRocks] Load Raw ClinVar RCV Summary",
@@ -190,19 +183,31 @@ with DAG(
 
     # COSMIC has no OpenDataLake contract and is not an Iceberg source any more: it is loaded from the
     # census TSV by its own DAG, which also rebuilds cosmic_gene_panel.
-    trigger_import_cosmic_gene_set = TriggerDagRunOperator(
-        task_id="trigger_import_cosmic_gene_set",
-        task_display_name="[DAG] Import COSMIC Gene Set",
-        trigger_dag_id=f"{NAMESPACE}-import-cosmic-gene-set",
-        conf={"cosmic_gene_set_filepath": "{{ params.cosmic_gene_set_filepath }}"},
-        reset_dag_run=True,
-        wait_for_completion=True,
-        poke_interval=30,
-    )
+    with TaskGroup(group_id="cosmic_gene_set") as tg_cosmic_gene_set:
+
+        @task.short_circuit(
+            task_id="has_cosmic_gene_set_filepath",
+            task_display_name="[PyOp] COSMIC Gene Set Filepath Provided?",
+            ignore_downstream_trigger_rules=False,
+        )
+        def has_cosmic_gene_set_filepath(params: dict | None = None) -> bool:
+            return bool((params or {}).get("cosmic_gene_set_filepath"))
+
+        trigger_import_cosmic_gene_set = TriggerDagRunOperator(
+            task_id="trigger_import_cosmic_gene_set",
+            task_display_name="[DAG] Import COSMIC Gene Set",
+            trigger_dag_id=f"{NAMESPACE}-import-cosmic-gene-set",
+            conf={"cosmic_gene_set_filepath": "{{ params.cosmic_gene_set_filepath }}"},
+            reset_dag_run=True,
+            wait_for_completion=True,
+            poke_interval=30,
+        )
+
+        has_cosmic_gene_set_filepath() >> trigger_import_cosmic_gene_set
 
     start >> _tables_to_refresh
     chain(refresh_iceberg_tables, *data_tasks)
 
     data_tasks[-1] >> has_raw_rcv_filepaths() >> load_raw_clinvar_rcv_summary >> insert_clinvar_rcv_summary
     data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband
-    data_tasks[-1] >> has_cosmic_gene_set_filepath() >> trigger_import_cosmic_gene_set
+    data_tasks[-1] >> tg_cosmic_gene_set
