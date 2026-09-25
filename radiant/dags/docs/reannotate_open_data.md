@@ -151,16 +151,16 @@ else. That flag makes the import skip every source still read from the legacy Ra
 catalog:
 
 - The ones held back by **RADIANT_OPEN_DATA_USE_LEGACY_TABLES**.
-- The three with no upstream contract at all: **ensembl_gene**, **ensembl_exon_by_gene** and
-  **cosmic_gene_panel**.
+- The two with no upstream contract at all: **ensembl_gene** and **ensembl_exon_by_gene**.
 
 None of them move when OpenDataLake publishes, so re-importing them here is work with no new
 data behind it. A manual run of radiant-import-open-data leaves the flag false and imports
 everything, as before.
 
-Because nothing else is passed, that DAG's two file-driven broker loads — ClinVar RCV summary
-and cytoband — still skip: both are gated on filepath params P1 does not set. Neither source
-comes from OpenDataLake; both are file drops and stay a manual, operator-triggered run with
+Because nothing else is passed, that DAG's file-driven branches — the ClinVar RCV summary and
+cytoband broker loads, and the COSMIC gene set import it triggers — still skip: all are gated on
+filepath params P1 does not set. None of them
+comes from OpenDataLake; they are file drops and stay a manual, operator-triggered run with
 the paths filled in.
 
 > **On an unmigrated environment, P1 is a no-op.**

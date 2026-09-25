@@ -69,7 +69,6 @@ _OPEN_DATA_CONTRACT_TABLES = {
 _OPEN_DATA_LEGACY_TABLES = {
     "ensembl_gene": None,
     "ensembl_exon_by_gene": ["transcript_ids"],
-    "cosmic_gene_set": ["tumour_types_germline"],
 }
 
 _OPEN_DATA_NA_FILL = {

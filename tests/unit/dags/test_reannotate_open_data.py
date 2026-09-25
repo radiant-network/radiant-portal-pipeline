@@ -304,11 +304,12 @@ def test_p1_asks_the_import_to_skip_legacy_sources(dag):
 
 
 def test_p1_leaves_the_file_driven_loads_unset(dag):
-    """`import-open-data` gates its two broker loads on filepath params. P1 passes neither, so ClinVar RCV
-    summary and cytoband stay a manual, operator-triggered run."""
+    """`import-open-data` gates its broker loads and the COSMIC hand-off on filepath params. P1 passes none
+    of them, so ClinVar RCV summary, cytoband and COSMIC stay a manual, operator-triggered run."""
     conf = dag.get_task("reference_load").conf
     assert "raw_rcv_filepaths" not in conf
     assert "cytoband_filepath" not in conf
+    assert "cosmic_gene_set_filepath" not in conf
 
 
 # --- map index labels ---------------------------------------------------------------------------

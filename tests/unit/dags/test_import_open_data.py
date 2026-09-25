@@ -20,12 +20,12 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "ensembl_gene",
         "ensembl_exon_by_gene",
         "ddd_gene_panel",
-        "cosmic_gene_panel",
         "mondo_term",
         "hpo_term",
     ]
-    # start + the metadata-refresh pair + 3 file-driven load/insert tasks + 2 short-circuit gates
-    assert len(dag.tasks) == 8 + len(gene_group_ids) + len(variant_group_ids) * 2
+    # start + the metadata-refresh pair + 3 file-driven load/insert tasks + the COSMIC trigger
+    # + 3 short-circuit gates
+    assert len(dag.tasks) == 10 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_metadata_cache_is_refreshed_before_any_source_is_read(dag_bag):
@@ -43,13 +43,24 @@ def test_file_driven_loads_are_gated_on_their_params(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
     assert dag.get_task("has_raw_rcv_filepaths").downstream_task_ids == {"load_raw_clinvar_rcv_summary"}
     assert dag.get_task("has_cytoband_filepath").downstream_task_ids == {"load_cytoband"}
+    assert dag.get_task("cosmic_gene_set.has_cosmic_gene_set_filepath").downstream_task_ids == {
+        "cosmic_gene_set.trigger_import_cosmic_gene_set"
+    }
     # Separate branches: cytoband is not downstream of the RCV chain any more.
     assert "load_cytoband" not in dag.get_task("insert_clinvar_rcv_summary").downstream_task_ids
+    # Every file-driven branch hangs off the end of the source chain, independently of the others.
+    last_source = dag.get_task("insert_hpo_term")
+    for gate in ("has_raw_rcv_filepaths", "has_cytoband_filepath", "cosmic_gene_set.has_cosmic_gene_set_filepath"):
+        assert gate in last_source.downstream_task_ids
 
 
 @pytest.mark.parametrize(
     ("task_id", "param"),
-    [("has_raw_rcv_filepaths", "raw_rcv_filepaths"), ("has_cytoband_filepath", "cytoband_filepath")],
+    [
+        ("has_raw_rcv_filepaths", "raw_rcv_filepaths"),
+        ("has_cytoband_filepath", "cytoband_filepath"),
+        ("cosmic_gene_set.has_cosmic_gene_set_filepath", "cosmic_gene_set_filepath"),
+    ],
 )
 def test_file_driven_gates_read_params_from_the_run_context(dag_bag, task_id, param):
     gate = dag_bag.get_dag(f"{NAMESPACE}-import-open-data").get_task(task_id)
@@ -61,6 +72,23 @@ def test_file_driven_gates_read_params_from_the_run_context(dag_bag, task_id, pa
     assert decide({param: ["s3://bucket/file.tsv"]}) is True
     assert decide({}) is False
     assert decide({param: None}) is False
+
+
+def test_cosmic_is_handed_off_to_its_own_dag(dag_bag):
+    """COSMIC has no OpenDataLake contract and is no longer an Iceberg source: the census TSV is loaded
+    by radiant-import-cosmic-gene-set, which this DAG triggers with the filepath it was given."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    assert "insert_cosmic_gene_panel" not in {t.task_id for t in dag.tasks}
+    # Self-contained group: the gate and the trigger are the only COSMIC tasks left in this DAG.
+    assert {t.task_id for t in dag.task_group.get_child_by_label("cosmic_gene_set")} == {
+        "cosmic_gene_set.has_cosmic_gene_set_filepath",
+        "cosmic_gene_set.trigger_import_cosmic_gene_set",
+    }
+    trigger = dag.get_task("cosmic_gene_set.trigger_import_cosmic_gene_set")
+    assert trigger.trigger_dag_id == f"{NAMESPACE}-import-cosmic-gene-set"
+    assert trigger.conf == {"cosmic_gene_set_filepath": "{{ params.cosmic_gene_set_filepath }}"}
+    assert trigger.wait_for_completion is True
+    assert dag.params["cosmic_gene_set_filepath"] is None
 
 
 def test_dag_has_all_group_tasks(dag_bag):
@@ -106,8 +134,8 @@ def test_a_skipped_group_does_not_cascade_down_the_chain(dag_bag):
         # Held back -> reads the Radiant catalog -> skipped. Its neighbours still import.
         ("dbsnp", True, {"dbsnp": True, "clinvar": False, "gnomad": False, "ensembl_gene": True}),
         # `*` is the default, so on an unmigrated environment this skips everything.
-        ("*", True, {"dbsnp": True, "clinvar": True, "gnomad": True, "cosmic_gene_panel": True}),
-        # Fully migrated -- only the three with no upstream contract stay behind. These have no
+        ("*", True, {"dbsnp": True, "clinvar": True, "gnomad": True, "ensembl_exon_by_gene": True}),
+        # Fully migrated -- only the two with no upstream contract stay behind. These have no
         # `_is_contract` key at all, so they are also the StrictUndefined regression case.
         (
             "",
@@ -117,7 +145,6 @@ def test_a_skipped_group_does_not_cascade_down_the_chain(dag_bag):
                 "clinvar": False,
                 "ensembl_gene": True,
                 "ensembl_exon_by_gene": True,
-                "cosmic_gene_panel": True,
             },
         ),
     ],

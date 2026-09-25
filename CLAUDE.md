@@ -28,7 +28,7 @@ make format             # ruff format + ruff check --fix over radiant/ tests/ sc
 
 Integration tests select their fixtures via an env var (not a make flag):
 ```sh
-USE_DOCKER_FIXTURES=true  make test-integration   # spins up local Docker (testcontainers): MinIO + Iceberg REST catalog. CI default.
+USE_DOCKER_FIXTURES=true  make test-integration   # spins up local Docker (testcontainers): RustFS (S3) + Iceberg REST catalog. CI default.
 USE_DOCKER_FIXTURES=false make test-integration   # runs against the external radiant-portal-sandbox environment
 ```
 CI (`.github/workflows/test.yml`) runs on every PR with `USE_DOCKER_FIXTURES=true`: static → unit → integration → docker. Tagged `v*` pushes build/push the two images (`build_and_push*.yml`).
@@ -69,7 +69,7 @@ VCF file → cyvcf2 parse
 - `import_part.py` — processes one partition: VCF extraction → Iceberg → StarRocks.
 - `import_snv_vcf.py` — sub-DAG triggered by `import_part`, doing all SNV → Iceberg extraction. **Germline and somatic both live here on purpose**: each fans out one mapped writer per annotation task (pool `import_vcf`), and both fan into a *single* `merge_commits` → `commit_partitions`. `snv_variant` and `snv_consequence` are written by both flows, so one committer per part is what keeps their Iceberg commits from racing (design: `design/SJRA-1751-snv-vcf-ingestion-fan-out.md`).
 - `nextflow_postprocessing.py` / `nextflow_quality_control.py` — thin launchers: one Nextflow driver pod on k8s each. `nextflow_postprocessing_cases.py` / `nextflow_quality_control_cases.py` — the scheduled automations around them: discover pending cases in the clinical model (`sql/clinical/pending_*_select.sql`), build inputs on S3, trigger the launcher, register the outputs on the cases through the portal batch PATCH (`radiant/tasks/nextflow/`, QC-specific parts in `radiant/tasks/nextflow/qc/`). Designs: `design/SJRA-1698-*.md`, `design/SJRA-1879-*.md`.
-- `import_open_data.py`, `import_brim.py` — additional sources. `import_open_data` reads each open-data source either from the OpenDataLake catalog under its contract name or from the Radiant Iceberg catalog under its pre-contract name (`RADIANT_OPEN_DATA_USE_LEGACY_TABLES`), refreshes the StarRocks metadata cache first, and skips its two file-driven broker loads (ClinVar RCV summary, cytoband) unless the caller passes their paths.
+- `import_open_data.py`, `import_brim.py` — additional sources. `import_open_data` reads each open-data source either from the OpenDataLake catalog under its contract name or from the Radiant Iceberg catalog under its pre-contract name (`RADIANT_OPEN_DATA_USE_LEGACY_TABLES`), refreshes the StarRocks metadata cache first, and skips its two file-driven broker loads (ClinVar RCV summary, cytoband) unless the caller passes their paths. It also triggers `import_cosmic_gene_set.py` when given `cosmic_gene_set_filepath`: that DAG broker-loads the COSMIC Cancer Gene Census TSV into `cosmic_gene_set` (positional columns, transforms in the load's `SET` clause) and rebuilds `cosmic_gene_panel` from it — COSMIC has no OpenDataLake contract and is no longer an Iceberg source.
 - `init_iceberg_tables.py`, `init_starrocks_tables.py`, `init-qa-clinical-data.py` — one-time setup.
 - `diagnostics.py` — manual ops DAG (e.g. StarRocks DNS TTL checks).
 - Design rationale for major features lives in `design/SJRA-*.md`.
@@ -83,7 +83,7 @@ Partitioned by `experimental_strategy` so all experiments of the same patient/fa
 `radiant/dags/__init__.py` centralizes config: `NAMESPACE`, `ICEBERG_NAMESPACE` (env-overridable), `DEFAULT_ARGS`, `load_docs_md`, `get_namespace`, and the `IS_AWS` flag. **`IS_AWS` (env var) is a load-time toggle**: `import_part.py` does `if IS_AWS: from radiant.dags.operators import ecs as operators else k8s`. On AWS, `ECSEnv` pulls `AWS_ECS_*` from Airflow Variables. Three execution contexts:
 - **KubernetesPodOperator** — K8s deployments (`IS_AWS=false`)
 - **ECS task** — AWS ECS via custom operator (`IS_AWS=true`)
-- **Local Docker Compose** — dev stack (`docker-compose.yml`): Airflow + PostgreSQL + Redis + MinIO + Polaris
+- **Local Docker Compose** — dev stack (`docker-compose.yml`): Airflow + PostgreSQL + Redis + RustFS (S3, keeps the `radiant-minio` host name) + Polaris
 
 `Dockerfile` = Airflow webserver/scheduler image; `Dockerfile.radiant.operator` = task-execution image with all Radiant deps.
 
