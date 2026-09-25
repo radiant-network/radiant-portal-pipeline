@@ -58,8 +58,14 @@ any indel: no anchor base, a different start, and no left-alignment.
   (with `locus_hash`) for the load and for debugging. `mutation_url` is stored as published — the Scala
   appended `&genome=37`, a parameter the URL already carries. `tier` stays a string (`1`, `2`, `3`,
   `Other`); `Other` is a real category, not a missing value.
-- **Rows dropped, counted, never guessed:** no GRCh38 position (~0.25% of the export), a contig the
+- **Rows dropped, counted, never guessed:** no GRCh38 position (~0.9% of the export), a contig the
   FASTA lacks, a span that disagrees with the allele, a reference allele the FASTA contradicts.
+- **Strand-flipped liftover rows stay dropped (decided 2026-09-25).** 11,401 of the 11,513 reference
+  mismatches are exact reverse complements, clustered in 80 genes in segments GRCh38 inverted relative to
+  GRCh37 (PDE4DIP, NBPF10, 1q21, 10q11, Xq28, 22q11): COSMIC lifted the positions but kept the GRCh37-strand
+  alleles. Recovering them by reverse-complementing both alleles would assert a diagnosis COSMIC itself does
+  not make, a single-base complement match is a coincidence one time in three, and a liftover into a
+  segmental duplication may sit on the wrong paralog anyway. They are counted under ``rows_ref_mismatch``.
 
 ## Verified
 
