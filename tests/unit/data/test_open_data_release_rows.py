@@ -8,10 +8,7 @@ hold-back paths rather than the happy one.
 import pytest
 
 from radiant.tasks.data.open_data import build_open_data_release_rows
-from radiant.tasks.data.radiant_tables import (
-    ICEBERG_OPEN_DATA_CONTRACT_MAPPING,
-    ICEBERG_OPEN_DATA_LEGACY_MAPPING,
-)
+from radiant.tasks.data.radiant_tables import ICEBERG_OPEN_DATA_CONTRACT_MAPPING
 
 _CONF = {
     "RADIANT_ICEBERG_CATALOG": "radiant_iceberg_catalog",
@@ -29,7 +26,7 @@ def _by_source(conf=None) -> dict[str, dict[str, str]]:
 
 def test_one_row_per_open_data_source():
     rows = build_open_data_release_rows(_CONF)
-    expected = len(ICEBERG_OPEN_DATA_CONTRACT_MAPPING) + len(ICEBERG_OPEN_DATA_LEGACY_MAPPING)
+    expected = len(ICEBERG_OPEN_DATA_CONTRACT_MAPPING)
     assert len(rows) == expected
     assert len({row["source_name"] for row in rows}) == expected
     assert rows == sorted(rows, key=lambda row: row["source_name"])
@@ -86,12 +83,18 @@ def test_holding_everything_back_records_no_opendatalake_row():
     assert {row["iceberg_ref"] for row in rows} == {"LEGACY"}
 
 
-def test_legacy_only_sources_carry_no_ref():
-    """`ensembl_gene` and friends have no OpenDataLake contract at all."""
+def test_ensembl_is_recorded_from_the_catalog_it_was_read_from():
+    """The ensembl sources used to be the only ones with no contract, recorded as LEGACY unconditionally.
+    They now follow the gate: the contract table on the ref, or the pre-contract one when held back."""
     row = _by_source()["ensembl_gene"]
-    assert row["table_name"] == "ensembl_gene"
-    assert row["catalog_name"] == "radiant_iceberg_catalog"
-    assert row["iceberg_ref"] == "LEGACY"
+    assert row["table_name"] == "ensembl_gene_v1"
+    assert row["catalog_name"] == "odl_catalog"
+    assert row["iceberg_ref"] == "latest"
+
+    held_back = _by_source(_CONF | {"RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "ensembl_gene"})["ensembl_gene"]
+    assert held_back["table_name"] == "ensembl_gene"
+    assert held_back["catalog_name"] == "radiant_iceberg_catalog"
+    assert held_back["iceberg_ref"] == "LEGACY"
 
 
 @pytest.mark.parametrize(

@@ -3,7 +3,6 @@ import pytest
 from radiant.dags import DAGS_DIR
 from radiant.tasks.data.radiant_tables import (
     ICEBERG_OPEN_DATA_CONTRACT_MAPPING,
-    ICEBERG_OPEN_DATA_LEGACY_MAPPING,
     ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING,
     STARROCKS_RADIANT_BASE_MAPPING,
     STARROCKS_RADIANT_PER_TENANT_MAPPING,
@@ -82,13 +81,25 @@ def test_contract_tables_resolve_to_the_open_data_catalog_pinned_to_the_ref():
     assert mapping["iceberg_gnomad_joint"] == ("odl_catalog.opendatalake_qa.gnomad_joint_v1 VERSION AS OF 'latest'")
 
 
-def test_legacy_tables_stay_on_the_radiant_catalog_with_no_ref():
-    # No OpenDataLake contract exists for these, so they must not move or acquire a ref.
+def test_ensembl_is_gated_like_every_other_contract_source():
+    """The two ensembl tables were the last sources with no OpenDataLake contract and used to be pinned
+    to the Radiant catalog whatever the gate said. Now they follow `RADIANT_OPEN_DATA_USE_LEGACY_TABLES`
+    like the rest: opted in they read the contract table on the ref, held back they read the
+    pre-contract table with no ref."""
     mapping = get_iceberg_open_data_mapping(_OPEN_DATA)
-    assert mapping["iceberg_ensembl_gene"] == "radiant_iceberg_catalog.radiant.ensembl_gene"
-    assert mapping["iceberg_ensembl_exon_by_gene"] == "radiant_iceberg_catalog.radiant.ensembl_exon_by_gene"
-    for key in ICEBERG_OPEN_DATA_LEGACY_MAPPING:
-        assert "VERSION AS OF" not in mapping[key]
+    assert mapping["iceberg_ensembl_gene"] == "odl_catalog.opendatalake_qa.ensembl_gene_v1 VERSION AS OF 'latest'"
+    assert mapping["iceberg_ensembl_exon_by_gene"] == (
+        "odl_catalog.opendatalake_qa.ensembl_exon_by_gene_v1 VERSION AS OF 'latest'"
+    )
+    assert mapping["iceberg_ensembl_exon_by_gene_is_contract"] == "true"
+
+    held_back = get_iceberg_open_data_mapping(
+        {**_OPEN_DATA, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "ensembl_gene,ensembl_exon_by_gene"}
+    )
+    assert held_back["iceberg_ensembl_gene"] == f"{_LEGACY}.ensembl_gene"
+    assert held_back["iceberg_ensembl_exon_by_gene"] == f"{_LEGACY}.ensembl_exon_by_gene"
+    assert held_back["iceberg_ensembl_exon_by_gene_is_contract"] == ""
+    assert held_back["iceberg_clinvar_is_contract"] == "true"
 
 
 def test_an_empty_ref_is_refused():
@@ -119,13 +130,9 @@ def test_every_contract_table_carries_the_major_suffix():
         assert table.split("_")[-1].startswith("v"), f"[{key}] {table} has no v{{MAJOR}} suffix"
 
 
-def test_contract_and_legacy_families_do_not_overlap():
-    assert not set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING) & set(ICEBERG_OPEN_DATA_LEGACY_MAPPING)
-
-
 _SUBSET = {
     **_OPEN_DATA,
-    # Everything except the five small sources the sandbox can hold is held back.
+    # Everything except the seven small sources the sandbox can hold is held back.
     "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": (
         "1000_genomes,dbnsfp,gnomad_constraint,gnomad_joint,gnomad_sv,mondo,omim,orphanet,spliceai,topmed_bravo"
     ),
@@ -158,6 +165,8 @@ def test_named_sources_are_held_back_and_the_rest_still_come_from_opendatalake()
         "iceberg_clinvar",
         "iceberg_dbsnp",
         "iceberg_ddd_gene_set",
+        "iceberg_ensembl_exon_by_gene",
+        "iceberg_ensembl_gene",
         "iceberg_hpo_gene_set",
         "iceberg_hpo_term",
     }

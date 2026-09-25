@@ -59,39 +59,35 @@ _OPEN_DATA_CONTRACT_TABLES = {
     "topmed_bravo_v1": None,
     "omim_v1": ["symbols", "phenotype"],
     "ddd_v1": None,
+    # `alias` is an array upstream. One row carries a value so pyarrow infers list<string>, not list<null>.
+    "ensembl_gene_v1": ["alias"],
+    "ensembl_exon_by_gene_v1": ["transcript_ids"],
     "hpo_genes_v1": None,
     "hpo_terms_v1": None,
     "mondo_v1": None,
     "orphanet_v1": ["type_of_inheritance"],
 }
 
-# No OpenDataLake contract exists for these, so they keep their legacy names and carry no ref.
-_OPEN_DATA_LEGACY_TABLES = {
-    "ensembl_gene": None,
-    "ensembl_exon_by_gene": ["transcript_ids"],
-}
-
 _OPEN_DATA_NA_FILL = {
     "clinvar_v1": [""],
-    "ensembl_gene": "",
-    "ensembl_exon_by_gene": "",
+    "ensembl_gene_v1": "",
+    "ensembl_exon_by_gene_v1": "",
 }
 
 
 @pytest.fixture(scope="session")
 def open_data_iceberg_tables(s3_fs, iceberg_client, iceberg_namespace, resources_dir, random_test_id):
     # Json fields are required for certain .tsv files to properly handle types
-    for tables, tag in ((_OPEN_DATA_CONTRACT_TABLES, OPEN_DATA_REF), (_OPEN_DATA_LEGACY_TABLES, None)):
-        for table, json_fields in tables.items():
-            create_and_append_table(
-                iceberg_client,
-                iceberg_namespace,
-                f"{table}",
-                resources_dir / "open_data" / f"{table}.tsv",
-                json_fields=json_fields,
-                na_fill=_OPEN_DATA_NA_FILL.get(table),
-                tag=tag,
-            )
+    for table, json_fields in _OPEN_DATA_CONTRACT_TABLES.items():
+        create_and_append_table(
+            iceberg_client,
+            iceberg_namespace,
+            f"{table}",
+            resources_dir / "open_data" / f"{table}.tsv",
+            json_fields=json_fields,
+            na_fill=_OPEN_DATA_NA_FILL.get(table),
+            tag=OPEN_DATA_REF,
+        )
 
 
 @pytest.fixture(scope="session")

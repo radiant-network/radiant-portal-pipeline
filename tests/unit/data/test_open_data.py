@@ -12,7 +12,6 @@ from radiant.dags import DAGS_DIR
 from radiant.tasks.data.open_data import list_iceberg_source_tables
 from radiant.tasks.data.radiant_tables import (
     ICEBERG_OPEN_DATA_CONTRACT_MAPPING,
-    ICEBERG_OPEN_DATA_LEGACY_MAPPING,
     IS_CONTRACT_SUFFIX,
 )
 
@@ -30,7 +29,7 @@ _LEGACY = "radiant_iceberg_catalog.radiant"
 
 def test_every_source_is_refreshed_exactly_once():
     tables = list_iceberg_source_tables(_CONF)
-    assert len(tables) == len(ICEBERG_OPEN_DATA_CONTRACT_MAPPING) + len(ICEBERG_OPEN_DATA_LEGACY_MAPPING)
+    assert len(tables) == len(ICEBERG_OPEN_DATA_CONTRACT_MAPPING)
     assert len(set(tables)) == len(tables)
     assert tables == sorted(tables)
 
@@ -38,8 +37,9 @@ def test_every_source_is_refreshed_exactly_once():
 def test_contract_tables_are_refreshed_in_the_opendatalake_catalog():
     tables = list_iceberg_source_tables(_CONF)
     assert f"{_ODL}.clinvar_v1" in tables
-    # The three with no OpenDataLake contract never move.
-    assert f"{_LEGACY}.ensembl_gene" in tables
+    # ensembl was the last source without a contract; it now moves with the rest.
+    assert f"{_ODL}.ensembl_gene_v1" in tables
+    assert not any(table.startswith(_LEGACY) for table in tables)
 
 
 def test_names_carry_no_time_travel_clause():
@@ -50,7 +50,11 @@ def test_names_carry_no_time_travel_clause():
 
 @pytest.mark.parametrize(
     ("held_back", "expected"),
-    [("clinvar", f"{_LEGACY}.clinvar"), ("gnomad_joint", f"{_LEGACY}.gnomad_genomes_v3")],
+    [
+        ("clinvar", f"{_LEGACY}.clinvar"),
+        ("gnomad_joint", f"{_LEGACY}.gnomad_genomes_v3"),
+        ("ensembl_gene", f"{_LEGACY}.ensembl_gene"),
+    ],
 )
 def test_a_held_back_source_is_refreshed_where_it_is_actually_read(held_back, expected):
     tables = list_iceberg_source_tables({**_CONF, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": held_back})
@@ -68,7 +72,7 @@ def _keys_refreshed_by_import_part() -> set[str]:
 
 
 def test_import_part_refreshes_every_open_data_source_its_sql_reads():
-    open_data_keys = set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING) | set(ICEBERG_OPEN_DATA_LEGACY_MAPPING)
+    open_data_keys = set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING)
     referenced = set()
     for path in (DAGS_DIR / "sql" / "radiant").rglob("*.sql"):
         for key in re.findall(r"mapping\.(iceberg_\w+)", path.read_text()):

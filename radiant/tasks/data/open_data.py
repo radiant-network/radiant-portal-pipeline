@@ -19,7 +19,6 @@ def _iceberg_schemas(conf: dict | None) -> tuple[str, str]:
 def resolve_iceberg_source_tables(conf: dict | None = None) -> dict[str, str]:
     from radiant.tasks.data.radiant_tables import (
         ICEBERG_OPEN_DATA_CONTRACT_MAPPING,
-        ICEBERG_OPEN_DATA_LEGACY_MAPPING,
         ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING,
         get_open_data_contract_keys,
     )
@@ -27,7 +26,7 @@ def resolve_iceberg_source_tables(conf: dict | None = None) -> dict[str, str]:
     odl_schema, legacy_schema = _iceberg_schemas(conf)
     contract_keys = get_open_data_contract_keys(conf)
 
-    tables = {
+    return {
         key: (
             f"{odl_schema}.{table}"
             if key in contract_keys
@@ -35,8 +34,6 @@ def resolve_iceberg_source_tables(conf: dict | None = None) -> dict[str, str]:
         )
         for key, table in ICEBERG_OPEN_DATA_CONTRACT_MAPPING.items()
     }
-    tables.update({key: f"{legacy_schema}.{table}" for key, table in ICEBERG_OPEN_DATA_LEGACY_MAPPING.items()})
-    return tables
 
 
 def list_iceberg_source_tables(conf: dict | None = None, keys: Iterable[str] | None = None) -> list[str]:

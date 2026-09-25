@@ -148,14 +148,13 @@ None. Tenants and parts are discovered from **staging_sequencing_experiment** at
 
 P1 triggers radiant-import-open-data with **skip_legacy_tables** set to true, and nothing
 else. That flag makes the import skip every source still read from the legacy Radiant Iceberg
-catalog:
+catalog, i.e. the ones held back by **RADIANT_OPEN_DATA_USE_LEGACY_TABLES**. Every source now
+has an OpenDataLake contract (the two ensembl tables were the last to get one), so on a fully
+migrated environment nothing is skipped.
 
-- The ones held back by **RADIANT_OPEN_DATA_USE_LEGACY_TABLES**.
-- The two with no upstream contract at all: **ensembl_gene** and **ensembl_exon_by_gene**.
-
-None of them move when OpenDataLake publishes, so re-importing them here is work with no new
-data behind it. A manual run of radiant-import-open-data leaves the flag false and imports
-everything, as before.
+Held-back sources do not move when OpenDataLake publishes, so re-importing them here is work
+with no new data behind it. A manual run of radiant-import-open-data leaves the flag false and
+imports everything, as before.
 
 Because nothing else is passed, that DAG's file-driven branches — the ClinVar RCV summary and
 cytoband broker loads, and the COSMIC gene set import it triggers — still skip: all are gated on

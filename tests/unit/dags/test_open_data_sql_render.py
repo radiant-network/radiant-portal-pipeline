@@ -13,7 +13,6 @@ import pytest
 from radiant.dags import DAGS_DIR
 from radiant.tasks.data.radiant_tables import (
     ICEBERG_OPEN_DATA_CONTRACT_MAPPING,
-    ICEBERG_OPEN_DATA_LEGACY_MAPPING,
     RadiantConfigKeys,
     get_radiant_mapping,
 )
@@ -58,7 +57,7 @@ def _open_data_sql_files():
 def test_every_mapping_key_used_in_sql_exists():
     """A typo in `{{ mapping.iceberg_x }}` renders as the empty string rather than failing, so the
     resulting SQL is silently wrong. Catch unknown keys here instead."""
-    known = set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING) | set(ICEBERG_OPEN_DATA_LEGACY_MAPPING)
+    known = set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING)
     mapping = get_radiant_mapping(_CONF)
     referenced = set()
     for path in list(_open_data_sql_files()) + sorted(_RADIANT_SQL.glob("*.sql")):
@@ -66,7 +65,7 @@ def test_every_mapping_key_used_in_sql_exists():
 
     unknown = {key for key in referenced if key not in mapping}
     assert not unknown, f"SQL references mapping keys that do not exist: {sorted(unknown)}"
-    # And every open-data key the SQL uses is one of the two open-data families, not a Radiant table.
+    # And every open-data key the SQL uses is an open-data source, not a Radiant table.
     assert referenced & known
 
 
@@ -144,6 +143,28 @@ def test_hpo_gene_panel_reads_the_upstream_column_names():
         assert column in sql
     for column in ("h.symbol", "h.hpo_term_name", "h.hpo_term_id"):
         assert column not in sql
+
+
+_EXON_LEGACY_ONLY_COLUMNS = ("phase", "alias", "description", "external_name", "logic_name")
+
+
+def test_ensembl_exon_by_gene_null_fills_the_columns_the_contract_dropped():
+    """`ensembl_exon_by_gene_v1` carries no phase, alias, description, external_name or logic_name. The
+    StarRocks target keeps those columns, so the contract branch has to fill them with typed NULLs in
+    the target's column order rather than read names that resolve to nothing upstream."""
+    path = _OPEN_DATA_SQL / "ensembl_exon_by_gene_insert.sql"
+    sql = _statement(_render(path))
+    assert "ensembl_exon_by_gene_v1" in sql
+    for column in _EXON_LEGACY_ONLY_COLUMNS:
+        assert re.search(rf"CAST\(NULL AS .+?\) AS {column}\b", sql), f"{column} is not NULL-filled"
+        assert not re.search(rf"^\s*{column},\s*$", sql, flags=re.MULTILINE), f"{column} is still read upstream"
+
+    held_back = get_radiant_mapping({**_CONF, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "ensembl_exon_by_gene"})
+    sql = _statement(jinja2.Template(path.read_text()).render(mapping=held_back))
+    assert "radiant.ensembl_exon_by_gene" in sql
+    assert "CAST(NULL" not in sql
+    for column in _EXON_LEGACY_ONLY_COLUMNS:
+        assert re.search(rf"^\s*{column},\s*$", sql, flags=re.MULTILINE), f"{column} is not read from the legacy table"
 
 
 # Discovered from the tree rather than listed by name, so a statement that moves to another branch
