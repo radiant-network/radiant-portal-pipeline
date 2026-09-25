@@ -2,6 +2,11 @@ FROM --platform=linux/amd64 python:3.12
 
 USER root
 
+# bcftools left-aligns the COSMIC Mutation Census variants (radiant/tasks/open_data/cosmic_mutation_set.py)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends bcftools \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt /opt/radiant/requirements.txt
 RUN pip install -r /opt/radiant/requirements.txt
 

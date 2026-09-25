@@ -14,6 +14,16 @@ class S3DownloadError(Exception):
     """Raised when an S3 download fails; wraps the underlying boto3/botocore/OS error."""
 
 
+class S3UploadError(Exception):
+    """Raised when an S3 upload fails; wraps the underlying boto3/botocore/OS error."""
+
+
+def _split_s3_uri(s3_uri: str) -> tuple[str, str]:
+    """Split ``s3://bucket/key`` into ``(bucket, key)``."""
+    parsed = parse.urlparse(s3_uri)
+    return parsed.netloc, parsed.path.lstrip("/")
+
+
 def _flush_pipes(stdout, stderr):
     """
     Flushes the logs to the specified file.
@@ -60,14 +70,7 @@ def capture_libc_stderr_and_check_errors(error_patterns: list[str]):
 
 def download_s3_file(s3_path, dest_dir, randomize_filename=False):
     s3_client = boto3.client("s3")
-
-    def extract_bucket_key(s3_path):
-        parsed = parse.urlparse(s3_path)
-        bucket = parsed.netloc
-        key = parsed.path.lstrip("/")
-        return bucket, key
-
-    bucket_name, object_key = extract_bucket_key(s3_path)
+    bucket_name, object_key = _split_s3_uri(s3_path)
     if randomize_filename:
         import uuid
 
@@ -82,6 +85,16 @@ def download_s3_file(s3_path, dest_dir, randomize_filename=False):
         # "unable to locate credentials" are indistinguishable in a task log.
         raise S3DownloadError(f"Failed to download S3 file {s3_path}: {e}") from e
     return local_path
+
+
+def upload_s3_file(local_path: str, s3_uri: str) -> str:
+    """Upload a local file to ``s3_uri`` and return the URI; the counterpart of `download_s3_file`."""
+    bucket_name, object_key = _split_s3_uri(s3_uri)
+    try:
+        boto3.client("s3").upload_file(local_path, bucket_name, object_key)
+    except (BotoCoreError, ClientError, Boto3Error, OSError) as e:
+        raise S3UploadError(f"Failed to upload {local_path} to {s3_uri}: {e}") from e
+    return s3_uri
 
 
 def download_json_from_s3(s3_path: str, local_path: str, logger) -> list | dict:
