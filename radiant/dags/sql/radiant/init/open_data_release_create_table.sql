@@ -6,7 +6,8 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_open_data_release }} (
     catalog_name     VARCHAR(100)    NOT NULL COMMENT "Catalog it was read from: OpenDataLake, or the Radiant one when held back",
     database_name    VARCHAR(100)    NOT NULL COMMENT "Database it was read from",
     iceberg_ref      VARCHAR(200)    NULL     COMMENT "RADIANT_OPEN_DATA_REF, or `LEGACY` when the source was held back and read without time travel",
-    dataset_version  VARCHAR(200)    NULL     COMMENT "Concrete release when the ref names one, `LEGACY` when held back, NULL on a moving tag"
+    dataset_version  VARCHAR(200)    NULL     COMMENT "Concrete release when the ref names one, `LEGACY` when held back, NULL on a moving tag",
+    snapshot_id      BIGINT          NULL     COMMENT "Iceberg snapshot `iceberg_ref` resolved to when this release was annotated; NULL when held back or unresolvable. The change-detection key -- `dataset_version` is NULL on a moving tag and cannot serve"
 ) ENGINE=OLAP
 PRIMARY KEY(source_name)
 DISTRIBUTED BY HASH(source_name) BUCKETS 1;

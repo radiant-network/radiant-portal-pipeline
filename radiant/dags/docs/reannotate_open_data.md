@@ -18,6 +18,7 @@ derived from them. Design: design/SJRA-1811-opendatalake-integration.md, section
 | 2 | | **acquire_import_lock** | Takes the import mutex for the whole run |
 | 3 | P1 | **reference_load** | Triggers radiant-import-open-data, waits for it |
 | | | *CHECKPOINT* | All sources loaded |
+| | | **compute_reannotation_gates** | Which branches have a source that moved. See below |
 | 4 | P2 | **reannotate_accumulators** | snv\_\_staging_variant, then snv\_\_consequence. Upsert in place |
 | | | *CHECKPOINT* | Accumulators re-annotated |
 | 5 | P3a | **snv_variant** | snv\_\_variant into its partitioned copy |
@@ -53,6 +54,95 @@ Only some of that order is a data dependency:
 
 The rest is deliberate serialisation and can be reordered, as long as nothing ends up running
 two statements at once.
+
+---
+
+## Only what moved gets re-annotated
+
+**compute_reannotation_gates** runs right after P1 and decides, per branch, whether there is
+anything new to annotate against. Each statement in a gated-out branch skips itself through
+**skip_if**; the checkpoints are NONE_FAILED, so the rest of the chain carries on.
+
+| Branch | Watches | Statements it gates |
+|:--|:--|:--|
+| **snv_variant** | 1000_genomes, clinvar, dbsnp, gnomad_joint, omim_gene_set, topmed_bravo | The staging-variant re-annotation and both snv\_\_variant inserts |
+| **snv_consequence** | dbnsfp, gnomad_constraint, spliceai | The consequence re-annotation and both consequence-filter inserts |
+| **cnv_occurrence** | ensembl_gene, gnomad_sv | Germline then somatic CNV occurrences |
+
+The watch lists live in **REANNOTATION_SOURCES** in radiant.tasks.data.open_data and are copied
+by hand from the FROM and JOIN lists of the statements. **Change a statement's joins and you have
+to change that map** — nothing checks it for you, and a source dropped from it silently stops
+gating.
+
+A watched source only moves a gate if it has an OpenDataLake contract. A source **held back** with
+RADIANT_OPEN_DATA_USE_LEGACY_TABLES is read straight off the legacy Radiant catalog, carries no ref
+and no snapshot, and cannot open a gate while it is held — so the gate gets narrower as an
+environment holds more back, never wrong. Cytoband cannot be watched at all: it is a broker load
+with no Iceberg source anywhere. clinvar_rcv has a contract but no re-annotation statement reads
+it, so it is deliberately absent.
+
+### The signal is the Iceberg snapshot, not dataset_version
+
+**dataset_version is NULL on the default latest tag**, so it can never answer "did this change?".
+What can is the snapshot the ref resolves to. StarRocks exposes it from 3.4.1 as an Iceberg
+metadata table — **SELECT snapshot_id FROM the_relation$refs WHERE name = the_ref** — so this
+needs no new client, just the starrocks_conn that was already there. P4 records that snapshot per
+source, and the next run compares against it.
+
+The gate runs **after** P1 on purpose: P1 is what refreshes the external metadata cache, and a
+$refs read before it can still report last week's snapshot.
+
+### It fails open
+
+Anything the gate cannot establish counts as changed, and the branch runs:
+
+- A source with no recorded row — the first run ever, or one added to the mapping since.
+- A contract source whose $refs read raises or returns nothing. A StarRocks older than 3.4.1 has
+  no $refs at all; the gate logs the failure and the branch rebuilds.
+- Every source, when open_data_release itself cannot be read — an environment that has not taken
+  the snapshot_id migration below. The gate then does nothing, which is what this DAG did before
+  it existed. P4 still fails on the missing column, so the migration cannot be skipped quietly.
+- A source that just migrated to OpenDataLake, or was just rolled back to legacy. Both replace
+  values as surely as a publish does.
+
+A **held back** source is the one case treated as never changing. It is read without time travel
+and no refresh touches it, so reporting it as moved every week would defeat the gate entirely on
+an unmigrated environment.
+
+### P1 gates on the same ledger
+
+**import-open-data** carries the same gate on its own inserts, against the same
+open_data_release rows, so a source that has not published is not re-read into StarRocks either.
+Its override is **force_import** — set it after editing an insert statement, and after truncating
+or recreating a StarRocks open-data table, neither of which a snapshot comparison can see.
+
+> **Known gap.** P1's gate reads $refs when the import starts; P4 re-reads it when the import
+> finishes, hours later. A publish inside that window is recorded as annotated when only the older
+> data was imported, and the next run skips it — the one case where these gates fail closed rather
+> than open. Closing it needs a second ledger of what the import loaded, separate from what P4
+> annotated. Until then, **force_import plus force_reannotation** is the recovery.
+
+### A variant rebuild always drags the CNV rebuild with it
+
+**nb_snv** counts rows in snv\_\_variant, which the variant chain rebuilds with INSERT OVERWRITE.
+So the cnv_occurrence gate opens whenever the snv_variant gate does, even when no CNV source
+moved — the same dependency the P3a-before-P3b ordering exists for.
+
+### When to override it
+
+> **The gate watches data, not code.** It cannot see that you edited a statement, added a column,
+> or fixed a join. After any change to the re-annotation SQL, run with
+> **force_reannotation** set to true, or the run will skip the very branch you changed.
+
+### Required setup on an existing deployment: the snapshot_id migration
+
+> **A database created before SJRA-1950 has no open_data_release.snapshot_id and P4 fails on it.**
+> Run sql/radiant/migrations/SJRA-1950_open_data_release_add_snapshot_id.sql once, against the base
+> database only — open_data_release is not per-tenant.
+
+New deployments get the column from init/open_data_release_create_table.sql and must not run it.
+The first run after the migration re-annotates everything: the existing rows carry no snapshot, and
+there is no way to recover which one they used. That run is what establishes the baseline.
 
 ---
 
@@ -112,6 +202,7 @@ statements themselves resolve it (radiant.tasks.data.open_data.build_open_data_r
 | **catalog_name**, **database_name** | The schema it was read from |
 | **iceberg_ref** | The pinned ref, or the literal LEGACY |
 | **dataset_version** | Set only when a concrete release is pinned. See below |
+| **snapshot_id** | The Iceberg snapshot the ref resolved to. What the next run's gate compares against |
 | **recorded_at** | NOW(), evaluated by StarRocks when P4 executes |
 
 A few of those need explaining:
@@ -141,8 +232,12 @@ A few of those need explaining:
 
 ## Parameters
 
-None. Tenants and parts are discovered from **staging_sequencing_experiment** at run time
-(radiant.tasks.data.tenants), so the fan-out follows the data rather than a hardcoded list.
+One. **force_reannotation**, default false — rebuild every branch whether or not its sources
+moved. Set it after editing a re-annotation statement; see the gate section above.
+
+Tenants and parts take no parameter: they are discovered from **staging_sequencing_experiment**
+at run time (radiant.tasks.data.tenants), so the fan-out follows the data rather than a
+hardcoded list.
 
 ### What P1 passes on
 

@@ -414,3 +414,130 @@ def test_map_index_labels_name_the_tenant_and_the_part(dag):
     assert _render(dag, filter_part, {"parameters": {"part": 7}}) == "part=7"
 
     assert _render(dag, tasks["snv_variant.insert_snv_variant"], {"tenant_code": "CHOP"}) == "CHOP"
+
+
+# --- The gates (SJRA-1950) -----------------------------------------------------------------------
+#
+# A full re-annotation is hours of whole-table scans. `compute_reannotation_gates` decides per branch
+# whether any source it reads actually moved, and every statement in the branch carries the same
+# `skip_if`. The rules that matter are structural, and none of them are visible from the SQL.
+
+# task_id (group-qualified) -> the branch it must gate on. The three rebuild groups are named after
+# their branch; the two accumulators sit in one group and gate on different branches, which is the
+# case a group-name shortcut would get wrong.
+_GATED_STATEMENTS = {
+    "reannotate_accumulators.reannotate_snv_staging_variant": "snv_variant",
+    "reannotate_accumulators.reannotate_snv_consequence": "snv_consequence",
+    "snv_variant.insert_snv_variant": "snv_variant",
+    "snv_variant.insert_snv_variant_part": "snv_variant",
+    "snv_consequence.insert_snv_consequence_filter": "snv_consequence",
+    "snv_consequence.insert_snv_consequence_filter_part": "snv_consequence",
+    "cnv_occurrence.reannotate_germline_cnv_occurrence": "cnv_occurrence",
+    "cnv_occurrence.reannotate_somatic_cnv_occurrence": "cnv_occurrence",
+}
+
+_GATE_TASK_ID = "compute_reannotation_gates"
+
+
+def _skip_if(task):
+    """`skip_if` off a plain or a mapped operator. A mapped one keeps it in `partial_kwargs`."""
+    if hasattr(task, "partial_kwargs"):
+        return task.partial_kwargs.get("skip_if")
+    return getattr(task, "skip_if", None)
+
+
+def _render_gate(dag, template: str, gates, force: bool):
+    """Render one `skip_if` the way Airflow will.
+
+    Native types and `StrictUndefined` because that is what this DAG runs under
+    (`render_template_as_native_obj=True`, `DAG(template_undefined=jinja2.StrictUndefined)`). A
+    lenient, string-rendering environment returns "False" -- which is truthy, and would skip every
+    gated statement.
+    """
+    import types
+
+    import jinja2
+    from jinja2.nativetypes import NativeEnvironment
+
+    env = NativeEnvironment(undefined=jinja2.StrictUndefined)
+    ti = types.SimpleNamespace(xcom_pull=lambda task_ids: gates)
+    return env.from_string(template).render(ti=ti, params={"force_reannotation": force})
+
+
+def test_the_gate_task_covers_exactly_the_branches_the_source_map_declares(dag):
+    """Two hand-written literals in two files. A branch in one and not the other either gates on
+    nothing or is never gated."""
+    from radiant.tasks.data.open_data import REANNOTATION_SOURCES
+
+    assert set(_GATED_STATEMENTS.values()) == set(REANNOTATION_SOURCES)
+    assert dag.get_task(_GATE_TASK_ID) is not None
+
+
+def test_every_reannotation_statement_is_gated(dag):
+    gated = {task.task_id for task in _starrocks_tasks(dag) if _skip_if(task)}
+    assert gated == set(_GATED_STATEMENTS)
+
+
+def test_each_statement_gates_on_the_branch_that_owns_it(dag):
+    """The statements a branch gates are copied by hand. One pointed at the wrong branch rebuilds on
+    someone else's publish, or -- worse -- sits out its own."""
+    for task_id, branch in _GATED_STATEMENTS.items():
+        from radiant.dags.reannotate_open_data import gated
+
+        assert _skip_if(dag.get_task(task_id)) == gated(branch), task_id
+
+
+def test_the_gate_is_decided_after_the_reference_load_and_before_the_first_statement(dag):
+    """`$refs` is read through the external metadata cache, and P1 is what refreshes it. Read before
+    P1 and the gate answers with last week's snapshot -- so the task is not merely upstream of the
+    statements, it is downstream of the load."""
+    gate = dag.get_task(_GATE_TASK_ID)
+    assert _reaches(dag, dag.get_task("sources_loaded"), gate)
+    for task_id in _GATED_STATEMENTS:
+        assert _reaches(dag, gate, dag.get_task(task_id)), task_id
+
+
+def test_the_release_row_is_recorded_whether_or_not_anything_was_rebuilt(dag):
+    """P4 writes the snapshot the *next* run compares against. Gating it would freeze the ledger at
+    the last full rebuild, and every later run would re-annotate against a baseline that never moves."""
+    assert _skip_if(dag.get_task("record_open_data_release")) is None
+
+
+def test_a_statement_gated_apart_from_its_predecessor_does_not_skip_with_it(dag):
+    """The edges inside a group exist to keep two statements off the cluster at once, not to express a
+    data dependency. Under the default ALL_SUCCESS a gated-out predecessor drags its successor into
+    SKIPPED even when that successor's own branch has work."""
+    from airflow.utils.trigger_rule import TriggerRule
+
+    for task_id, branch in _GATED_STATEMENTS.items():
+        task = dag.get_task(task_id)
+        upstream_branches = {_GATED_STATEMENTS[up] for up in task.upstream_task_ids if up in _GATED_STATEMENTS}
+        if upstream_branches - {branch}:
+            assert task.trigger_rule == TriggerRule.NONE_FAILED, task_id
+
+
+def test_force_reannotation_defaults_to_the_gated_run(dag):
+    assert dag.params["force_reannotation"] is False
+
+
+@pytest.mark.parametrize(
+    ("gates", "force", "skipped"),
+    [
+        # The ordinary weekly run: one source moved, one branch rebuilds.
+        ({"snv_variant": True, "snv_consequence": False, "cnv_occurrence": True}, False, False),
+        ({"snv_variant": False, "snv_consequence": True, "cnv_occurrence": False}, False, True),
+        # The override. It has to win over a closed gate or it is not an override -- this is the only
+        # way to rebuild after editing a statement, since the gate watches data and not code.
+        ({"snv_variant": False, "snv_consequence": False, "cnv_occurrence": False}, True, False),
+        # Fail open, twice over: no XCom at all (the gate task was cleared, or skipped), and an XCom
+        # that came back without this branch in it.
+        (None, False, False),
+        ({}, False, False),
+        ({"snv_consequence": False}, False, False),
+    ],
+)
+def test_the_gate_renders_to_a_real_bool(dag, gates, force, skipped):
+    """`skip_if` is rendered, not computed. The operator treats any non-empty string as truthy, so a
+    template that renders "False" instead of False skips the statement it was meant to run."""
+    rendered = _render_gate(dag, _skip_if(dag.get_task("snv_variant.insert_snv_variant")), gates, force)
+    assert rendered is skipped, f"rendered {rendered!r}"

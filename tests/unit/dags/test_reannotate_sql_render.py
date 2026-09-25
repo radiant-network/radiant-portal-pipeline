@@ -143,6 +143,7 @@ def test_open_data_release_insert_upserts_every_column_by_name():
         "database_name",
         "iceberg_ref",
         "dataset_version",
+        "snapshot_id",
     ]
 
 
