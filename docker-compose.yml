@@ -503,13 +503,16 @@ services:
           -H "Authorization: Bearer $$token" -H "Polaris-Realm: $$REALM_NAME" -H "Accept: application/json" -H "Content-Type: application/json" \
           -d "$$grant_payload"
 
+  # S3 store. RustFS replaced MinIO when MinIO pulled its images from the public registries
+  # (September 2026). The service keeps its `radiant-minio` name: every other service points at
+  # http://radiant-minio:9000.
   radiant-minio:
-    image: minio/minio:RELEASE.2024-10-29T16-01-48Z
+    image: rustfs/rustfs:1.0.0
     container_name: radiant-minio
     environment:
-      - MINIO_ROOT_USER=admin
-      - MINIO_ROOT_PASSWORD=password
-      - MINIO_DOMAIN=radiant-minio
+      - RUSTFS_ACCESS_KEY=admin
+      - RUSTFS_SECRET_KEY=password
+      - RUSTFS_CONSOLE_ENABLE=true
     networks:
       airflow_network:
         aliases:
@@ -517,13 +520,19 @@ services:
     ports:
       - 9001:9001
       - 9000:9000
-    command: ["server", "/data", "--console-address", ":9001"]
     volumes:
       - minio-data-volume:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  # Creates the buckets and opens them to anonymous access, as `mc policy set public` used to.
   mc:
     depends_on:
-      - radiant-minio
-    image: minio/mc:RELEASE.2024-10-29T15-34-59Z
+      radiant-minio:
+        condition: service_healthy
+    image: amazon/aws-cli:2.37.4
     container_name: mc
     networks:
       airflow_network:
@@ -531,15 +540,13 @@ services:
       - AWS_ACCESS_KEY_ID=admin
       - AWS_SECRET_ACCESS_KEY=password
       - AWS_REGION=us-east-1
+      - AWS_ENDPOINT_URL=http://radiant-minio:9000
     entrypoint: >
       /bin/sh -c "
-      until (/usr/bin/mc config host add minio http://radiant-minio:9000 admin password) do echo '...waiting...' && sleep 1; done;
-      /usr/bin/mc mb minio/starrocks;
-      /usr/bin/mc policy set public minio/starrocks;
-      /usr/bin/mc mb minio/warehouse;
-      /usr/bin/mc policy set public minio/warehouse;
-      /usr/bin/mc mb minio/vcf;
-      /usr/bin/mc policy set public minio/vcf;
+      for bucket in starrocks warehouse vcf; do
+        aws s3api create-bucket --bucket $$bucket || true;
+        aws s3api put-bucket-policy --bucket $$bucket --policy \"{\\\"Version\\\":\\\"2012-10-17\\\",\\\"Statement\\\":[{\\\"Effect\\\":\\\"Allow\\\",\\\"Principal\\\":{\\\"AWS\\\":[\\\"*\\\"]},\\\"Action\\\":[\\\"s3:GetBucketLocation\\\",\\\"s3:ListBucket\\\",\\\"s3:GetObject\\\",\\\"s3:PutObject\\\",\\\"s3:DeleteObject\\\"],\\\"Resource\\\":[\\\"arn:aws:s3:::$$bucket\\\",\\\"arn:aws:s3:::$$bucket/*\\\"]}]}\";
+      done;
       tail -f /dev/null
       "
 

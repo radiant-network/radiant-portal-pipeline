@@ -28,7 +28,7 @@ make format             # ruff format + ruff check --fix over radiant/ tests/ sc
 
 Integration tests select their fixtures via an env var (not a make flag):
 ```sh
-USE_DOCKER_FIXTURES=true  make test-integration   # spins up local Docker (testcontainers): MinIO + Iceberg REST catalog. CI default.
+USE_DOCKER_FIXTURES=true  make test-integration   # spins up local Docker (testcontainers): RustFS (S3) + Iceberg REST catalog. CI default.
 USE_DOCKER_FIXTURES=false make test-integration   # runs against the external radiant-portal-sandbox environment
 ```
 CI (`.github/workflows/test.yml`) runs on every PR with `USE_DOCKER_FIXTURES=true`: static → unit → integration → docker. Tagged `v*` pushes build/push the two images (`build_and_push*.yml`).
@@ -83,7 +83,7 @@ Partitioned by `experimental_strategy` so all experiments of the same patient/fa
 `radiant/dags/__init__.py` centralizes config: `NAMESPACE`, `ICEBERG_NAMESPACE` (env-overridable), `DEFAULT_ARGS`, `load_docs_md`, `get_namespace`, and the `IS_AWS` flag. **`IS_AWS` (env var) is a load-time toggle**: `import_part.py` does `if IS_AWS: from radiant.dags.operators import ecs as operators else k8s`. On AWS, `ECSEnv` pulls `AWS_ECS_*` from Airflow Variables. Three execution contexts:
 - **KubernetesPodOperator** — K8s deployments (`IS_AWS=false`)
 - **ECS task** — AWS ECS via custom operator (`IS_AWS=true`)
-- **Local Docker Compose** — dev stack (`docker-compose.yml`): Airflow + PostgreSQL + Redis + MinIO + Polaris
+- **Local Docker Compose** — dev stack (`docker-compose.yml`): Airflow + PostgreSQL + Redis + RustFS (S3, keeps the `radiant-minio` host name) + Polaris
 
 `Dockerfile` = Airflow webserver/scheduler image; `Dockerfile.radiant.operator` = task-execution image with all Radiant deps.
 

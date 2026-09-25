@@ -1,7 +1,9 @@
 import os
+import time
 from pathlib import Path
 
 import pytest
+import requests
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.network import Network
 from testcontainers.core.waiting_utils import wait_for_logs
@@ -17,7 +19,10 @@ RESOURCES_DIR = CURRENT_DIR.parent / "resources" / "integration"
 RADIANT_DIR = CURRENT_DIR.parent.parent / "radiant"
 
 # Constants
-MINIO_IMAGE = "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
+# S3 store. RustFS replaced MinIO in September 2026, when MinIO pulled its images from Docker Hub and
+# quay.io; every tag the fixtures and docker-compose.yml pinned stopped resolving. RustFS speaks the same
+# S3 subset the tests need, including the put-if-absent (`If-None-Match: *`) behind the import mutex.
+S3_IMAGE = "rustfs/rustfs:1.0.0"
 
 ICEBERG_REST_IMAGE = "apache/polaris:1.3.0-incubating"
 ICEBERG_INIT_IMAGE = "apache/polaris-admin-tool:1.3.0-incubating"
@@ -38,22 +43,38 @@ def network():
 
 
 # Fixtures
+def _wait_for_s3_health(endpoint: str, timeout: int = 30) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            if requests.get(f"{endpoint}/health", timeout=2).ok:
+                return
+        except requests.RequestException:
+            pass
+        if time.monotonic() > deadline:
+            raise TimeoutError(f"S3 store at {endpoint} did not become healthy in {timeout}s")
+        time.sleep(0.5)
+
+
 @pytest.fixture(scope="session")
 def minio_instance(network):
+    """The S3 store. Still named after MinIO everywhere it is consumed (`radiant-minio` host, `minio_instance`
+    fixture) so the StarRocks and Polaris wiring in the tests did not have to move with the image."""
     minio_name = "radiant-minio"
     container = (
-        DockerContainer(MINIO_IMAGE)
+        DockerContainer(S3_IMAGE)
         .with_name(minio_name)
-        .with_env("MINIO_ROOT_USER", MINIO_ACCESS_KEY)
-        .with_env("MINIO_ROOT_PASSWORD", MINIO_SECRET_KEY)
+        .with_env("RUSTFS_ACCESS_KEY", MINIO_ACCESS_KEY)
+        .with_env("RUSTFS_SECRET_KEY", MINIO_SECRET_KEY)
+        .with_env("RUSTFS_CONSOLE_ENABLE", "true")
         .with_exposed_ports(MINIO_API_PORT, MINIO_CONSOLE_PORT)
         .with_network(network)
-        .with_command("server /data --console-address ':9001'")
     )
     container.start()
-    wait_for_logs(container, "API:", timeout=30)
+    wait_for_logs(container, "Starting:", timeout=30)
 
     api_port = container.get_exposed_port(MINIO_API_PORT)
+    _wait_for_s3_health(f"http://{container.get_container_host_ip()}:{api_port}")
     console_port = container.get_exposed_port(MINIO_CONSOLE_PORT)
 
     instance = MinioInstance(
