@@ -211,6 +211,7 @@ def test_queries_are_valid(
             "cytoband",
             "orphanet_gene_panel",
             "ddd_gene_panel",
+            "cosmic_gene_set",
             "cosmic_gene_panel",
             "raw_clinvar_rcv_summary",
             "clinvar_rcv_summary",

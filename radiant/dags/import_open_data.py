@@ -5,6 +5,7 @@ from airflow.decorators import task
 from airflow.models import Param
 from airflow.models.baseoperator import chain
 from airflow.operators.empty import EmptyOperator
+from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from radiant.dags import NAMESPACE
 from radiant.tasks.starrocks.operator import RadiantStarrocksLoadOperator, RadiantStarRocksOperator, SubmitTaskOptions
@@ -22,15 +23,13 @@ gene_group_ids = [
     "ensembl_exon_by_gene",
     "orphanet_gene_panel",
     "ddd_gene_panel",
-    "cosmic_gene_panel",
     "mondo_term",
     "hpo_term",
 ]
 
-# The `mapping.iceberg_*` key each group reads, for the six that are not simply `iceberg_{group}`.
+# The `mapping.iceberg_*` key each group reads, for the five that are not simply `iceberg_{group}`.
 source_keys = {
     "gnomad": "iceberg_gnomad_joint",
-    "cosmic_gene_panel": "iceberg_cosmic_gene_set",
     "ddd_gene_panel": "iceberg_ddd_gene_set",
     "hpo_gene_panel": "iceberg_hpo_gene_set",
     "omim_gene_panel": "iceberg_omim_gene_set",
@@ -61,6 +60,14 @@ dag_params = {
     "cytoband_filepath": Param(
         default=None,
         description="Cytoband filepath to load into the raw Cytoband table.",
+        type=["array", "null"],
+    ),
+    "cosmic_gene_set_filepath": Param(
+        default=None,
+        description=(
+            "COSMIC Cancer Gene Census filepath(s). When set, triggers radiant-import-cosmic-gene-set, which "
+            "loads cosmic_gene_set and rebuilds cosmic_gene_panel from it."
+        ),
         type=["array", "null"],
     ),
 }
@@ -146,6 +153,14 @@ with DAG(
     def has_cytoband_filepath(params: dict | None = None) -> bool:
         return bool((params or {}).get("cytoband_filepath"))
 
+    @task.short_circuit(
+        task_id="has_cosmic_gene_set_filepath",
+        task_display_name="[PyOp] COSMIC Gene Set Filepath Provided?",
+        ignore_downstream_trigger_rules=False,
+    )
+    def has_cosmic_gene_set_filepath(params: dict | None = None) -> bool:
+        return bool((params or {}).get("cosmic_gene_set_filepath"))
+
     load_raw_clinvar_rcv_summary = RadiantStarrocksLoadOperator(
         task_id="load_raw_clinvar_rcv_summary",
         task_display_name="[StarRocks] Load Raw ClinVar RCV Summary",
@@ -173,8 +188,21 @@ with DAG(
         parameters={"tsv_filepath": "{{ params.cytoband_filepath }}"},
     )
 
+    # COSMIC has no OpenDataLake contract and is not an Iceberg source any more: it is loaded from the
+    # census TSV by its own DAG, which also rebuilds cosmic_gene_panel.
+    trigger_import_cosmic_gene_set = TriggerDagRunOperator(
+        task_id="trigger_import_cosmic_gene_set",
+        task_display_name="[DAG] Import COSMIC Gene Set",
+        trigger_dag_id=f"{NAMESPACE}-import-cosmic-gene-set",
+        conf={"cosmic_gene_set_filepath": "{{ params.cosmic_gene_set_filepath }}"},
+        reset_dag_run=True,
+        wait_for_completion=True,
+        poke_interval=30,
+    )
+
     start >> _tables_to_refresh
     chain(refresh_iceberg_tables, *data_tasks)
 
     data_tasks[-1] >> has_raw_rcv_filepaths() >> load_raw_clinvar_rcv_summary >> insert_clinvar_rcv_summary
     data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband
+    data_tasks[-1] >> has_cosmic_gene_set_filepath() >> trigger_import_cosmic_gene_set

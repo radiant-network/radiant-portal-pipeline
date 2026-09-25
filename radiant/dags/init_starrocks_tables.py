@@ -82,6 +82,7 @@ with DAG(
         "cytoband",
         "orphanet_gene_panel",
         "ddd_gene_panel",
+        "cosmic_gene_set",
         "cosmic_gene_panel",
         "clinvar_rcv_summary",
         "raw_clinvar_rcv_summary",

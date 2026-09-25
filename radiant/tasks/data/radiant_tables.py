@@ -85,7 +85,6 @@ ICEBERG_OPEN_DATA_CONTRACT_MAPPING = {
 ICEBERG_OPEN_DATA_LEGACY_MAPPING = {
     "iceberg_ensembl_gene": "ensembl_gene",
     "iceberg_ensembl_exon_by_gene": "ensembl_exon_by_gene",
-    "iceberg_cosmic_gene_set": "cosmic_gene_set",
 }
 
 ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING = {
@@ -168,6 +167,7 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_hpo_term": "hpo_term",
     "starrocks_mondo_term": "mondo_term",
     "starrocks_orphanet_gene_panel": "orphanet_gene_panel",
+    "starrocks_cosmic_gene_set": "cosmic_gene_set",
     "starrocks_cosmic_gene_panel": "cosmic_gene_panel",
     "starrocks_ddd_gene_panel": "ddd_gene_panel",
     "starrocks_clinvar_rcv_summary": "clinvar_rcv_summary",

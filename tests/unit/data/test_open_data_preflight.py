@@ -54,14 +54,14 @@ def test_reports_every_gap_at_once_not_just_the_first(tables_in):
     """The whole point: the serial reference load would surface these one run at a time."""
     present = _everything_present()
     present[_ODL] = present[_ODL] - {"omim_v1", "topmed_bravo_v1"}
-    present[_LEGACY] = present[_LEGACY] - {"cosmic_gene_set"}
+    present[_LEGACY] = present[_LEGACY] - {"ensembl_exon_by_gene"}
     present["radiant"] = present["radiant"] - {"cytoband"}
     tables_in.side_effect = lambda schema: present[schema]
 
     missing = open_data.list_missing_open_data_tables(_CONF)
     assert missing == {
         "OpenDataLake contract tables": [f"{_ODL}.omim_v1", f"{_ODL}.topmed_bravo_v1"],
-        "Legacy Iceberg tables": [f"{_LEGACY}.cosmic_gene_set"],
+        "Legacy Iceberg tables": [f"{_LEGACY}.ensembl_exon_by_gene"],
         "StarRocks target tables": ["radiant.cytoband"],
     }
 

@@ -86,7 +86,7 @@ def test_legacy_tables_stay_on_the_radiant_catalog_with_no_ref():
     # No OpenDataLake contract exists for these, so they must not move or acquire a ref.
     mapping = get_iceberg_open_data_mapping(_OPEN_DATA)
     assert mapping["iceberg_ensembl_gene"] == "radiant_iceberg_catalog.radiant.ensembl_gene"
-    assert mapping["iceberg_cosmic_gene_set"] == "radiant_iceberg_catalog.radiant.cosmic_gene_set"
+    assert mapping["iceberg_ensembl_exon_by_gene"] == "radiant_iceberg_catalog.radiant.ensembl_exon_by_gene"
     for key in ICEBERG_OPEN_DATA_LEGACY_MAPPING:
         assert "VERSION AS OF" not in mapping[key]
 
