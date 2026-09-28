@@ -1,3 +1,7 @@
+import datetime
+import json
+
+import pyarrow as pa
 import pytest
 
 from radiant.dags import NAMESPACE
@@ -9,10 +13,7 @@ from tests.utils.dags import get_pyarrow_table_from_csv, poll_dag_until_success,
 OPEN_DATA_REF = RadiantConfigKeys.OPEN_DATA_REF.default
 
 
-def create_and_append_table(
-    iceberg_client, namespace, table_name, file_path, json_fields=None, na_fill=None, tag=None
-):
-    content = get_pyarrow_table_from_csv(csv_path=file_path, sep="\t", json_fields=json_fields, na_fill=na_fill)
+def create_and_append_arrow_table(iceberg_client, namespace, table_name, content, tag=None):
     if not iceberg_client.namespace_exists(namespace):
         return
     if iceberg_client.table_exists(f"{namespace}.{table_name}"):
@@ -25,6 +26,13 @@ def create_and_append_table(
         # `latest` by default), so the fixture has to carry that ref or the rendered SQL resolves
         # nothing. Upstream this tag is moved by each publish; here one append is the whole history.
         table.manage_snapshots().create_tag(snapshot_id=table.current_snapshot().snapshot_id, tag_name=tag).commit()
+
+
+def create_and_append_table(
+    iceberg_client, namespace, table_name, file_path, json_fields=None, na_fill=None, tag=None
+):
+    content = get_pyarrow_table_from_csv(csv_path=file_path, sep="\t", json_fields=json_fields, na_fill=na_fill)
+    create_and_append_arrow_table(iceberg_client, namespace, table_name, content, tag=tag)
 
 
 # Tables OpenDataLake publishes under contract: named `<table_prefix>_v{MAJOR}` and read through the
@@ -68,6 +76,50 @@ _OPEN_DATA_CONTRACT_TABLES = {
     "orphanet_v1": ["type_of_inheritance"],
 }
 
+# `clinvar_rcv_v1` reuses the NDJSON the broker load is fed, so one file serves both ways into
+# `raw_clinvar_rcv_summary`. Not a .tsv like its neighbours: the CSV reader would flatten its array of
+# structs into an array of strings. Typed explicitly, to match the contract and the StarRocks DDL.
+_CLINVAR_RCV_SCHEMA = pa.schema(
+    [
+        ("clinvar_id", pa.string()),
+        ("accession", pa.string()),
+        ("clinical_significance", pa.list_(pa.string())),
+        ("date_last_evaluated", pa.date32()),
+        ("submission_count", pa.int32()),
+        ("review_status", pa.string()),
+        ("review_status_stars", pa.int32()),
+        ("version", pa.int32()),
+        ("traits", pa.list_(pa.string())),
+        ("origins", pa.list_(pa.string())),
+        (
+            "submissions",
+            pa.list_(
+                pa.struct(
+                    [
+                        ("submitter", pa.string()),
+                        ("scv", pa.string()),
+                        ("version", pa.int32()),
+                        ("review_status", pa.string()),
+                        ("review_status_stars", pa.int32()),
+                        ("clinical_significance", pa.string()),
+                        ("date_last_evaluated", pa.date32()),
+                    ]
+                )
+            ),
+        ),
+        ("clinical_significance_count", pa.map_(pa.string(), pa.int32())),
+    ]
+)
+
+
+def get_pyarrow_table_from_clinvar_rcv_ndjson(path) -> pa.Table:
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    for row in rows:
+        for record in [row, *(row["submissions"] or [])]:
+            record["date_last_evaluated"] = datetime.date.fromisoformat(record["date_last_evaluated"])
+    return pa.Table.from_pylist(rows, schema=_CLINVAR_RCV_SCHEMA)
+
+
 _OPEN_DATA_NA_FILL = {
     "clinvar_v1": [""],
     "ensembl_gene_v1": "",
@@ -88,6 +140,14 @@ def open_data_iceberg_tables(s3_fs, iceberg_client, iceberg_namespace, resources
             na_fill=_OPEN_DATA_NA_FILL.get(table),
             tag=OPEN_DATA_REF,
         )
+
+    create_and_append_arrow_table(
+        iceberg_client,
+        iceberg_namespace,
+        "clinvar_rcv_v1",
+        get_pyarrow_table_from_clinvar_rcv_ndjson(resources_dir / "open_data" / "clinvar_rcv_summary.ndjson"),
+        tag=OPEN_DATA_REF,
+    )
 
 
 @pytest.fixture(scope="session")
