@@ -156,14 +156,6 @@ with DAG(
         )
 
     @task.short_circuit(
-        task_id="has_raw_rcv_filepaths",
-        task_display_name="[PyOp] RCV Summary Filepaths Provided?",
-        ignore_downstream_trigger_rules=False,
-    )
-    def has_raw_rcv_filepaths(params: dict | None = None) -> bool:
-        return bool((params or {}).get("raw_rcv_filepaths"))
-
-    @task.short_circuit(
         task_id="has_cytoband_filepath",
         task_display_name="[PyOp] Cytoband Filepath Provided?",
         ignore_downstream_trigger_rules=False,
@@ -171,22 +163,45 @@ with DAG(
     def has_cytoband_filepath(params: dict | None = None) -> bool:
         return bool((params or {}).get("cytoband_filepath"))
 
-    load_raw_clinvar_rcv_summary = RadiantStarrocksLoadOperator(
-        task_id="load_raw_clinvar_rcv_summary",
-        task_display_name="[StarRocks] Load Raw ClinVar RCV Summary",
-        sql="./sql/open_data/raw_clinvar_rcv_summary_load.sql",
-        table="{{ mapping.starrocks_raw_clinvar_rcv_summary }}",
-        truncate=True,
-        load_label="load_raw_clinvar_rcv_summary_{{ ts_nodash }}_{{ ti.try_number }}",
-        parameters={"rcv_summary_filepaths": "{{ params.raw_rcv_filepaths }}"},
-    )
+    with TaskGroup(group_id="clinvar_rcv_summary") as tg_clinvar_rcv_summary:
 
-    insert_clinvar_rcv_summary = RadiantStarRocksOperator(
-        task_id="insert_clinvar_rcv_summary",
-        task_display_name="[StarRocks] ClinVar RCV Summary Insert Data",
-        sql="./sql/open_data/clinvar_rcv_summary_insert.sql",
-        submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
-    )
+        @task.short_circuit(
+            task_id="has_raw_filepaths",
+            task_display_name="[PyOp] RCV Summary Filepaths Provided?",
+            ignore_downstream_trigger_rules=False,
+            trigger_rule="none_failed",
+        )
+        def has_raw_filepaths(params: dict | None = None) -> bool:
+            return bool((params or {}).get("raw_rcv_filepaths"))
+
+        insert_raw_from_open_data = RadiantStarRocksOperator(
+            task_id="insert_raw_from_open_data",
+            task_display_name="[StarRocks] Raw ClinVar RCV Summary Insert Data",
+            sql="./sql/open_data/raw_clinvar_rcv_summary_insert.sql",
+            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+            trigger_rule="none_failed",
+            skip_if="{{ not mapping.get('iceberg_clinvar_rcv_is_contract') }}",
+        )
+
+        load_raw_from_files = RadiantStarrocksLoadOperator(
+            task_id="load_raw_from_files",
+            task_display_name="[StarRocks] Load Raw ClinVar RCV Summary",
+            sql="./sql/open_data/raw_clinvar_rcv_summary_load.sql",
+            table="{{ mapping.starrocks_raw_clinvar_rcv_summary }}",
+            truncate=True,
+            load_label="load_raw_clinvar_rcv_summary_{{ ts_nodash }}_{{ ti.try_number }}",
+            parameters={"rcv_summary_filepaths": "{{ params.raw_rcv_filepaths }}"},
+        )
+
+        insert_summary = RadiantStarRocksOperator(
+            task_id="insert_summary",
+            task_display_name="[StarRocks] ClinVar RCV Summary Insert Data",
+            sql="./sql/open_data/clinvar_rcv_summary_insert.sql",
+            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+            trigger_rule="none_failed",
+        )
+
+        insert_raw_from_open_data >> has_raw_filepaths() >> load_raw_from_files >> insert_summary
 
     load_cytoband = RadiantStarrocksLoadOperator(
         task_id="load_cytoband",
@@ -256,7 +271,7 @@ with DAG(
     start >> _tables_to_refresh
     chain(refresh_iceberg_tables, *data_tasks)
 
-    data_tasks[-1] >> has_raw_rcv_filepaths() >> load_raw_clinvar_rcv_summary >> insert_clinvar_rcv_summary
+    data_tasks[-1] >> tg_clinvar_rcv_summary
     data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband
     data_tasks[-1] >> tg_cosmic_gene_set
     data_tasks[-1] >> tg_cosmic_mutation_set

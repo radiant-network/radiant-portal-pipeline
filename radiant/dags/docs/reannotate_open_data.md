@@ -156,11 +156,15 @@ Held-back sources do not move when OpenDataLake publishes, so re-importing them 
 with no new data behind it. A manual run of radiant-import-open-data leaves the flag false and
 imports everything, as before.
 
-Because nothing else is passed, that DAG's file-driven branches — the ClinVar RCV summary and
-cytoband broker loads, and the COSMIC gene set import it triggers — still skip: all are gated on
-filepath params P1 does not set. None of them
-comes from OpenDataLake; they are file drops and stay a manual, operator-triggered run with
-the paths filled in.
+Because nothing else is passed, that DAG's file-driven branches — the cytoband broker load and
+the COSMIC gene set import it triggers — still skip: both are gated on filepath params P1 does
+not set. Neither comes from OpenDataLake; they are file drops and stay a manual,
+operator-triggered run with the paths filled in.
+
+The ClinVar RCV summary is the one file drop that also has an OpenDataLake source
+(**clinvar_rcv_v1**), so P1 does refresh it unless **clinvar_rcv** is held back. Its broker load
+stays behind the same filepath param — the fallback when it is held back, an override when it is
+not.
 
 > **On an unmigrated environment, P1 is a no-op.**
 > **RADIANT_OPEN_DATA_USE_LEGACY_TABLES** defaults to the wildcard, so *every* source is held

@@ -49,8 +49,9 @@ No `latest` pointer exists today, in SJRA-1546 §2.2 designs snapshot tagging, b
 
 ## 3. Coverage
 
-Of the 20 tables Radiant consumes: **17 can move, 3 cannot.** (The two ensembl tables moved after the
-initial cutover, once OpenDataLake published them under SJRA-1803; see the shape note below.)
+Of the 20 tables Radiant consumes: **18 can move, 2 cannot.** (The two ensembl tables moved after the
+initial cutover, once OpenDataLake published them under SJRA-1803; `raw_clinvar_rcv_summary` followed
+once `clinvar_rcv_v1` shipped. See the notes below.)
 
 ### ✅ Ready — 6
 
@@ -178,17 +179,36 @@ and follow `RADIANT_OPEN_DATA_USE_LEGACY_TABLES` like every other source (the fo
 on the contract side. Nothing downstream reads those columns: the CNV statements join
 `ensembl_gene` only, on `chromosome`/`start`/`end`. The DDL is left as is rather than migrated.
 
-### ❌ Missing or unversioned — 2
+### ❌ Missing or unversioned — 1
 
-No contract upstream, so these stay on their S3 broker loads.
+No contract upstream, so this stays on its S3 broker load.
 
-| Radiant                   | Status                              | Ticket              |
-|---------------------------|-------------------------------------|---------------------|
-| `cytoband`                | Not implemented yet — broker load   | none                |
-| `raw_clinvar_rcv_summary` | Not implemented yet — broker load   | none                |
+| Radiant     | Status                              | Ticket |
+|-------------|-------------------------------------|--------|
+| `cytoband`  | Not implemented yet — broker load   | none   |
 
-`cytoband` and `raw_clinvar_rcv_summary` are file-driven: `import_open_data` skips both unless the caller
-passes `cytoband_filepath` / `raw_rcv_filepaths`, so they are not part of the weekly refresh at all.
+`cytoband` is file-driven: `import_open_data` skips it unless the caller passes `cytoband_filepath`, so it
+is not part of the weekly refresh at all.
+
+### ✅ Added after this design — 1
+
+| Radiant                   | OpenDataLake     | Columns read from OpenDataLake |
+|---------------------------|------------------|--------------------------------|
+| `raw_clinvar_rcv_summary` | `clinvar_rcv_v1` | all 12 — a straight projection |
+
+`clinvar_rcv_v1` shipped after this was written (contract dated 2026-09-25), publishing exactly the columns
+`raw_clinvar_rcv_summary` holds, in the same types — so the load is a column-for-column `INSERT OVERWRITE`
+and `clinvar_rcv_summary_insert.sql` still adds `locus_id` from `clinvar` afterwards.
+
+**It is the first contract source with no pre-contract Radiant table**, which the hold-back mechanism did not
+anticipate: every other source falls back to `ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING` when held back. Holding
+this one back has to mean "read no Iceberg table at all", so both resolvers skip a contract key with no
+pre-contract name — the mapping carries no `iceberg_clinvar_rcv`, and nothing is refreshed or recorded for it.
+
+The `clinvar_rcv_summary` task group is then one serial chain: `insert_raw_from_open_data` (skipped when held
+back, on the contract flag alone rather than through `skip_legacy` — held back, there is nothing to read on a
+full import either) → the existing filepath gate → the broker load → `insert_summary`, which projects
+whichever one filled the raw table.
 
 
 ### ⛔️Won't do

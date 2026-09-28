@@ -67,6 +67,7 @@ ICEBERG_RADIANT_MAPPING = {
 ICEBERG_OPEN_DATA_CONTRACT_MAPPING = {
     "iceberg_1000_genomes": "1000_genomes_v1",
     "iceberg_clinvar": "clinvar_v1",
+    "iceberg_clinvar_rcv": "clinvar_rcv_v1",
     "iceberg_dbnsfp": "dbnsfp_v1",
     "iceberg_dbsnp": "dbsnp_v1",
     "iceberg_ddd_gene_set": "ddd_v1",
@@ -248,6 +249,9 @@ def get_iceberg_open_data_mapping(conf=None) -> dict:
             else _legacy(ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING[key])
         )
         for key, value in ICEBERG_OPEN_DATA_CONTRACT_MAPPING.items()
+        # `clinvar_rcv` has no pre-contract table -- held back it is broker-loaded, not read from
+        # Iceberg, so it resolves to no relation at all rather than to one that does not exist.
+        if key in _contract_keys or key in ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING
     }
     mapping.update(
         {

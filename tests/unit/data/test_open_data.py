@@ -59,7 +59,16 @@ def test_names_carry_no_time_travel_clause():
 def test_a_held_back_source_is_refreshed_where_it_is_actually_read(held_back, expected):
     tables = list_iceberg_source_tables({**_CONF, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": held_back})
     assert expected in tables
-    assert not any(table.startswith(f"{_ODL}.{held_back}") for table in tables)
+    # The whole name, not a prefix: `clinvar_rcv_v1` is a different source and stays on OpenDataLake.
+    assert f"{_ODL}.{held_back}_v1" not in tables
+
+
+def test_a_held_back_contract_only_source_is_refreshed_nowhere():
+    """`clinvar_rcv` exists only on OpenDataLake, so held back there is no table to refresh -- naming
+    one would fail the refresh on an environment that has no such table."""
+    assert f"{_ODL}.clinvar_rcv_v1" in list_iceberg_source_tables(_CONF)
+    held_back = list_iceberg_source_tables({**_CONF, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "clinvar_rcv"})
+    assert not any("clinvar_rcv" in table for table in held_back)
 
 
 def _keys_refreshed_by_import_part() -> set[str]:
