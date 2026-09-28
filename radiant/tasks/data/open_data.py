@@ -33,6 +33,9 @@ def resolve_iceberg_source_tables(conf: dict | None = None) -> dict[str, str]:
             else f"{legacy_schema}.{ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING[key]}"
         )
         for key, table in ICEBERG_OPEN_DATA_CONTRACT_MAPPING.items()
+        # Held back with no pre-contract table (`clinvar_rcv`): no Iceberg table anywhere, so nothing
+        # to refresh and nothing to report as missing.
+        if key in contract_keys or key in ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING
     }
 
 

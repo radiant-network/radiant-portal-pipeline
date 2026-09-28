@@ -134,7 +134,8 @@ _SUBSET = {
     **_OPEN_DATA,
     # Everything except the seven small sources the sandbox can hold is held back.
     "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": (
-        "1000_genomes,dbnsfp,gnomad_constraint,gnomad_joint,gnomad_sv,mondo,omim,orphanet,spliceai,topmed_bravo"
+        "1000_genomes,clinvar_rcv,dbnsfp,gnomad_constraint,gnomad_joint,"
+        "gnomad_sv,mondo,omim,orphanet,spliceai,topmed_bravo"
     ),
 }
 
@@ -193,9 +194,22 @@ def test_held_back_sources_read_their_pre_contract_table():
     assert "VERSION AS OF" not in mapping["iceberg_dbnsfp"]
 
 
-def test_every_contract_table_has_a_pre_contract_name_to_fall_back_to():
-    # Without one, holding a source back would raise a KeyError at mapping time.
-    assert set(ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING) == set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING)
+def test_only_clinvar_rcv_has_no_pre_contract_name_to_fall_back_to():
+    """A contract table with no pre-contract name resolves to no relation at all when held back --
+    right for `clinvar_rcv` (broker-loaded, never in the Radiant catalog), a silent hole for any
+    other source, whose statement would then render against an empty string."""
+    missing = set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING) - set(ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING)
+    assert missing == {"iceberg_clinvar_rcv"}
+
+
+def test_a_held_back_clinvar_rcv_resolves_to_nothing_at_all():
+    held_back = get_iceberg_open_data_mapping(_SUBSET)
+    assert "iceberg_clinvar_rcv" not in held_back
+    assert held_back["iceberg_clinvar_rcv_is_contract"] == ""
+
+    on_contract = get_iceberg_open_data_mapping(_OPEN_DATA)
+    assert on_contract["iceberg_clinvar_rcv"] == "odl_catalog.opendatalake_qa.clinvar_rcv_v1 VERSION AS OF 'latest'"
+    assert on_contract["iceberg_clinvar_rcv_is_contract"] == "true"
 
 
 def test_an_unknown_source_name_is_rejected_rather_than_ignored():
