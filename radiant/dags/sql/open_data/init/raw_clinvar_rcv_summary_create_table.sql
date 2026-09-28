@@ -8,11 +8,11 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_raw_clinvar_rcv_summary }}
     `review_status`         VARCHAR(128) NULL,
     `review_status_stars`   INT(11)      NULL,
     `version`               INT(11)      NULL,
-    `traits`                ARRAY< VARCHAR (256)> NULL,
+    `traits`                ARRAY< VARCHAR (512)> NULL,
     `origins`               ARRAY< VARCHAR (64)> NULL,
     `submissions`           ARRAY<
         struct<
-            submitter               VARCHAR (256),
+            submitter               VARCHAR (512),
             scv                     VARCHAR(32),
             version                 INT(11),
             review_status           VARCHAR(128),
