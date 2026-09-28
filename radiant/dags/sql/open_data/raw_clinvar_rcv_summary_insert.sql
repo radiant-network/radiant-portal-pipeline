@@ -1,9 +1,4 @@
--- The OpenDataLake-backed load of the raw ClinVar RCV summary. `clinvar_rcv_v1` publishes exactly
--- the columns this table holds, in the same types, so the copy is a straight projection --
--- `locus_id` is added afterwards by `clinvar_rcv_summary_insert.sql`, joining `clinvar`.
---
--- Guarded: held back, `clinvar_rcv` has no `mapping.iceberg_clinvar_rcv` to read at all, and the
--- table is filled by the broker load instead (`raw_clinvar_rcv_summary_load.sql`).
+-- The OpenDataLake-backed load of the raw ClinVar RCV summary.
 {% if mapping.iceberg_clinvar_rcv_is_contract %}
 INSERT OVERWRITE {{ mapping.starrocks_raw_clinvar_rcv_summary }}
 SELECT
