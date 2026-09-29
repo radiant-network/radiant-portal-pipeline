@@ -27,8 +27,9 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "hpo_term",
     ]
     # start + the metadata-refresh pair + the snapshot gate + the ledger write's 3 + the RCV
-    # group's 4 + cytoband's load + the COSMIC trigger + 3 short-circuit gates
-    assert len(dag.tasks) == 15 + len(gene_group_ids) + len(variant_group_ids) * 2
+    # group's 4 + cytoband's load + the COSMIC gene-set group's 2 + the COSMIC mutation-set
+    # group's 3 + cytoband's own short-circuit gate
+    assert len(dag.tasks) == 18 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_metadata_cache_is_refreshed_before_any_source_is_read(dag_bag):

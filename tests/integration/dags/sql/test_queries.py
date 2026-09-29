@@ -114,9 +114,13 @@ def _explain_insert(starrocks_session, sql_dir):
                 or "snv_occurrence_copy_partition" in sql_file.lower()
                 or "exomiser_copy_partition" in sql_file.lower()
                 or "exomiser_insert_partition_delta" in sql_file.lower()
+                or "open_data_release_annotate" in sql_file.lower()
             ):
                 # "EXPLAIN" not supported with "LOAD"; the *_copy_partition files select from an explicit
                 # `{{ table }} PARTITION (p0)` that only exists once the swap operator has created it.
+                # `open_data_release_annotate` is P4's UPDATE, not an insert: StarRocks does not document
+                # EXPLAIN for data-modification statements, and this context has no `run_id` to render, so
+                # explaining it would check a statement with an empty `dag_run_id` at best.
                 continue
             with open(sql_file) as f:
                 rendered_sql = jinja2.Template(f.read()).render(
