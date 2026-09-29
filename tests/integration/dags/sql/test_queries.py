@@ -219,6 +219,7 @@ def test_queries_are_valid(
             "cosmic_gene_panel",
             "raw_cosmic_mutation_set",
             "cosmic_mutation_set",
+            "cosmic_mutation_set_hgvs",
             "raw_clinvar_rcv_summary",
             "clinvar_rcv_summary",
         ],

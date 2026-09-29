@@ -171,6 +171,7 @@ STARROCKS_OPEN_DATA_MAPPING = {
     "starrocks_cosmic_gene_panel": "cosmic_gene_panel",
     "starrocks_raw_cosmic_mutation_set": "raw_cosmic_mutation_set",
     "starrocks_cosmic_mutation_set": "cosmic_mutation_set",
+    "starrocks_cosmic_mutation_set_hgvs": "cosmic_mutation_set_hgvs",
     "starrocks_ddd_gene_panel": "ddd_gene_panel",
     "starrocks_clinvar_rcv_summary": "clinvar_rcv_summary",
     "starrocks_raw_clinvar_rcv_summary": "raw_clinvar_rcv_summary",
