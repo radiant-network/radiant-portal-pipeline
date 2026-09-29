@@ -27,7 +27,7 @@ derived from them. Design: design/SJRA-1811-opendatalake-integration.md, section
 | | | *CHECKPOINT* | SNV consequences rebuilt |
 | 7 | P3b | **cnv_occurrence** | Germline then somatic, per tenant and part |
 | | | *CHECKPOINT* | Every rebuild done |
-| 8 | P4 | **record_open_data_release** | Stamps one row per source |
+| 8 | P4 | **record_open_data_release** | Promotes what P1 imported to annotated. One UPDATE |
 | 9 | | **release_import_lock** | Gives the mutex back |
 
 A checkpoint sits between every group of StarRocks work. They run nothing — they are there so
@@ -83,14 +83,27 @@ it, so it is deliberately absent.
 
 ### The signal is the Iceberg snapshot, not dataset_version
 
-**dataset_version is NULL on the default latest tag**, so it can never answer "did this change?".
+**dataset_version could never answer "did this change?"** — it was a restatement of the ref, NULL
+whenever the ref is a moving tag.
 What can is the snapshot the ref resolves to. StarRocks exposes it from 3.4.1 as an Iceberg
 metadata table — **SELECT snapshot_id FROM the_relation$refs WHERE name = the_ref** — so this
-needs no new client, just the starrocks_conn that was already there. P4 records that snapshot per
-source, and the next run compares against it.
+needs no new client, just the starrocks_conn that was already there. P1 records that snapshot per
+source, P4 promotes it, and the next run compares against it.
 
 The gate runs **after** P1 on purpose: P1 is what refreshes the external metadata cache, and a
 $refs read before it can still report last week's snapshot.
+
+### The same read also names the release
+
+OpenDataLake publishes each version onto **its own branch** and moves the **latest** tag onto the
+newest one (radiant-open-datalake — WapLoader.publishVersionBranch, IcebergTable.LatestTag). So the
+release a run read is the branch sharing a snapshot with the ref, and the one $refs read already on
+the wire returns it. That is what fills **dataset_version**, on a moving tag as well as a pinned
+one — so the ledger can answer "which dbSNP is the portal showing?" with GCF_000001405.40 rather
+than a 64-bit snapshot id.
+
+Two branch names are never the answer: **main**, which the loader leaves empty, and
+**audit_&lt;version&gt;**, the staging branch it drops once the publish succeeds.
 
 ### It fails open
 
@@ -100,8 +113,8 @@ Anything the gate cannot establish counts as changed, and the branch runs:
 - A contract source whose $refs read raises or returns nothing. A StarRocks older than 3.4.1 has
   no $refs at all; the gate logs the failure and the branch rebuilds.
 - Every source, when open_data_release itself cannot be read — an environment that has not taken
-  the snapshot_id migration below. The gate then does nothing, which is what this DAG did before
-  it existed. P4 still fails on the missing column, so the migration cannot be skipped quietly.
+  the migration below. The gates then do nothing, which is what these DAGs did before they existed.
+  The ledger writes still fail on the missing columns, so the migration cannot be skipped quietly.
 - A source that just migrated to OpenDataLake, or was just rolled back to legacy. Both replace
   values as surely as a publish does.
 
@@ -109,18 +122,30 @@ A **held back** source is the one case treated as never changing. It is read wit
 and no refresh touches it, so reporting it as moved every week would defeat the gate entirely on
 an unmigrated environment.
 
-### P1 gates on the same ledger
+### P1 gates too, on the other column
 
-**import-open-data** carries the same gate on its own inserts, against the same
-open_data_release rows, so a source that has not published is not re-read into StarRocks either.
-Its override is **force_import** — set it after editing an insert statement, and after truncating
-or recreating a StarRocks open-data table, neither of which a snapshot comparison can see.
+**import-open-data** carries the same kind of gate on its own inserts, so a source that has not
+published is not re-read into StarRocks either. Its override is **force_import** — set it after
+editing an insert statement, and after truncating or recreating a StarRocks open-data table,
+neither of which a snapshot comparison can see.
 
-> **Known gap.** P1's gate reads $refs when the import starts; P4 re-reads it when the import
-> finishes, hours later. A publish inside that window is recorded as annotated when only the older
-> data was imported, and the next run skips it — the one case where these gates fail closed rather
-> than open. Closing it needs a second ledger of what the import loaded, separate from what P4
-> annotated. Until then, **force_import plus force_reannotation** is the recovery.
+One table, **two snapshot columns**, because the two values drift apart:
+
+| Column | Records | Written by |
+|:--|:--|:--|
+| **imported_snapshot_id** | What the StarRocks open-data copies hold | The import, at the end of its run |
+| **reannotated_snapshot_id** | What the portal-facing tables were annotated from | P4, by promoting the column above |
+
+A standalone import moves the first without the second, so neither column alone answers both
+questions. Gating imports on reannotated_snapshot_id would leave a standalone run comparing against a value
+nothing had written, re-reading the same snapshot forever; gating re-annotation on
+imported_snapshot_id would skip a rebuild the warehouse still needs.
+
+P4 is now one UPDATE — **SET reannotated_snapshot_id = imported_snapshot_id** — not a fresh $refs read. What the
+rebuilds annotated is whatever P1 loaded, so re-resolving the ref hours later would stamp a publish
+that landed mid-run as annotated, and the following run would skip the rebuild that publish needs.
+The snapshot is resolved exactly once per import, by compute_import_gates, and those are the values
+the import records.
 
 ### A variant rebuild always drags the CNV rebuild with it
 
@@ -134,15 +159,16 @@ moved — the same dependency the P3a-before-P3b ordering exists for.
 > or fixed a join. After any change to the re-annotation SQL, run with
 > **force_reannotation** set to true, or the run will skip the very branch you changed.
 
-### Required setup on an existing deployment: the snapshot_id migration
+### Required setup on an existing deployment: the snapshot-column migration
 
-> **A database created before SJRA-1950 has no open_data_release.snapshot_id and P4 fails on it.**
-> Run sql/radiant/migrations/SJRA-1950_open_data_release_add_snapshot_id.sql once, against the base
-> database only — open_data_release is not per-tenant.
+> **A database created before SJRA-1950 has neither snapshot column, and the ledger writes fail on
+> them.** Run sql/radiant/migrations/SJRA-1950_open_data_release_add_snapshot_columns.sql once, against
+> the base database only — open_data_release is not per-tenant.
 
-New deployments get the column from init/open_data_release_create_table.sql and must not run it.
-The first run after the migration re-annotates everything: the existing rows carry no snapshot, and
-there is no way to recover which one they used. That run is what establishes the baseline.
+New deployments get both columns from init/open_data_release_create_table.sql and must not run it.
+The first run after the migration re-imports and re-annotates everything: the existing rows carry no
+snapshot, and there is no way to recover which one they used. That run establishes the baseline, and
+the one after it is the first that can skip anything.
 
 ---
 
@@ -202,7 +228,8 @@ statements themselves resolve it (radiant.tasks.data.open_data.build_open_data_r
 | **catalog_name**, **database_name** | The schema it was read from |
 | **iceberg_ref** | The pinned ref, or the literal LEGACY |
 | **dataset_version** | Set only when a concrete release is pinned. See below |
-| **snapshot_id** | The Iceberg snapshot the ref resolved to. What the next run's gate compares against |
+| **imported_snapshot_id** | The Iceberg snapshot P1 loaded the StarRocks copy from |
+| **reannotated_snapshot_id** | The same value once P4 promotes it. What the next run's re-annotation gate compares against |
 | **recorded_at** | NOW(), evaluated by StarRocks when P4 executes |
 
 A few of those need explaining:

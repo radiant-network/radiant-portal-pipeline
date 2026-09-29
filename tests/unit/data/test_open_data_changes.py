@@ -206,11 +206,11 @@ def test_a_refs_read_that_raises_does_not_take_the_run_down():
 
 
 def test_a_ledger_without_the_snapshot_column_reannotates_everything():
-    """`snapshot_id` arrives with migrations/SJRA-1950_open_data_release_add_snapshot_id.sql. Before
+    """Both snapshot columns arrive with migrations/SJRA-1950_open_data_release_add_snapshot_columns.sql. Before
     it is taken, the SELECT errors -- and "nothing recorded" is the honest reading, which is also the
     behaviour the DAG had before the gate existed. P4's INSERT still fails on the missing column, so
     the migration is not silently skippable."""
-    with patch.object(open_data, "_query", side_effect=RuntimeError("Unknown column 'snapshot_id'")):
+    with patch.object(open_data, "_query", side_effect=RuntimeError("Unknown column 'reannotated_snapshot_id'")):
         assert open_data.last_recorded_snapshots(_CONF) == {}
 
 
@@ -222,3 +222,169 @@ def test_nothing_readable_at_all_gates_nothing_out():
             "snv_consequence": True,
             "cnv_occurrence": True,
         }
+
+
+# --- The two snapshot columns ---------------------------------------------------------------------
+#
+# `open_data_release` carries both, because a standalone import moves what StarRocks holds without
+# moving what the portal tables were annotated from. One column cannot answer both gates.
+
+
+def test_the_import_gate_reads_the_imported_column():
+    """`reannotated_snapshot_id` is promoted only once a whole re-annotation succeeds, so gating imports on it
+    would leave a standalone import run comparing against a value nothing ever wrote."""
+    with (
+        patch.object(open_data, "last_recorded_snapshots", return_value={}) as recorded,
+        patch.object(open_data, "resolve_current_snapshots", return_value={}),
+    ):
+        changed_sources(_CONF, column=open_data.IMPORTED_SNAPSHOT)
+
+    assert recorded.call_args.kwargs["column"] == open_data.IMPORTED_SNAPSHOT
+    assert open_data.IMPORTED_SNAPSHOT != open_data.ANNOTATED_SNAPSHOT
+
+
+def test_the_reannotation_gate_still_reads_the_annotated_column():
+    with (
+        patch.object(open_data, "last_recorded_snapshots", return_value={}) as recorded,
+        patch.object(open_data, "resolve_current_snapshots", return_value={}),
+    ):
+        changed_sources(_CONF)
+
+    assert recorded.call_args.kwargs["column"] == open_data.ANNOTATED_SNAPSHOT
+
+
+def test_the_column_name_is_not_a_free_string():
+    """It is interpolated into the SELECT, so anything but the two real columns is refused."""
+    with pytest.raises(ValueError, match="not a snapshot column"):
+        open_data.last_recorded_snapshots(_CONF, column="1; DROP TABLE open_data_release")
+
+
+def test_changed_sources_reuses_snapshots_it_is_given():
+    """The import gate records the very values it gated on. A second resolve would open a window for
+    a publish landing mid-run to be recorded as imported when the inserts never read it."""
+    with (
+        patch.object(open_data, "resolve_current_snapshots") as resolve,
+        patch.object(open_data, "last_recorded_snapshots", return_value={_VARIANT_SOURCE: ("latest", 100)}),
+    ):
+        assert changed_sources(_CONF, current={_VARIANT_SOURCE: 101}) == {_VARIANT_SOURCE}
+
+    resolve.assert_not_called()
+
+
+def test_the_import_carries_the_annotated_snapshot_through_its_upsert():
+    """The row is a whole-row upsert on a PRIMARY KEY table. Leaving `reannotated_snapshot_id` out would
+    blank the re-annotation ledger on every import, and every branch would then rebuild."""
+    from radiant.tasks.data.open_data import build_open_data_release_rows
+
+    rows = {
+        row["source_name"]: row
+        for row in build_open_data_release_rows(
+            _CONF,
+            refs={_VARIANT_SOURCE: {"snapshot": 101, "dataset_version": "2026-09-22"}},
+            annotated={_VARIANT_SOURCE: 100},
+        )
+    }
+
+    assert rows["clinvar"]["imported_snapshot_id"] == "101"
+    assert rows["clinvar"]["reannotated_snapshot_id"] == "100", "P4's column, not the import's, to overwrite"
+
+
+def test_a_source_with_nothing_annotated_yet_records_no_annotated_snapshot():
+    """First import on a fresh database: there is nothing to carry, and NULL is the honest value --
+    the next re-annotation then counts it as changed and rebuilds."""
+    from radiant.tasks.data.open_data import build_open_data_release_rows
+
+    rows = {
+        row["source_name"]: row
+        for row in build_open_data_release_rows(_CONF, refs={_VARIANT_SOURCE: {"snapshot": 101}})
+    }
+
+    assert rows["clinvar"]["imported_snapshot_id"] == "101"
+    assert rows["clinvar"]["reannotated_snapshot_id"] == ""
+
+
+# --- dataset_version, resolved rather than restated -----------------------------------------------
+#
+# OpenDataLake publishes each version onto its own branch and moves the `latest` tag onto the newest
+# (radiant-open-datalake -- WapLoader.publishVersionBranch, IcebergTable.LatestTag). So the release a
+# run actually read is the branch sharing a snapshot with the ref, and one `$refs` read gets it.
+
+_REFS_COL = "SELECT name, type, snapshot_id"
+
+
+def _refs_rows(rows):
+    """Stand in for the `$refs` read, leaving the ledger read to the caller."""
+
+    def fake(sql, params=()):
+        if _REFS_COL in sql:
+            return rows
+        return []
+
+    return patch.object(open_data, "_query", side_effect=fake)
+
+
+def test_the_moving_tag_still_names_a_release():
+    """The whole point. On `latest`, the old derivation recorded NULL -- nobody could say which
+    ClinVar the portal was showing."""
+    with _refs_rows([("latest", "TAG", 9104), ("2026-09-22", "BRANCH", 9104), ("main", "BRANCH", 1)]):
+        refs = open_data.resolve_current_refs(_CONF)
+
+    assert refs[_VARIANT_SOURCE]["snapshot"] == 9104
+    assert refs[_VARIANT_SOURCE]["dataset_version"] == "2026-09-22"
+
+
+def test_a_pinned_ref_is_its_own_version():
+    """A ref that is already a branch names the release outright; no snapshot matching needed."""
+    conf = _CONF | {"RADIANT_OPEN_DATA_REF": "GCF_000001405.40"}
+    with _refs_rows([("GCF_000001405.40", "BRANCH", 4242), ("latest", "TAG", 9104)]):
+        refs = open_data.resolve_current_refs(conf)
+
+    assert refs[_VARIANT_SOURCE] == {"snapshot": 4242, "dataset_version": "GCF_000001405.40"}
+
+
+def test_the_staging_branch_is_never_mistaken_for_the_release():
+    """`audit_<version>` is where the loader stages before publishing, and it shares the snapshot
+    until it is dropped. Recording it would name a release that was never published."""
+    with _refs_rows([("latest", "TAG", 9104), ("audit_2026-09-22", "BRANCH", 9104)]):
+        refs = open_data.resolve_current_refs(_CONF)
+
+    assert refs[_VARIANT_SOURCE]["snapshot"] == 9104
+    assert refs[_VARIANT_SOURCE]["dataset_version"] == ""
+
+
+def test_main_is_never_the_release():
+    """The loader leaves `main` empty; consumers read the version branch."""
+    with _refs_rows([("latest", "TAG", 77), ("main", "BRANCH", 77)]):
+        assert open_data.resolve_current_refs(_CONF)[_VARIANT_SOURCE]["dataset_version"] == ""
+
+
+def test_an_unresolvable_ref_names_no_version():
+    """No row for the ref means no snapshot, and a version guessed off a snapshot we do not have
+    would be a claim about data nothing read."""
+    with _refs_rows([("2026-01-01", "BRANCH", 12)]):
+        assert open_data.resolve_current_refs(_CONF)[_VARIANT_SOURCE] == {"snapshot": None, "dataset_version": ""}
+
+
+def test_the_ref_falls_back_to_naming_itself_when_refs_cannot_be_read():
+    """A pinned ref is still a true statement of which release was read, even with no `$refs`."""
+    from radiant.tasks.data.open_data import build_open_data_release_rows
+
+    conf = _CONF | {"RADIANT_OPEN_DATA_REF": "2026-09-01"}
+    rows = {row["source_name"]: row for row in build_open_data_release_rows(conf)}
+
+    assert rows["clinvar"]["dataset_version"] == "2026-09-01"
+    assert rows["clinvar"]["imported_snapshot_id"] == ""
+
+
+def test_a_held_back_source_records_legacy_not_a_version():
+    with _refs_rows([]):
+        refs = open_data.resolve_current_refs(_CONF | {"RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "gnomad_sv"})
+
+    assert refs[_CNV_SOURCE] == {"snapshot": LEGACY, "dataset_version": LEGACY}
+
+
+def test_snapshots_projects_the_refs_it_is_handed():
+    """The import gate resolves once and reuses; a second read is what reopens the mid-run window."""
+    refs = {_VARIANT_SOURCE: {"snapshot": 9104, "dataset_version": "2026-09-22"}}
+    with patch.object(open_data, "_query", side_effect=AssertionError("must not query")):
+        assert open_data.resolve_current_snapshots(_CONF, refs=refs) == {_VARIANT_SOURCE: 9104}

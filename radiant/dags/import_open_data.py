@@ -39,6 +39,7 @@ source_keys = {
 
 
 IMPORT_GATES_TASK_ID = "compute_import_gates"
+IMPORT_REFS_XCOM_KEY = "refs"
 
 
 def skip_legacy(group: str) -> str:
@@ -143,21 +144,36 @@ with DAG(
 
     @task(task_id=IMPORT_GATES_TASK_ID, task_display_name="[PyOp] Which Sources Have New Data?")
     def compute_import_gates() -> dict[str, bool]:
-        """One entry per open-data source, True when OpenDataLake has published since the last
-        recorded release.
+        """One entry per open-data source, True when OpenDataLake has published since the copy in
+        StarRocks was loaded.
+
+        Gates on `imported_snapshot_id`, not `snapshot_id`: the latter is only promoted once a whole
+        re-annotation has succeeded, so gating on it would leave a standalone run with nothing to
+        compare against and re-read the same snapshot every time.
 
         Sits after `refresh_iceberg_tables` so the `$refs` read is not answered from metadata this
-        run has already superseded.
+        run has already superseded, and resolves the snapshots **once** -- `record_open_data_import`
+        records these very values -- both the snapshot and the version branch sitting on it.
+        Resolving again at the end of the run would record whatever `latest` points at by then,
+        which is not what the inserts below read.
         """
         from airflow.operators.python import get_current_context
 
-        from radiant.tasks.data.open_data import changed_sources, resolve_iceberg_source_tables
+        from radiant.tasks.data.open_data import (
+            IMPORTED_SNAPSHOT,
+            changed_sources,
+            resolve_current_refs,
+            resolve_current_snapshots,
+        )
 
-        conf = get_current_context()["dag_run"].conf or {}
-        changed = changed_sources(conf)
-        gates = {key: key in changed for key in resolve_iceberg_source_tables(conf)}
+        context = get_current_context()
+        conf = context["dag_run"].conf or {}
+        refs = resolve_current_refs(conf)
+        snapshots = resolve_current_snapshots(conf, refs=refs)
+        changed = changed_sources(conf, column=IMPORTED_SNAPSHOT, current=snapshots)
+        context["ti"].xcom_push(key=IMPORT_REFS_XCOM_KEY, value=refs)
         LOGGER.info(f"Sources with something new: {sorted(changed) or 'none'}.")
-        return gates
+        return {key: key in changed for key in snapshots}
 
     _import_gates = compute_import_gates()
 
@@ -283,9 +299,61 @@ with DAG(
 
         has_cosmic_gene_set_filepath() >> trigger_import_cosmic_gene_set
 
+    @task(task_id="build_import_rows", task_display_name="[PyOp] Build Open Data Release Rows")
+    def build_import_rows() -> list[dict[str, str]]:
+        """One row per source, carrying the snapshot and dataset version the gate resolved before
+        the inserts ran.
+
+        Written for every source, not only the ones re-read: a gated-out source was skipped
+        *because* its copy already holds this snapshot, so the row is true for it too.
+
+        `reannotated_snapshot_id` is carried through from what is already there. This is a whole-row upsert on a
+        PRIMARY KEY table, and that column belongs to P4 -- omitting it would blank the re-annotation
+        ledger on every import.
+        """
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.data.open_data import annotated_snapshots, build_open_data_release_rows
+
+        context = get_current_context()
+        conf = context["dag_run"].conf or {}
+        refs = context["ti"].xcom_pull(task_ids=IMPORT_GATES_TASK_ID, key=IMPORT_REFS_XCOM_KEY)
+        return build_open_data_release_rows(conf, refs=refs, annotated=annotated_snapshots(conf))
+
+    @task(task_id="render_import_sql", task_display_name="[PyOp] Render Open Data Release SQL")
+    def render_import_sql(releases: list[dict[str, str]]) -> str:
+        import jinja2
+        from airflow.operators.python import get_current_context
+
+        from radiant.dags import DAGS_DIR
+        from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+        context = get_current_context()
+        conf = context["dag_run"].conf or {}
+        text = (DAGS_DIR / "sql" / "radiant" / "open_data_release_insert.sql").read_text()
+        return jinja2.Template(text).render(
+            mapping=get_radiant_mapping(conf),
+            releases=releases,
+            dag_run_id=context["run_id"],
+        )
+
+    _import_rows = build_import_rows()
+    record_import = RadiantStarRocksOperator(
+        task_id="record_open_data_import",
+        task_display_name="[StarRocks] Record What Was Imported",
+        sql=render_import_sql(_import_rows),
+        # NONE_FAILED: a gated-out or held-back source skips its insert, and the row still has to be
+        # written -- it is what the next run compares against. A *failed* insert does stop it.
+        trigger_rule="none_failed",
+    )
+
     start >> _tables_to_refresh
     chain(refresh_iceberg_tables, _import_gates, *data_tasks)
 
     data_tasks[-1] >> tg_clinvar_rcv_summary
     data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband
     data_tasks[-1] >> tg_cosmic_gene_set
+
+    # After every Iceberg-sourced insert, the RCV group's included. The file-driven branches
+    # (cytoband, COSMIC) read no Iceberg source and have no row here.
+    tg_clinvar_rcv_summary >> _import_rows >> record_import

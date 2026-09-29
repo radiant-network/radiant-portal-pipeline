@@ -26,9 +26,9 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "mondo_term",
         "hpo_term",
     ]
-    # start + the metadata-refresh pair + the snapshot gate + the RCV group's 4 + cytoband's load
-    # + the COSMIC trigger + 3 short-circuit gates
-    assert len(dag.tasks) == 12 + len(gene_group_ids) + len(variant_group_ids) * 2
+    # start + the metadata-refresh pair + the snapshot gate + the ledger write's 3 + the RCV
+    # group's 4 + cytoband's load + the COSMIC trigger + 3 short-circuit gates
+    assert len(dag.tasks) == 15 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_metadata_cache_is_refreshed_before_any_source_is_read(dag_bag):
@@ -327,3 +327,57 @@ def test_a_held_back_source_is_never_skipped_by_the_snapshot_half(dag_bag):
 
     # The catalog half still governs it.
     assert _render_skip_if(template, held_back=_GATED_SOURCE, skip_legacy_tables=True, gates=None) is True
+
+
+# --- The release ledger ---------------------------------------------------------------------------
+#
+# `open_data_release.imported_snapshot_id` is what StarRocks now holds. The import writes it; P4
+# promotes it to `reannotated_snapshot_id`. One table, two columns -- a standalone import moves the first
+# without the second, which is why one column cannot serve both gates.
+
+
+def test_the_import_records_what_it_loaded(dag_bag):
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    record = dag.get_task("record_open_data_import")
+
+    assert record.trigger_rule == "none_failed", "a gated-out source skips its insert; the row still stands"
+    assert getattr(record, "skip_if", None) is None, "the ledger is what the next run compares against"
+
+
+def test_the_ledger_is_written_after_every_iceberg_sourced_insert(dag_bag):
+    """Including the RCV group's -- `clinvar_rcv` is a contract source and carries a row."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+
+    def reaches(a, b, seen=None):
+        seen = seen if seen is not None else set()
+        if a.task_id in seen:
+            return False
+        seen.add(a.task_id)
+        if b.task_id in a.downstream_task_ids:
+            return True
+        return any(reaches(dag.get_task(t), b, seen) for t in a.downstream_task_ids)
+
+    record = dag.get_task("record_open_data_import")
+    for task in dag.tasks:
+        if task.task_id.startswith("insert_") or task.task_id == f"{_RCV}.insert_raw_from_open_data":
+            assert reaches(task, record), task.task_id
+
+
+def test_the_ledger_rows_are_built_downstream_of_the_gate(dag_bag):
+    """`build_import_rows` reads the snapshots the gate resolved, over XCom. Resolving them again at
+    the end of the run would record whatever `latest` points at by then rather than what the inserts
+    read. The XCom is only there to read if the gate is upstream, so that edge is the guarantee."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    rows = dag.get_task("build_import_rows")
+
+    def reaches(a, b, seen=None):
+        seen = seen if seen is not None else set()
+        if a.task_id in seen:
+            return False
+        seen.add(a.task_id)
+        if b.task_id in a.downstream_task_ids:
+            return True
+        return any(reaches(dag.get_task(t), b, seen) for t in a.downstream_task_ids)
+
+    assert reaches(dag.get_task("compute_import_gates"), rows)
+    assert rows.task_id in dag.get_task("record_open_data_import").upstream_task_ids

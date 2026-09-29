@@ -199,7 +199,7 @@ def reannotate_open_data():
     _cnv_params = cnv_params(tenant_parts)
     _part_params = part_params(all_parts)
 
-    @task(task_id=GATES_TASK_ID, task_display_name="[PyOp] Which Branches Have New Open Data?")
+    @task(task_id=GATES_TASK_ID, task_display_name="[PyOp] Collect updated upstream Iceberg branches")
     def compute_reannotation_gates() -> dict[str, bool]:
         """One branch per key, True when a source it reads has moved since the last release.
 
@@ -336,37 +336,6 @@ def reannotate_open_data():
 
         reannotate_germline_cnv >> reannotate_somatic_cnv
 
-    @task(task_id="build_release_rows", task_display_name="[PyOp] Build Release Rows")
-    def build_release_rows() -> list[dict[str, str]]:
-        from airflow.operators.python import get_current_context
-
-        from radiant.tasks.data.open_data import build_open_data_release_rows, resolve_current_snapshots
-
-        conf = get_current_context()["dag_run"].conf or {}
-        # Resolved here rather than at P4 so the recorded snapshot is the one the rebuilds actually
-        # read, not whatever `latest` points at hours later.
-        return build_open_data_release_rows(conf, snapshots=resolve_current_snapshots(conf))
-
-    @task(task_id="render_release_sql", task_display_name="[PyOp] Render Release SQL")
-    def render_release_sql(releases: list[dict[str, str]]) -> str:
-        import jinja2
-        from airflow.operators.python import get_current_context
-
-        from radiant.dags import DAGS_DIR
-        from radiant.tasks.data.radiant_tables import get_radiant_mapping
-
-        context = get_current_context()
-        conf = context["dag_run"].conf or {}
-        text = (DAGS_DIR / "sql" / "radiant" / "open_data_release_insert.sql").read_text()
-        return jinja2.Template(text).render(
-            mapping=get_radiant_mapping(conf),
-            releases=releases,
-            dag_run_id=context["run_id"],
-        )
-
-    _release_rows = build_release_rows()
-    _release_sql = render_release_sql(_release_rows)
-
     # Checkpoints
 
     accumulators_reannotated = EmptyOperator(
@@ -396,7 +365,9 @@ def reannotate_open_data():
     record_release = RadiantStarRocksOperator(
         task_id="record_open_data_release",
         task_display_name="[StarRocks] Record the Release",
-        sql=_release_sql,
+        # One UPDATE promoting `imported_snapshot_id` to `snapshot_id`. P1 wrote the descriptive
+        # columns and the snapshot it actually loaded; this marks those values as annotated.
+        sql="./sql/radiant/open_data_release_annotate.sql",
         trigger_rule=TriggerRule.NONE_FAILED,
         pool=STARROCKS_INSERT_POOL,
     )
@@ -405,7 +376,6 @@ def reannotate_open_data():
     _preflight_tables_exist >> _acquire_import_lock >> reference_load >> sources_loaded
 
     sources_loaded >> [all_tenants, all_parts, tenant_parts]
-    sources_loaded >> _release_rows
 
     sources_loaded >> _gates >> tg_accumulators >> accumulators_reannotated
     accumulators_reannotated >> tg_variants >> snv_variants_rebuilt

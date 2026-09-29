@@ -40,7 +40,8 @@ def test_a_contract_source_records_the_opendatalake_schema():
         "database_name": "opendatalake_qa",
         "iceberg_ref": "latest",
         "dataset_version": "",
-        "snapshot_id": "",
+        "imported_snapshot_id": "",
+        "reannotated_snapshot_id": "",
     }
 
 
