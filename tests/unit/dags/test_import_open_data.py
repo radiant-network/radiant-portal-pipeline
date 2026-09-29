@@ -26,9 +26,10 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
         "mondo_term",
         "hpo_term",
     ]
-    # start + the metadata-refresh pair + the RCV group's 4 + cytoband's load + the COSMIC gene set
-    # trigger + the COSMIC mutation set group's 3 (gate + conf + trigger) + 3 short-circuit gates
-    assert len(dag.tasks) == 14 + len(gene_group_ids) + len(variant_group_ids) * 2
+    # start + the metadata-refresh pair + the snapshot gate + the ledger write's 3 + the RCV
+    # group's 4 + cytoband's load + the COSMIC gene-set group's 2 + the COSMIC mutation-set
+    # group's 3 + cytoband's own short-circuit gate
+    assert len(dag.tasks) == 18 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_metadata_cache_is_refreshed_before_any_source_is_read(dag_bag):
@@ -37,8 +38,10 @@ def test_metadata_cache_is_refreshed_before_any_source_is_read(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
     refresh = dag.get_task("refresh_iceberg_tables")
     assert refresh.upstream_task_ids == {"get_tables_to_refresh"}
-    # Gates the whole chain: the first source load hangs off the refresh, not off `start`.
-    assert refresh.downstream_task_ids == {"insert_hashes_1000_genomes"}
+    # Gates the whole chain: nothing reads a source before the refresh, and the snapshot gate sits
+    # between the two so its `$refs` read is not answered from metadata this run has superseded.
+    assert refresh.downstream_task_ids == {"compute_import_gates"}
+    assert dag.get_task("compute_import_gates").downstream_task_ids == {"insert_hashes_1000_genomes"}
     assert dag.get_task("start").downstream_task_ids == {"get_tables_to_refresh"}
 
 
@@ -145,12 +148,20 @@ def test_dag_has_all_group_tasks(dag_bag):
 
 
 def test_the_raw_rcv_table_is_loaded_from_opendatalake_when_the_source_is_not_held_back(dag_bag):
-    """`clinvar_rcv` has no pre-contract Iceberg table, so the skip is on the contract flag alone --
-    `skip_legacy`'s `params.skip_legacy_tables and ...` would re-run a source that cannot be read on a
-    full import too."""
+    """`clinvar_rcv` has no pre-contract Iceberg table, so the catalog half of the skip is on the
+    contract flag alone -- `skip_legacy`'s `params.skip_legacy_tables and ...` would re-run a source
+    that cannot be read on a full import too. The snapshot half is the same as every other group's."""
+    from radiant.dags.import_open_data import skip_unchanged
+
     task = dag_bag.get_dag(f"{NAMESPACE}-import-open-data").get_task(f"{_RCV}.insert_raw_from_open_data")
-    assert task.skip_if == "{{ not mapping.get('iceberg_clinvar_rcv_is_contract') }}"
     assert "params.skip_legacy_tables" not in task.skip_if
+    assert skip_unchanged("clinvar_rcv") in task.skip_if
+
+    # Held back: skipped whatever the gates say, because there is nothing to read.
+    assert _render_skip_if(task.skip_if, held_back="clinvar_rcv", gates={"iceberg_clinvar_rcv": True}) is True
+    # On contract and unchanged: skipped. On contract and moved: imported.
+    assert _render_skip_if(task.skip_if, gates={"iceberg_clinvar_rcv": False}) is True
+    assert _render_skip_if(task.skip_if, gates={"iceberg_clinvar_rcv": True}) is False
 
 
 def test_the_rcv_group_is_one_serial_chain(dag_bag):
@@ -195,6 +206,38 @@ def test_a_skipped_group_does_not_cascade_down_the_chain(dag_bag):
             assert task.trigger_rule == "none_failed", task.task_id
 
 
+def _render_skip_if(template, held_back="", skip_legacy_tables=False, gates=None, force_import=False):
+    """Render one `skip_if` the way Airflow will.
+
+    Native types and `StrictUndefined` because that is what this DAG runs under
+    (`DAG(template_undefined=jinja2.StrictUndefined)`, plus `render_template_as_native_obj=True`). A
+    lenient environment turns a missing mapping key into a falsy Undefined and passes; Airflow raises
+    `UndefinedError` -- which is exactly how the then contract-less ensembl sources broke in
+    production before they had an `_is_contract` flag. And a string-rendering environment returns
+    "False", which is truthy and would skip every gated task.
+    """
+    import types
+
+    import jinja2
+    from jinja2.nativetypes import NativeEnvironment
+
+    from radiant.tasks.data.radiant_tables import get_iceberg_open_data_mapping
+
+    conf = {
+        "RADIANT_ICEBERG_CATALOG": "radiant_iceberg_catalog",
+        "RADIANT_ICEBERG_NAMESPACE": "radiant",
+        "RADIANT_OPEN_DATA_CATALOG": "odl",
+        "RADIANT_OPEN_DATA_DATABASE": "odl_db",
+        "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": held_back,
+    }
+    context = {
+        "mapping": get_iceberg_open_data_mapping(conf),
+        "params": {"skip_legacy_tables": skip_legacy_tables, "force_import": force_import},
+        "ti": types.SimpleNamespace(xcom_pull=lambda task_ids: gates),
+    }
+    return NativeEnvironment(undefined=jinja2.StrictUndefined).from_string(template).render(context)
+
+
 @pytest.mark.parametrize(
     ("held_back", "flag", "expected"),
     [
@@ -229,26 +272,11 @@ def test_skip_if_resolves_from_the_catalog_the_source_landed_on(held_back, flag,
     raises `UndefinedError` -- which is exactly how the then contract-less ensembl sources broke in
     production before they had an `_is_contract` flag.
     """
-    import jinja2
-    from jinja2.nativetypes import NativeEnvironment
+    from radiant.dags.import_open_data import gated
 
-    from radiant.dags.import_open_data import skip_legacy
-    from radiant.tasks.data.radiant_tables import get_iceberg_open_data_mapping
-
-    conf = {
-        "RADIANT_ICEBERG_CATALOG": "radiant_iceberg_catalog",
-        "RADIANT_ICEBERG_NAMESPACE": "radiant",
-        "RADIANT_OPEN_DATA_CATALOG": "odl",
-        "RADIANT_OPEN_DATA_DATABASE": "odl_db",
-        "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": held_back,
-    }
-    context = {
-        "mapping": get_iceberg_open_data_mapping(conf),
-        "params": {"skip_legacy_tables": flag},
-    }
-    env = NativeEnvironment(undefined=jinja2.StrictUndefined)
+    # No gate XCom, so the snapshot half is False throughout and what is left is the catalog half.
     for group, skipped in expected.items():
-        rendered = env.from_string(skip_legacy(group)).render(context)
+        rendered = _render_skip_if(gated(group), held_back=held_back, skip_legacy_tables=flag)
         assert rendered is skipped, f"{group} rendered {rendered!r}"
 
 
@@ -266,3 +294,125 @@ def test_every_group_gates_on_the_source_its_sql_reads():
         keys = {k.removesuffix(IS_CONTRACT_SUFFIX) for k in re.findall(r"mapping\.(iceberg_\w+)", sql)}
         assert len(keys) == 1, f"{group}_insert.sql reads {sorted(keys)}"
         assert source_keys.get(group, f"iceberg_{group}") == keys.pop(), group
+
+
+# --- The snapshot gate (SJRA-1950) ----------------------------------------------------------------
+#
+# A full import re-reads every OpenDataLake source, and most weeks only some of them published. The
+# gate compares the snapshot each ref resolves to against `open_data_release`, so an unchanged source
+# is not read again.
+
+_GATED_SOURCE = "dbsnp"
+_GATED_KEY = "iceberg_dbsnp"
+
+
+def test_force_import_defaults_to_the_gated_run(dag_bag):
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    assert dag.params["force_import"] is False
+
+
+def test_every_group_carries_the_snapshot_clause_for_its_own_source(dag_bag):
+    """`source_keys` already maps a group to the source its SQL reads. A clause keyed to the wrong
+    source skips on someone else's publish, or re-reads on every run."""
+    from radiant.dags.import_open_data import gene_group_ids, skip_unchanged, variant_group_ids
+
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    for group in variant_group_ids + gene_group_ids:
+        clause = skip_unchanged(group)
+        for task_id in (f"insert_{group}", f"insert_hashes_{group}"):
+            if task_id in {t.task_id for t in dag.tasks}:
+                assert clause in dag.get_task(task_id).skip_if, task_id
+
+
+@pytest.mark.parametrize(
+    ("gates", "force_import", "skipped"),
+    [
+        # The ordinary run: OpenDataLake published, so the source is re-read.
+        ({_GATED_KEY: True}, False, False),
+        # Nothing published since the last recorded release.
+        ({_GATED_KEY: False}, False, True),
+        # The override. It has to beat a closed gate, or there is no way to reload after editing an
+        # insert statement or truncating the StarRocks copy -- the gate sees neither.
+        ({_GATED_KEY: False}, True, False),
+        # Fail open: no XCom at all (the gate task was cleared or skipped), and an XCom that came
+        # back without this source in it.
+        (None, False, False),
+        ({}, False, False),
+        ({"iceberg_clinvar": False}, False, False),
+    ],
+)
+def test_the_snapshot_gate_renders_to_a_real_bool(dag_bag, gates, force_import, skipped):
+    """`skip_if` is rendered, not computed, and the operator treats any non-empty string as truthy."""
+    from radiant.dags.import_open_data import gated
+
+    rendered = _render_skip_if(gated(_GATED_SOURCE), gates=gates, force_import=force_import)
+    assert rendered is skipped, f"rendered {rendered!r}"
+
+
+def test_a_held_back_source_is_never_skipped_by_the_snapshot_half(dag_bag):
+    """A held-back source is read off the legacy catalog without time travel: no ref, no snapshot,
+    nothing that could ever report it as moved. Gating it on snapshots would import it once and never
+    again -- so on a full import it is read whatever the gates say, and only `skip_legacy_tables`
+    decides otherwise."""
+    from radiant.dags.import_open_data import gated
+
+    template = gated(_GATED_SOURCE)
+    for gates in ({_GATED_KEY: False}, {}, None):
+        assert _render_skip_if(template, held_back=_GATED_SOURCE, gates=gates) is False, gates
+
+    # The catalog half still governs it.
+    assert _render_skip_if(template, held_back=_GATED_SOURCE, skip_legacy_tables=True, gates=None) is True
+
+
+# --- The release ledger ---------------------------------------------------------------------------
+#
+# `open_data_release.imported_snapshot_id` is what StarRocks now holds. The import writes it; P4
+# promotes it to `reannotated_snapshot_id`. One table, two columns -- a standalone import moves the first
+# without the second, which is why one column cannot serve both gates.
+
+
+def test_the_import_records_what_it_loaded(dag_bag):
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    record = dag.get_task("record_open_data_import")
+
+    assert record.trigger_rule == "none_failed", "a gated-out source skips its insert; the row still stands"
+    assert getattr(record, "skip_if", None) is None, "the ledger is what the next run compares against"
+
+
+def test_the_ledger_is_written_after_every_iceberg_sourced_insert(dag_bag):
+    """Including the RCV group's -- `clinvar_rcv` is a contract source and carries a row."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+
+    def reaches(a, b, seen=None):
+        seen = seen if seen is not None else set()
+        if a.task_id in seen:
+            return False
+        seen.add(a.task_id)
+        if b.task_id in a.downstream_task_ids:
+            return True
+        return any(reaches(dag.get_task(t), b, seen) for t in a.downstream_task_ids)
+
+    record = dag.get_task("record_open_data_import")
+    for task in dag.tasks:
+        if task.task_id.startswith("insert_") or task.task_id == f"{_RCV}.insert_raw_from_open_data":
+            assert reaches(task, record), task.task_id
+
+
+def test_the_ledger_rows_are_built_downstream_of_the_gate(dag_bag):
+    """`build_import_rows` reads the snapshots the gate resolved, over XCom. Resolving them again at
+    the end of the run would record whatever `latest` points at by then rather than what the inserts
+    read. The XCom is only there to read if the gate is upstream, so that edge is the guarantee."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    rows = dag.get_task("build_import_rows")
+
+    def reaches(a, b, seen=None):
+        seen = seen if seen is not None else set()
+        if a.task_id in seen:
+            return False
+        seen.add(a.task_id)
+        if b.task_id in a.downstream_task_ids:
+            return True
+        return any(reaches(dag.get_task(t), b, seen) for t in a.downstream_task_ids)
+
+    assert reaches(dag.get_task("compute_import_gates"), rows)
+    assert rows.task_id in dag.get_task("record_open_data_import").upstream_task_ids

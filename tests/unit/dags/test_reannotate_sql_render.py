@@ -143,6 +143,8 @@ def test_open_data_release_insert_upserts_every_column_by_name():
         "database_name",
         "iceberg_ref",
         "dataset_version",
+        "imported_snapshot_id",
+        "reannotated_snapshot_id",
     ]
 
 
@@ -191,3 +193,34 @@ def test_cnv_reannotation_projects_every_target_column(kind):
     projected = [alias or column for alias, column in projected]
 
     assert projected == ddl_columns, f"{kind} projection does not line up with its DDL"
+
+
+def test_p4_promotes_what_was_imported_rather_than_re_reading_the_ref():
+    """The window this closes: P1 imports snapshot 100, OpenDataLake publishes 101 while the rebuilds
+    run, and a fresh `$refs` read at P4 would stamp 101 on tables built from 100 -- after which the
+    gate skips the rebuild that 101 actually needs.
+
+    So P4 copies the column P1 wrote. It must touch no metadata table at all.
+    """
+    sql = _text("open_data_release_annotate.sql")
+    statements = "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))
+
+    assert "reannotated_snapshot_id = imported_snapshot_id" in statements
+    assert "$refs" not in statements and "$snapshots" not in statements
+
+
+def test_p4_updates_every_row_and_says_so():
+    """StarRocks supports UPDATE only on Primary Key tables and makes the WHERE mandatory, so the
+    clause has to be there and has to match every row -- a missing one is a parse error, and a
+    narrow one silently leaves sources unannotated."""
+    import re
+
+    rendered = jinja2.Template(_text("open_data_release_annotate.sql")).render(
+        mapping={"starrocks_open_data_release": "radiant.open_data_release"},
+        run_id="manual__2026-09-01T00:00:00+00:00",
+    )
+
+    assert re.search(r"UPDATE\s+radiant\.open_data_release", rendered)
+    assert re.search(r"WHERE\s+source_name\s+IS\s+NOT\s+NULL", rendered)
+    assert "NOW()" in rendered, "the stamp comes from the database at execution, not from render time"
+    assert "manual__2026-09-01T00:00:00+00:00" in rendered

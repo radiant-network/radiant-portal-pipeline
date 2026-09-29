@@ -38,9 +38,25 @@ source_keys = {
 }
 
 
+IMPORT_GATES_TASK_ID = "compute_import_gates"
+IMPORT_REFS_XCOM_KEY = "refs"
+
+
 def skip_legacy(group: str) -> str:
     key = source_keys.get(group, f"iceberg_{group}")
-    return f"{{{{ params.skip_legacy_tables and not mapping.get('{key}_is_contract') }}}}"
+    return f"params.skip_legacy_tables and not mapping.get('{key}_is_contract')"
+
+
+def skip_unchanged(group: str) -> str:
+    key = source_keys.get(group, f"iceberg_{group}")
+    return (
+        f"not not mapping.get('{key}_is_contract') and not params.force_import "
+        f"and not (ti.xcom_pull(task_ids='{IMPORT_GATES_TASK_ID}') or {{}}).get('{key}', True)"
+    )
+
+
+def gated(group: str) -> str:
+    return "{{ (" + skip_legacy(group) + ") or (" + skip_unchanged(group) + ") }}"
 
 
 dag_params = {
@@ -50,6 +66,15 @@ dag_params = {
             "Import only the OpenDataLake sources, skipping every table still read from the legacy Radiant "
             "Iceberg catalog. Those do not move when OpenDataLake publishes, so a refresh-driven run has "
             "nothing new to read for them. Set by the re-annotation DAG; leave False for a full import."
+        ),
+        type="boolean",
+    ),
+    "force_import": Param(
+        default=False,
+        description=(
+            "Re-import every source whether or not OpenDataLake published since the last recorded "
+            "release. Set it after editing an insert statement, and after truncating or recreating a "
+            "StarRocks open-data table -- the gate compares Iceberg snapshots and cannot see either."
         ),
         type="boolean",
     ),
@@ -120,6 +145,28 @@ with DAG(
         map_index_template="{{ params.table }}",
     ).expand(params=_tables_to_refresh)
 
+    @task(task_id=IMPORT_GATES_TASK_ID, task_display_name="[PyOp] Which Sources Have New Data?")
+    def compute_import_gates() -> dict[str, bool]:
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.data.open_data import (
+            IMPORTED_SNAPSHOT,
+            changed_sources,
+            resolve_current_refs,
+            resolve_current_snapshots,
+        )
+
+        context = get_current_context()
+        conf = context["dag_run"].conf or {}
+        refs = resolve_current_refs(conf)
+        snapshots = resolve_current_snapshots(conf, refs=refs)
+        changed = changed_sources(conf, column=IMPORTED_SNAPSHOT, current=snapshots)
+        context["ti"].xcom_push(key=IMPORT_REFS_XCOM_KEY, value=refs)
+        LOGGER.info(f"Sources with something new: {sorted(changed) or 'none'}.")
+        return {key: key in changed for key in snapshots}
+
+    _import_gates = compute_import_gates()
+
     data_tasks = []
     for group in variant_group_ids:
         data_tasks.append(
@@ -129,7 +176,7 @@ with DAG(
                 sql=f"./sql/open_data/{group}_insert_hashes.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
                 trigger_rule="none_failed",
-                skip_if=skip_legacy(group),
+                skip_if=gated(group),
             )
         )
         data_tasks.append(
@@ -139,7 +186,7 @@ with DAG(
                 sql=f"./sql/open_data/{group}_insert.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
                 trigger_rule="none_failed",
-                skip_if=skip_legacy(group),
+                skip_if=gated(group),
             )
         )
 
@@ -151,7 +198,7 @@ with DAG(
                 sql=f"./sql/open_data/{group}_insert.sql",
                 submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
                 trigger_rule="none_failed",
-                skip_if=skip_legacy(group),
+                skip_if=gated(group),
             )
         )
 
@@ -180,7 +227,9 @@ with DAG(
             sql="./sql/open_data/raw_clinvar_rcv_summary_insert.sql",
             submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
             trigger_rule="none_failed",
-            skip_if="{{ not mapping.get('iceberg_clinvar_rcv_is_contract') }}",
+            skip_if=(
+                f"{{{{ (not mapping.get('iceberg_clinvar_rcv_is_contract')) or ({skip_unchanged('clinvar_rcv')}) }}}}"
+            ),
         )
 
         load_raw_from_files = RadiantStarrocksLoadOperator(
@@ -268,10 +317,48 @@ with DAG(
 
         has_cosmic_mutation_set_filepath() >> cosmic_mutation_set_conf() >> trigger_import_cosmic_mutation_set
 
+    @task(task_id="build_import_rows", task_display_name="[PyOp] Build Open Data Release Rows")
+    def build_import_rows() -> list[dict[str, str]]:
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.data.open_data import annotated_snapshots, build_open_data_release_rows
+
+        context = get_current_context()
+        conf = context["dag_run"].conf or {}
+        refs = context["ti"].xcom_pull(task_ids=IMPORT_GATES_TASK_ID, key=IMPORT_REFS_XCOM_KEY)
+        return build_open_data_release_rows(conf, refs=refs, annotated=annotated_snapshots(conf))
+
+    @task(task_id="render_import_sql", task_display_name="[PyOp] Render Open Data Release SQL")
+    def render_import_sql(releases: list[dict[str, str]]) -> str:
+        import jinja2
+        from airflow.operators.python import get_current_context
+
+        from radiant.dags import DAGS_DIR
+        from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+        context = get_current_context()
+        conf = context["dag_run"].conf or {}
+        text = (DAGS_DIR / "sql" / "radiant" / "open_data_release_insert.sql").read_text()
+        return jinja2.Template(text).render(
+            mapping=get_radiant_mapping(conf),
+            releases=releases,
+            dag_run_id=context["run_id"],
+        )
+
+    _import_rows = build_import_rows()
+    record_import = RadiantStarRocksOperator(
+        task_id="record_open_data_import",
+        task_display_name="[StarRocks] Record What Was Imported",
+        sql=render_import_sql(_import_rows),
+        trigger_rule="none_failed",
+    )
+
     start >> _tables_to_refresh
-    chain(refresh_iceberg_tables, *data_tasks)
+    chain(refresh_iceberg_tables, _import_gates, *data_tasks)
 
     data_tasks[-1] >> tg_clinvar_rcv_summary
     data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband
     data_tasks[-1] >> tg_cosmic_gene_set
     data_tasks[-1] >> tg_cosmic_mutation_set
+
+    tg_clinvar_rcv_summary >> _import_rows >> record_import
