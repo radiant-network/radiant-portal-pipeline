@@ -25,12 +25,13 @@ ANNOTATION_TASK_TYPE = "radiant_germline_annotation"
 EXOMISER_TASK_TYPE = "exomiser"
 
 # The Ferlab pipeline that produced the slivar VCF -- deliberately not the variant caller
-# upstream of this run.
-ANNOTATION_PIPELINE = ("Post-processing-Pipeline", "3.0.0")
+# upstream of this run. The revision the launcher image pins (`PIPELINE_REV` in
+# Dockerfile.nextflow.launcher): a commit of `main` until the next release is tagged.
+# Bump both together.
+ANNOTATION_PIPELINE = ("Post-processing-Pipeline", "b535f27")
 
-# 14.0.0 is inherited from existing seed data, not read from the container
-# (ferlabcrsj/exomiser:2.4.1, data 2402). Confirm the real software version before this
-# becomes load-bearing metadata.
+# The pinned pipeline runs the official exomiser/exomiser-cli:14.0.0-bash image, so this
+# now matches the software actually run (it was inherited from seed data before).
 EXOMISER_PIPELINE = ("Exomiser", "14.0.0")
 
 # The spelling already stored in the tenant databases. The casing is odd on purpose:

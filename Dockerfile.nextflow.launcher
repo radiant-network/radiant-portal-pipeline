@@ -22,7 +22,12 @@ FROM --platform=linux/amd64 public.ecr.aws/amazonlinux/amazonlinux:2023
 
 ARG NXF_VER=24.10.5
 ARG PIPELINE_REPO=Ferlab-Ste-Justine/Post-processing-Pipeline
-ARG PIPELINE_REV=v3.0.0
+# Pinned to a commit of `main` until the next release is tagged: v3.0.0 types
+# `sample`/`familyId` as string-only in its samplesheet schema, and nf-schema
+# casts numeric IDs to integers, so every Radiant samplesheet fails validation
+# (fixed upstream in BIOINFO-221). `radiant/tasks/nextflow/batch.py::ANNOTATION_PIPELINE`
+# records the same revision on every task it registers -- bump both together.
+ARG PIPELINE_REV=b535f2743d73a303a32579a40ecd833185f9db0b
 
 # `-r` is load-bearing on this one: its manifest declares
 # `defaultBranch = 'master'` while the repo's actual default branch is `main`,
@@ -38,8 +43,9 @@ ARG CNV_PIPELINE_REPO=Ferlab-Ste-Justine/cnv-post-processing
 ARG CNV_PIPELINE_REV=6b9b2dd15ce2598bb7a083690307f40b0cee35f6
 
 # Keep in sync with each pipeline's own `plugins` block: Post-processing-Pipeline
-# v3.0.0 declares nf-schema@2.1.0 (v2.11.0 declared nf-validation@1.1.3 - a
-# different plugin, not a version bump), quality-control-pipeline v2.0.0 and
+# (v3.0.0 through the pinned commit) declares nf-schema@2.1.0 (v2.11.0 declared
+# nf-validation@1.1.3 - a different plugin, not a version bump),
+# quality-control-pipeline v2.0.0 and
 # cnv-post-processing both declare nf-schema@2.3.0. Nextflow keeps versioned
 # plugin directories side by side, so
 # both resolve; a missing one fails at plugin resolution, offline, with no way to

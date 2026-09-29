@@ -198,7 +198,7 @@ Per case, two tasks:
 | **aliquots** | Every family member | Proband only |
 | **input_documents** | Each member's gVCF | The slivar VCF |
 | **output_documents** | slivar vcf and tbi | tsv, html and json |
-| **pipeline** | Post-processing-Pipeline 3.0.0 | Exomiser 14.0.0 |
+| **pipeline** | Post-processing-Pipeline b535f27 | Exomiser 14.0.0 |
 
 > **Known compromise: Exomiser's input lineage.** The pipeline actually feeds Exomiser the
 > VEP-annotated VCF (exomiser_start_from_vep is true), one step before slivar. That file is
