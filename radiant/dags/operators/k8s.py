@@ -6,7 +6,9 @@ from airflow.providers.cncf.kubernetes.secret import Secret
 from kubernetes.client import models as k8s
 
 
-def _container_resources(profile: str, cpu: str, memory: str, memory_limit: str) -> k8s.V1ResourceRequirements:
+def _container_resources(
+    profile: str, cpu: str, memory: str, memory_limit: str, ephemeral_storage: str | None = None
+) -> k8s.V1ResourceRequirements:
     """Build the pod resources for a Radiant task.
 
     Sizing a task at all is what makes it visible to the scheduler: with no request,
@@ -19,16 +21,23 @@ def _container_resources(profile: str, cpu: str, memory: str, memory_limit: str)
     limit would merely throttle work we want to run at full speed (cyvcf2 reads with
     ``vcf_threads=4`` and pyiceberg writes its parquet files in parallel).
 
+    A task that stages large files on the node's disk also requests (and is limited to) that
+    much ``ephemeral-storage``, so the scheduler picks a node with room and an overrun evicts
+    the one pod instead of starving the node.
+
     Each profile is overridable without a deploy via
-    ``RADIANT_TASK_OPERATOR_<PROFILE>_{CPU,MEMORY,MEMORY_LIMIT}``.
+    ``RADIANT_TASK_OPERATOR_<PROFILE>_{CPU,MEMORY,MEMORY_LIMIT,EPHEMERAL_STORAGE}``.
     """
-    return k8s.V1ResourceRequirements(
-        requests={
-            "cpu": os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_CPU", cpu),
-            "memory": os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_MEMORY", memory),
-        },
-        limits={"memory": os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_MEMORY_LIMIT", memory_limit)},
-    )
+    requests = {
+        "cpu": os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_CPU", cpu),
+        "memory": os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_MEMORY", memory),
+    }
+    limits = {"memory": os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_MEMORY_LIMIT", memory_limit)}
+    if ephemeral_storage:
+        storage = os.getenv(f"RADIANT_TASK_OPERATOR_{profile}_EPHEMERAL_STORAGE", ephemeral_storage)
+        requests["ephemeral-storage"] = storage
+        limits["ephemeral-storage"] = storage
+    return k8s.V1ResourceRequirements(requests=requests, limits=limits)
 
 
 def _snv_container_resources() -> k8s.V1ResourceRequirements:
@@ -63,6 +72,15 @@ def _metadata_container_resources() -> k8s.V1ResourceRequirements:
     network-bound.
     """
     return _container_resources("METADATA", cpu="500m", memory="1Gi", memory_limit="2Gi")
+
+
+def _cosmic_container_resources() -> k8s.V1ResourceRequirements:
+    """The COSMIC normalization streams everything (two passes over the gzipped export, bcftools
+    over a pipe, an external sort with a bounded buffer), so memory stays low. Disk is the
+    constraint: the GRCh38 FASTA is 3 GB and the VCF/BCF/TSV intermediates add ~2 GB, hence
+    the ephemeral-storage request.
+    """
+    return _container_resources("COSMIC", cpu="1", memory="2Gi", memory_limit="4Gi", ephemeral_storage="8Gi")
 
 
 def _nextflow_container_resources() -> k8s.V1ResourceRequirements:
@@ -349,6 +367,28 @@ class InitIcebergTables(RadiantTaskK8SOperator):
             initialization.create_somatic_cnv_occurrence_table()
 
         return create_somatic_cnv_occurrence_table
+
+
+class CosmicMutationSet(RadiantTaskK8SOperator):
+    @staticmethod
+    def get_normalize(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                task_id="normalize_cosmic_mutation_set_k8s",
+                task_display_name="[K8s] Normalize COSMIC Mutation Set",
+                name="normalize-cosmic-mutation-set",
+                do_xcom_push=True,
+            )
+            | CosmicMutationSet._get_k8s_context(radiant_namespace, container_resources=_cosmic_container_resources()),
+        )
+        def k8s_normalize_cosmic_mutation_set(
+            input_filepath: str, reference_fasta_filepath: str, output_filepath: str
+        ) -> dict:
+            from radiant.tasks.open_data.cosmic_mutation_set import normalize_cosmic_mutation_set
+
+            return normalize_cosmic_mutation_set(input_filepath, reference_fasta_filepath, output_filepath)
+
+        return k8s_normalize_cosmic_mutation_set
 
 
 class CheckDataIntegrity:

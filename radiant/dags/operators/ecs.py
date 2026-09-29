@@ -257,6 +257,40 @@ class ImportPart(RadiantTaskECSOperator):
         )
 
 
+class CosmicMutationSet(RadiantTaskECSOperator):
+    @staticmethod
+    def get_normalize(ecs_env: ECSEnv):
+        return ecs.EcsRunTaskOperator(
+            **dict(
+                task_id="normalize_cosmic_mutation_set_ecs",
+                task_display_name="[ECS] Normalize COSMIC Mutation Set",
+                overrides={
+                    "containerOverrides": [
+                        {
+                            "name": "radiant-operator-qa-etl-container",
+                            "command": [
+                                "python /opt/radiant/normalize_cosmic_mutation_set.py "
+                                "--input '{{ params.cosmic_mutation_set_filepath }}' "
+                                "--fasta '{{ params.reference_fasta_filepath }}' "
+                                "--output '{{ ti.xcom_pull(task_ids=\"resolve_normalized_filepath\") }}'"
+                            ],
+                            "environment": [
+                                {"name": "PYTHONPATH", "value": "/opt/radiant"},
+                                {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
+                                {"name": "STARROCKS_BROKER_USE_INSTANCE_PROFILE", "value": "true"},
+                            ],
+                        }
+                    ]
+                },
+            )
+            | CosmicMutationSet._get_ecs_context(
+                ecs_cluster=ecs_env.ECS_CLUSTER,
+                ecs_subnets=ecs_env.ECS_SUBNETS,
+                ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
+            )
+        )
+
+
 class Toolbox:
     @staticmethod
     def get_run_command(ecs_env: ECSEnv, extra_env: list[dict] | None = None) -> ecs.EcsRunTaskOperator:

@@ -8,3 +8,11 @@ def test_docker_image_contains_cyvcf():
         assert exit_code == 0
         assert b"cyvcf2" in output
         assert b"wurlitzer" in output
+
+
+def test_docker_image_contains_bcftools():
+    _IMAGE_NAME = "ghcr.io/radiant-network/radiant-airflow-task-operator:latest"
+    with DockerContainer(_IMAGE_NAME).with_command("sleep 10") as container:
+        exit_code, output = container.exec("bcftools --version")
+        assert exit_code == 0
+        assert output.startswith(b"bcftools 1.")

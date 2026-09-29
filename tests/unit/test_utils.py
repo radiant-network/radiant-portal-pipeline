@@ -4,7 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from radiant.tasks.utils import S3DownloadError, capture_libc_stderr_and_check_errors, download_s3_file
+from radiant.tasks.utils import (
+    S3DownloadError,
+    S3UploadError,
+    capture_libc_stderr_and_check_errors,
+    download_s3_file,
+    upload_s3_file,
+)
 
 
 def test_raises_value_error_when_error_pattern_is_found_in_stderr():
@@ -91,3 +97,30 @@ def test_download_s3_file_randomizes_filename():
     assert result.startswith("/tmp/dest/")
     assert result.endswith("_file.vcf.gz")
     assert result != "/tmp/dest/file.vcf.gz"
+
+
+def test_upload_s3_file_returns_uri_on_success():
+    mock_client = MagicMock()
+    with patch("radiant.tasks.utils.boto3.client", return_value=mock_client):
+        result = upload_s3_file("/tmp/src/file.tsv.gz", "s3://my-bucket/path/to/file.tsv.gz")
+
+    assert result == "s3://my-bucket/path/to/file.tsv.gz"
+    mock_client.upload_file.assert_called_once_with("/tmp/src/file.tsv.gz", "my-bucket", "path/to/file.tsv.gz")
+
+
+def test_upload_s3_file_propagates_error_with_paths():
+    original = OSError("AccessDenied")
+    mock_client = MagicMock()
+    mock_client.upload_file.side_effect = original
+    s3_uri = "s3://my-bucket/path/to/file.tsv.gz"
+
+    with (
+        patch("radiant.tasks.utils.boto3.client", return_value=mock_client),
+        pytest.raises(S3UploadError) as exc_info,
+    ):
+        upload_s3_file("/tmp/src/file.tsv.gz", s3_uri)
+
+    assert s3_uri in str(exc_info.value)
+    assert "/tmp/src/file.tsv.gz" in str(exc_info.value)
+    assert "AccessDenied" in str(exc_info.value)
+    assert exc_info.value.__cause__ is original

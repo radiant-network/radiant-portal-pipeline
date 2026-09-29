@@ -310,6 +310,7 @@ def test_p1_leaves_the_file_driven_loads_unset(dag):
     assert "raw_rcv_filepaths" not in conf
     assert "cytoband_filepath" not in conf
     assert "cosmic_gene_set_filepath" not in conf
+    assert "cosmic_mutation_set_filepath" not in conf
 
 
 # --- map index labels ---------------------------------------------------------------------------
