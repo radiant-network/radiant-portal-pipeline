@@ -43,24 +43,12 @@ IMPORT_REFS_XCOM_KEY = "refs"
 
 
 def skip_legacy(group: str) -> str:
-    """Clause one: the source lives on the legacy catalog and the caller asked for contracts only."""
     key = source_keys.get(group, f"iceberg_{group}")
     return f"params.skip_legacy_tables and not mapping.get('{key}_is_contract')"
 
 
 def skip_unchanged(group: str) -> str:
-    """Clause two: OpenDataLake has published nothing since the copy in StarRocks was loaded.
-
-    Contract sources only. A held-back source is read off the legacy catalog without time travel,
-    so it has no ref, no snapshot, and nothing that could report it as moved -- gating it here would
-    mean never importing it again after the first run.
-
-    The gate task returns True for a source with something new, so the skip is its negation, and a
-    source missing from the map defaults to True: unknown means import.
-    """
     key = source_keys.get(group, f"iceberg_{group}")
-    # `not not` is what keeps the clause a bool: `_is_contract` is the string "true" or "", so a bare
-    # `mapping.get(...) and ...` renders "" rather than False for a held-back source.
     return (
         f"not not mapping.get('{key}_is_contract') and not params.force_import "
         f"and not (ti.xcom_pull(task_ids='{IMPORT_GATES_TASK_ID}') or {{}}).get('{key}', True)"
@@ -68,8 +56,6 @@ def skip_unchanged(group: str) -> str:
 
 
 def gated(group: str) -> str:
-    """The full `skip_if` for both statements of one group. Renders to a real bool -- the DAG sets
-    `render_template_as_native_obj`."""
     return "{{ (" + skip_legacy(group) + ") or (" + skip_unchanged(group) + ") }}"
 
 
@@ -144,19 +130,6 @@ with DAG(
 
     @task(task_id=IMPORT_GATES_TASK_ID, task_display_name="[PyOp] Which Sources Have New Data?")
     def compute_import_gates() -> dict[str, bool]:
-        """One entry per open-data source, True when OpenDataLake has published since the copy in
-        StarRocks was loaded.
-
-        Gates on `imported_snapshot_id`, not `snapshot_id`: the latter is only promoted once a whole
-        re-annotation has succeeded, so gating on it would leave a standalone run with nothing to
-        compare against and re-read the same snapshot every time.
-
-        Sits after `refresh_iceberg_tables` so the `$refs` read is not answered from metadata this
-        run has already superseded, and resolves the snapshots **once** -- `record_open_data_import`
-        records these very values -- both the snapshot and the version branch sitting on it.
-        Resolving again at the end of the run would record whatever `latest` points at by then,
-        which is not what the inserts below read.
-        """
         from airflow.operators.python import get_current_context
 
         from radiant.tasks.data.open_data import (
@@ -237,9 +210,6 @@ with DAG(
             sql="./sql/open_data/raw_clinvar_rcv_summary_insert.sql",
             submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
             trigger_rule="none_failed",
-            # Not `gated()`: clinvar_rcv has no pre-contract table, so a held-back run has nothing to
-            # read at all and must skip whatever `skip_legacy_tables` says. The snapshot half is the
-            # same as every other group's.
             skip_if=(
                 f"{{{{ (not mapping.get('iceberg_clinvar_rcv_is_contract')) or ({skip_unchanged('clinvar_rcv')}) }}}}"
             ),
@@ -301,16 +271,6 @@ with DAG(
 
     @task(task_id="build_import_rows", task_display_name="[PyOp] Build Open Data Release Rows")
     def build_import_rows() -> list[dict[str, str]]:
-        """One row per source, carrying the snapshot and dataset version the gate resolved before
-        the inserts ran.
-
-        Written for every source, not only the ones re-read: a gated-out source was skipped
-        *because* its copy already holds this snapshot, so the row is true for it too.
-
-        `reannotated_snapshot_id` is carried through from what is already there. This is a whole-row upsert on a
-        PRIMARY KEY table, and that column belongs to P4 -- omitting it would blank the re-annotation
-        ledger on every import.
-        """
         from airflow.operators.python import get_current_context
 
         from radiant.tasks.data.open_data import annotated_snapshots, build_open_data_release_rows
@@ -342,8 +302,6 @@ with DAG(
         task_id="record_open_data_import",
         task_display_name="[StarRocks] Record What Was Imported",
         sql=render_import_sql(_import_rows),
-        # NONE_FAILED: a gated-out or held-back source skips its insert, and the row still has to be
-        # written -- it is what the next run compares against. A *failed* insert does stop it.
         trigger_rule="none_failed",
     )
 
@@ -354,6 +312,4 @@ with DAG(
     data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband
     data_tasks[-1] >> tg_cosmic_gene_set
 
-    # After every Iceberg-sourced insert, the RCV group's included. The file-driven branches
-    # (cytoband, COSMIC) read no Iceberg source and have no row here.
     tg_clinvar_rcv_summary >> _import_rows >> record_import

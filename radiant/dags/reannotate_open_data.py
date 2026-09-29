@@ -39,11 +39,6 @@ dag_params = {
 
 
 def gated(branch: str) -> str:
-    """`skip_if` for every statement in one re-annotation branch.
-
-    Renders to a real bool -- the DAG sets `render_template_as_native_obj`. The gate task returns
-    True for a branch that has work to do, so the skip is its negation.
-    """
     return (
         "{{ not params.force_reannotation and not "
         f"(ti.xcom_pull(task_ids='{GATES_TASK_ID}') or {{}}).get('{branch}', True) }}}}"
@@ -201,10 +196,6 @@ def reannotate_open_data():
 
     @task(task_id=GATES_TASK_ID, task_display_name="[PyOp] Collect updated upstream Iceberg branches")
     def compute_reannotation_gates() -> dict[str, bool]:
-        """One branch per key, True when a source it reads has moved since the last release.
-
-        Runs after P1 so the `$refs` read sees the metadata cache the reference load refreshed.
-        """
         from airflow.operators.python import get_current_context
 
         from radiant.tasks.data.open_data import branches_to_reannotate, changed_sources
@@ -250,9 +241,6 @@ def reannotate_open_data():
             skip_if=gated("snv_consequence"),
             submit_task_options=std_submit_task_opts,
             pool=STARROCKS_INSERT_POOL,
-            # NONE_FAILED, not the default ALL_SUCCESS: the edge below exists only to keep the two
-            # statements off the cluster at the same time, and the branches are gated separately.
-            # Under ALL_SUCCESS a gated-out variant re-annotation would skip this one with it.
             trigger_rule=TriggerRule.NONE_FAILED,
         )
         reannotate_staging_variant >> reannotate_consequence
@@ -365,8 +353,6 @@ def reannotate_open_data():
     record_release = RadiantStarRocksOperator(
         task_id="record_open_data_release",
         task_display_name="[StarRocks] Record the Release",
-        # One UPDATE promoting `imported_snapshot_id` to `snapshot_id`. P1 wrote the descriptive
-        # columns and the snapshot it actually loaded; this marks those values as annotated.
         sql="./sql/radiant/open_data_release_annotate.sql",
         trigger_rule=TriggerRule.NONE_FAILED,
         pool=STARROCKS_INSERT_POOL,
