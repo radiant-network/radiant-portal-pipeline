@@ -95,3 +95,47 @@ def wait_for_batch(
             return report
         time.sleep(poll_interval)
     raise PortalError(f"batch {batch_id} was still pending after {timeout}s; last report: {report}")
+
+
+def _raise_for_status(response, method: str, url: str, tenant: str) -> None:
+    if response.status_code == 403:
+        raise PortalError(
+            f"{method} {url} returned 403. A valid token is not enough: the service-account user "
+            f"needs tenant access and the `ingest_data` action granted inside the portal for "
+            f"tenant '{tenant}'."
+        )
+    if not response.ok:
+        raise PortalError(f"{method} {url} failed: {response.status_code} {response.text[:2000]}")
+
+
+def post_case_group(host: str, tenant: str, token: str, name: str, case_ids: list[int]) -> dict:
+    """Create the named case group, or overwrite its case list when the name already exists.
+
+    The name is the key, so a retried task lands on the same group instead of a second one.
+    Returns the group as the portal stores it: `{name, tenant_code, case_ids}`.
+    """
+    import requests
+
+    url = f"{host.rstrip('/')}/{tenant}/case_groups"
+    response = requests.post(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        json={"name": name, "case_ids": case_ids},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    _raise_for_status(response, "POST", url, tenant)
+    return response.json()
+
+
+def notify_case_group(host: str, tenant: str, token: str, name: str) -> dict:
+    """Email each diagnosis laboratory of the group its manifest; returns the per-lab report.
+
+    Stateless on the portal side: calling it again sends again. A 500 means nothing was sent
+    (no template for the tenant, or bad SMTP settings), a 404 that the group does not exist.
+    """
+    import requests
+
+    url = f"{host.rstrip('/')}/{tenant}/case_groups/{name}/notify"
+    response = requests.post(url, headers={"Authorization": f"Bearer {token}"}, timeout=REQUEST_TIMEOUT_SECONDS)
+    _raise_for_status(response, "POST", url, tenant)
+    return response.json()
