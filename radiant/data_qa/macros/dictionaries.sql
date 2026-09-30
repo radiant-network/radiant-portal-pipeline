@@ -49,9 +49,10 @@
              'Established_risk_allele', 'Likely_benign',
              'likely_pathogenic_low_penetrance', 'Likely_pathogenic',
              'Likely_risk_allele',
-             'no_classification_for_the_single_variant', 'not_provided', 'other',
+             'no_classification_for_the_single_variant', 'no_classifications_from_unflagged_records',
+             'not_provided', 'other',
              'pathogenic_low_penetrance', 'Pathogenic', 'protective', 'risk_factor',
-             'Uncertain_risk_allele', 'Uncertain_significance',
+             'Uncertain_risk_allele', 'Uncertain_significance', 'VUS-high', 'VUS-low', 'VUS-mid',
              '_low_penetrance', 'low_penetrance']) }}
 {% endmacro %}
 
