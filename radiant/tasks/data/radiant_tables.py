@@ -54,6 +54,10 @@ CLINICAL_MAPPING = {
     "clinical_family_history": "family_history",
 }
 
+# --- Case statuses a pipeline picks a case up in
+PIPELINE_CASE_STATUSES = ("submitted", "processing", "in_progress", "completed")
+PIPELINE_CASE_STATUSES_KEY = "pipeline_case_statuses"
+
 # --- Iceberg tables
 ICEBERG_RADIANT_MAPPING = {
     "iceberg_germline_cnv_occurrence": "germline_cnv_occurrence",
@@ -306,4 +310,5 @@ def get_radiant_mapping(conf=None, tenant_code=None) -> dict:
     mapping.update(get_starrocks_mapping(conf=conf, tenant_code=tenant_code))
     mapping.update(get_iceberg_tables(conf))
     mapping.update(get_clinical_mapping(conf))
+    mapping[PIPELINE_CASE_STATUSES_KEY] = ", ".join(f"'{status}'" for status in PIPELINE_CASE_STATUSES)
     return mapping

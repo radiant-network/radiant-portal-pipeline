@@ -27,7 +27,7 @@ with sequencing_context AS (
 	FROM  {{ mapping.clinical_sequencing_experiment }} se
 	LEFT JOIN {{ mapping.clinical_case_has_sequencing_experiment }} chse ON chse.sequencing_experiment_id = se.id
 	JOIN {{ mapping.clinical_case }} c ON chse.case_id = c.id
-	WHERE c.status_code in ('in_progress', 'completed')
+	WHERE c.status_code IN ({{ mapping.pipeline_case_statuses }})
 	GROUP BY
 	    c.id,
 		se.id,

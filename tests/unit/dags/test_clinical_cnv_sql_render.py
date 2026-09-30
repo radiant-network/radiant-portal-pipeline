@@ -110,4 +110,4 @@ def test_members_without_sequencing_come_back_carrying_a_reason():
 def test_only_germline_cases_and_never_revoked_ones():
     sql = _without_comments(_render(_TEMPLATE))
     assert "c.case_type_code = 'germline'" in sql
-    assert "c.status_code IN ('in_progress', 'completed')" in sql
+    assert "c.status_code IN ('submitted', 'processing', 'in_progress', 'completed')" in sql

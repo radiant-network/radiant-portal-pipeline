@@ -135,7 +135,7 @@ def test_revoked_cases_are_never_resurrected():
     """In the field a revoked case is very often precisely a case left un-annotated on
     purpose, so admitting it would re-process every one of them nightly."""
     sql = _without_comments(_render("pending_annotation_select.sql"))
-    assert "c.status_code IN ('in_progress', 'completed')" in sql
+    assert "c.status_code IN ('submitted', 'processing', 'in_progress', 'completed')" in sql
 
 
 def test_the_project_join_is_on_the_primary_key_alone():
@@ -186,3 +186,11 @@ def test_the_gvcf_is_selected_on_document_type_not_filename():
 def test_only_germline_cases_are_returned():
     """The pipeline's `step: genotype` entry point assumes germline joint calling."""
     assert "c.case_type_code = 'germline'" in _render("pending_annotation_select.sql")
+
+
+def test_the_import_view_reads_the_same_statuses_as_the_discovery_queries():
+    text = (
+        DAGS_DIR / "sql" / "radiant" / "init" / "staging_external_sequencing_experiment_create_table.sql"
+    ).read_text()
+    sql = jinja2.Template(text, undefined=jinja2.StrictUndefined).render(mapping=get_radiant_mapping(_CONF))
+    assert "c.status_code IN ('submitted', 'processing', 'in_progress', 'completed')" in sql
