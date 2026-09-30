@@ -30,7 +30,8 @@ configuration, not for normal operation.
 |:--|:--|:--|
 | **task_ids** | empty | alignment_germline_variant_calling task ids, for a targeted rerun. Empty means "find everything" |
 | **tenants** | $NEXTFLOW_POSTPROCESSING_TENANTS | Tenants the portal has granted this service account ingest_data on. Empty means no filtering |
-| **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing |
+| **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing, and skips the case group and the notification |
+| **notify** | **true** | Email the laboratories after registration. False still creates the case group, so **notify_cases** can send later |
 
 > **dry_run on a scheduled run is a trap.** A dry run registers nothing, so every case stays
 > eligible and tomorrow's run does the same work again, for ever. Manual runs only.
@@ -198,7 +199,7 @@ Per case, two tasks:
 | **aliquots** | Every family member | Proband only |
 | **input_documents** | Each member's gVCF | The slivar VCF |
 | **output_documents** | slivar vcf and tbi | tsv, html and json |
-| **pipeline** | Post-processing-Pipeline 3.0.0 | Exomiser 14.0.0 |
+| **pipeline** | Post-processing-Pipeline b535f27 | Exomiser 14.0.0 |
 
 > **Known compromise: Exomiser's input lineage.** The pipeline actually feeds Exomiser the
 > VEP-annotated VCF (exomiser_start_from_vep is true), one step before slivar. That file is
@@ -229,6 +230,41 @@ The grant is client_credentials — no browser, no device approval.
 > **register_tasks** fails with a 403 and no error codes, that grant is what is missing, not
 > the payload — and the tenant should come out of **tenants** until it is fixed, so the
 > pipeline stops spending hours on cases it cannot register.
+
+---
+
+## Notification
+
+After registration, two more mapped tasks per tenant, in order:
+
+- **create_case_group** POSTs `/{tenant}/case_groups` with the tenant's case ids under the name
+  `postprocessing-<run tag>`. The name is the key and the call overwrites, so a retry lands on
+  the same group.
+- **notify_labs** POSTs `/{tenant}/case_groups/{name}/notify`. The portal groups the cases by
+  diagnosis laboratory and emails each one the TSV manifest of its output documents (index
+  files included), ready for `radiant-client download -m`. Recipients come from the
+  organization's `notification_emails`, subject and body from the tenant's template.
+
+The log holds one line per laboratory with its status, recipients, the template file used and
+the render context (`has_stat`, `analysis_codes`, `case_ids`, `manifest_filename`):
+
+| Status | Meaning | Task outcome |
+|:--|:--|:--|
+| **sent** | Email sent with the manifest attached | success |
+| **skipped_no_contact** | The organization has no `notification_emails` | warning, success |
+| **skipped_no_documents** | Nothing registered for that laboratory's cases | warning, success |
+| **failed** | The SMTP relay refused the email | task fails |
+
+> **A retry re-sends.** The portal keeps no record of what was emailed, so clearing
+> **notify_labs** emails every laboratory of that tenant again, the ones already served
+> included. Clear one mapped instance, not the whole task, for the same reason as
+> registration.
+
+A **500** from the portal means nothing was sent: the tenant has no notification template
+mounted (the `radiant-notification-templates` ConfigMap), or the SMTP settings are invalid.
+Infrastructure, not pipeline state. Both tasks are skipped on **dry_run**; **notify_labs**
+alone is skipped when **notify** is false. The manual **notify_cases** DAG sends for an
+existing group or an ad-hoc list of cases.
 
 ---
 

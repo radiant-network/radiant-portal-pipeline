@@ -21,6 +21,8 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "run_pipeline",
         "collect_outputs",
         "register_tasks",
+        "create_case_group",
+        "notify_labs",
     }
     assert dag.validate() is None
 
@@ -59,8 +61,22 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     register = dag.get_task("register_tasks")
     assert {t.task_id for t in register.upstream_list} == {"resolve_cases", "collect_outputs", "list_tenants"}
-    assert register.downstream_list == []
+    assert {t.task_id for t in register.downstream_list} == {"create_case_group"}
     assert isinstance(register, MappedOperator)
+
+
+def test_notification_follows_registration_one_group_then_one_email_per_tenant(dag_bag):
+    """The group must exist before notify, and both must wait for the documents to be
+    registered: a manifest built before the PATCH landed would be empty. Mapped for the same
+    per-tenant retry reason as registration -- and because a retry of notify re-sends."""
+    dag = dag_bag.get_dag(DAG_ID)
+    grouped = dag.get_task("create_case_group")
+    notified = dag.get_task("notify_labs")
+    assert {t.task_id for t in grouped.upstream_list} == {"register_tasks", "resolve_cases", "list_tenants"}
+    assert {t.task_id for t in notified.upstream_list} == {"create_case_group", "list_tenants"}
+    assert notified.downstream_list == []
+    assert isinstance(grouped, MappedOperator)
+    assert isinstance(notified, MappedOperator)
 
 
 def test_dag_asks_for_nothing_it_can_work_out_itself(dag_bag):
@@ -69,7 +85,13 @@ def test_dag_asks_for_nothing_it_can_work_out_itself(dag_bag):
     schema, so the tenant is read off the cases. What is left is intent: which tasks (none,
     normally), where writes are permitted, and whether to write at all."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert set(dag.params) == {"task_ids", "tenants", "dry_run"}
+    assert set(dag.params) == {"task_ids", "tenants", "dry_run", "notify"}
+
+
+def test_a_scheduled_run_notifies(dag_bag):
+    """Silence is the exception, not the default: the laboratories are the reason the run exists."""
+    dag = dag_bag.get_dag(DAG_ID)
+    assert dag.params["notify"] is True
 
 
 def test_a_scheduled_run_actually_writes(dag_bag):
