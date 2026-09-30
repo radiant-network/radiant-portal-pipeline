@@ -94,7 +94,7 @@ def test_driver_script_is_jinja_safe_and_runs_the_cnv_pipeline():
     assert 'cd "$LAUNCH"' in script
     assert "-resume" in script
     assert "assets/Ferlab-Ste-Justine/cnv-post-processing" in script
-    assert "Post-processing-Pipeline" not in script
+    assert "snv-post-processing" not in script
     assert "quality-control-pipeline" not in script
     # Nothing beyond the samplesheet and outdir on the command line.
     assert "--dragen_metrics_dir" not in script

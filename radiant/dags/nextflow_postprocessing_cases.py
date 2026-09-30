@@ -68,8 +68,8 @@ PORTAL_CONN_ID = "radiant_api_conn"
 CASE_GROUP_PREFIX = "postprocessing"
 
 # Under the shared roots, apart from quality control (`qc-runs/`, `qc/`).
-INPUTS_SUBDIR = "postprocessing-runs"
-OUTPUTS_SUBDIR = "postprocessing"
+INPUTS_SUBDIR = "snv-runs"
+OUTPUTS_SUBDIR = "snv"
 
 # Tenants the service account has been granted `ingest_data` on, comma separated. Empty
 # means "do not filter", which is right for a single-tenant deployment and wrong the moment

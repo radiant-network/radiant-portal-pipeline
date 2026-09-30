@@ -157,7 +157,7 @@ index:
 - OUTPUTS_ROOT / qc / RUN_TAG-gN / multiqc / CA_ID /
 
 The qc-runs/ and qc/ subdirectories keep these apart from post-processing, which writes
-postprocessing-runs/ and postprocessing/ under the same two roots.
+snv-runs/ and snv/ under the same two roots.
 
 The child run id is pinned to RUN_TAG-gN, so a retry of this DAG re-enters the same launcher
 run and its Nextflow launch directory, and -resume skips what already completed. The launcher

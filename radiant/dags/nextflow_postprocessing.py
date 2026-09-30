@@ -1,11 +1,11 @@
-"""Run the Ferlab Post-processing-Pipeline (VEP / slivar / Exomiser) from Airflow.
+"""Run the Ferlab snv-post-processing (VEP / slivar / Exomiser) from Airflow.
 
 A single task launches a Nextflow *driver* pod on qlin-eks; that driver then spawns
 one worker pod per pipeline process through Nextflow's own k8s executor. Airflow
 sees one task, Kubernetes sees a fan-out.
 
 Run-invariant settings (reference paths, tools, VEP/Exomiser versions) live in the
-`nextflow-params` ConfigMap, the executor and resource layout in `nextflow-cfg` --
+`nextflow-snv-params` ConfigMap, the executor and resource layout in `nextflow-snv-cfg` --
 both owned by the kustomization in qlin-qa-infra. Only the two values that change
 every run are exposed here as DAG params.
 

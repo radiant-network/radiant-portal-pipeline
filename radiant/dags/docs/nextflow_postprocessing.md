@@ -1,7 +1,7 @@
 # Nextflow Post-processing
 
 Runs the Ferlab
-[Post-processing-Pipeline](https://github.com/Ferlab-Ste-Justine/Post-processing-Pipeline)
+[snv-post-processing](https://github.com/Ferlab-Ste-Justine/snv-post-processing)
 on qlin-eks: joint genotyping from per-sample gVCFs, then VEP, slivar and Exomiser.
 
 > **One Airflow task is a fan-out of dozens of pods.** The task launches a Nextflow
@@ -33,8 +33,8 @@ Everything else is run-invariant and lives in ConfigMaps rather than params:
 
 | ConfigMap | Holds |
 |:--|:--|
-| **nextflow-params** | Reference genome, VEP cache, Exomiser data, tools, step |
-| **nextflow-cfg** | The executor and per-process resources |
+| **nextflow-snv-params** | Reference genome, VEP cache, Exomiser data, tools, step |
+| **nextflow-snv-cfg** | The executor and per-process resources |
 
 Both are owned by the kustomization in qlin-qa-infra/kubernetes-manifests/apps/nextflow/.
 

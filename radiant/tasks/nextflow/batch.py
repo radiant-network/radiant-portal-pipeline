@@ -28,7 +28,7 @@ EXOMISER_TASK_TYPE = "exomiser"
 # upstream of this run. The revision the launcher image pins (`PIPELINE_REV` in
 # Dockerfile.nextflow.launcher): a commit of `main` until the next release is tagged.
 # Bump both together.
-ANNOTATION_PIPELINE = ("Post-processing-Pipeline", "b535f27")
+ANNOTATION_PIPELINE = ("snv-post-processing", "b535f27")
 
 # The pinned pipeline runs the official exomiser/exomiser-cli:14.0.0-bash image, so this
 # now matches the software actually run (it was inherited from seed data before).
