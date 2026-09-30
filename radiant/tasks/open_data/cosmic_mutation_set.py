@@ -8,6 +8,10 @@ from the COSMIC columns never matches an indel. This module rebuilds every row a
 anchor base read from the reference FASTA, runs ``bcftools norm`` against that same FASTA, and writes the
 rows back out keyed on the normalized alleles with the pipeline's own ``locus_hash``.
 
+Rows that cannot be keyed (no GRCh38 position, a reference allele the FASTA contradicts, ...) are written
+too, with the key columns empty: every row also carries COSMIC's transcript and ``c.`` change, which is how
+``cosmic_mutation_set_hgvs`` reaches the mutations coordinates cannot place.
+
 Runs inside the radiant-operator image (which carries ``bcftools``), on Kubernetes or ECS; it needs the
 stdlib, ``boto3`` and a few GB of scratch disk (the GRCh38 FASTA alone is 3 GB).
 """
@@ -42,7 +46,11 @@ PASSTHROUGH_COLUMNS = {
     "sample_tested": "COSMIC_SAMPLE_TESTED",
     "tier": "MUTATION_SIGNIFICANCE_TIER",
 }
-OUTPUT_COLUMNS = ["chromosome", "start", "reference", "alternate", "locus_hash", *PASSTHROUGH_COLUMNS]
+ACCESSION_COLUMN = "ACCESSION_NUMBER"  # Ensembl transcript with version, e.g. ENST00000375687.4
+CDS_COLUMN = "Mutation CDS"  # HGVS coding change on that transcript, e.g. c.1934del
+KEY_COLUMNS = ["chromosome", "start", "reference", "alternate", "locus_hash"]
+HGVS_COLUMNS = ["transcript_id", "cds_change"]  # the accession without its version, and the c. change
+OUTPUT_COLUMNS = [*KEY_COLUMNS, *PASSTHROUGH_COLUMNS, *HGVS_COLUMNS]
 COSMIC_CONTIGS = [str(i) for i in range(1, 23)] + ["X", "Y", "MT"]
 
 # Rejection reasons; each is a counter in the summary.
@@ -80,6 +88,8 @@ class CosmicRow:
     ref: str
     alt: str
     values: tuple[str, ...]  # PASSTHROUGH_COLUMNS, in order
+    transcript_id: str  # ACCESSION_NUMBER without its version
+    cds_change: str  # Mutation CDS as published
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,15 +142,17 @@ class CosmicNormalizationSummary:
     rows_ref_mismatch: int = 0
     bcftools_excluded: int = 0
     bcftools_lines: dict[str, int] = field(default_factory=dict)
-    rows_out: int = 0
+    rows_out: int = 0  # every input row, keyed or not
+    rows_keyed: int = 0  # rows written with a normalized locus
     dropped_contigs: dict[str, int] = field(default_factory=dict)
     output_s3_uri: str = ""
 
     def check(self) -> None:
-        dropped = sum(getattr(self, reason) for reason in DROP_REASONS)
-        if self.rows_out != self.rows_in - dropped:
+        unkeyed = sum(getattr(self, reason) for reason in DROP_REASONS)
+        if self.rows_keyed != self.rows_in - unkeyed or self.rows_out != self.rows_in:
             raise CosmicNormalizationError(
-                f"row accounting mismatch: {self.rows_in} in, {dropped} dropped, {self.rows_out} out"
+                f"row accounting mismatch: {self.rows_in} in, {unkeyed} without a locus, "
+                f"{self.rows_keyed} keyed, {self.rows_out} out"
             )
 
 
@@ -245,12 +257,13 @@ def iter_cosmic_rows(path: str) -> Iterator[CosmicRow]:
     with gzip.open(path, "rt", encoding="utf-8", newline="") as handle:
         header = handle.readline().rstrip("\r\n").split("\t")
         index = {name: i for i, name in enumerate(header)}
-        needed = [POSITION_COLUMN, REF_COLUMN, ALT_COLUMN, *PASSTHROUGH_COLUMNS.values()]
+        needed = [POSITION_COLUMN, REF_COLUMN, ALT_COLUMN, ACCESSION_COLUMN, CDS_COLUMN, *PASSTHROUGH_COLUMNS.values()]
         missing = [name for name in needed if name not in index]
         if missing:
             raise CosmicNormalizationError(f"COSMIC export is missing columns {missing}; header: {header}")
         position_idx, ref_idx, alt_idx = index[POSITION_COLUMN], index[REF_COLUMN], index[ALT_COLUMN]
         passthrough_idx = [index[name] for name in PASSTHROUGH_COLUMNS.values()]
+        accession_idx, cds_idx = index[ACCESSION_COLUMN], index[CDS_COLUMN]
         width = len(header)
         for row_number, line in enumerate(handle, start=1):
             fields = line.rstrip("\r\n").split("\t")
@@ -264,6 +277,8 @@ def iter_cosmic_rows(path: str) -> Iterator[CosmicRow]:
                 ref=fields[ref_idx].strip().upper(),
                 alt=fields[alt_idx].strip().upper(),
                 values=tuple(fields[i].strip() for i in passthrough_idx),
+                transcript_id=fields[accession_idx].strip().split(".", 1)[0],
+                cds_change=fields[cds_idx].strip(),
             )
 
 
@@ -436,29 +451,31 @@ def iter_normalized(path: str) -> Iterator[NormalizedRecord]:
 def merge_back(
     rows: Iterable[CosmicRow], normalized: Iterable[NormalizedRecord], contig_map: ContigMap
 ) -> Iterator[list[str]]:
-    """Walk the original rows and the ID-sorted normalized records together. A row absent from the
-    normalized stream was dropped upstream; a normalized ID that never meets its row means the two streams
-    diverged, which is an error rather than something to paper over."""
+    """Walk the original rows and the ID-sorted normalized records together, yielding one output row per
+    input row. A row absent from the normalized stream could not be keyed upstream and goes out with empty
+    key columns; a normalized ID that never meets its row means the two streams diverged, which is an error
+    rather than something to paper over."""
     pending_iter = iter(normalized)
     pending = next(pending_iter, None)
     for row in rows:
-        if pending is None:
-            return
-        if pending.row_number < row.row_number:
+        if pending is not None and pending.row_number < row.row_number:
             raise CosmicNormalizationError(f"normalized ID {pending.row_number} has no source row")
-        if pending.row_number > row.row_number:
-            continue
-        chromosome = contig_map.to_radiant(pending.contig)
-        _, locus_hash = locus_and_hash(chromosome, pending.pos, pending.ref, pending.alt)
-        yield [chromosome, str(pending.pos), pending.ref, pending.alt, locus_hash, *row.values]
-        pending = next(pending_iter, None)
+        if pending is not None and pending.row_number == row.row_number:
+            chromosome = contig_map.to_radiant(pending.contig)
+            _, locus_hash = locus_and_hash(chromosome, pending.pos, pending.ref, pending.alt)
+            key = [chromosome, str(pending.pos), pending.ref, pending.alt, locus_hash]
+            pending = next(pending_iter, None)
+        else:
+            key = [""] * len(KEY_COLUMNS)
+        yield [*key, *row.values, row.transcript_id, row.cds_change]
     if pending is not None:
         raise CosmicNormalizationError(f"normalized ID {pending.row_number} is past the last source row")
 
 
-def write_output(out_rows: Iterable[list[str]], path: str) -> int:
-    """Gzipped TSV with a header row, the shape ``cosmic_mutation_set_load.sql`` reads by position."""
-    written = 0
+def write_output(out_rows: Iterable[list[str]], path: str) -> tuple[int, int]:
+    """Gzipped TSV with a header row, the shape ``cosmic_mutation_set_load.sql`` reads by position. Returns
+    ``(rows written, rows with a locus)``."""
+    written = keyed = 0
     with gzip.open(path, "wt", encoding="utf-8", compresslevel=6, newline="") as out:
         out.write("\t".join(OUTPUT_COLUMNS) + "\n")
         for fields in out_rows:
@@ -467,7 +484,8 @@ def write_output(out_rows: Iterable[list[str]], path: str) -> int:
                     raise CosmicNormalizationError(f"field contains a delimiter: {value!r}")
             out.write("\t".join(fields) + "\n")
             written += 1
-    return written
+            keyed += fields[0] != ""
+    return written, keyed
 
 
 def normalize_cosmic_mutation_set(
@@ -497,7 +515,7 @@ def normalize_cosmic_mutation_set(
             logger.warning("bcftools %s", line)
 
         output_path = os.path.join(tmpdir, "cosmic_mutation_set.normalized.tsv.gz")
-        rows_out = write_output(
+        rows_out, rows_keyed = write_output(
             merge_back(iter_cosmic_rows(tsv_path), iter_normalized(sorted_path), contig_map), output_path
         )
 
@@ -507,10 +525,11 @@ def normalize_cosmic_mutation_set(
         summary.bcftools_excluded = stats.excluded
         summary.bcftools_lines = stats.lines
         summary.rows_out = rows_out
+        summary.rows_keyed = rows_keyed
         summary.dropped_contigs = {k.removeprefix("contig:"): v for k, v in counts.items() if k.startswith("contig:")}
         summary.check()
 
-        logger.info("Uploading %d rows to %s", rows_out, output_s3_uri)
+        logger.info("Uploading %d rows (%d with a locus) to %s", rows_out, rows_keyed, output_s3_uri)
         upload_s3_file(output_path, output_s3_uri)
     logger.info("Summary: %s", asdict(summary))
     return asdict(summary)

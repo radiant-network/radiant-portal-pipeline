@@ -102,6 +102,7 @@ ANNOTATED_SNAPSHOT = "reannotated_snapshot_id"
 def _snapshot_literal(snapshot: int | str | None) -> str:
     return "" if snapshot in (None, LEGACY) else str(snapshot)
 
+
 REANNOTATION_SOURCES = {
     # snv_staging_variant_reannotate.sql:42-47
     "snv_variant": {
@@ -135,8 +136,10 @@ def _query(sql: str, params: tuple = ()) -> list[tuple]:
         cursor.execute(sql, params)
         return list(cursor.fetchall())
 
+
 MAIN_BRANCH = "main"
 AUDIT_BRANCH_PREFIX = "audit_"
+
 
 def _dataset_version_of(rows: list[tuple], ref: str, snapshot: int | None) -> str:
     """The version branch `ref` resolves to, given every row of one table's `$refs`."""

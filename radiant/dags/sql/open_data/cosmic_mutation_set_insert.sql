@@ -1,5 +1,6 @@
 -- One row per locus: the census lists a mutation once per transcript, so a locus repeats (same or different
 -- COSV id); keep the row with the most mutated samples, as the legacy Spark ETL did (Variants.scala withCosmic).
+-- Staging rows without a locus belong to cosmic_mutation_set_hgvs, not here.
 INSERT OVERWRITE {{ mapping.starrocks_cosmic_mutation_set }}
 SELECT
     locus_id,
@@ -22,5 +23,6 @@ FROM (
         ROW_NUMBER() OVER (PARTITION BY t.locus_hash ORDER BY t.sample_mutated DESC, t.cosmic_id) AS rn
     FROM {{ mapping.starrocks_raw_cosmic_mutation_set }} t
     LEFT JOIN {{ mapping.starrocks_variant_lookup }} v ON v.locus_hash = t.locus_hash
+    WHERE t.locus_hash IS NOT NULL
 ) ranked
 WHERE rn = 1;

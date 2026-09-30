@@ -86,6 +86,7 @@ with DAG(
         "cosmic_gene_panel",
         "raw_cosmic_mutation_set",
         "cosmic_mutation_set",
+        "cosmic_mutation_set_hgvs",
         "clinvar_rcv_summary",
         "raw_clinvar_rcv_summary",
         "mondo_term",
