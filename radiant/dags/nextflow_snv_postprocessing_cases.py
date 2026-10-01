@@ -1,6 +1,6 @@
 """Find the germline cases waiting for an annotation, run the pipeline, register the result.
 
-`radiant-nextflow-postprocessing` runs the Ferlab post-processing pipeline. This DAG closes
+`radiant-nextflow-snv-postprocessing` runs the Ferlab post-processing pipeline. This DAG closes
 the two manual ends around it: it discovers what needs running, builds the samplesheet, PED
 files and phenopackets from the clinical model, triggers that DAG, then registers what the
 run published back onto the cases as `radiant_germline_annotation` and `exomiser` tasks.
@@ -68,8 +68,8 @@ PORTAL_CONN_ID = "radiant_api_conn"
 CASE_GROUP_PREFIX = "postprocessing"
 
 # Under the shared roots, apart from quality control (`qc-runs/`, `qc/`).
-INPUTS_SUBDIR = "postprocessing-runs"
-OUTPUTS_SUBDIR = "postprocessing"
+INPUTS_SUBDIR = "snv-runs"
+OUTPUTS_SUBDIR = "snv"
 
 # Tenants the service account has been granted `ingest_data` on, comma separated. Empty
 # means "do not filter", which is right for a single-tenant deployment and wrong the moment
@@ -149,8 +149,8 @@ def _workspace_env() -> dict[str, str]:
 
 
 @dag(
-    dag_id=f"{NAMESPACE}-nextflow-postprocessing-cases",
-    dag_display_name="Radiant - Nextflow Post-processing (from Cases)",
+    dag_id=f"{NAMESPACE}-nextflow-snv-postprocessing-cases",
+    dag_display_name="Radiant - Nextflow SNV Post-processing (from Cases)",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     schedule="@daily",
@@ -162,11 +162,11 @@ def _workspace_env() -> dict[str, str]:
     max_active_runs=1,
     tags=["radiant", "nextflow"],
     params=dag_params,
-    doc_md=load_docs_md("nextflow_postprocessing_cases.md"),
+    doc_md=load_docs_md("nextflow_snv_postprocessing_cases.md"),
     render_template_as_native_obj=True,
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
-def nextflow_postprocessing_cases():
+def nextflow_snv_postprocessing_cases():
     # The clinical tables are one shared schema behind the `radiant_jdbc` catalog, not one
     # per tenant, and `cases.id` is a single-column primary key over all of it -- so the
     # tenant comes back with the rows rather than scoping the query. Nothing here needs
@@ -447,8 +447,8 @@ def nextflow_postprocessing_cases():
 
     run_pipeline = TriggerDagRunOperator(
         task_id="run_pipeline",
-        task_display_name="[DAG] Run Nextflow Post-processing",
-        trigger_dag_id=f"{NAMESPACE}-nextflow-postprocessing",
+        task_display_name="[DAG] Run Nextflow SNV Post-processing",
+        trigger_dag_id=f"{NAMESPACE}-nextflow-snv-postprocessing",
         # Pinned, not auto-generated. Without this a retry of *this* DAG would create a
         # fresh child run with a fresh RUN_TAG and therefore a fresh Nextflow launch dir,
         # so `-resume` would find nothing and a retry would become a full re-run.
@@ -474,4 +474,4 @@ def nextflow_postprocessing_cases():
     paths >> run_pipeline >> collected
 
 
-nextflow_postprocessing_cases()
+nextflow_snv_postprocessing_cases()

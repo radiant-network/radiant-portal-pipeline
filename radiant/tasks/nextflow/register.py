@@ -1,6 +1,6 @@
 """Send one tenant's batch to the portal and insist on a confirmed result.
 
-Extracted from `nextflow_postprocessing_cases.register_tasks` so the QC DAG registers the
+Extracted from `nextflow_snv_postprocessing_cases.register_tasks` so the QC DAG registers the
 same way. Airflow is imported inside the function: the module stays importable from plain
 unit tests, and only the DAG task pays for it.
 """

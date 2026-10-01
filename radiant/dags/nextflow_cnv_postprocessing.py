@@ -1,7 +1,7 @@
 """Run the Ferlab cnv-post-processing pipeline (truvari / mosdepth / VEP / Exomiser / slivar
 over germline CNV VCFs) from Airflow.
 
-Sibling of `nextflow_postprocessing.py`, built the same way: a single task launches a
+Sibling of `nextflow_snv_postprocessing.py`, built the same way: a single task launches a
 Nextflow *driver* pod on qlin-eks, and that driver spawns one worker pod per pipeline
 process through Nextflow's own k8s executor. Airflow sees one task, Kubernetes a fan-out.
 
@@ -70,7 +70,7 @@ def nextflow_cnv_postprocessing():
     # date-derived templates then raise UndefinedError at render time.
     #
     # `cnv-` keeps this DAG's launch dirs, work dirs and default outdirs apart from
-    # radiant-nextflow-postprocessing's and radiant-nextflow-quality-control's on the
+    # radiant-nextflow-snv-postprocessing's and radiant-nextflow-quality-control's on the
     # shared filesystem: sharing a launch dir corrupts the resume cache, and either
     # cleanup_work would delete the other's scratch.
     run_tag = "cnv-{{ run_id | replace(':', '-') | replace('+', '-') }}"

@@ -1,10 +1,10 @@
-# Nextflow Post-processing (from Cases)
+# Nextflow SNV Post-processing (from Cases)
 
 Finds the germline cases that have been aligned but never annotated, runs the Ferlab
-[Post-processing-Pipeline](https://github.com/Ferlab-Ste-Justine/Post-processing-Pipeline)
+[snv-post-processing](https://github.com/Ferlab-Ste-Justine/snv-post-processing)
 over them, and registers what it produces back onto those cases.
 
-**radiant-nextflow-postprocessing** runs the pipeline and nothing else. This DAG closes
+**radiant-nextflow-snv-postprocessing** runs the pipeline and nothing else. This DAG closes
 everything around it — deciding what needs running, building the pipeline's inputs from the
 clinical model, and turning its outputs into portal tasks.
 
@@ -37,7 +37,7 @@ configuration, not for normal operation.
 > eligible and tomorrow's run does the same work again, for ever. Manual runs only.
 
 Nothing else is a param. Paths are derived from the run (below), everything run-invariant —
-reference genome, VEP cache, Exomiser data, tools, step — lives in the **nextflow-params**
+reference genome, VEP cache, Exomiser data, tools, step — lives in the **nextflow-snv-params**
 ConfigMap the pipeline DAG reads, and the **tenant is read off the cases**.
 
 That last one matters. The clinical tables are a single shared schema behind the
@@ -118,12 +118,12 @@ Both roots are environment, not params:
 
 Each root gets a subdirectory named after the run:
 
-- INPUTS_ROOT / postprocessing-runs / RUN_TAG / samplesheet.csv
-- INPUTS_ROOT / postprocessing-runs / RUN_TAG / pedigrees / FAMILY_ID.ped
-- INPUTS_ROOT / postprocessing-runs / RUN_TAG / phenotypes / FAMILY_ID.yml
-- OUTPUTS_ROOT / postprocessing / RUN_TAG / slivar and exomiser
+- INPUTS_ROOT / snv-runs / RUN_TAG / samplesheet.csv
+- INPUTS_ROOT / snv-runs / RUN_TAG / pedigrees / FAMILY_ID.ped
+- INPUTS_ROOT / snv-runs / RUN_TAG / phenotypes / FAMILY_ID.yml
+- OUTPUTS_ROOT / snv / RUN_TAG / slivar and exomiser
 
-The postprocessing-runs/ and postprocessing/ subdirectories keep these apart from quality
+The snv-runs/ and snv/ subdirectories keep these apart from quality
 control, which writes qc-runs/ and qc/ under the same two roots.
 
 **RUN_TAG comes from run_id, not from a timestamp** — an Airflow 3 manual run can have a
@@ -199,7 +199,7 @@ Per case, two tasks:
 | **aliquots** | Every family member | Proband only |
 | **input_documents** | Each member's gVCF | The slivar VCF |
 | **output_documents** | slivar vcf and tbi | tsv, html and json |
-| **pipeline** | Post-processing-Pipeline b535f27 | Exomiser 14.0.0 |
+| **pipeline** | snv-post-processing b535f27 | Exomiser 14.0.0 |
 
 > **Known compromise: Exomiser's input lineage.** The pipeline actually feeds Exomiser the
 > VEP-annotated VCF (exomiser_start_from_vep is true), one step before slivar. That file is

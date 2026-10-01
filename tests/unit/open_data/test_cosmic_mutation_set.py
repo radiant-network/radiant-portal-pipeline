@@ -66,6 +66,8 @@ _HEADER = [
     "COSMIC_SAMPLE_TESTED",
     "COSMIC_SAMPLE_MUTATED",
     "MUTATION_SIGNIFICANCE_TIER",
+    "ACCESSION_NUMBER",
+    "Mutation CDS",
 ]
 
 
@@ -82,25 +84,41 @@ def tiny_ref(tmp_path):
     return str(fasta)
 
 
-def _row(position, ref, alt, row_number=1, cosmic_id="COSV1", mutated="5", tested="100", tier="Other"):
+def _row(
+    position,
+    ref,
+    alt,
+    row_number=1,
+    cosmic_id="COSV1",
+    mutated="5",
+    tested="100",
+    tier="Other",
+    transcript_id="ENST00000375687",
+    cds_change="c.1934del",
+):
     return CosmicRow(
         row_number=row_number,
         position=position,
         ref=ref,
         alt=alt,
         values=("https://cosmic/?id=1", "2", cosmic_id, mutated, tested, tier),
+        transcript_id=transcript_id,
+        cds_change=cds_change,
     )
 
 
 def _write_export(path, rows):
-    """Rows as (position, ref, alt, cosmic_id, mutated, tested, tier) in the real header's shape."""
+    """Rows as (position, ref, alt, cosmic_id, mutated, tested, tier) in the real header's shape; every row
+    is annotated on ENST00000375687.4 with a c. change derived from its id."""
     with gzip.open(path, "wt") as out:
         out.write("\t".join(_HEADER) + "\n")
         for position, ref, alt, cosmic_id, mutated, tested, tier in rows:
-            out.write(
-                "\t".join(["GENE", "https://cosmic/?id=1", "2", ref, alt, cosmic_id, position, tested, mutated, tier])
-                + "\n"
-            )
+            fields = ["GENE", "https://cosmic/?id=1", "2", ref, alt, cosmic_id, position, tested, mutated, tier]
+            fields += ["ENST00000375687.4", f"c.{cosmic_id.removeprefix('COSV')}del"]
+            out.write("\t".join(fields) + "\n")
+
+
+_KEYLESS = [""] * 5
 
 
 # --- FASTA access ------------------------------------------------------------------------------------------
@@ -216,8 +234,12 @@ def test_iter_cosmic_rows_resolves_columns_by_name_and_numbers_rows(tmp_path):
     _write_export(path, [("1:3-3", "G", "T", "COSV1", "5", "100", "3"), ("", "", "A", "COSV2", "1", "10", "Other")])
     rows = list(iter_cosmic_rows(str(path)))
     assert [r.row_number for r in rows] == [1, 2]
-    assert rows[0] == CosmicRow(1, "1:3-3", "G", "T", ("https://cosmic/?id=1", "2", "COSV1", "5", "100", "3"))
+    assert rows[0] == CosmicRow(
+        1, "1:3-3", "G", "T", ("https://cosmic/?id=1", "2", "COSV1", "5", "100", "3"), "ENST00000375687", "c.1del"
+    )
     assert rows[1].position == "" and rows[1].ref == "" and rows[1].alt == "A"
+    # The accession loses its version (COSMIC's are old; VEP's differ), the c. change is kept verbatim.
+    assert rows[1].transcript_id == "ENST00000375687" and rows[1].cds_change == "c.2del"
 
 
 def test_iter_cosmic_rows_fails_on_a_missing_column(tmp_path):
@@ -321,8 +343,8 @@ def test_run_bcftools_norm_reports_a_missing_binary(tmp_path):
 # --- merge back and output -------------------------------------------------------------------------------
 
 
-def test_merge_back_skips_dropped_rows_and_rekeys_on_the_normalized_alleles():
-    rows = [_row("1:1-1", "A", "C", row_number=i, cosmic_id=f"COSV{i}") for i in range(1, 6)]
+def test_merge_back_rekeys_matched_rows_and_passes_unmatched_rows_through_keyless():
+    rows = [_row("1:1-1", "A", "C", row_number=i, cosmic_id=f"COSV{i}", cds_change=f"c.{i}del") for i in range(1, 6)]
     normalized = [
         NormalizedRecord(1, "chr1", 61, "G", "GA"),
         NormalizedRecord(3, "chrM", 5, "G", "A"),
@@ -332,10 +354,15 @@ def test_merge_back_skips_dropped_rows_and_rekeys_on_the_normalized_alleles():
 
     out = list(merge_back(rows, normalized, contig_map))
 
-    assert [o[7] for o in out] == ["COSV1", "COSV3", "COSV5"]
+    # One output row per input row, in input order; the HGVS key rides along on every one of them.
+    assert [o[7] for o in out] == ["COSV1", "COSV2", "COSV3", "COSV4", "COSV5"]
+    assert [o[-2:] for o in out] == [["ENST00000375687", f"c.{i}del"] for i in range(1, 6)]
     assert out[0][:5] == ["1", "61", "G", "GA", locus_and_hash("1", 61, "G", "GA")[1]]
-    assert out[1][:5] == ["M", "5", "G", "A", locus_and_hash("M", 5, "G", "A")[1]]
-    assert out[2][5:] == list(rows[4].values)
+    assert out[2][:5] == ["M", "5", "G", "A", locus_and_hash("M", 5, "G", "A")[1]]
+    assert out[4][5:11] == list(rows[4].values)
+    # Rows 2 and 4 never came back from bcftools: no locus, but they are not lost.
+    assert out[1][:5] == _KEYLESS and out[3][:5] == _KEYLESS
+    assert out[1][5:11] == list(rows[1].values)
 
 
 @pytest.mark.parametrize(
@@ -351,21 +378,27 @@ def test_merge_back_refuses_to_lose_track_of_its_rows(normalized):
         list(merge_back(rows, normalized, ContigMap.build(["chr1"])))
 
 
-def test_write_output_writes_a_gzipped_tsv_with_a_header(tmp_path):
+def test_write_output_writes_a_gzipped_tsv_with_a_header_and_counts_keyed_rows(tmp_path):
     path = str(tmp_path / "out.tsv.gz")
-    assert write_output([["1", "61", "G", "GA", "hash", "url", "", "COSV1", "5", "100", "Other"]], path) == 1
+    keyed = ["1", "61", "G", "GA", "hash", "url", "", "COSV1", "5", "100", "Other", "ENST00000375687", "c.1934del"]
+    keyless = [*_KEYLESS, "url", "4", "COSV2", "9", "50", "2", "ENST00000324856", "c.1650dup"]
+    assert write_output([keyed, keyless], path) == (2, 1)
     with gzip.open(path, "rt") as handle:
         lines = handle.read().splitlines()
     assert lines[0] == "\t".join(OUTPUT_COLUMNS)
-    assert lines[1] == "1\t61\tG\tGA\thash\turl\t\tCOSV1\t5\t100\tOther"
+    assert lines[1] == "1\t61\tG\tGA\thash\turl\t\tCOSV1\t5\t100\tOther\tENST00000375687\tc.1934del"
+    assert lines[2] == "\t\t\t\t\turl\t4\tCOSV2\t9\t50\t2\tENST00000324856\tc.1650dup"
 
 
 def test_summary_check_enforces_the_row_accounting():
-    summary = CosmicNormalizationSummary(rows_in=10, rows_without_position=2, bcftools_excluded=1, rows_out=7)
+    summary = CosmicNormalizationSummary(
+        rows_in=10, rows_without_position=2, bcftools_excluded=1, rows_keyed=7, rows_out=10
+    )
     summary.check()
-    summary.rows_out = 8
-    with pytest.raises(CosmicNormalizationError, match="row accounting"):
-        summary.check()
+    for field_name, bad in (("rows_out", 8), ("rows_keyed", 8)):
+        broken = CosmicNormalizationSummary(**{**vars(summary), field_name: bad})
+        with pytest.raises(CosmicNormalizationError, match="row accounting"):
+            broken.check()
 
 
 @pytest.mark.skipif(shutil.which("bcftools") is None, reason="bcftools is not on PATH")
@@ -405,12 +438,17 @@ def test_normalize_cosmic_mutation_set_end_to_end(tiny_ref, tmp_path):
     ):
         summary = normalize_cosmic_mutation_set("s3://in/cmc_export.tsv.gz", "s3://ref/ref.fa", "s3://out/n.tsv.gz")
 
-    assert summary["rows_in"] == 5 and summary["rows_out"] == 2
+    assert summary["rows_in"] == 5 and summary["rows_out"] == 5 and summary["rows_keyed"] == 2
     assert summary[NO_POSITION] == 1 and summary[UNMAPPED_CONTIG] == 1 and summary[REF_MISMATCH] == 1
     assert summary[BCFTOOLS_EXCLUDED] == 0 and summary["dropped_contigs"] == {"7": 1}
     assert summary["output_s3_uri"] == "s3://out/n.tsv.gz"
     lines = uploaded["s3://out/n.tsv.gz"]
     assert lines[0] == "\t".join(OUTPUT_COLUMNS)
-    assert lines[1].split("\t")[:4] == ["1", "61", "G", "GA"] and lines[1].split("\t")[7] == "COSV1"
-    assert lines[2].split("\t")[:4] == ["1", "3", "G", "T"] and lines[2].split("\t")[7] == "COSV3"
-    assert cms.locus_and_hash("1", 61, "G", "GA")[1] == lines[1].split("\t")[4]
+    rows = [line.split("\t") for line in lines[1:]]
+    assert [r[7] for r in rows] == ["COSV1", "COSV2", "COSV3", "COSV4", "COSV5"]
+    assert rows[0][:4] == ["1", "61", "G", "GA"] and rows[0][4] == cms.locus_and_hash("1", 61, "G", "GA")[1]
+    assert rows[2][:4] == ["1", "3", "G", "T"]
+    # The rows without a locus are still there, keyless, carrying their HGVS key for cosmic_mutation_set_hgvs.
+    for keyless in (rows[1], rows[3], rows[4]):
+        assert keyless[:5] == _KEYLESS
+    assert rows[1][-2:] == ["ENST00000375687", "c.2del"]

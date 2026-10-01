@@ -1,7 +1,7 @@
 """Find the germline cases waiting for CNV post-processing, run the pipeline, register the result.
 
 `radiant-nextflow-cnv-postprocessing` runs the Ferlab cnv-post-processing pipeline. This DAG
-closes the two manual ends around it, the way `nextflow_postprocessing_cases` does for SNV
+closes the two manual ends around it, the way `nextflow_snv_postprocessing_cases` does for SNV
 annotation: it discovers which cases have a germline CNV VCF but no CNV annotation, builds the
 samplesheet, PED files and phenopackets from the clinical model, triggers that DAG, then
 registers what the run published back onto the cases as `radiant_germline_cnv_annotation` and
@@ -54,7 +54,7 @@ FALLBACK_TENANTS_ENV = "NEXTFLOW_POSTPROCESSING_TENANTS"
 
 PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-cnv-postprocessing"
 
-# Under the shared roots, apart from post-processing (`postprocessing-runs/`, `postprocessing/`)
+# Under the shared roots, apart from post-processing (`snv-runs/`, `snv/`)
 # and quality control (`qc-runs/`, `qc/`).
 INPUTS_SUBDIR = "cnv-runs"
 OUTPUTS_SUBDIR = "cnv"

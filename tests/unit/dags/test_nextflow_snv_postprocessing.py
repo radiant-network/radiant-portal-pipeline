@@ -1,7 +1,7 @@
 import pytest
 from airflow.exceptions import ParamValidationError
 
-DAG_ID = "radiant-nextflow-postprocessing"
+DAG_ID = "radiant-nextflow-snv-postprocessing"
 
 
 def test_dag_is_importable(dag_bag):
@@ -26,7 +26,7 @@ def test_cleanup_only_runs_after_a_successful_pipeline(dag_bag):
 
 def test_dag_exposes_exactly_input_and_outdir(dag_bag):
     """Guards against param creep: everything run-invariant belongs in the
-    nextflow-params ConfigMap, not here."""
+    nextflow-snv-params ConfigMap, not here."""
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.params) == {"input", "outdir"}
 

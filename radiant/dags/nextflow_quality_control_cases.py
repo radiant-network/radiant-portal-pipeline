@@ -1,7 +1,7 @@
 """Find the germline cases waiting for a QC report, run the pipeline, register the result.
 
 `radiant-nextflow-quality-control` runs the Ferlab quality-control-pipeline in DRAGEN-metrics
-mode. This DAG closes the two manual ends around it, the way `nextflow_postprocessing_cases`
+mode. This DAG closes the two manual ends around it, the way `nextflow_snv_postprocessing_cases`
 does for annotation: it discovers which cases have been aligned but never QC'd, builds the
 samplesheet, triggers that DAG, then registers what the run published back onto the cases as
 one `quality_control_metrics` task each, carrying the per-family MultiQC set as `aggqc`
@@ -58,7 +58,7 @@ FALLBACK_TENANTS_ENV = "NEXTFLOW_POSTPROCESSING_TENANTS"
 
 PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-quality-control"
 
-# Under the shared roots, apart from post-processing (`postprocessing-runs/`, `postprocessing/`).
+# Under the shared roots, apart from post-processing (`snv-runs/`, `snv/`).
 INPUTS_SUBDIR = "qc-runs"
 OUTPUTS_SUBDIR = "qc"
 

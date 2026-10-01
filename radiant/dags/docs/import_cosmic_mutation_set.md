@@ -26,8 +26,9 @@ normalized alleles. For example:
 | COSV60102180 | `20:32434646-32434646`, ref `G`, alt `` | `20-32434638-AG-A` |
 
 Rows without a GRCh38 position, on a contig the reference lacks, or whose reference allele contradicts
-the FASTA are dropped and counted; the task's XCom carries the counts (`rows_in`, `rows_out`, one counter
-per drop reason, and bcftools's own line summary).
+the FASTA cannot be keyed; they are written with **empty key columns** and counted, so they still reach
+the staging table. The task's XCom carries the counts (`rows_in`, `rows_out`, `rows_keyed`, one counter per
+reason a row has no locus, and bcftools's own line summary).
 
 ## Input
 
@@ -50,13 +51,25 @@ per drop reason, and bcftools's own line summary).
 |:--|:--|:--|:--|
 | 1 | **resolve_normalized_filepath** | Airflow | Decides the output path and refuses to start without a reference FASTA. |
 | 2 | **normalize_cosmic_mutation_set** | radiant-operator pod (K8s) or task (ECS) | Downloads the export and the FASTA (~3 GB), rebuilds the rows as VCF records, `bcftools norm`, writes the keyed TSV to S3. Needs ~8 GB of scratch disk; ~15 minutes. |
-| 3 | **load_raw_cosmic_mutation_set** | StarRocks | `TRUNCATE` then `BROKER LOAD` the normalized TSV into the staging table `raw_cosmic_mutation_set` (one row per mutation × transcript, as published). |
+| 3 | **load_raw_cosmic_mutation_set** | StarRocks | `TRUNCATE` then `BROKER LOAD` the normalized TSV into the staging table `raw_cosmic_mutation_set` (one row per mutation × transcript, as published; the key columns are NULL for rows without a locus). |
 | 4 | **insert_cosmic_mutation_set_hashes** | StarRocks | Registers in `variant_lookup` the loci the `GET_VARIANT_ID` UDF cannot encode, like every other variant-level source. |
-| 5 | **insert_cosmic_mutation_set** | StarRocks | `INSERT OVERWRITE` cosmic_mutation_set: resolves `locus_id`, keeps one row per locus (the highest `sample_mutated`, as the legacy ETL did) and computes `sample_ratio`. |
+| 5 | **insert_cosmic_mutation_set** | StarRocks | `INSERT OVERWRITE` cosmic_mutation_set from the staging rows that have a locus: resolves `locus_id`, keeps one row per locus (the highest `sample_mutated`, as the legacy ETL did) and computes `sample_ratio`. |
+| 6 | **insert_cosmic_mutation_set_hgvs** | StarRocks | `INSERT OVERWRITE` cosmic_mutation_set_hgvs from the staging rows **without** a locus: one row per (transcript, `c.` change), same tie-break. Runs in parallel with steps 4–5. |
 
 The truncate and the load are two statements, so the staging table is empty for the duration of the
 load and stays empty if it fails; `cosmic_mutation_set` itself is only replaced by the final `INSERT
 OVERWRITE`. Re-run the DAG with the same params to recover.
+
+## The two output tables
+
+| Table | Key | Holds |
+|:--|:--|:--|
+| **cosmic_mutation_set** | `locus_id` | every mutation the normalization could place on GRCh38 (98.9% of the export); the join key `snv__variant` uses today. |
+| **cosmic_mutation_set_hgvs** | (`transcript_id` without version, `cds_change`) | the rest: ~50k rows the export ships without a GRCh38 coordinate and ~11k whose alleles the reference contradicts (COSMIC's liftover kept GRCh37-strand alleles in inverted segments). COSMIC annotates each gene on a single transcript, so this key matches a variant's picked `transcript_id` + the `c.` part of its `hgvsc`. |
+
+The two never share a mutation: a staging row goes to one or the other on `locus_hash IS NULL`. Joining
+`cosmic_mutation_set_hgvs` into `snv__variant` is a separate step; when it lands, it must fill only the
+variants the locus join left empty and take every column from the same source row.
 
 ## Triggered from radiant-import-open-data
 

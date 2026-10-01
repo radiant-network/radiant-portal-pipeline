@@ -1,5 +1,7 @@
 """End-to-end check of the COSMIC Mutation Census StarRocks steps: broker load of the normalized TSV into the
-staging table, the variant_lookup registration, and the per-locus deduplication into cosmic_mutation_set.
+staging table (keyed and keyless rows alike, alleles longer than 2,000 bases included), the variant_lookup
+registration, the per-locus deduplication into cosmic_mutation_set, and the per-(transcript, c.) build of
+cosmic_mutation_set_hgvs from the keyless rows.
 
 The normalization itself (anchor bases + bcftools) is covered by tests/unit/open_data; this starts from the
 file it writes.
@@ -35,6 +37,7 @@ def test_cosmic_mutation_set_load_and_dedup(
 ):
     raw = radiant_mapping["starrocks_raw_cosmic_mutation_set"]
     final = radiant_mapping["starrocks_cosmic_mutation_set"]
+    hgvs = radiant_mapping["starrocks_cosmic_mutation_set_hgvs"]
     lookup = radiant_mapping["starrocks_variant_lookup"]
     database_name, table_name = raw.split(".")
     label = f"test_cosmic_mutation_set_load_{uuid.uuid4().hex}"
@@ -63,6 +66,7 @@ def test_cosmic_mutation_set_load_and_dedup(
         cursor.execute(render("radiant/init/variant_lookup_create_table.sql"))
         cursor.execute(render("open_data/init/raw_cosmic_mutation_set_create_table.sql"))
         cursor.execute(render("open_data/init/cosmic_mutation_set_create_table.sql"))
+        cursor.execute(render("open_data/init/cosmic_mutation_set_hgvs_create_table.sql"))
         cursor.execute(f"TRUNCATE TABLE {raw}")
 
         # The DAG passes a one-element list; pymysql renders it as `('s3://...')`, which DATA INFILE requires.
@@ -70,12 +74,31 @@ def test_cosmic_mutation_set_load_and_dedup(
         cursor.fetchall()
         _wait_for_load(cursor, label)
 
-        cursor.execute(f"SELECT cosmic_id, chromosome, start, reference, alternate, shared_aa, tier FROM {raw}")
+        cursor.execute(
+            f"SELECT cosmic_id, chromosome, start, reference, alternate, shared_aa, tier, locus_hash, transcript_id, "
+            f"cds_change FROM {raw}"
+        )
         staged = {r[0]: r[1:] for r in cursor.fetchall()}
-        assert set(staged) == {"COSV61373102", "COSV99999999", "COSV60102180", "COSV56056643", "COSV115976235"}
-        assert staged["COSV61373102"] == ("1", 26731445, "G", "GC", 5, "3")
-        assert staged["COSV60102180"] == ("20", 32434638, "AG", "A", 3, "3")
-        assert staged["COSV56056643"][4:] == (None, "1"), "an empty SHARED_AA cell is NULL"
+        assert set(staged) == {
+            "COSV61373102",
+            "COSV99999999",
+            "COSV60102180",
+            "COSV56056643",
+            "COSV115976235",
+            "COSV105246280",
+            "COSV88888888",
+            "COSV88888889",
+        }
+        assert staged["COSV61373102"][:6] == ("1", 26731445, "G", "GC", 5, "3")
+        assert staged["COSV61373102"][7:] == ("ENST00000324856", "c.1650dup"), "accession without its version"
+        assert staged["COSV60102180"][:6] == ("20", 32434638, "AG", "A", 3, "3")
+        assert staged["COSV56056643"][4:6] == (None, "1"), "an empty SHARED_AA cell is NULL"
+        # The QA failure: a 2,501-base reference allele must load, not cancel the job.
+        assert len(staged["COSV105246280"][2]) == 2501
+        # Rows the normalizer could not place arrive with their five key cells empty and are stored NULL.
+        for keyless in ("COSV88888888", "COSV88888889"):
+            assert staged[keyless][:4] == (None, None, None, None) and staged[keyless][6] is None
+            assert staged[keyless][7:] == ("ENST00000324856", "c.1651dup")
 
         cursor.execute(render("open_data/cosmic_mutation_set_insert_hashes.sql"))
         cursor.execute(render("open_data/cosmic_mutation_set_insert.sql"))
@@ -84,8 +107,9 @@ def test_cosmic_mutation_set_load_and_dedup(
             f"SELECT cosmic_id, locus_id, sample_mutated, sample_tested, sample_ratio, tier, shared_aa FROM {final}"
         )
         rows = {r[0]: r[1:] for r in cursor.fetchall()}
-        # One row per locus: the second transcript row on 1-26731445-G-GC lost to the higher sample_mutated.
-        assert set(rows) == {"COSV61373102", "COSV60102180", "COSV56056643", "COSV115976235"}
+        # One row per locus: the second transcript row on 1-26731445-G-GC lost to the higher sample_mutated,
+        # and the keyless rows are not here at all.
+        assert set(rows) == {"COSV61373102", "COSV60102180", "COSV56056643", "COSV115976235", "COSV105246280"}
         assert all(r[0] is not None for r in rows.values()), "every row must resolve a locus_id"
         assert rows["COSV61373102"][1:] == (24, 100149, 24 / 100149, "3", 5)
         assert rows["COSV60102180"][1:3] == (87, 104260)
@@ -107,3 +131,15 @@ def test_cosmic_mutation_set_load_and_dedup(
             assert looked_up is not None and resolved == looked_up
         else:
             assert resolved == packed
+
+        # The HGVS table: exactly the keyless rows, one per (transcript, c.), highest sample_mutated first.
+        cursor.execute(render("open_data/cosmic_mutation_set_hgvs_insert.sql"))
+        cursor.execute(
+            f"SELECT transcript_id, cds_change, cosmic_id, sample_mutated, sample_tested, sample_ratio, tier, "
+            f"shared_aa FROM {hgvs}"
+        )
+        hgvs_rows = cursor.fetchall()
+        assert hgvs_rows == (("ENST00000324856", "c.1651dup", "COSV88888888", 9, 50000, 9 / 50000, "2", 4),)
+        # Never a mutation that cosmic_mutation_set already holds.
+        cursor.execute(f"SELECT count(*) FROM {hgvs} h JOIN {final} c ON c.cosmic_id = h.cosmic_id")
+        assert cursor.fetchone() == (0,)

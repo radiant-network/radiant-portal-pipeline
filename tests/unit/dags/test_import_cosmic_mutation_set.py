@@ -11,7 +11,7 @@ def test_dag_is_importable(dag_bag):
     assert dag_bag.import_errors == {}
 
 
-def test_dag_runs_normalize_then_the_three_starrocks_steps(dag_bag):
+def test_dag_runs_normalize_then_the_starrocks_steps(dag_bag):
     dag = dag_bag.get_dag(_DAG_ID)
     assert {t.task_id for t in dag.tasks} == {
         "resolve_normalized_filepath",
@@ -19,12 +19,18 @@ def test_dag_runs_normalize_then_the_three_starrocks_steps(dag_bag):
         "load_raw_cosmic_mutation_set",
         "insert_cosmic_mutation_set_hashes",
         "insert_cosmic_mutation_set",
+        "insert_cosmic_mutation_set_hgvs",
     }
     normalize = dag.get_task("normalize_cosmic_mutation_set_k8s")
     assert normalize.upstream_task_ids == {"resolve_normalized_filepath"}
     assert normalize.downstream_task_ids == {"load_raw_cosmic_mutation_set"}
-    assert dag.get_task("load_raw_cosmic_mutation_set").downstream_task_ids == {"insert_cosmic_mutation_set_hashes"}
+    # Both derived tables read the staging table only: the HGVS build does not wait for the locus chain.
+    assert dag.get_task("load_raw_cosmic_mutation_set").downstream_task_ids == {
+        "insert_cosmic_mutation_set_hashes",
+        "insert_cosmic_mutation_set_hgvs",
+    }
     assert dag.get_task("insert_cosmic_mutation_set_hashes").downstream_task_ids == {"insert_cosmic_mutation_set"}
+    assert dag.get_task("insert_cosmic_mutation_set_hgvs").downstream_task_ids == set()
 
 
 def test_normalize_reads_its_paths_from_the_params_and_the_resolved_output(dag_bag):
@@ -48,9 +54,21 @@ def test_insert_dedupes_per_locus_on_sample_mutated(dag_bag):
     insert = dag_bag.get_dag(_DAG_ID).get_task("insert_cosmic_mutation_set")
     assert "INSERT OVERWRITE {{ mapping.starrocks_cosmic_mutation_set }}" in insert.sql
     assert "PARTITION BY t.locus_hash ORDER BY t.sample_mutated DESC" in insert.sql
+    assert "WHERE t.locus_hash IS NOT NULL" in insert.sql
     hashes = dag_bag.get_dag(_DAG_ID).get_task("insert_cosmic_mutation_set_hashes")
     assert "INSERT INTO {{ mapping.starrocks_variant_lookup }}" in hashes.sql
     assert "FROM {{ mapping.starrocks_raw_cosmic_mutation_set }}" in hashes.sql
+    assert "v.locus_hash IS NOT NULL" in hashes.sql
+
+
+def test_hgvs_insert_takes_the_rows_without_a_locus_one_per_transcript_change(dag_bag):
+    """The staging table holds the whole export; `locus_hash IS NULL` is the split between the locus-keyed
+    table and the HGVS-keyed one, so a mutation never lands in both."""
+    hgvs = dag_bag.get_dag(_DAG_ID).get_task("insert_cosmic_mutation_set_hgvs")
+    assert "INSERT OVERWRITE {{ mapping.starrocks_cosmic_mutation_set_hgvs }}" in hgvs.sql
+    assert "FROM {{ mapping.starrocks_raw_cosmic_mutation_set }} t" in hgvs.sql
+    assert "WHERE t.locus_hash IS NULL" in hgvs.sql
+    assert "PARTITION BY t.transcript_id, t.cds_change ORDER BY t.sample_mutated DESC" in hgvs.sql
 
 
 def test_params(dag_bag):

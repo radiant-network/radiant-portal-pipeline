@@ -67,6 +67,28 @@ any indel: no anchor base, a different start, and no left-alignment.
   not make, a single-base complement match is a coincidence one time in three, and a liftover into a
   segmental duplication may sit on the wrong paralog anyway. They are counted under ``rows_ref_mismatch``.
 
+## HGVS complement: `cosmic_mutation_set_hgvs` (follow-up, 2026-09-29)
+
+Coordinates cannot reach ~62k rows of the export (no GRCh38 position, or strand-flipped liftover alleles).
+A coworker's analysis on the legacy Spark ETL showed the HGVS coding change reaches them: every CMC row
+carries an Ensembl transcript and a `c.` change, COSMIC annotates 99.8% of genes on a single transcript,
+and `snv__variant` already stores the picked `transcript_id` and `hgvsc`, so a *variant-level* key
+`(transcript without version, c. change)` is viable without touching `snv__consequence`.
+
+- The normalizer keeps every row: a row it cannot key goes out with empty key columns, so
+  `raw_cosmic_mutation_set` holds the whole export (`locus_hash` NULL marks the ~62k). Allele columns are
+  uncapped (`VARCHAR(65533)`): the first real load was cancelled by four intronic deletions longer than the
+  previous `VARCHAR(2000)`, since StarRocks nulls an over-long value and the column was `NOT NULL`.
+- `cosmic_mutation_set` is built from rows with a locus, `cosmic_mutation_set_hgvs` from rows without;
+  each is one row per key (`ROW_NUMBER`, highest `sample_mutated` wins). They never share a mutation.
+- The HGVS table is deliberately small (~62k rows): it exists to fill the gaps, not to replace the locus
+  key. Recall through it depends on our picked transcript being COSMIC's for that gene; the locus key does
+  not have that dependency, which is why it stays primary.
+- For the future `snv__variant` join: `LEFT JOIN` both tables, then select the source row **once** on the
+  join key, `IF(c.locus_id IS NOT NULL, c.x, h.x)` for every cmc column. A per-column `COALESCE` would mix
+  two rows whenever the locus match has a NULL field (`shared_aa` is nullable) and the HGVS match does not.
+  The HGVS join needs a `[BROADCAST]` hint: the table is not colocated and 62k rows should be the build side.
+
 ## Verified
 
 `COSV61373102` (ARID1A c.1650dup) → `1-26731445-G-GC` and `COSV60102180` (ASXL1 c.1934del) →

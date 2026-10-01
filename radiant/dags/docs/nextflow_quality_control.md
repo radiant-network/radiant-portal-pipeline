@@ -38,8 +38,8 @@ Everything else is run-invariant and lives in ConfigMaps:
 
 Both are owned by the kustomization in qlin-qa-infra/kubernetes-manifests/apps/nextflow/.
 
-They are a **separate pair** from post-processing's **nextflow-cfg** and
-**nextflow-params**, and not by preference: the post-processing config references
+They are a **separate pair** from post-processing's **nextflow-snv-cfg** and
+**nextflow-snv-params**, and not by preference: the post-processing config references
 params.save_genotyped and params.tools, and a param referenced from a -c config but absent
 from the -params-file kills the run at config parse.
 
@@ -96,7 +96,7 @@ The Nextflow launch directory is /workspace/work/.nextflow-launchdir/qc- plus th
 
 **The qc- prefix matters.** RUN_TAG drives the work directory, the launch directory and the
 default outdir; Airflow run ids are only unique *within* a DAG; and this DAG can run at the
-same time as **radiant-nextflow-postprocessing**. Without the prefix the two could share a
+same time as **radiant-nextflow-snv-postprocessing**. Without the prefix the two could share a
 launch directory — which is how a resume cache gets corrupted — and either cleanup_work
 could delete the other's scratch.
 

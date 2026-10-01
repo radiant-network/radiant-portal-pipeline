@@ -126,4 +126,14 @@ with DAG(
         submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
     )
 
-    normalize >> load_raw_cosmic_mutation_set >> insert_cosmic_mutation_set_hashes >> insert_cosmic_mutation_set
+    insert_cosmic_mutation_set_hgvs = RadiantStarRocksOperator(
+        task_id="insert_cosmic_mutation_set_hgvs",
+        task_display_name="[StarRocks] COSMIC Mutation Set HGVS Insert Data",
+        sql="./sql/open_data/cosmic_mutation_set_hgvs_insert.sql",
+        submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+    )
+
+    # Both derived tables read the staging table only, so the HGVS one does not wait for the locus chain.
+    normalize >> load_raw_cosmic_mutation_set
+    load_raw_cosmic_mutation_set >> insert_cosmic_mutation_set_hashes >> insert_cosmic_mutation_set
+    load_raw_cosmic_mutation_set >> insert_cosmic_mutation_set_hgvs

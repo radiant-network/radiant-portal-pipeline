@@ -1,6 +1,6 @@
 -- HPO terms per (case, patient) for the requested case ids.
 --
--- Consumed by `radiant-nextflow-postprocessing-cases` (resolve_cases) to build the
+-- Consumed by `radiant-nextflow-snv-postprocessing-cases` (resolve_cases) to build the
 -- proband's phenopacket. `interpretation_code = 'negative'` means the term was explicitly
 -- excluded, so the writer emits it as `excluded: true` rather than as an observed feature.
 --

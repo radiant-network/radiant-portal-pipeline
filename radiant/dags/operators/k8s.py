@@ -470,7 +470,7 @@ LAUNCH="${NXF_WORKSPACE}/work/.nextflow-launchdir/${RUN_TAG}"
 OUTDIR="${NXF_OUTDIR:-${NXF_WORKSPACE}/outputs/qlin/${RUN_TAG}}"
 mkdir -p "$LAUNCH" && cd "$LAUNCH"
 echo ">> run_tag=$RUN_TAG input=$NXF_INPUT outdir=$OUTDIR"
-nextflow run "${NXF_HOME}/assets/Ferlab-Ste-Justine/Post-processing-Pipeline" \
+nextflow run "${NXF_HOME}/assets/Ferlab-Ste-Justine/snv-post-processing" \
     -profile docker \
     -c /etc/nextflow/nextflow.config \
     -resume \
@@ -739,7 +739,7 @@ def _nextflow_cleanup_operator(run_tag: str, name: str, image: str | None) -> Ku
 
 
 class NextflowPostprocessing:
-    """Runs the Ferlab Post-processing-Pipeline (VEP / slivar / Exomiser) as a
+    """Runs the Ferlab snv-post-processing (VEP / slivar / Exomiser) as a
     Nextflow driver pod, which spawns its own worker pods via Nextflow's k8s executor.
     """
 
@@ -747,8 +747,8 @@ class NextflowPostprocessing:
     def get_run_postprocessing(input_csv: str, outdir: str, run_tag: str) -> KubernetesPodOperator:
         return _nextflow_driver_operator(
             task_id="run_postprocessing",
-            task_display_name="[K8s] Run Nextflow Post-processing",
-            name="nextflow-postprocessing-driver",
+            task_display_name="[K8s] Run Nextflow SNV Post-processing",
+            name="nextflow-snv-postprocessing-driver",
             script=_NEXTFLOW_DRIVER_SCRIPT,
             image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
             env_vars={
@@ -756,15 +756,15 @@ class NextflowPostprocessing:
                 "NXF_INPUT": input_csv,
                 "NXF_OUTDIR": outdir,
             },
-            config_configmap=os.getenv("NEXTFLOW_OPERATOR_CONFIG_CONFIGMAP", "nextflow-cfg"),
-            params_configmap=os.getenv("NEXTFLOW_OPERATOR_PARAMS_CONFIGMAP", "nextflow-params"),
+            config_configmap=os.getenv("NEXTFLOW_OPERATOR_CONFIG_CONFIGMAP", "nextflow-snv-cfg"),
+            params_configmap=os.getenv("NEXTFLOW_OPERATOR_PARAMS_CONFIGMAP", "nextflow-snv-params"),
         )
 
     @staticmethod
     def get_cleanup_work(run_tag: str) -> KubernetesPodOperator:
         return _nextflow_cleanup_operator(
             run_tag,
-            name="nextflow-postprocessing-cleanup",
+            name="nextflow-snv-postprocessing-cleanup",
             image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
         )
 

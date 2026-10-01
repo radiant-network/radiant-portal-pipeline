@@ -6,7 +6,7 @@ over them in DRAGEN-metrics mode, and registers the per-family MultiQC report ba
 case as a **quality_control_metrics** task.
 
 **radiant-nextflow-quality-control** runs the pipeline and nothing else. This DAG closes
-everything around it, exactly as **radiant-nextflow-postprocessing-cases** does for
+everything around it, exactly as **radiant-nextflow-snv-postprocessing-cases** does for
 annotation.
 
 | # | Task | Does |
@@ -157,7 +157,7 @@ index:
 - OUTPUTS_ROOT / qc / RUN_TAG-gN / multiqc / CA_ID /
 
 The qc-runs/ and qc/ subdirectories keep these apart from post-processing, which writes
-postprocessing-runs/ and postprocessing/ under the same two roots.
+snv-runs/ and snv/ under the same two roots.
 
 The child run id is pinned to RUN_TAG-gN, so a retry of this DAG re-enters the same launcher
 run and its Nextflow launch directory, and -resume skips what already completed. The launcher

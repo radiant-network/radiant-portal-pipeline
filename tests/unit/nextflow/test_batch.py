@@ -68,6 +68,6 @@ def test_output_documents_are_split_between_the_two_tasks(tasks):
 
 def test_pipeline_metadata_names_the_post_processing_pipeline(tasks):
     """Not the variant caller upstream of this run."""
-    assert tasks["radiant_germline_annotation"]["pipeline_name"] == "Post-processing-Pipeline"
+    assert tasks["radiant_germline_annotation"]["pipeline_name"] == "snv-post-processing"
     assert tasks["exomiser"]["pipeline_name"] == "Exomiser"
     assert all(t["genome_build"] == "GRch38" for t in tasks.values())
