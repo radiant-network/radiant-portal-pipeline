@@ -38,8 +38,8 @@ Everything else is run-invariant and lives in ConfigMaps:
 
 Both are owned by the kustomization in qlin-qa-infra/kubernetes-manifests/apps/nextflow/.
 
-They are a **separate pair** from post-processing's **nextflow-cfg** and
-**nextflow-params**, and not by preference: the post-processing config references
+They are a **separate pair** from post-processing's **nextflow-snv-cfg** and
+**nextflow-snv-params**, and not by preference: the post-processing config references
 params.save_genotyped and params.tools, and a param referenced from a -c config but absent
 from the -params-file kills the run at config parse.
 

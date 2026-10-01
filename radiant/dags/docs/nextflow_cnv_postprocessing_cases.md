@@ -136,7 +136,7 @@ alongside the first.
 ```
 
 The `cnv-runs/` and `cnv/` subdirectories keep these apart from post-processing
-(`postprocessing-runs/`, `postprocessing/`) and QC (`qc-runs/`, `qc/`) under the same roots.
+(`snv-runs/`, `snv/`) and QC (`qc-runs/`, `qc/`) under the same roots.
 
 The child run id is pinned to `{run_tag}`, so a retry of this DAG re-enters the same
 launcher run and its Nextflow launch directory, and `-resume` skips what already completed.

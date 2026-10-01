@@ -42,8 +42,8 @@ def test_get_run_postprocessing_with_env():
     volumes = {v.name: v for v in op.volumes}
     assert set(volumes) == {"workspace", "nextflow-cfg", "nextflow-params"}
     assert volumes["workspace"].persistent_volume_claim.claim_name == "fsx-test"
-    assert volumes["nextflow-cfg"].config_map.name == "nextflow-cfg"
-    assert volumes["nextflow-params"].config_map.name == "nextflow-params"
+    assert volumes["nextflow-cfg"].config_map.name == "nextflow-snv-cfg"
+    assert volumes["nextflow-params"].config_map.name == "nextflow-snv-params"
 
     mounts = {m.name: m for m in op.volume_mounts}
     assert mounts["workspace"].mount_path == "/ws"

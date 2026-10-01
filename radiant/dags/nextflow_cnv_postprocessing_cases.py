@@ -54,7 +54,7 @@ FALLBACK_TENANTS_ENV = "NEXTFLOW_POSTPROCESSING_TENANTS"
 
 PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-cnv-postprocessing"
 
-# Under the shared roots, apart from post-processing (`postprocessing-runs/`, `postprocessing/`)
+# Under the shared roots, apart from post-processing (`snv-runs/`, `snv/`)
 # and quality control (`qc-runs/`, `qc/`).
 INPUTS_SUBDIR = "cnv-runs"
 OUTPUTS_SUBDIR = "cnv"

@@ -72,7 +72,7 @@ def run_paths(
     matters because re-runs sit alongside earlier analyses rather than replacing them.
 
     `inputs_subdir` / `outputs_subdir` keep the pipelines apart under the shared roots:
-    post-processing writes `postprocessing-runs/<run>` and `postprocessing/<run>`, quality
+    SNV post-processing writes `snv-runs/<run>` and `snv/<run>`, quality
     control `qc-runs/<run>` and `qc/<run>`. Empty means directly under the root.
     """
     input_prefix_s3 = join_s3(inputs_root, *_parts(inputs_subdir), run_tag)

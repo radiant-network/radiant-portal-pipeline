@@ -125,7 +125,7 @@ def test_driver_script_is_jinja_safe_and_runs_the_qc_pipeline():
     assert "-resume" in script
     # The QC pipeline asset, not the post-processing one.
     assert "assets/Ferlab-Ste-Justine/quality-control-pipeline" in script
-    assert "Post-processing-Pipeline" not in script
+    assert "snv-post-processing" not in script
     # Passing this flag is the whole point: it is what skips BAM_QC and VCF_QC.
     assert '--dragen_metrics_dir "$NXF_DRAGEN_METRICS_DIR"' in script
 
