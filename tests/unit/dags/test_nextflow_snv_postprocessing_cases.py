@@ -1,7 +1,7 @@
 from airflow.models.mappedoperator import MappedOperator
 
-DAG_ID = "radiant-nextflow-postprocessing-cases"
-PIPELINE_DAG_ID = "radiant-nextflow-postprocessing"
+DAG_ID = "radiant-nextflow-snv-postprocessing-cases"
+PIPELINE_DAG_ID = "radiant-nextflow-snv-postprocessing"
 
 
 def test_dag_is_importable(dag_bag):

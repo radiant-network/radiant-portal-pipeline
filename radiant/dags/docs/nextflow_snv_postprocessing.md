@@ -1,4 +1,4 @@
-# Nextflow Post-processing
+# Nextflow SNV Post-processing
 
 Runs the Ferlab
 [snv-post-processing](https://github.com/Ferlab-Ste-Justine/snv-post-processing)
@@ -66,7 +66,7 @@ Check first:
 
 | Purpose | Command |
 |:--|:--|
-| Is a driver still up? | **kubectl -n nextflow get pods -l dag_id=radiant-nextflow-postprocessing** |
+| Is a driver still up? | **kubectl -n nextflow get pods -l dag_id=radiant-nextflow-snv-postprocessing** |
 | Kill it, if Running | **kubectl -n nextflow delete pod DRIVER_POD** |
 
 **active_deadline_seconds** (24h by default) is the backstop if nobody does.

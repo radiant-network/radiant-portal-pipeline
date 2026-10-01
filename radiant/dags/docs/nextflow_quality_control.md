@@ -96,7 +96,7 @@ The Nextflow launch directory is /workspace/work/.nextflow-launchdir/qc- plus th
 
 **The qc- prefix matters.** RUN_TAG drives the work directory, the launch directory and the
 default outdir; Airflow run ids are only unique *within* a DAG; and this DAG can run at the
-same time as **radiant-nextflow-postprocessing**. Without the prefix the two could share a
+same time as **radiant-nextflow-snv-postprocessing**. Without the prefix the two could share a
 launch directory — which is how a resume cache gets corrupted — and either cleanup_work
 could delete the other's scratch.
 
