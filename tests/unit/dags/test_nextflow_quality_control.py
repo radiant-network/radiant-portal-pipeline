@@ -62,7 +62,7 @@ def test_up_to_five_drivers_run_side_by_side(dag_bag):
 def test_run_tag_is_namespaced_away_from_the_postprocessing_dag(dag_bag):
     """RUN_TAG drives the Nextflow workDir, the launch dir and the default outdir,
     but Airflow run ids are only unique *within* a DAG -- and this DAG can run
-    concurrently with radiant-nextflow-postprocessing. Sharing a launch dir is how a
+    concurrently with radiant-nextflow-snv-postprocessing. Sharing a launch dir is how a
     resume cache gets corrupted, and either cleanup_work would delete the other's
     scratch."""
     dag = dag_bag.get_dag(DAG_ID)

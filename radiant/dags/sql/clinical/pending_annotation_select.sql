@@ -2,7 +2,7 @@
 -- experiment, the gVCF of that experiment's *current* alignment, and why the case cannot
 -- run if it cannot.
 --
--- Consumed by `radiant-nextflow-postprocessing-cases` (discover_scope). Full analysis:
+-- Consumed by `radiant-nextflow-snv-postprocessing-cases` (discover_scope). Full analysis:
 -- `design/SJRA-1698-nextflow-postprocessing-automation.md`.
 --
 -- One statement on purpose: it decides both which cases are pending and which experiment

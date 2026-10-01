@@ -1,10 +1,10 @@
-# Nextflow Post-processing (from Cases)
+# Nextflow SNV Post-processing (from Cases)
 
 Finds the germline cases that have been aligned but never annotated, runs the Ferlab
 [snv-post-processing](https://github.com/Ferlab-Ste-Justine/snv-post-processing)
 over them, and registers what it produces back onto those cases.
 
-**radiant-nextflow-postprocessing** runs the pipeline and nothing else. This DAG closes
+**radiant-nextflow-snv-postprocessing** runs the pipeline and nothing else. This DAG closes
 everything around it — deciding what needs running, building the pipeline's inputs from the
 clinical model, and turning its outputs into portal tasks.
 

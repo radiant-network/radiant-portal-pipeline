@@ -747,8 +747,8 @@ class NextflowPostprocessing:
     def get_run_postprocessing(input_csv: str, outdir: str, run_tag: str) -> KubernetesPodOperator:
         return _nextflow_driver_operator(
             task_id="run_postprocessing",
-            task_display_name="[K8s] Run Nextflow Post-processing",
-            name="nextflow-postprocessing-driver",
+            task_display_name="[K8s] Run Nextflow SNV Post-processing",
+            name="nextflow-snv-postprocessing-driver",
             script=_NEXTFLOW_DRIVER_SCRIPT,
             image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
             env_vars={
@@ -764,7 +764,7 @@ class NextflowPostprocessing:
     def get_cleanup_work(run_tag: str) -> KubernetesPodOperator:
         return _nextflow_cleanup_operator(
             run_tag,
-            name="nextflow-postprocessing-cleanup",
+            name="nextflow-snv-postprocessing-cleanup",
             image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
         )
 

@@ -6,7 +6,7 @@ over them in DRAGEN-metrics mode, and registers the per-family MultiQC report ba
 case as a **quality_control_metrics** task.
 
 **radiant-nextflow-quality-control** runs the pipeline and nothing else. This DAG closes
-everything around it, exactly as **radiant-nextflow-postprocessing-cases** does for
+everything around it, exactly as **radiant-nextflow-snv-postprocessing-cases** does for
 annotation.
 
 | # | Task | Does |

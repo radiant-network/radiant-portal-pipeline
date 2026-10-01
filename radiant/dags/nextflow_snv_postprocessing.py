@@ -49,8 +49,8 @@ dag_params = {
 
 
 @dag(
-    dag_id=f"{NAMESPACE}-nextflow-postprocessing",
-    dag_display_name="Radiant - Nextflow Post-processing",
+    dag_id=f"{NAMESPACE}-nextflow-snv-postprocessing",
+    dag_display_name="Radiant - Nextflow SNV Post-processing",
     # retries are load-bearing here, not defensive: they are what makes -resume
     # reachable (see the module docstring).
     default_args=DEFAULT_ARGS | {"retries": 2, "retry_delay": pendulum.duration(minutes=5)},
@@ -61,9 +61,9 @@ dag_params = {
     max_active_runs=1,
     tags=["radiant", "nextflow", "manual"],
     params=dag_params,
-    doc_md=load_docs_md("nextflow_postprocessing.md"),
+    doc_md=load_docs_md("nextflow_snv_postprocessing.md"),
 )
-def nextflow_postprocessing():
+def nextflow_snv_postprocessing():
     # Not ts_nodash: an Airflow 3 manual run can have a null logical_date, and
     # date-derived templates then raise UndefinedError at render time.
     run_tag = "{{ run_id | replace(':', '-') | replace('+', '-') }}"
@@ -81,4 +81,4 @@ def nextflow_postprocessing():
     run >> cleanup
 
 
-nextflow_postprocessing()
+nextflow_snv_postprocessing()

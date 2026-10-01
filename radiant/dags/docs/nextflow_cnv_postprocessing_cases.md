@@ -7,7 +7,7 @@ over them, and registers the result back onto each case as a
 `radiant_germline_cnv_annotation` task and an `exomiser_cnv` task.
 
 `radiant-nextflow-cnv-postprocessing` runs the pipeline and nothing else. This DAG closes
-everything around it, exactly as `radiant-nextflow-postprocessing-cases` does for SNV
+everything around it, exactly as `radiant-nextflow-snv-postprocessing-cases` does for SNV
 annotation.
 
 ```

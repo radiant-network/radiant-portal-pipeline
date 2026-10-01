@@ -1,7 +1,7 @@
 import pytest
 from airflow.exceptions import ParamValidationError
 
-DAG_ID = "radiant-nextflow-postprocessing"
+DAG_ID = "radiant-nextflow-snv-postprocessing"
 
 
 def test_dag_is_importable(dag_bag):

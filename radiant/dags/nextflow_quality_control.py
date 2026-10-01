@@ -3,7 +3,7 @@
 A single task launches a Nextflow *driver* pod on qlin-eks; that driver then spawns
 one worker pod per pipeline process through Nextflow's own k8s executor. Airflow
 sees one task, Kubernetes sees a fan-out. Same shape as
-`nextflow_postprocessing.py`, and the same driver image -- only the pipeline asset
+`nextflow_snv_postprocessing.py`, and the same driver image -- only the pipeline asset
 and the ConfigMap pair differ.
 
 DRAGEN metrics only
@@ -88,7 +88,7 @@ dag_params = {
 def nextflow_quality_control():
     # The `qc-` prefix is load-bearing, not labelling. RUN_TAG drives the Nextflow
     # workDir, the launch dir *and* the default outdir, and Airflow run ids are only
-    # unique within a DAG -- while this DAG and radiant-nextflow-postprocessing are
+    # unique within a DAG -- while this DAG and radiant-nextflow-snv-postprocessing are
     # separate DAGs that can run at the same time (and the cases DAG pins a child
     # run id explicitly). Without the prefix, two runs could share one launch dir,
     # corrupting the resume cache, and either cleanup could delete the other's scratch.
