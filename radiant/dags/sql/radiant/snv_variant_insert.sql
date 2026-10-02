@@ -80,7 +80,11 @@ SELECT
     v.aa_change,
     v.transcript_id,
     v.pick_source,
-    v.omim_inheritance_code
+    v.omim_inheritance_code,
+    v.cmc_mutation_url,
+    v.cmc_sample_mutated,
+    v.cmc_sample_ratio,
+    v.cmc_tier
 FROM {{ mapping.starrocks_snv_staging_variant }} v
 LEFT SEMI JOIN tenant_loci tl ON tl.locus_id = v.locus_id
 LEFT JOIN {{ mapping.starrocks_germline_snv_variant_frequency }} gf ON gf.locus_id = v.locus_id

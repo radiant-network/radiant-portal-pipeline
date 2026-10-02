@@ -67,9 +67,31 @@ OVERWRITE`. Re-run the DAG with the same params to recover.
 | **cosmic_mutation_set** | `locus_id` | every mutation the normalization could place on GRCh38 (98.9% of the export); the join key `snv__variant` uses today. |
 | **cosmic_mutation_set_hgvs** | (`transcript_id` without version, `cds_change`) | the rest: ~50k rows the export ships without a GRCh38 coordinate and ~11k whose alleles the reference contradicts (COSMIC's liftover kept GRCh37-strand alleles in inverted segments). COSMIC annotates each gene on a single transcript, so this key matches a variant's picked `transcript_id` + the `c.` part of its `hgvsc`. |
 
-The two never share a mutation: a staging row goes to one or the other on `locus_hash IS NULL`. Joining
-`cosmic_mutation_set_hgvs` into `snv__variant` is a separate step; when it lands, it must fill only the
-variants the locus join left empty and take every column from the same source row.
+The two never share a mutation: a staging row goes to one or the other on `locus_hash IS NULL`.
+
+## How the variants read it
+
+`snv_staging_variant_insert.sql` and `snv_staging_variant_reannotate.sql` denormalise four fields into
+`snv__staging_variant`, and from there into `snv__variant` and `snv__variant_partitioned` (RAD-15):
+
+| Variant column | From |
+|:--|:--|
+| `cmc_mutation_url` | `mutation_url` |
+| `cmc_sample_mutated` | `sample_mutated` |
+| `cmc_sample_ratio` | `sample_ratio` |
+| `cmc_tier` | `tier` (`'1'`, `'2'`, `'3'`, `'Other'`) |
+
+The fields come from `cosmic_mutation_set` when the variant's locus is there. Otherwise, all four come from
+`cosmic_mutation_set_hgvs`, matched on the variant's picked `transcript_id` + `dna_change`. Otherwise
+they are `NULL`. The switch is on the whole row, never per column, so a variant never mixes two COSMIC rows.
+`shared_aa`, `cosmic_id` and `sample_tested` are not carried.
+
+## After each import: force a re-annotation
+
+Variants already in the platform keep their previous CMC values until they are re-annotated. COSMIC is a
+broker load, not an Iceberg source, so the gate of **radiant-reannotate-open-data** cannot tell it changed
+(same as the cytoband). After each run of this DAG, trigger the re-annotation with
+`force_reannotation=True`. New imports pick up the new values straight away.
 
 ## Triggered from radiant-import-open-data
 

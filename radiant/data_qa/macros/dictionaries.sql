@@ -163,3 +163,9 @@
      i18n at the same time. #}
   {{ return(['Ensembl', 'RefSeq']) }}
 {% endmacro %}
+
+{% macro dict_cosmic_tier() %}
+  {# RAD-15. COSMIC Mutation Census MUTATION_SIGNIFICANCE_TIER, as published.
+     mirrors facets.go and frontend i18n — keep in sync #}
+  {{ return(['1', '2', '3', 'Other']) }}
+{% endmacro %}
