@@ -27,7 +27,7 @@ WITH germline_case AS (
            c.project_id        AS project_id
     FROM {{ mapping.clinical_case }} c
     WHERE c.case_type_code = 'germline'
-      AND c.status_code IN ('in_progress', 'completed')
+      AND c.status_code NOT IN ({{ mapping.pipeline_ignored_case_statuses }})
 ),
 current_experiment AS (
     -- The supersession policy: one `completed` experiment per (case, member), newest wins.
