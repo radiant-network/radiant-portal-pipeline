@@ -63,6 +63,10 @@ sources:
           # pf frequency ratios must be in [0,1] (defaults: like '_pf_', 0..1)
           - should_be_within_range:
               name: snv_variant__should_be_within_range_pf
+          # RAD-15: COSMIC sample_mutated / sample_tested
+          - should_be_within_range:
+              name: snv_variant__should_be_within_range_cmc_sample_ratio
+              like: cmc_sample_ratio
         columns:
           - name: locus_id
             tests:
@@ -149,3 +153,12 @@ sources:
               - accepted_values_in_array:
                   name: snv_variant__accepted_values_consequences
                   values: "{{ dict_consequences() }}"
+          - name: cmc_tier
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_cosmic_tier() — see macros/dictionaries.sql (RAD-15)
+              - accepted_values:
+                  name: snv_variant__accepted_values_cmc_tier
+                  values: "{{ dict_cosmic_tier() }}"
+                  config:
+                    where: "cmc_tier is not null"

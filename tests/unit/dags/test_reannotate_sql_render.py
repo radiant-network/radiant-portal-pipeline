@@ -77,6 +77,18 @@ def test_staging_variant_reannotates_from_the_accumulator_not_the_batch():
     assert "task_ids" not in sql
 
 
+def test_staging_variant_reannotation_matches_the_ingest_statement():
+    """Apart from the driving table, re-annotating must compute every column the way the ingest does.
+
+    Otherwise a forced re-annotation silently changes values the ingest wrote, e.g. the COSMIC CMC
+    fallback rule (RAD-15).
+    """
+    ingest = _statement("snv_staging_variant_insert.sql").replace(
+        "{{ mapping.starrocks_snv_tmp_variant }} v", "{{ mapping.starrocks_snv_staging_variant }} v"
+    )
+    assert ingest.split() == _statement("snv_staging_variant_reannotate.sql").split()
+
+
 def test_consequence_reannotation_keeps_the_mane_pair_score_lookup():
     """§5's snippet joins dbNSFP on `transcript_id`; that would drop every RefSeq row's scores.
 

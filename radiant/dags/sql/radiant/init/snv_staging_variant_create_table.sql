@@ -28,7 +28,11 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_staging_variant }} (
     aa_change VARCHAR(2000),
     transcript_id varchar(100) COMMENT "",
     pick_source varchar(20) NULL COMMENT "",
-    omim_inheritance_code array<varchar(5)> COMMENT ""
+    omim_inheritance_code array<varchar(5)> COMMENT "",
+    cmc_mutation_url VARCHAR(255) NULL COMMENT "",
+    cmc_sample_mutated INT NULL COMMENT "",
+    cmc_sample_ratio DOUBLE NULL COMMENT "",
+    cmc_tier VARCHAR(8) NULL COMMENT ""
 )
 PRIMARY KEY(locus_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10

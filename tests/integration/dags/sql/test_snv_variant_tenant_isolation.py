@@ -27,6 +27,16 @@ _STAGING_LOCI = (1, 2, 3, 4)
 # its own row rather than being broadcast.
 _STAGING_PICK_SOURCE = {1: "Ensembl", 2: "RefSeq", 3: "Ensembl", 4: "Ensembl"}
 
+# RAD-15. Appended at the very end of the positional projection, so an off-by-one there shows up as a
+# value in the wrong column. Locus 3 has no COSMIC entry.
+_STAGING_CMC_COLUMNS = ("cmc_mutation_url", "cmc_sample_mutated", "cmc_sample_ratio", "cmc_tier")
+_STAGING_CMC = {
+    1: ("https://cosmic/1", 11, 0.125, "1"),
+    2: ("https://cosmic/2", 22, 0.25, "Other"),
+    3: (None, None, None, None),
+    4: ("https://cosmic/4", 44, 0.5, "3"),
+}
+
 # locus_id -> (pc_wgs, pn_wgs). `pn_*` is the tenant's whole cohort, broadcast onto every row by
 # germline_snv_variant_frequency_insert.sql.
 _GERMLINE_FREQ = {
@@ -61,6 +71,7 @@ _CATALOG_COLUMNS = (
     # SJRA-1833. Not a frequency, but it sits next to `transcript_id` in the middle of the positional
     # projection, so a wrong ordinal there surfaces here rather than as a silent column swap.
     "pick_source",
+    *_STAGING_CMC_COLUMNS,
 )
 
 
@@ -88,8 +99,11 @@ def test_snv_variant_is_isolated_per_tenant(starrocks_session, mapping_conf, sta
         _seed(
             cursor,
             base_mapping["starrocks_snv_staging_variant"],
-            ("locus_id", "chromosome", "start", "reference", "alternate", "pick_source"),
-            [(locus_id, "1", 1000 + locus_id, "A", "T", _STAGING_PICK_SOURCE[locus_id]) for locus_id in _STAGING_LOCI],
+            ("locus_id", "chromosome", "start", "reference", "alternate", "pick_source", *_STAGING_CMC_COLUMNS),
+            [
+                (locus_id, "1", 1000 + locus_id, "A", "T", _STAGING_PICK_SOURCE[locus_id], *_STAGING_CMC[locus_id])
+                for locus_id in _STAGING_LOCI
+            ],
         )
 
         for tenant, mapping in mappings.items():
@@ -161,3 +175,9 @@ def test_snv_variant_is_isolated_per_tenant(starrocks_session, mapping_conf, sta
     assert catalogs[_TENANT_A][2]["pick_source"] == "RefSeq"
     assert catalogs[_TENANT_B][2]["pick_source"] == "RefSeq"
     assert catalogs[_TENANT_B][3]["pick_source"] == "Ensembl"
+
+    # The COSMIC CMC columns are copied from the shared staging catalog, per row (RAD-15).
+    for tenant, catalog in catalogs.items():
+        for locus_id, row in catalog.items():
+            cmc = tuple(row[column] for column in _STAGING_CMC_COLUMNS)
+            assert cmc == _STAGING_CMC[locus_id], (tenant, locus_id)
