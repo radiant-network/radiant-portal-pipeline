@@ -69,14 +69,13 @@ def build_cnv_params(tenant_parts: list[dict]) -> list[dict[str, Any]]:
 
 @dag(
     start_date=datetime.datetime(2021, 1, 1),
-    # Manual until an operator flips this to the weekly Saturday 00:00 run (§4); see the module docstring.
-    #   schedule="0 0 * * 6",
-    schedule=None,
+    # Weekly, Saturday 00:00 (§4).
+    schedule="0 0 * * 6",
     catchup=False,
     max_active_runs=1,
     default_args=DEFAULT_ARGS,
     params=dag_params,
-    tags=["radiant", "starrocks", "open-data", "manual"],
+    tags=["radiant", "starrocks", "open-data"],
     dag_display_name="Radiant - Re-annotate against OpenDataLake",
     dag_id=f"{NAMESPACE}-reannotate-open-data",
     render_template_as_native_obj=True,

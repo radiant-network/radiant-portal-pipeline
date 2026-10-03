@@ -3,10 +3,8 @@
 Weekly refresh of the open-data reference tables, followed by a re-annotation of everything
 derived from them. Design: design/SJRA-1811-opendatalake-integration.md, sections 4 and 5.
 
-> **Manual trigger only, for now.** Every phase is wired, but the schedule is off. Flip the
-> **schedule** argument in reannotate_open_data.py to Saturday 00:00 and drop the **manual**
-> tag to start it. Once weekly, a missed or failed run is not re-run — the next week catches
-> up.
+> **Scheduled weekly, Saturday 00:00.** A missed or failed run is not re-run — the next week
+> catches up.
 
 ---
 
