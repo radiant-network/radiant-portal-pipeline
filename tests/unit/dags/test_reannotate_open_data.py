@@ -28,14 +28,15 @@ def test_never_runs_concurrently(dag):
     assert dag.max_active_runs == 1
 
 
-def test_is_manual_until_the_weekly_schedule_is_flipped(dag):
-    """§4 asks for Saturday 00:00; the DAG is held at manual trigger until an operator flips it.
+def test_runs_weekly_on_saturday_midnight(dag):
+    """§4 asks for Saturday 00:00, with no catch-up of missed weeks.
 
-    Pinned rather than left unasserted so the flip is a deliberate edit, made together with dropping
-    the `manual` tag -- not something that arrives unnoticed with an unrelated change.
+    Pinned so a change to the schedule is a deliberate edit, not something that arrives unnoticed
+    with an unrelated change.
     """
-    assert dag.schedule_interval is None
-    assert "manual" in dag.tags
+    assert dag.schedule_interval == "0 0 * * 6"
+    assert dag.catchup is False
+    assert "manual" not in dag.tags
 
 
 def test_preflight_runs_before_the_lock_is_taken(dag):
