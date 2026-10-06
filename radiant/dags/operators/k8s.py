@@ -433,7 +433,7 @@ class CheckDataIntegrity:
 
 class Toolbox:
     @staticmethod
-    def get_run_command(extra_env: dict[str, str] | None = None) -> KubernetesPodOperator:
+    def get_run_command(command: list[str], extra_env: dict[str, str] | None = None) -> KubernetesPodOperator:
         return KubernetesPodOperator(
             task_id="run_toolbox_command",
             task_display_name="[K8s] Run Toolbox Command",
@@ -442,8 +442,7 @@ class Toolbox:
             service_account_name=os.getenv("RADIANT_TASK_OPERATOR_SERVICE_ACCOUNT_NAME"),
             image=os.getenv("RADIANT_TOOLBOX_OPERATOR_IMAGE"),
             image_pull_policy="IfNotPresent",
-            cmds=["{{ params.command }}"],
-            arguments="{{ params.args }}",
+            cmds=command,
             env_vars=extra_env,
             secrets=[
                 Secret("env", None, os.getenv("RADIANT_TOOLBOX_OPERATOR_SECRET_NAME", "radiant-toolbox-secret")),

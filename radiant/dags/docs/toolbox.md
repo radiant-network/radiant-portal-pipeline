@@ -7,10 +7,11 @@ command, hit trigger.
 |:--|:--|:--|
 | **create-tenant** | Onboards a tenant across Postgres, StarRocks and Ranger | Toolbox image |
 | **create-user** | Provisions a user across Keycloak, Postgres, Ranger and StarRocks | Toolbox image |
+| **update-user** | Adds grants to an existing Keycloak user, without touching Keycloak | Toolbox image |
 | **refresh-tenants** | Re-applies StarRocks views and Ranger masking policies | Toolbox image |
 | **check-lock** | Reports, and optionally clears, the import mutex | This DAG |
 
-The three image-backed commands launch a one-off ECS task or K8s pod from the radiant-portal
+The four image-backed commands launch a one-off ECS task or K8s pod from the radiant-portal
 backend's toolbox image (radiant-portal/backend/toolbox.Dockerfile). **check-lock** touches
 neither — it is a plain S3 read and an optional delete, run inside this DAG.
 
@@ -22,7 +23,9 @@ The flag tables below are what each command's own --help would print.
    create-user. Otherwise it returns nothing.
 2. **select_execution_path** — branches on **command**:
    - **check-lock** goes to **check_import_lock** and stops there. No container, no image.
-   - The other three resolve their env vars, then run the command on ECS or K8s.
+   - The others go to **resolve_toolbox_command**, which picks the image binary (update-user
+     runs create-user) and checks the args, then resolve their env vars and run the command on
+     ECS or K8s.
 
 ---
 
@@ -58,6 +61,35 @@ Keyed on the Keycloak sub. See radiant-portal/backend/cmd/create-user/main.go.
 
 > Do not pass the CLI's own **-p** (prompt-for-password) flag. This DAG always sets
 > USER_PASSWORD, and -p is ignored whenever that variable is set. See **Credentials** below.
+
+---
+
+## update-user
+
+Runs the image's **create-user** binary in its -sub mode: Keycloak is skipped entirely, and
+only Postgres, Ranger and StarRocks are (re)applied. The account keeps its password, names and
+required actions. Use it to change the permissions of any user that already exists in Keycloak,
+including a Keycloak client's service-account user (e.g. airflow), which has no email and whose
+secret must not change.
+
+| Flag | Type | Required | Effect |
+|:--|:--|:--|:--|
+| **-sub** | string | Yes | The user's Keycloak id. For a client, the id of its service-account user |
+| **-grant** | string, repeatable | No | A tenant:org:role grant |
+| **-email** | string | No | Stored in Postgres only. Keeps the current value if omitted |
+| **-first** | string | No | Stored in Postgres only. Keeps the current value if omitted |
+| **-last** | string | No | Stored in Postgres only. Keeps the current value if omitted |
+
+The run fails on **resolve_toolbox_command** if -sub is missing, before any container starts.
+No password is generated.
+
+Grants are additive: re-running with fewer grants does not revoke the others.
+
+**args**: "-sub", "6f9619ff-8b86-d011-b42d-00c04fc964ff", "-grant", "demo:\*:geneticist"
+
+> Why not create-user with -email? For an email that already exists in Keycloak, create-user
+> overwrites that user's names and required actions, and resets its password to the one this
+> DAG generates.
 
 ---
 
@@ -110,7 +142,7 @@ a cleared task — where waiting out the remaining TTL is not worth it.
 
 | Param | Contents |
 |:--|:--|
-| **command** | Which of the four commands above to run |
+| **command** | Which of the five commands above to run |
 | **args** | CLI flags for that command, per the tables above |
 | **env_vars** | Plain, non-secret container env vars: a list of objects with a name and a value. Ignored by check-lock |
 
@@ -141,5 +173,5 @@ assigned to the new user — not a fixed deployment credential, so it cannot be 
 2. It is logged on the **generate_user_password** task. Copy it from there.
 3. Share it with the user out-of-band, and have them change it on first login.
 
-Passing -sub instead of -email, for an already-existing Keycloak user, makes create-user
-ignore the generated password entirely.
+For an already-existing Keycloak user, use **update-user** instead: no password is generated,
+and Keycloak is not touched.

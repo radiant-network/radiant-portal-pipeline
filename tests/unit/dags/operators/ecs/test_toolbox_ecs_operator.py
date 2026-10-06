@@ -18,7 +18,7 @@ def test_get_run_command():
         ECS_SECURITY_GROUPS=["sg-1"],
     )
     with patch.dict(os.environ, fake_env, clear=True):
-        op = Toolbox.get_run_command(ecs_env=ecs_env)
+        op = Toolbox.get_run_command(ecs_env=ecs_env, command=["create-tenant", "-code", "demo"])
 
     assert op.task_id == "run_toolbox_command"
     assert op.cluster == "my-cluster"
@@ -32,7 +32,7 @@ def test_get_run_command():
 
     (container,) = op.overrides["containerOverrides"]
     assert container["name"] == "radiant-toolbox-container"
-    assert container["command"] == "{{ [params.command] + (params.args or []) }}"
+    assert container["command"] == ["create-tenant", "-code", "demo"]
     # No extra_env given, defaults to an empty override rather than None.
     assert container["environment"] == []
 
@@ -44,7 +44,9 @@ def test_get_run_command():
 def test_get_run_command_passes_through_extra_env():
     ecs_env = SimpleNamespace(ECS_CLUSTER="my-cluster", ECS_SUBNETS=[], ECS_SECURITY_GROUPS=[])
     with patch.dict(os.environ, {}, clear=True):
-        op = Toolbox.get_run_command(ecs_env=ecs_env, extra_env=[{"name": "USER_PASSWORD", "value": "s3cr3t"}])
+        op = Toolbox.get_run_command(
+            ecs_env=ecs_env, command=["create-user"], extra_env=[{"name": "USER_PASSWORD", "value": "s3cr3t"}]
+        )
 
     (container,) = op.overrides["containerOverrides"]
     assert container["environment"] == [{"name": "USER_PASSWORD", "value": "s3cr3t"}]
