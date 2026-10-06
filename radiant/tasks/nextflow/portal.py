@@ -1,13 +1,15 @@
-"""Minimal Radiant portal API client: a token, a batch PATCH, and a poll.
+"""Minimal Radiant portal API client: a token, the case batch PATCH and its poll, the case
+group calls, and the gene panel upload.
 
 Deliberately not the generated `radiant_python` client -- it is not published to an index,
-and the two calls used here are a PATCH with a body we build ourselves and a GET.
+and each call here is one plain request whose body we build ourselves.
 
 Authentication is the OAuth **client_credentials** grant: a client id and secret, no
 browser and no device approval. Note that a valid token is not sufficient on its own. The
-portal authorises against its own permission store -- tenant access plus the `ingest_data`
-action -- not against realm roles, so a service-account client that has not been granted
-those gets a flat 403 before any validation runs, with no error codes to read.
+portal authorises against its own permission store -- tenant access plus an action, not realm
+roles -- so a service-account client that has not been granted those gets a flat 403 before
+any validation runs, with no error codes to read. The action is `ingest_data` for the case
+calls and `can_manage_analysis_catalog` for the gene panel upload.
 """
 
 import logging
@@ -24,7 +26,16 @@ PENDING_STATUSES = {"pending", "processing", "in_progress", "running"}
 
 
 class PortalError(Exception):
-    """The portal refused a request, or reported a failed batch."""
+    """The portal refused a request, or reported a failed batch.
+
+    `status` and `body` are set when the portal answered, so a caller can tell a refusal of the
+    request (4xx) from a failure worth a retry.
+    """
+
+    def __init__(self, message: str, status: int | None = None, body: str = ""):
+        super().__init__(message)
+        self.status = status
+        self.body = body
 
 
 def fetch_token(token_url: str, client_id: str, client_secret: str, scope: str | None = None) -> str:
@@ -124,6 +135,34 @@ def post_case_group(host: str, tenant: str, token: str, name: str, case_ids: lis
         timeout=REQUEST_TIMEOUT_SECONDS,
     )
     _raise_for_status(response, "POST", url, tenant)
+    return response.json()
+
+
+def put_gene_panels(host: str, tenant: str, token: str, filename: str, content: bytes, strict: bool) -> dict:
+    """Replace the tenant's uploaded gene panels with the panels of the file; returns
+    `{panels, genes, warnings}`.
+
+    The file is the one multipart part, named `file`, sent as is. The portal needs the
+    `can_manage_analysis_catalog` action here, not `ingest_data`, so a 403 is not reported with
+    the generic hint. Any refusal raises PortalError with the status and the body (the ApiError
+    `detail` holds the line of a 400 and the rows of a 422).
+    """
+    import requests
+
+    url = f"{host.rstrip('/')}/{tenant}/gene_panels"
+    response = requests.put(
+        url,
+        params={"strict": str(strict).lower()},
+        headers={"Authorization": f"Bearer {token}"},
+        files={"file": (filename, content, "text/tab-separated-values")},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if not response.ok:
+        raise PortalError(
+            f"PUT {url} failed: {response.status_code} {response.text[:2000]}",
+            status=response.status_code,
+            body=response.text,
+        )
     return response.json()
 
 
