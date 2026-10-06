@@ -1,5 +1,5 @@
 """Minimal Radiant portal API client: a token, the case batch PATCH and its poll, the case
-group calls, and the gene panel upload.
+system status PATCH, the case group calls, and the gene panel upload.
 
 Deliberately not the generated `radiant_python` client -- it is not published to an index,
 and each call here is one plain request whose body we build ourselves.
@@ -15,6 +15,8 @@ calls and `can_manage_analysis_catalog` for the gene panel upload.
 import logging
 import time
 
+import requests
+
 LOGGER = logging.getLogger(__name__)
 
 TOKEN_TIMEOUT_SECONDS = 30
@@ -23,6 +25,10 @@ BATCH_POLL_INTERVAL_SECONDS = 5
 BATCH_POLL_TIMEOUT_SECONDS = 600
 
 PENDING_STATUSES = {"pending", "processing", "in_progress", "running"}
+
+# The only case status changes the pipeline makes: target status -> the status the case must
+# still be in. Anything else is a user status, which the pipeline never touches.
+SYSTEM_STATUS_TRANSITIONS = {"processing": "submitted", "in_progress": "processing"}
 
 
 class PortalError(Exception):
@@ -39,8 +45,6 @@ class PortalError(Exception):
 
 
 def fetch_token(token_url: str, client_id: str, client_secret: str, scope: str | None = None) -> str:
-    import requests
-
     data = {"grant_type": "client_credentials", "client_id": client_id, "client_secret": client_secret}
     if scope:
         data["scope"] = scope
@@ -53,7 +57,6 @@ def fetch_token(token_url: str, client_id: str, client_secret: str, scope: str |
 
 def patch_case_batch(host: str, tenant: str, token: str, body: dict, dry_run: bool) -> str | None:
     """Submit the batch. Returns its id, or None if the portal did not report one."""
-    import requests
 
     url = f"{host.rstrip('/')}/{tenant}/cases/batch"
     response = requests.patch(
@@ -90,7 +93,6 @@ def wait_for_batch(
     an HTTP status -- so it is returned even when the batch failed, and logged by the
     caller before anything is raised.
     """
-    import requests
 
     url = f"{host.rstrip('/')}/{tenant}/batches/{batch_id}"
     headers = {"Authorization": f"Bearer {token}"}
@@ -119,13 +121,93 @@ def _raise_for_status(response, method: str, url: str, tenant: str) -> None:
         raise PortalError(f"{method} {url} failed: {response.status_code} {response.text[:2000]}")
 
 
+def patch_case_system_status(host: str, tenant: str, token: str, cases: list[dict]) -> list[dict]:
+    """Send the status changes in one `PATCH /{tenant}/cases/status`; returns the portal's
+    `[{case_id, updated, current_status_code}]`.
+
+    The portal checks every change before writing any, so a 400 or a 403 changes no case. It then
+    writes them one by one: a 404 (a case deleted between the check and its write) leaves the
+    cases before it changed, which a retry reports as `updated: false` already in their target.
+    """
+
+    for case in cases:
+        status_code = case.get("status_code")
+        expected = SYSTEM_STATUS_TRANSITIONS.get(status_code)
+        if expected is None or case.get("expected_status_codes") != [expected]:
+            raise ValueError(
+                f"case {case.get('case_id')}: the pipeline only sends {SYSTEM_STATUS_TRANSITIONS} "
+                f"(target: expected), got {status_code}: {case.get('expected_status_codes')}"
+            )
+
+    url = f"{host.rstrip('/')}/{tenant}/cases/status"
+    response = requests.patch(
+        url,
+        headers={"Authorization": f"Bearer {token}"},
+        json={"cases": cases},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    if response.status_code == 403:
+        raise PortalError(
+            f"PATCH {url} returned 403 and changed no case. Either the service-account user is "
+            f"missing the `can_ingest_data` action at every diagnosis lab ('*') of tenant '{tenant}', or "
+            f"one of the cases is not in that tenant.",
+            status=403,
+            body=response.text,
+        )
+    if not response.ok:
+        raise PortalError(
+            f"PATCH {url} failed: {response.status_code} {response.text[:2000]}",
+            status=response.status_code,
+            body=response.text,
+        )
+    return response.json()["cases"]
+
+
+def set_case_system_status(host: str, tenant: str, token: str, case_ids: list[int], status_code: str) -> list[dict]:
+    """Move the cases to `processing` (from `submitted`) or `in_progress` (from `processing`)."""
+    if status_code not in SYSTEM_STATUS_TRANSITIONS:
+        raise ValueError(
+            f"'{status_code}' is not a pipeline status, expected one of {list(SYSTEM_STATUS_TRANSITIONS)}"
+        )
+    if not case_ids:
+        return []
+
+    expected = SYSTEM_STATUS_TRANSITIONS[status_code]
+    cases = [
+        {"case_id": case_id, "status_code": status_code, "expected_status_codes": [expected]}
+        for case_id in sorted(set(case_ids))
+    ]
+    results = patch_case_system_status(host, tenant, token, cases)
+
+    skipped = [r for r in results if not r.get("updated")]
+    for result in skipped:
+        if result.get("current_status_code") == status_code:
+            LOGGER.info("tenant '%s': case %s is already %s", tenant, result.get("case_id"), status_code)
+            continue
+        LOGGER.warning(
+            "tenant '%s': case %s not moved to %s, its status is %s (expected %s)",
+            tenant,
+            result.get("case_id"),
+            status_code,
+            result.get("current_status_code"),
+            expected,
+        )
+    LOGGER.info(
+        "tenant '%s': %d case(s) moved to %s, %d left unchanged",
+        tenant,
+        len(results) - len(skipped),
+        status_code,
+        len(skipped),
+    )
+    return results
+
+
 def post_case_group(host: str, tenant: str, token: str, name: str, case_ids: list[int]) -> dict:
     """Create the named case group, or overwrite its case list when the name already exists.
 
     The name is the key, so a retried task lands on the same group instead of a second one.
     Returns the group as the portal stores it: `{name, tenant_code, case_ids}`.
     """
-    import requests
 
     url = f"{host.rstrip('/')}/{tenant}/case_groups"
     response = requests.post(
@@ -147,7 +229,6 @@ def put_gene_panels(host: str, tenant: str, token: str, filename: str, content: 
     the generic hint. Any refusal raises PortalError with the status and the body (the ApiError
     `detail` holds the line of a 400 and the rows of a 422).
     """
-    import requests
 
     url = f"{host.rstrip('/')}/{tenant}/gene_panels"
     response = requests.put(
@@ -172,7 +253,6 @@ def notify_case_group(host: str, tenant: str, token: str, name: str) -> dict:
     Stateless on the portal side: calling it again sends again. A 500 means nothing was sent
     (no template for the tenant, or bad SMTP settings), a 404 that the group does not exist.
     """
-    import requests
 
     url = f"{host.rstrip('/')}/{tenant}/case_groups/{name}/notify"
     response = requests.post(url, headers={"Authorization": f"Bearer {token}"}, timeout=REQUEST_TIMEOUT_SECONDS)
