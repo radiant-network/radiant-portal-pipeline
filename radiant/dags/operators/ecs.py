@@ -293,7 +293,9 @@ class CosmicMutationSet(RadiantTaskECSOperator):
 
 class Toolbox:
     @staticmethod
-    def get_run_command(ecs_env: ECSEnv, extra_env: list[dict] | None = None) -> ecs.EcsRunTaskOperator:
+    def get_run_command(
+        ecs_env: ECSEnv, command: list[str], extra_env: list[dict] | None = None
+    ) -> ecs.EcsRunTaskOperator:
         return ecs.EcsRunTaskOperator(
             task_id="run_toolbox_command",
             task_display_name="[ECS] Run Toolbox Command",
@@ -308,7 +310,7 @@ class Toolbox:
                 "containerOverrides": [
                     {
                         "name": "radiant-toolbox-container",
-                        "command": "{{ [params.command] + (params.args or []) }}",
+                        "command": command,
                         "environment": extra_env if extra_env is not None else [],
                     }
                 ]

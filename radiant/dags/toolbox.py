@@ -13,7 +13,10 @@ if IS_AWS:
 else:
     from radiant.dags.operators import k8s as operators
 
-TOOLBOX_COMMANDS = ["create-tenant", "create-user", "refresh-tenants", "check-lock"]
+TOOLBOX_COMMANDS = ["create-tenant", "create-user", "update-user", "refresh-tenants", "check-lock"]
+
+# DAG commands backed by a differently named binary in the toolbox image.
+_TOOLBOX_BINARIES = {"update-user": "create-user"}
 
 _KV_ITEMS = {
     "type": "object",
@@ -34,6 +37,24 @@ def _delete_if_expired(args: list[str]) -> bool:
 
 def _force_delete(args: list[str]) -> bool:
     return "-force-delete" in args
+
+
+def _toolbox_command(command: str, args: list[str]) -> list[str]:
+    """The container command line: the image binary for `command`, then `args` verbatim.
+
+    `update-user` is `create-user -sub`. With `-sub`, create-user skips Keycloak entirely, so the
+    account (a person, or a client's service-account user such as airflow) keeps its password,
+    names and required actions; only Postgres grants, Ranger roles and the StarRocks user are
+    (re)applied. With `-email` instead, create-user upserts the Keycloak user, which overwrites
+    those attributes and resets the password whenever USER_PASSWORD is set -- hence `-sub` is
+    mandatory here.
+    """
+    if command == "update-user" and "-sub" not in args:
+        raise ValueError(
+            'update-user needs "-sub", "<keycloak user id>" in args: it never touches Keycloak, '
+            "so the user is identified by its sub, not its email"
+        )
+    return [_TOOLBOX_BINARIES.get(command, command), *args]
 
 
 def _generate_user_password(command: str, token_urlsafe=secrets.token_urlsafe) -> str:
@@ -75,7 +96,8 @@ def _generate_user_password(command: str, token_urlsafe=secrets.token_urlsafe) -
             title="Arguments",
             description=(
                 "CLI flags passed verbatim to the command, e.g. "
-                '["-code", "demo", "-name", "Demo Hospital"] for create-tenant. For check-lock, two '
+                '["-code", "demo", "-name", "Demo Hospital"] for create-tenant. update-user takes '
+                'create-user\'s flags and requires "-sub". For check-lock, two '
                 'flags are recognized. "-delete-if-expired": if the import_mutex lock is held and '
                 "past its TTL, delete it; no effect on a lock still within its TTL. "
                 '"-force-delete": delete it whatever its age and whoever holds it -- the only way to '
@@ -119,7 +141,7 @@ def toolbox():
     def select_execution_path(command: str) -> str:
         if command == "check-lock":
             return "check_import_lock"
-        return "build_ecs_environment" if IS_AWS else "resolve_env_vars"
+        return "resolve_toolbox_command"
 
     branch = select_execution_path(command="{{ params.command }}")
 
@@ -136,6 +158,13 @@ def toolbox():
     check_lock_task = check_import_lock(args="{{ params.args }}")
     branch >> check_lock_task
 
+    @task(task_id="resolve_toolbox_command", task_display_name="[PyOp] Resolve Toolbox Command")
+    def resolve_toolbox_command(command: str, args: list[str]) -> list[str]:
+        return _toolbox_command(command, args)
+
+    toolbox_command = resolve_toolbox_command(command="{{ params.command }}", args="{{ params.args }}")
+    branch >> toolbox_command
+
     if IS_AWS:
 
         @task(task_id="build_ecs_environment", task_display_name="[PyOp] Build ECS Environment")
@@ -146,8 +175,8 @@ def toolbox():
             return environment
 
         environment = build_ecs_environment(env_vars="{{ params.env_vars }}", password=password)
-        branch >> environment
-        operators.Toolbox.get_run_command(ecs_env=ECSEnv(), extra_env=environment)
+        toolbox_command >> environment
+        operators.Toolbox.get_run_command(ecs_env=ECSEnv(), command=toolbox_command, extra_env=environment)
     else:
 
         @task(task_id="resolve_env_vars", task_display_name="[PyOp] Resolve Env Vars")
@@ -158,8 +187,8 @@ def toolbox():
             return resolved
 
         extra_env = resolve_env_vars(env_vars="{{ params.env_vars }}", password=password)
-        branch >> extra_env
-        operators.Toolbox.get_run_command(extra_env=extra_env)
+        toolbox_command >> extra_env
+        operators.Toolbox.get_run_command(command=toolbox_command, extra_env=extra_env)
 
 
 toolbox()
