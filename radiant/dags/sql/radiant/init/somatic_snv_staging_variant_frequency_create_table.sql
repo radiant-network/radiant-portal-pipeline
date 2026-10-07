@@ -13,7 +13,11 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_snv_staging_variant_freq
 	`pf_to_wgs` DOUBLE,
 	`pc_to_wxs` BIGINT,
 	`pn_to_wxs` BIGINT,
-	`pf_to_wxs` DOUBLE
+	`pf_to_wxs` DOUBLE,
+	`hom_tn_wgs` BIGINT,
+	`hom_tn_wxs` BIGINT,
+	`hom_to_wgs` BIGINT,
+	`hom_to_wxs` BIGINT
 )
 PARTITION BY (`tenant_code`, `part`)
 DISTRIBUTED BY HASH(`locus_id`)

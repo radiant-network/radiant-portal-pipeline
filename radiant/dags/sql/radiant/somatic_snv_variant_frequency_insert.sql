@@ -22,7 +22,11 @@ freq AS (
      SUM(pc_tn_wgs) AS pc_tn_wgs,
 	 SUM(pc_tn_wxs) AS pc_tn_wxs,
      SUM(pc_to_wgs) AS pc_to_wgs,
-     SUM(pc_to_wxs) AS pc_to_wxs
+     SUM(pc_to_wxs) AS pc_to_wxs,
+     SUM(hom_tn_wgs) AS hom_tn_wgs,
+     SUM(hom_tn_wxs) AS hom_tn_wxs,
+     SUM(hom_to_wgs) AS hom_to_wgs,
+     SUM(hom_to_wxs) AS hom_to_wxs
   FROM {{ mapping.starrocks_somatic_snv_staging_variant_frequency }}
   WHERE tenant_code = %(tenant_code)s
   GROUP BY locus_id
@@ -39,5 +43,9 @@ SELECT locus_id,
        pc_to_wgs / (SELECT pn_to_wgs FROM patients_total_count) AS pf_to_wgs,
        pc_to_wxs,
        (SELECT pn_to_wxs FROM patients_total_count) AS pn_to_wxs,
-       pc_to_wxs / (SELECT pn_to_wxs FROM patients_total_count) AS pf_to_wxs
+       pc_to_wxs / (SELECT pn_to_wxs FROM patients_total_count) AS pf_to_wxs,
+       hom_tn_wgs,
+       hom_tn_wxs,
+       hom_to_wgs,
+       hom_to_wxs
 FROM freq;

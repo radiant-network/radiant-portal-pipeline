@@ -63,7 +63,27 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_variant_partitioned }} (
     cmc_mutation_url VARCHAR(255) NULL COMMENT "",
     cmc_sample_mutated INT NULL COMMENT "",
     cmc_sample_ratio DOUBLE NULL COMMENT "",
-    cmc_tier VARCHAR(8) NULL COMMENT ""
+    cmc_tier VARCHAR(8) NULL COMMENT "",
+    germline_hom_wgs INT(11),
+    germline_af_wgs DOUBLE,
+    germline_hom_wgs_affected INT(11),
+    germline_af_wgs_affected DOUBLE,
+    germline_hom_wgs_not_affected INT(11),
+    germline_af_wgs_not_affected DOUBLE,
+    germline_hom_wxs INT(11),
+    germline_af_wxs DOUBLE,
+    germline_hom_wxs_affected INT(11),
+    germline_af_wxs_affected DOUBLE,
+    germline_hom_wxs_not_affected INT(11),
+    germline_af_wxs_not_affected DOUBLE,
+    somatic_hom_tn_wgs INT(11),
+    somatic_af_tn_wgs DOUBLE,
+    somatic_hom_tn_wxs INT(11),
+    somatic_af_tn_wxs DOUBLE,
+    somatic_hom_to_wgs INT(11),
+    somatic_af_to_wgs DOUBLE,
+    somatic_hom_to_wxs INT(11),
+    somatic_af_to_wxs DOUBLE
 )
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10

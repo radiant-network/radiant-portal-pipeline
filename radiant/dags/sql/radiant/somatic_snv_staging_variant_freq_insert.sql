@@ -56,7 +56,12 @@ freqs_tumor AS (
         COUNT(DISTINCT CASE WHEN t.is_tumor_normal AND t.experimental_strategy = 'wgs' THEN t.patient_id END) AS pc_tn_wgs,
         COUNT(DISTINCT CASE WHEN t.is_tumor_normal AND t.experimental_strategy = 'wxs' THEN t.patient_id END) AS pc_tn_wxs,
         COUNT(DISTINCT CASE WHEN t.is_tumor_only   AND t.experimental_strategy = 'wgs' THEN t.patient_id END) AS pc_to_wgs,
-        COUNT(DISTINCT CASE WHEN t.is_tumor_only   AND t.experimental_strategy = 'wxs' THEN t.patient_id END) AS pc_to_wxs
+        COUNT(DISTINCT CASE WHEN t.is_tumor_only   AND t.experimental_strategy = 'wxs' THEN t.patient_id END) AS pc_to_wxs,
+        -- RAD-22: carriers whose tumor call is homozygous, hemizygous included, with the same cohorts as pc_*.
+        COUNT(DISTINCT CASE WHEN t.is_tumor_normal AND t.experimental_strategy = 'wgs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_tn_wgs,
+        COUNT(DISTINCT CASE WHEN t.is_tumor_normal AND t.experimental_strategy = 'wxs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_tn_wxs,
+        COUNT(DISTINCT CASE WHEN t.is_tumor_only   AND t.experimental_strategy = 'wgs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_to_wgs,
+        COUNT(DISTINCT CASE WHEN t.is_tumor_only   AND t.experimental_strategy = 'wxs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_to_wxs
     FROM {{ mapping.starrocks_somatic_snv_occurrence }} o
     -- task_id, NOT seq_id: one tumor sample can be analysed both tumor-only and tumor-normal, so
     -- joining `s.seq_id = o.tumor_seq_id` duplicated the occurrence once per task using that
@@ -84,5 +89,9 @@ SELECT
     pc_to_wgs / NULLIF((SELECT cnt_to_wgs FROM patients_total_count_cohort), 0)   AS pf_to_wgs,
     pc_to_wxs,
     (SELECT cnt_to_wxs FROM patients_total_count_cohort)                          AS pn_to_wxs,
-    pc_to_wxs / NULLIF((SELECT cnt_to_wxs FROM patients_total_count_cohort), 0)   AS pf_to_wxs
+    pc_to_wxs / NULLIF((SELECT cnt_to_wxs FROM patients_total_count_cohort), 0)   AS pf_to_wxs,
+    hom_tn_wgs,
+    hom_tn_wxs,
+    hom_to_wgs,
+    hom_to_wxs
 FROM freqs_tumor

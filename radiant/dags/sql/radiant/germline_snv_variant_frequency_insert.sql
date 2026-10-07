@@ -21,7 +21,13 @@ freq AS (
                  SUM(pc_wgs_not_affected) AS pc_wgs_not_affected,
                  SUM(pc_wxs)                 AS pc_wxs,
                  SUM(pc_wxs_affected)     AS pc_wxs_affected,
-                 SUM(pc_wxs_not_affected) AS pc_wxs_not_affected
+                 SUM(pc_wxs_not_affected) AS pc_wxs_not_affected,
+                 SUM(hom_wgs)              AS hom_wgs,
+                 SUM(hom_wgs_affected)     AS hom_wgs_affected,
+                 SUM(hom_wgs_not_affected) AS hom_wgs_not_affected,
+                 SUM(hom_wxs)              AS hom_wxs,
+                 SUM(hom_wxs_affected)     AS hom_wxs_affected,
+                 SUM(hom_wxs_not_affected) AS hom_wxs_not_affected
           FROM {{ mapping.starrocks_germline_snv_staging_variant_frequency }}
           WHERE tenant_code = %(tenant_code)s
           GROUP BY locus_id
@@ -44,5 +50,11 @@ SELECT locus_id,
        pc_wxs_affected / (SELECT pn_wxs_affected FROM patients_total_count)         AS pf_wxs_affected,
        pc_wxs_not_affected,
        (SELECT pn_wxs_not_affected FROM patients_total_count)                       AS pn_wxs_not_affected,
-       pc_wxs_not_affected / (SELECT pn_wxs_not_affected FROM patients_total_count) AS pf_wxs_not_affected
+       pc_wxs_not_affected / (SELECT pn_wxs_not_affected FROM patients_total_count) AS pf_wxs_not_affected,
+       hom_wgs,
+       hom_wgs_affected,
+       hom_wgs_not_affected,
+       hom_wxs,
+       hom_wxs_affected,
+       hom_wxs_not_affected
 FROM freq

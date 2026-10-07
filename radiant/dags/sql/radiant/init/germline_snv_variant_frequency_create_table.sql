@@ -17,7 +17,13 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_variant_frequency }
    `pf_wxs_affected` DOUBLE,
    `pc_wxs_not_affected` BIGINT,
    `pn_wxs_not_affected` BIGINT,
-   `pf_wxs_not_affected` DOUBLE
+   `pf_wxs_not_affected` DOUBLE,
+   `hom_wgs` BIGINT,
+   `hom_wgs_affected` BIGINT,
+   `hom_wgs_not_affected` BIGINT,
+   `hom_wxs` BIGINT,
+   `hom_wxs_affected` BIGINT,
+   `hom_wxs_not_affected` BIGINT
 )
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10

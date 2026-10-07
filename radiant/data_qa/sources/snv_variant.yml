@@ -58,6 +58,19 @@ sources:
                 - somatic_pf_to_wgs
                 - somatic_pc_to_wxs
                 - somatic_pf_to_wxs
+                # RAD-22: hom / af of the same cohorts as above (WGS-only, no tumor-only cohort), constant 0.
+                - germline_hom_wxs
+                - germline_af_wxs
+                - germline_hom_wxs_affected
+                - germline_af_wxs_affected
+                - germline_hom_wxs_not_affected
+                - germline_af_wxs_not_affected
+                - somatic_hom_tn_wxs
+                - somatic_af_tn_wxs
+                - somatic_hom_to_wgs
+                - somatic_af_to_wgs
+                - somatic_hom_to_wxs
+                - somatic_af_to_wxs
 
           # --- Should Be Within Range ----------------------------------------
           # pf frequency ratios must be in [0,1] (defaults: like '_pf_', 0..1)
@@ -67,6 +80,11 @@ sources:
           - should_be_within_range:
               name: snv_variant__should_be_within_range_cmc_sample_ratio
               like: cmc_sample_ratio
+          # RAD-22: approximate allele frequencies (pc + hom) / (2 * pn). `_af_` matches only the
+          # germline_af_* / somatic_af_* columns, not gnomad_v3_af, topmed_af or tg_af.
+          - should_be_within_range:
+              name: snv_variant__should_be_within_range_af_RAD-22
+              like: _af_
         columns:
           - name: locus_id
             tests:

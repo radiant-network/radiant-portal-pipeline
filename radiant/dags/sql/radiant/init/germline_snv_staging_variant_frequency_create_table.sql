@@ -13,7 +13,13 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_staging_variant_fre
     `pc_wxs_affected` BIGINT,
     `pn_wxs_affected` BIGINT,
     `pc_wxs_not_affected` BIGINT,
-    `pn_wxs_not_affected` BIGINT
+    `pn_wxs_not_affected` BIGINT,
+    `hom_wgs` BIGINT,
+    `hom_wgs_affected` BIGINT,
+    `hom_wgs_not_affected` BIGINT,
+    `hom_wxs` BIGINT,
+    `hom_wxs_affected` BIGINT,
+    `hom_wxs_not_affected` BIGINT
 )
 PARTITION BY (`tenant_code`, `part`)
 DISTRIBUTED BY HASH(`locus_id`)
