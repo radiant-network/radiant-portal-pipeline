@@ -35,7 +35,27 @@ WITH germline_sequencings AS (
                                          then patient_id end)                                                  AS pc_wxs_affected,
                   COUNT(distinct CASE
                                      WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'non_affected'
-                                         then patient_id end)                                                  AS pc_wxs_not_affected
+                                         then patient_id end)                                                  AS pc_wxs_not_affected,
+                  -- RAD-22: carriers called homozygous, hemizygous included. Same filters and cohorts as pc_*, and
+                  -- distinct per patient, so a patient HOM in one sample and HET in another counts once here.
+                  COUNT(distinct CASE
+                                     WHEN s.experimental_strategy = 'wgs' and o.zygosity IN ('HOM', 'HEM')
+                                         then patient_id end)                                                  AS hom_wgs,
+                  COUNT(distinct CASE
+                                     WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'affected' and o.zygosity IN ('HOM', 'HEM')
+                                         then patient_id end)                                                  AS hom_wgs_affected,
+                  COUNT(distinct CASE
+                                     WHEN s.experimental_strategy = 'wgs' and s.affected_status = 'non_affected' and o.zygosity IN ('HOM', 'HEM')
+                                         then patient_id end)                                                  AS hom_wgs_not_affected,
+                  COUNT(distinct CASE
+                                     WHEN s.experimental_strategy = 'wxs' and o.zygosity IN ('HOM', 'HEM')
+                                         then patient_id end)                                                  AS hom_wxs,
+                  COUNT(distinct CASE
+                                     WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'affected' and o.zygosity IN ('HOM', 'HEM')
+                                         then patient_id end)                                                  AS hom_wxs_affected,
+                  COUNT(distinct CASE
+                                     WHEN s.experimental_strategy = 'wxs' and s.affected_status = 'non_affected' and o.zygosity IN ('HOM', 'HEM')
+                                         then patient_id end)                                                  AS hom_wxs_not_affected
 			FROM  {{ mapping.starrocks_germline_snv_occurrence }} o
 			JOIN {{ mapping.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.seq_id
            WHERE o.part = %(part)s
@@ -57,5 +77,11 @@ SELECT %(tenant_code)s AS tenant_code,
        pc_wxs_affected,
        (SELECT cnt_wxs_affected FROM patients_total_count)     AS pn_wxs_affected,
        pc_wxs_not_affected,
-       (SELECT cnt_wxs_not_affected FROM patients_total_count) AS pn_wxs_not_affected
+       (SELECT cnt_wxs_not_affected FROM patients_total_count) AS pn_wxs_not_affected,
+       hom_wgs,
+       hom_wgs_affected,
+       hom_wgs_not_affected,
+       hom_wxs,
+       hom_wxs_affected,
+       hom_wxs_not_affected
 from freqs

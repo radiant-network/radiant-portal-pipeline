@@ -37,20 +37,21 @@ _STAGING_CMC = {
     4: ("https://cosmic/4", 44, 0.5, "3"),
 }
 
-# locus_id -> (pc_wgs, pn_wgs). `pn_*` is the tenant's whole cohort, broadcast onto every row by
+# locus_id -> (pc_wgs, pn_wgs, hom_wgs). `pn_*` is the tenant's whole cohort, broadcast onto every row by
 # germline_snv_variant_frequency_insert.sql.
+_GERMLINE_FREQ_COLUMNS = ("pc_wgs", "pn_wgs", "hom_wgs")
 _GERMLINE_FREQ = {
-    _TENANT_A: {1: (3, 10), 2: (5, 10)},
-    _TENANT_B: {2: (1, 4), 3: (2, 4)},
+    _TENANT_A: {1: (3, 10, 1), 2: (5, 10, 2)},
+    _TENANT_B: {2: (1, 4, 0), 3: (2, 4, 2)},
 }
-# locus_id -> (pc_tn_wgs, pn_tn_wgs, pc_to_wgs, pn_to_wgs). Tenant B has no somatic experiments at
-# all. The four values are deliberately distinct and the `*_to_wxs` columns are left unseeded, so a
+# locus_id -> (pc_tn_wgs, pn_tn_wgs, pc_to_wgs, pn_to_wgs, hom_tn_wgs, hom_to_wgs). Tenant B has no somatic
+# experiments at all. The pc/pn values are deliberately distinct and the `*_to_wxs` columns are left unseeded, so a
 # wgs/wxs or tn/to mix-up in the positional projections of snv_variant_insert.sql shows up as a
 # wrong number rather than passing silently — every somatic column there is INT(11) or DOUBLE, so
 # the column count alone would still line up.
-_SOMATIC_FREQ_COLUMNS = ("pc_tn_wgs", "pn_tn_wgs", "pc_to_wgs", "pn_to_wgs")
+_SOMATIC_FREQ_COLUMNS = ("pc_tn_wgs", "pn_tn_wgs", "pc_to_wgs", "pn_to_wgs", "hom_tn_wgs", "hom_to_wgs")
 _SOMATIC_FREQ = {
-    _TENANT_A: {2: (1, 7, 3, 12)},
+    _TENANT_A: {2: (1, 7, 3, 12, 1, 2)},
     _TENANT_B: {},
 }
 
@@ -72,6 +73,16 @@ _CATALOG_COLUMNS = (
     # projection, so a wrong ordinal there surfaces here rather than as a silent column swap.
     "pick_source",
     *_STAGING_CMC_COLUMNS,
+    # RAD-22. Appended after the CMC columns, at the very end of the positional projection.
+    "germline_hom_wgs",
+    "germline_af_wgs",
+    "germline_af_wxs",
+    "somatic_hom_tn_wgs",
+    "somatic_af_tn_wgs",
+    "somatic_hom_to_wgs",
+    "somatic_af_to_wgs",
+    "somatic_hom_to_wxs",
+    "somatic_af_to_wxs",
 )
 
 
@@ -113,8 +124,8 @@ def test_snv_variant_is_isolated_per_tenant(starrocks_session, mapping_conf, sta
             _seed(
                 cursor,
                 mapping["starrocks_germline_snv_variant_frequency"],
-                ("locus_id", "pc_wgs", "pn_wgs"),
-                [(locus_id, pc, pn) for locus_id, (pc, pn) in _GERMLINE_FREQ[tenant].items()],
+                ("locus_id", *_GERMLINE_FREQ_COLUMNS),
+                [(locus_id, *values) for locus_id, values in _GERMLINE_FREQ[tenant].items()],
             )
             _seed(
                 cursor,
@@ -181,3 +192,27 @@ def test_snv_variant_is_isolated_per_tenant(starrocks_session, mapping_conf, sta
         for locus_id, row in catalog.items():
             cmc = tuple(row[column] for column in _STAGING_CMC_COLUMNS)
             assert cmc == _STAGING_CMC[locus_id], (tenant, locus_id)
+
+    # af = (pc + hom) / (2 * pn), with the tenant's own pn (RAD-22). Pooled, locus 2 would have read
+    # (5 + 1 + 2 + 0) / 28 for both tenants.
+    expected_germline = {
+        _TENANT_A: {1: (1, (3 + 1) / 20), 2: (2, (5 + 2) / 20)},
+        _TENANT_B: {2: (0, (1 + 0) / 8), 3: (2, (2 + 2) / 8)},
+    }
+    for tenant, loci in expected_germline.items():
+        for locus_id, (hom, af) in loci.items():
+            row = catalogs[tenant][locus_id]
+            assert row["germline_hom_wgs"] == hom, (tenant, locus_id)
+            assert float(row["germline_af_wgs"]) == pytest.approx(af, rel=1e-6), (tenant, locus_id)
+            # No wxs cohort: pn_wxs = 0, so af is 0 rather than NULL or a division error.
+            assert row["germline_af_wxs"] == 0, (tenant, locus_id)
+
+    # Somatic tumor-normal and tumor-only each use their own pn: (1 + 1) / 14 and (3 + 2) / 24.
+    assert (tenant_a_locus_2["somatic_hom_tn_wgs"], tenant_a_locus_2["somatic_hom_to_wgs"]) == (1, 2)
+    assert float(tenant_a_locus_2["somatic_af_tn_wgs"]) == pytest.approx(2 / 14, rel=1e-6)
+    assert float(tenant_a_locus_2["somatic_af_to_wgs"]) == pytest.approx(5 / 24, rel=1e-6)
+    # The last column of the catalog. `*_to_wxs` was never seeded (pn = 0), so both read 0.
+    assert (tenant_a_locus_2["somatic_hom_to_wxs"], tenant_a_locus_2["somatic_af_to_wxs"]) == (0, 0)
+    # Tenant B has no somatic cohort at all: every somatic af is 0.
+    for row in catalogs[_TENANT_B].values():
+        assert (row["somatic_hom_tn_wgs"], row["somatic_af_tn_wgs"], row["somatic_af_to_wgs"]) == (0, 0, 0)
