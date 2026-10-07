@@ -9,7 +9,7 @@ import json
 import logging
 from dataclasses import dataclass
 
-from radiant.tasks.nextflow.portal import fetch_token, patch_case_batch, wait_for_batch
+from radiant.tasks.nextflow.portal import fetch_token, patch_case_batch, set_case_system_status, wait_for_batch
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +54,17 @@ def load_portal_connection(conn_id: str = PORTAL_CONN_ID) -> PortalConnection:
         client_secret=conn.password,
         scope=extra.get("scope"),
     )
+
+
+def update_case_system_status(
+    tenant: str, case_ids: list[int], status_code: str, conn_id: str = PORTAL_CONN_ID
+) -> list[dict]:
+    """Move the cases of `tenant` to the pipeline status `status_code`, through `conn_id`.
+
+    Cases left unchanged by the portal (`updated: false`) are logged, not raised.
+    """
+    portal = load_portal_connection(conn_id)
+    return set_case_system_status(portal.host, tenant, portal.token(), case_ids, status_code)
 
 
 def register_case_batch(tenant: str, body: dict, dry_run: bool, conn_id: str = PORTAL_CONN_ID) -> dict:

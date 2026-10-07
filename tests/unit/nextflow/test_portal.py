@@ -70,6 +70,122 @@ def test_notify_case_group_404_and_500_are_errors(requests_mock):
         portal.notify_case_group("https://api", "qlin", "tok", "run-a")
 
 
+def test_set_case_system_status_sends_the_expected_starting_status(requests_mock):
+    requests_mock.patch.return_value = _response(
+        200,
+        {
+            "cases": [
+                {"case_id": 123, "updated": True, "current_status_code": "in_progress"},
+                {"case_id": 456, "updated": True, "current_status_code": "in_progress"},
+            ]
+        },
+    )
+
+    results = portal.set_case_system_status("https://api/", "qlin", "tok", [456, 123, 456], "in_progress")
+
+    assert [r["case_id"] for r in results] == [123, 456]
+    args, kwargs = requests_mock.patch.call_args
+    assert args[0] == "https://api/qlin/cases/status"
+    assert kwargs["headers"] == {"Authorization": "Bearer tok"}
+    assert kwargs["json"] == {
+        "cases": [
+            {"case_id": 123, "status_code": "in_progress", "expected_status_codes": ["processing"]},
+            {"case_id": 456, "status_code": "in_progress", "expected_status_codes": ["processing"]},
+        ]
+    }
+
+
+def test_set_case_system_status_processing_expects_submitted(requests_mock):
+    requests_mock.patch.return_value = _response(
+        200, {"cases": [{"case_id": 1, "updated": True, "current_status_code": "processing"}]}
+    )
+
+    portal.set_case_system_status("https://api", "qlin", "tok", [1], "processing")
+
+    assert requests_mock.patch.call_args.kwargs["json"] == {
+        "cases": [{"case_id": 1, "status_code": "processing", "expected_status_codes": ["submitted"]}]
+    }
+
+
+def test_set_case_system_status_logs_updated_false_without_failing(requests_mock, caplog):
+    requests_mock.patch.return_value = _response(
+        200,
+        {
+            "cases": [
+                {"case_id": 123, "updated": True, "current_status_code": "in_progress"},
+                {"case_id": 456, "updated": False, "current_status_code": "revoked"},
+            ]
+        },
+    )
+
+    with caplog.at_level("WARNING", logger=portal.LOGGER.name):
+        results = portal.set_case_system_status("https://api", "qlin", "tok", [123, 456], "in_progress")
+
+    assert results[1] == {"case_id": 456, "updated": False, "current_status_code": "revoked"}
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert "case 456" in warnings[0].getMessage()
+    assert "revoked" in warnings[0].getMessage()
+
+
+def test_set_case_system_status_403_names_the_missing_grant(requests_mock):
+    requests_mock.patch.return_value = _response(403, text='{"message":"forbidden"}')
+
+    with pytest.raises(portal.PortalError, match="`can_ingest_data`.*tenant 'qlin'") as e:
+        portal.set_case_system_status("https://api", "qlin", "tok", [1], "processing")
+
+    assert e.value.status == 403
+
+
+def test_set_case_system_status_already_in_target_is_not_a_warning(requests_mock, caplog):
+    requests_mock.patch.return_value = _response(
+        200, {"cases": [{"case_id": 1, "updated": False, "current_status_code": "processing"}]}
+    )
+
+    with caplog.at_level("INFO", logger=portal.LOGGER.name):
+        portal.set_case_system_status("https://api", "qlin", "tok", [1], "processing")
+
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+    assert any("already processing" in r.getMessage() for r in caplog.records)
+
+
+def test_set_case_system_status_404_keeps_the_status(requests_mock):
+    requests_mock.patch.return_value = _response(404, text='{"message":"case 2 not found"}')
+
+    with pytest.raises(portal.PortalError, match="404") as e:
+        portal.set_case_system_status("https://api", "qlin", "tok", [1, 2], "processing")
+
+    assert e.value.status == 404
+
+
+def test_set_case_system_status_without_cases_sends_nothing(requests_mock):
+    assert portal.set_case_system_status("https://api", "qlin", "tok", [], "processing") == []
+    requests_mock.patch.assert_not_called()
+
+
+@pytest.mark.parametrize("status_code", ["submitted", "draft", "completed", "revoked", "in_review", ""])
+def test_set_case_system_status_refuses_any_other_status(requests_mock, status_code):
+    with pytest.raises(ValueError, match="not a pipeline status"):
+        portal.set_case_system_status("https://api", "qlin", "tok", [1], status_code)
+    requests_mock.patch.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        {"case_id": 1, "status_code": "completed", "expected_status_codes": ["in_progress"]},
+        {"case_id": 1, "status_code": "in_progress", "expected_status_codes": ["submitted"]},
+        {"case_id": 1, "status_code": "processing", "expected_status_codes": ["submitted", "in_review"]},
+        {"case_id": 1, "status_code": "processing", "expected_status_codes": []},
+        {"case_id": 1, "status_code": "processing"},
+    ],
+)
+def test_patch_case_system_status_refuses_anything_but_the_two_system_changes(requests_mock, case):
+    with pytest.raises(ValueError, match="only sends"):
+        portal.patch_case_system_status("https://api", "qlin", "tok", [case])
+    requests_mock.patch.assert_not_called()
+
+
 # Not valid UTF-8 on purpose, with a CRLF and a trailing tab: any decode or re-encode would change it.
 GENE_PANEL_FILE = b"panel_code\tpanel_name\tsymbol\r\nPANEL_1\tCardio\tTTN\t\n\xff\xfe"
 
