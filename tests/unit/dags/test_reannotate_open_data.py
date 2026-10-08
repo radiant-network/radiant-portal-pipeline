@@ -8,7 +8,11 @@ independent of each other.
 import pytest
 
 from radiant.dags import NAMESPACE
-from radiant.dags.reannotate_open_data import build_cnv_params, build_variant_part_params
+from radiant.dags.reannotate_open_data import (
+    build_cnv_params,
+    build_frequency_params,
+    build_variant_part_params,
+)
 
 _DAG_ID = f"{NAMESPACE}-reannotate-open-data"
 
@@ -79,6 +83,7 @@ def test_the_ui_lists_the_phases_in_order(dag):
         "reference_load",
         "sources_loaded",
         "reannotate_accumulators",
+        "snv_frequency",
         "snv_variant",
         "snv_consequence",
         "cnv_occurrence",
@@ -267,6 +272,7 @@ def test_a_checkpoint_brackets_every_group_of_starrocks_work(dag):
     checkpoints = [
         "sources_loaded",
         "accumulators_reannotated",
+        "frequencies_recomputed",
         "snv_variants_rebuilt",
         "snv_consequences_rebuilt",
         "rebuilds_complete",
@@ -295,7 +301,12 @@ def test_checkpoints_do_not_stall_the_spine_when_a_branch_skips(dag):
     the branch and take the whole spine -- including the lock release -- down with it."""
     from airflow.utils.trigger_rule import TriggerRule
 
-    for task_id in ("accumulators_reannotated", "snv_variants_rebuilt", "snv_consequences_rebuilt"):
+    for task_id in (
+        "accumulators_reannotated",
+        "frequencies_recomputed",
+        "snv_variants_rebuilt",
+        "snv_consequences_rebuilt",
+    ):
         assert dag.get_task(task_id).trigger_rule == TriggerRule.NONE_FAILED, task_id
 
 
@@ -322,6 +333,10 @@ def test_p1_leaves_the_file_driven_loads_unset(dag):
 # same label repeated, which is indistinguishable from a duplicate.
 
 _MAPPED_TASK_IDS = {
+    "snv_frequency.insert_stg_germline_snv_variant_freq",
+    "snv_frequency.aggregate_germline_snv_variant_freq",
+    "snv_frequency.insert_stg_somatic_snv_variant_freq",
+    "snv_frequency.aggregate_somatic_snv_variant_freq",
     "snv_variant.insert_snv_variant",
     "snv_variant.insert_snv_variant_part",
     "snv_consequence.insert_snv_consequence_filter_part",
@@ -374,7 +389,13 @@ def test_map_index_labels_are_unique_across_the_fan_out(dag):
 
     tasks = _mapped_tasks(dag)
     cnv_params = build_cnv_params(_TENANT_PARTS)
+    frequency_params = build_frequency_params(_TENANT_PARTS)
+    tenants = [{"tenant_code": t} for t in ("CHOP", "SJ")]
     expansions = {
+        "snv_frequency.insert_stg_germline_snv_variant_freq": frequency_params,
+        "snv_frequency.aggregate_germline_snv_variant_freq": tenants,
+        "snv_frequency.insert_stg_somatic_snv_variant_freq": frequency_params,
+        "snv_frequency.aggregate_somatic_snv_variant_freq": tenants,
         "snv_variant.insert_snv_variant": [{"tenant_code": t} for t in ("CHOP", "SJ")],
         "snv_variant.insert_snv_variant_part": build_variant_part_params(_TENANT_PARTS),
         "snv_consequence.insert_snv_consequence_filter_part": [
@@ -438,6 +459,25 @@ _GATED_STATEMENTS = {
     "cnv_occurrence.reannotate_somatic_cnv_occurrence": "cnv_occurrence",
 }
 
+# RAD-46: the statements recompute_frequencies opens on top of their gate -- the variant rebuild that
+# reads the recomputed frequencies, and the CNV rebuild that a variant rebuild always drags along.
+# The staging-variant and consequence statements stay out: the recompute does not need them.
+_OPENED_BY_RECOMPUTE = {
+    "snv_variant.insert_snv_variant",
+    "snv_variant.insert_snv_variant_part",
+    "cnv_occurrence.reannotate_germline_cnv_occurrence",
+    "cnv_occurrence.reannotate_somatic_cnv_occurrence",
+}
+
+# RAD-46: the frequency recompute, off unless the param is set. No gate can open it: the frequencies
+# depend on the occurrences, not on open data.
+_FREQUENCY_STATEMENTS = {
+    "snv_frequency.insert_stg_germline_snv_variant_freq",
+    "snv_frequency.aggregate_germline_snv_variant_freq",
+    "snv_frequency.insert_stg_somatic_snv_variant_freq",
+    "snv_frequency.aggregate_somatic_snv_variant_freq",
+}
+
 _GATE_TASK_ID = "compute_reannotation_gates"
 
 
@@ -448,7 +488,7 @@ def _skip_if(task):
     return getattr(task, "skip_if", None)
 
 
-def _render_gate(dag, template: str, gates, force: bool):
+def _render_gate(dag, template: str, gates, force: bool, recompute: bool = False):
     """Render one `skip_if` the way Airflow will.
 
     Native types and `StrictUndefined` because that is what this DAG runs under
@@ -463,7 +503,8 @@ def _render_gate(dag, template: str, gates, force: bool):
 
     env = NativeEnvironment(undefined=jinja2.StrictUndefined)
     ti = types.SimpleNamespace(xcom_pull=lambda task_ids: gates)
-    return env.from_string(template).render(ti=ti, params={"force_reannotation": force})
+    params = {"force_reannotation": force, "recompute_frequencies": recompute}
+    return env.from_string(template).render(ti=ti, params=params)
 
 
 def test_the_gate_task_covers_exactly_the_branches_the_source_map_declares(dag):
@@ -477,16 +518,17 @@ def test_the_gate_task_covers_exactly_the_branches_the_source_map_declares(dag):
 
 def test_every_reannotation_statement_is_gated(dag):
     gated = {task.task_id for task in _starrocks_tasks(dag) if _skip_if(task)}
-    assert gated == set(_GATED_STATEMENTS)
+    assert gated == set(_GATED_STATEMENTS) | _FREQUENCY_STATEMENTS
 
 
 def test_each_statement_gates_on_the_branch_that_owns_it(dag):
     """The statements a branch gates are copied by hand. One pointed at the wrong branch rebuilds on
     someone else's publish, or -- worse -- sits out its own."""
-    for task_id, branch in _GATED_STATEMENTS.items():
-        from radiant.dags.reannotate_open_data import gated
+    from radiant.dags.reannotate_open_data import RECOMPUTE_FREQUENCIES, gated
 
-        assert _skip_if(dag.get_task(task_id)) == gated(branch), task_id
+    for task_id, branch in _GATED_STATEMENTS.items():
+        opened_by = RECOMPUTE_FREQUENCIES if task_id in _OPENED_BY_RECOMPUTE else None
+        assert _skip_if(dag.get_task(task_id)) == gated(branch, opened_by=opened_by), task_id
 
 
 def test_the_gate_is_decided_after_the_reference_load_and_before_the_first_statement(dag):
@@ -543,3 +585,73 @@ def test_the_gate_renders_to_a_real_bool(dag, gates, force, skipped):
     template that renders "False" instead of False skips the statement it was meant to run."""
     rendered = _render_gate(dag, _skip_if(dag.get_task("snv_variant.insert_snv_variant")), gates, force)
     assert rendered is skipped, f"rendered {rendered!r}"
+
+
+# --- Frequency recompute (RAD-46) ----------------------------------------------------------------
+
+_CLOSED_GATES = {"snv_variant": False, "snv_consequence": False, "cnv_occurrence": False}
+
+
+def test_recompute_frequencies_defaults_to_off(dag):
+    assert dag.params["recompute_frequencies"] is False
+
+
+@pytest.mark.parametrize(("recompute", "skipped"), [(False, True), (True, False)])
+def test_the_frequency_recompute_runs_only_when_asked(dag, recompute, skipped):
+    """Neither the gates nor force_reannotation open it: a scheduled or forced run never pays for it."""
+    for task_id in _FREQUENCY_STATEMENTS:
+        for force in (False, True):
+            rendered = _render_gate(dag, _skip_if(dag.get_task(task_id)), _CLOSED_GATES, force, recompute)
+            assert rendered is skipped, (task_id, force, rendered)
+
+
+def test_recompute_frequencies_opens_the_rebuilds_it_needs_and_only_those(dag):
+    """With every gate closed, the param alone rebuilds snv__variant from the new frequencies, and the CNV
+    occurrences that count its rows. It does not drag in the staging-variant and consequence
+    re-annotations, which is what force_reannotation would cost."""
+    for task_id in _GATED_STATEMENTS:
+        rendered = _render_gate(dag, _skip_if(dag.get_task(task_id)), _CLOSED_GATES, False, recompute=True)
+        assert rendered is (task_id not in _OPENED_BY_RECOMPUTE), (task_id, rendered)
+
+
+def test_the_recompute_runs_in_order_between_the_accumulators_and_the_variant_rebuild(dag):
+    """Each roll-up sums the staging rows of its kind, and snv__variant reads both roll-ups."""
+    chain = [
+        "accumulators_reannotated",
+        "snv_frequency.insert_stg_germline_snv_variant_freq",
+        "snv_frequency.aggregate_germline_snv_variant_freq",
+        "snv_frequency.insert_stg_somatic_snv_variant_freq",
+        "snv_frequency.aggregate_somatic_snv_variant_freq",
+        "frequencies_recomputed",
+        "snv_variant.insert_snv_variant",
+    ]
+    for earlier, later in zip(chain, chain[1:], strict=False):
+        assert _reaches(dag, dag.get_task(earlier), dag.get_task(later)), f"{earlier} -> {later}"
+
+
+def test_frequency_params_bind_the_tenant_in_the_statement_too():
+    """The staging frequency tables are shared and keyed by (tenant_code, part), so the statement needs
+    tenant_code as a query parameter on top of the operator's per-tenant mapping."""
+    rows = [
+        {"tenant_code": "SJ", "part": 3},
+        {"tenant_code": "CHOP", "part": 1},
+        {"tenant_code": "CHOP", "part": 0},
+    ]
+    assert build_frequency_params(rows) == [
+        {"tenant_code": "CHOP", "parameters": {"part": 0, "tenant_code": "CHOP"}},
+        {"tenant_code": "CHOP", "parameters": {"part": 1, "tenant_code": "CHOP"}},
+        {"tenant_code": "SJ", "parameters": {"part": 3, "tenant_code": "SJ"}},
+    ]
+
+
+def test_frequency_labels_name_the_tenant_and_the_part(dag):
+    tasks = _mapped_tasks(dag)
+    staging = tasks["snv_frequency.insert_stg_germline_snv_variant_freq"]
+    assert [_render(dag, staging, kw) for kw in build_frequency_params(_TENANT_PARTS)] == [
+        "CHOP part=0",
+        "CHOP part=9",
+        "CHOP part=10",
+        "SJ part=3",
+    ]
+    rollup = tasks["snv_frequency.aggregate_somatic_snv_variant_freq"]
+    assert _render(dag, rollup, {"tenant_code": "SJ"}) == "SJ"

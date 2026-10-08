@@ -25,6 +25,8 @@ PARTS_PER_VARIANT_PART = 10
 
 GATES_TASK_ID = "compute_reannotation_gates"
 
+RECOMPUTE_FREQUENCIES = "recompute_frequencies"
+
 dag_params = {
     "force_reannotation": Param(
         default=False,
@@ -35,12 +37,23 @@ dag_params = {
         ),
         type="boolean",
     ),
+    RECOMPUTE_FREQUENCIES: Param(
+        default=False,
+        description=(
+            "Recompute the SNV frequencies of every tenant and part, then rebuild snv__variant, its "
+            "partitioned copy and the CNV occurrences. Set True after changing a frequency statement "
+            "(e.g. the RAD-22 backfill): the gates cannot see it, and force_reannotation is not needed."
+        ),
+        type="boolean",
+    ),
 }
 
 
-def gated(branch: str) -> str:
+def gated(branch: str, opened_by: str | None = None) -> str:
+    """`skip_if` for a statement of `branch`. `opened_by` names a boolean param that also opens it."""
+    opener = f"not params.{opened_by} and " if opened_by else ""
     return (
-        "{{ not params.force_reannotation and not "
+        f"{{{{ {opener}not params.force_reannotation and not "
         f"(ti.xcom_pull(task_ids='{GATES_TASK_ID}') or {{}}).get('{branch}', True) }}}}"
     )
 
@@ -57,6 +70,18 @@ def build_variant_part_params(tenant_parts: list[dict]) -> list[dict[str, Any]]:
             },
         }
         for tenant_code, variant_part in pairs
+    ]
+
+
+def build_frequency_params(tenant_parts: list[dict]) -> list[dict[str, Any]]:
+    # The frequency statements bind tenant_code as a query parameter as well: the staging frequency
+    # tables are shared, keyed by (tenant_code, part).
+    return [
+        {
+            "tenant_code": row["tenant_code"],
+            "parameters": {"part": int(row["part"]), "tenant_code": row["tenant_code"]},
+        }
+        for row in sorted(tenant_parts, key=lambda r: (r["tenant_code"], int(r["part"])))
     ]
 
 
@@ -181,6 +206,10 @@ def reannotate_open_data():
     def variant_part_params(tenant_parts: list[dict]) -> list[dict[str, Any]]:
         return build_variant_part_params(tenant_parts)
 
+    @task(task_id="build_frequency_params", task_display_name="[PyOp] Per-tenant Frequency Part Params")
+    def frequency_params(tenant_parts: list[dict]) -> list[dict[str, Any]]:
+        return build_frequency_params(tenant_parts)
+
     @task(task_id="build_cnv_params", task_display_name="[PyOp] Per-tenant CNV Part Params")
     def cnv_params(tenant_parts: list[dict]) -> list[dict[str, Any]]:
         return build_cnv_params(tenant_parts)
@@ -190,6 +219,7 @@ def reannotate_open_data():
         return [{"part": part} for part in parts]
 
     _variant_part_params = variant_part_params(tenant_parts)
+    _frequency_params = frequency_params(tenant_parts)
     _cnv_params = cnv_params(tenant_parts)
     _part_params = part_params(all_parts)
 
@@ -244,12 +274,65 @@ def reannotate_open_data():
         )
         reannotate_staging_variant >> reannotate_consequence
 
+    # Off unless recompute_frequencies is set: the frequencies depend on the occurrences, not on open
+    # data, so no gate can open this group. Same statements as import_part, over every tenant and part.
+    skip_unless_recompute = f"{{{{ not params.{RECOMPUTE_FREQUENCIES} }}}}"
+
+    with TaskGroup(group_id="snv_frequency") as tg_frequencies:
+        insert_stg_germline_freq = RadiantStarRocksOperator.partial(
+            task_id="insert_stg_germline_snv_variant_freq",
+            task_display_name="[StarRocks] Insert Stg Germline SNV Variants Freq Part",
+            sql="./sql/radiant/germline_snv_staging_variant_freq_insert.sql",
+            skip_if=skip_unless_recompute,
+            map_index_template="{{ task.tenant_code }} part={{ task.parameters['part'] }}",
+            submit_task_options=std_submit_task_opts,
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+            pool=STARROCKS_INSERT_POOL,
+        ).expand_kwargs(_frequency_params)
+
+        aggregate_germline_freq = RadiantStarRocksOperator.partial(
+            task_id="aggregate_germline_snv_variant_freq",
+            task_display_name="[StarRocks] Aggregate all Germline SNV variants frequencies",
+            sql="./sql/radiant/germline_snv_variant_frequency_insert.sql",
+            skip_if=skip_unless_recompute,
+            map_index_template="{{ task.tenant_code }}",
+            parameters={"tenant_code": "{{ tenant_code }}"},
+            submit_task_options=std_submit_task_opts,
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+            pool=STARROCKS_INSERT_POOL,
+        ).expand(tenant_code=all_tenants)
+
+        insert_stg_somatic_freq = RadiantStarRocksOperator.partial(
+            task_id="insert_stg_somatic_snv_variant_freq",
+            task_display_name="[StarRocks] Insert Stg Somatic SNV Variants Freq Part",
+            sql="./sql/radiant/somatic_snv_staging_variant_freq_insert.sql",
+            skip_if=skip_unless_recompute,
+            map_index_template="{{ task.tenant_code }} part={{ task.parameters['part'] }}",
+            submit_task_options=std_submit_task_opts,
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+            pool=STARROCKS_INSERT_POOL,
+        ).expand_kwargs(_frequency_params)
+
+        aggregate_somatic_freq = RadiantStarRocksOperator.partial(
+            task_id="aggregate_somatic_snv_variant_freq",
+            task_display_name="[StarRocks] Aggregate all Somatic SNV variants frequencies",
+            sql="./sql/radiant/somatic_snv_variant_frequency_insert.sql",
+            skip_if=skip_unless_recompute,
+            map_index_template="{{ task.tenant_code }}",
+            parameters={"tenant_code": "{{ tenant_code }}"},
+            submit_task_options=std_submit_task_opts,
+            trigger_rule=TriggerRule.ALL_SUCCESS,
+            pool=STARROCKS_INSERT_POOL,
+        ).expand(tenant_code=all_tenants)
+
+        insert_stg_germline_freq >> aggregate_germline_freq >> insert_stg_somatic_freq >> aggregate_somatic_freq
+
     with TaskGroup(group_id="snv_variant") as tg_variants:
         insert_snv_variants = RadiantStarRocksOperator.partial(
             task_id="insert_snv_variant",
             task_display_name="[StarRocks] Insert SNV Variants",
             sql="./sql/radiant/snv_variant_insert.sql",
-            skip_if=gated("snv_variant"),
+            skip_if=gated("snv_variant", opened_by=RECOMPUTE_FREQUENCIES),
             map_index_template="{{ task.tenant_code }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
@@ -260,7 +343,7 @@ def reannotate_open_data():
             task_id="insert_snv_variant_part",
             task_display_name="[StarRocks] Insert SNV Variants Part",
             sql="./sql/radiant/snv_variant_part_insert_part.sql",
-            skip_if=gated("snv_variant"),
+            skip_if=gated("snv_variant", opened_by=RECOMPUTE_FREQUENCIES),
             map_index_template="{{ task.tenant_code }} variant_part={{ task.parameters['variant_part'] }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
@@ -303,7 +386,7 @@ def reannotate_open_data():
             task_id="reannotate_germline_cnv_occurrence",
             task_display_name="[StarRocks] Re-annotate Germline CNV Occurrences",
             sql="./sql/radiant/germline_cnv_occurrence_reannotate_partition.sql",
-            skip_if=gated("cnv_occurrence"),
+            skip_if=gated("cnv_occurrence", opened_by=RECOMPUTE_FREQUENCIES),
             map_index_template="{{ task.tenant_code }} part={{ task.parameters['part'] }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
@@ -314,7 +397,7 @@ def reannotate_open_data():
             task_id="reannotate_somatic_cnv_occurrence",
             task_display_name="[StarRocks] Re-annotate Somatic CNV Occurrences",
             sql="./sql/radiant/somatic_cnv_occurrence_reannotate_partition.sql",
-            skip_if=gated("cnv_occurrence"),
+            skip_if=gated("cnv_occurrence", opened_by=RECOMPUTE_FREQUENCIES),
             map_index_template="{{ task.tenant_code }} part={{ task.parameters['part'] }}",
             submit_task_options=std_submit_task_opts,
             trigger_rule=TriggerRule.ALL_SUCCESS,
@@ -328,6 +411,12 @@ def reannotate_open_data():
     accumulators_reannotated = EmptyOperator(
         task_id="accumulators_reannotated",
         task_display_name="[ --- CHECKPOINT: PHASE 3A --- ] Accumulators Re-annotated",
+        trigger_rule=TriggerRule.NONE_FAILED,
+    )
+
+    frequencies_recomputed = EmptyOperator(
+        task_id="frequencies_recomputed",
+        task_display_name="[ --- CHECKPOINT: PHASE 3A (freq) --- ] Frequencies Recomputed",
         trigger_rule=TriggerRule.NONE_FAILED,
     )
 
@@ -363,7 +452,8 @@ def reannotate_open_data():
     sources_loaded >> [all_tenants, all_parts, tenant_parts]
 
     sources_loaded >> _gates >> tg_accumulators >> accumulators_reannotated
-    accumulators_reannotated >> tg_variants >> snv_variants_rebuilt
+    accumulators_reannotated >> tg_frequencies >> frequencies_recomputed
+    frequencies_recomputed >> tg_variants >> snv_variants_rebuilt
     snv_variants_rebuilt >> tg_consequences >> snv_consequences_rebuilt
     snv_consequences_rebuilt >> tg_cnv >> rebuilds_complete
 
