@@ -20,6 +20,10 @@ IS_AWS = os.environ.get("IS_AWS", "false").lower() == "true"
 
 RADIANT_LOCK_S3_BUCKET = os.getenv("RADIANT_LOCK_S3_BUCKET", "warehouse")
 
+# Bucket for temporary files handed from Airflow to the task containers (ECS and K8s) when the
+# payload is too large to pass inline. Defaults to the local/CI MinIO bucket.
+RADIANT_S3_WORKSPACE = os.getenv("RADIANT_S3_WORKSPACE", "warehouse")
+
 
 def parse_list(env_val):
     return [v.strip() for v in env_val.split(",") if v.strip()]
@@ -30,13 +34,11 @@ class ECSEnv:
     ECS_CLUSTER: str | None = None
     ECS_SUBNETS: list[str] | None = None
     ECS_SECURITY_GROUPS: list[str] | None = None
-    ECS_S3_WORKSPACE: str | None = None
 
     def __post_init__(self):
         object.__setattr__(self, "ECS_CLUSTER", Variable.get("AWS_ECS_CLUSTER"))
         object.__setattr__(self, "ECS_SUBNETS", parse_list(Variable.get("AWS_ECS_SUBNETS")))
         object.__setattr__(self, "ECS_SECURITY_GROUPS", parse_list(Variable.get("AWS_ECS_SECURITY_GROUPS")))
-        object.__setattr__(self, "ECS_S3_WORKSPACE", Variable.get("AWS_ECS_S3_WORKSPACE"))
 
 
 def load_docs_md(file_name: str) -> str:

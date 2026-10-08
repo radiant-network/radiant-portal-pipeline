@@ -5,18 +5,18 @@ import tempfile
 
 import boto3
 
-from radiant.dags import ECSEnv
+from radiant.dags import RADIANT_S3_WORKSPACE
 
 logger = logging.getLogger(__name__)
 
 
-def s3_store_content(content: dict, ecs_env: ECSEnv, prefix: str = "tmp") -> str:
+def s3_store_content(content: dict | list, prefix: str = "tmp") -> str:
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as tmpfile:
         json.dump(content, tmpfile)
         tmpfile_path = tmpfile.name
 
     s3_client = boto3.client("s3")
-    bucket_name = ecs_env.ECS_S3_WORKSPACE
+    bucket_name = RADIANT_S3_WORKSPACE
     s3_key = f"tmp/{prefix}_{os.path.basename(tmpfile_path)}"
 
     logger.info(f"Uploading content to S3: bucket={bucket_name}, key={s3_key}")

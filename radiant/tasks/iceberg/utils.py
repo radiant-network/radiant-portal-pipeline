@@ -114,6 +114,22 @@ def commit_partitions(table_partitions: dict[str, list[dict]], iceberg_catalog_p
         logger.info(f"✅ Changes committed to table {table_name}")
 
 
+def commit_partitions_from_s3(s3_path: str, iceberg_catalog_properties: dict | None = None):
+    """Commit the partitions stored by `merge_commits` as a JSON file in S3, then delete that file.
+
+    The file is kept when the commit fails, so clearing only the commit task retries it. The commit
+    is idempotent (see `commit_files`), so a retry after a partial failure is safe.
+    """
+    import tempfile
+
+    from radiant.tasks.utils import delete_s3_object, download_json_from_s3
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        table_partitions = download_json_from_s3(s3_path, f"{tmp_dir}/table_partitions.json", logger)
+    commit_partitions(table_partitions, iceberg_catalog_properties=iceberg_catalog_properties)
+    delete_s3_object(s3_path, logger)
+
+
 def dataframe_to_data_files(
     table_metadata: TableMetadata,
     df: pa.Table,

@@ -81,7 +81,7 @@ Partitioned by `experimental_strategy` so all experiments of the same patient/fa
 
 ### Deployment modes and config
 
-`radiant/dags/__init__.py` centralizes config: `NAMESPACE`, `ICEBERG_NAMESPACE` (env-overridable), `DEFAULT_ARGS`, `load_docs_md`, `get_namespace`, and the `IS_AWS` flag. **`IS_AWS` (env var) is a load-time toggle**: `import_part.py` does `if IS_AWS: from radiant.dags.operators import ecs as operators else k8s`. On AWS, `ECSEnv` pulls `AWS_ECS_*` from Airflow Variables. Three execution contexts:
+`radiant/dags/__init__.py` centralizes config: `NAMESPACE`, `ICEBERG_NAMESPACE` (env-overridable), `DEFAULT_ARGS`, `load_docs_md`, `get_namespace`, and the `IS_AWS` flag. **`IS_AWS` (env var) is a load-time toggle**: `import_part.py` does `if IS_AWS: from radiant.dags.operators import ecs as operators else k8s`. On AWS, `ECSEnv` pulls `AWS_ECS_CLUSTER`/`_SUBNETS`/`_SECURITY_GROUPS` from Airflow Variables. `RADIANT_S3_WORKSPACE` (env var, every deployment) is the bucket where Airflow stores payloads too large to pass inline to a task (`s3_store_content`), e.g. the merged partitions `merge_commits` hands to the commit task. Three execution contexts:
 - **KubernetesPodOperator** — K8s deployments (`IS_AWS=false`)
 - **ECS task** — AWS ECS via custom operator (`IS_AWS=true`)
 - **Local Docker Compose** — dev stack (`docker-compose.yml`): Airflow + PostgreSQL + Redis + RustFS (S3, keeps the `radiant-minio` host name) + Polaris
