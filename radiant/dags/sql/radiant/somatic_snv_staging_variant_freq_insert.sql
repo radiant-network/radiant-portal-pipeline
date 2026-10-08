@@ -49,29 +49,40 @@ patients_total_count_cohort AS (
     FROM somatic_tasks
     GROUP BY part
 ),
+-- RAD-57: every occurrence of the part, flagged instead of filtered. Filtering here dropped the loci
+-- whose occurrences all fail the quality gate from the frequency table, hence from `tenant_loci` in
+-- snv_variant_insert.sql, hence from the case. They must stay, with zero counts. NULL `tumor_ad_alt`
+-- leaves `qualifies` NULL, which counts nowhere.
+occurrences AS (
+    SELECT
+        o.part,
+        o.locus_id,
+        o.task_id,
+        o.tumor_zygosity,
+        o.filter = 'PASS' AND o.tumor_ad_alt >= 2 AS qualifies
+    FROM {{ mapping.starrocks_somatic_snv_occurrence }} o
+    WHERE o.part = %(part)s
+),
 freqs_tumor AS (
     SELECT
         o.part,
         o.locus_id,
-        COUNT(DISTINCT CASE WHEN t.is_tumor_normal AND t.experimental_strategy = 'wgs' THEN t.patient_id END) AS pc_tn_wgs,
-        COUNT(DISTINCT CASE WHEN t.is_tumor_normal AND t.experimental_strategy = 'wxs' THEN t.patient_id END) AS pc_tn_wxs,
-        COUNT(DISTINCT CASE WHEN t.is_tumor_only   AND t.experimental_strategy = 'wgs' THEN t.patient_id END) AS pc_to_wgs,
-        COUNT(DISTINCT CASE WHEN t.is_tumor_only   AND t.experimental_strategy = 'wxs' THEN t.patient_id END) AS pc_to_wxs,
-        -- RAD-22: carriers whose tumor call is homozygous, hemizygous included, with the same cohorts as pc_*.
-        COUNT(DISTINCT CASE WHEN t.is_tumor_normal AND t.experimental_strategy = 'wgs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_tn_wgs,
-        COUNT(DISTINCT CASE WHEN t.is_tumor_normal AND t.experimental_strategy = 'wxs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_tn_wxs,
-        COUNT(DISTINCT CASE WHEN t.is_tumor_only   AND t.experimental_strategy = 'wgs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_to_wgs,
-        COUNT(DISTINCT CASE WHEN t.is_tumor_only   AND t.experimental_strategy = 'wxs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_to_wxs
-    FROM {{ mapping.starrocks_somatic_snv_occurrence }} o
+        COUNT(DISTINCT CASE WHEN o.qualifies AND t.is_tumor_normal AND t.experimental_strategy = 'wgs' THEN t.patient_id END) AS pc_tn_wgs,
+        COUNT(DISTINCT CASE WHEN o.qualifies AND t.is_tumor_normal AND t.experimental_strategy = 'wxs' THEN t.patient_id END) AS pc_tn_wxs,
+        COUNT(DISTINCT CASE WHEN o.qualifies AND t.is_tumor_only   AND t.experimental_strategy = 'wgs' THEN t.patient_id END) AS pc_to_wgs,
+        COUNT(DISTINCT CASE WHEN o.qualifies AND t.is_tumor_only   AND t.experimental_strategy = 'wxs' THEN t.patient_id END) AS pc_to_wxs,
+        -- RAD-22: carriers whose tumor call is homozygous, hemizygous included, with the same cohorts and gate as pc_*.
+        COUNT(DISTINCT CASE WHEN o.qualifies AND t.is_tumor_normal AND t.experimental_strategy = 'wgs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_tn_wgs,
+        COUNT(DISTINCT CASE WHEN o.qualifies AND t.is_tumor_normal AND t.experimental_strategy = 'wxs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_tn_wxs,
+        COUNT(DISTINCT CASE WHEN o.qualifies AND t.is_tumor_only   AND t.experimental_strategy = 'wgs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_to_wgs,
+        COUNT(DISTINCT CASE WHEN o.qualifies AND t.is_tumor_only   AND t.experimental_strategy = 'wxs' AND o.tumor_zygosity IN ('HOM', 'HEM') THEN t.patient_id END) AS hom_to_wxs
+    FROM occurrences o
     -- task_id, NOT seq_id: one tumor sample can be analysed both tumor-only and tumor-normal, so
     -- joining `s.seq_id = o.tumor_seq_id` duplicated the occurrence once per task using that
     -- sample and made the tumor-only / tumor-normal split impossible. Tenant isolation comes from
     -- somatic_tasks (tenant-filtered) plus the per-tenant occurrence database — the occurrence
     -- table has no tenant_code column of its own.
     JOIN somatic_tasks t ON t.task_id = o.task_id
-    WHERE o.part = %(part)s
-      AND o.filter = 'PASS'
-      AND o.tumor_ad_alt > 2
     GROUP BY o.locus_id, o.part
 )
 SELECT

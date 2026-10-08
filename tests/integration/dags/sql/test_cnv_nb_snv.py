@@ -1,4 +1,4 @@
-"""SJRA-1811 -- `nb_snv` counts the part's SNV occurrences, coordinates joined from `snv__variant`.
+"""SJRA-1811 -- `nb_snv` counts the part's quality-passing SNV occurrences, coordinates joined from `snv__variant`.
 
 A mismatched join key fails silently: no rows, every `nb_snv` NULL, indistinguishable from a part with no
 SNVs. `EXPLAIN` plans that happily, so the values are asserted here, with a row on each side of the
@@ -42,10 +42,10 @@ _AFTER = 1811106
 _OTHER_CHROMOSOME = 1811107
 _OTHER_SAMPLE = 1811108
 _WRONG_PART = 1811109
-# An occurrence whose locus is absent from `snv__variant`. Routine, not exotic: that table is restricted to
-# loci which reached a frequency table, so anything failing gq/filter/ad_alt is missing and drops out of the
-# INNER JOIN. This is what makes nb_snv a count of quality-passing SNVs.
-_NO_VARIANT_ROW = 1811110
+# An occurrence inside the segment, with its `snv__variant` row, that fails the frequencies' quality gate
+# (gq/filter/ad_alt). Since RAD-57 every occurrence locus has a variant row, so the gate is applied in the
+# `snv` CTE itself: this is what keeps nb_snv a count of quality-passing SNVs.
+_FAILS_QUALITY = 1811110
 
 # (locus_id, chromosome, start) -- the only source of coordinates; the occurrence row has none.
 _VARIANTS = [
@@ -58,6 +58,7 @@ _VARIANTS = [
     (_OTHER_CHROMOSOME, "2", 1500),
     (_OTHER_SAMPLE, "1", 1500),
     (_WRONG_PART, "1", 1500),
+    (_FAILS_QUALITY, "1", 1700),
 ]
 
 # (part, seq_id, task_id, locus_id)
@@ -70,7 +71,7 @@ _SNV_OCCURRENCES = [
     (_PART, _SEQ_ID, _TASK_ID, _BEFORE),
     (_PART, _SEQ_ID, _TASK_ID, _AFTER),
     (_PART, _SEQ_ID, _TASK_ID, _OTHER_CHROMOSOME),
-    (_PART, _SEQ_ID, _TASK_ID, _NO_VARIANT_ROW),
+    (_PART, _SEQ_ID, _TASK_ID, _FAILS_QUALITY),
     (_PART, _OTHER_SEQ_ID, _TASK_ID, _OTHER_SAMPLE),
     (_OTHER_PART, _SEQ_ID, _TASK_ID, _WRONG_PART),
 ]
@@ -164,12 +165,20 @@ def _seed(starrocks_session, iceberg_client, namespace, mapping, *, flavour):
         _VARIANTS,
     )
 
-    occurrence_columns = ["part", sample_column, "task_id", "locus_id"]
-    occurrence_rows = [(part, seq_id, task_id, locus_id) for part, seq_id, task_id, locus_id in _SNV_OCCURRENCES]
+    # Quality columns: passing values for every row but `_FAILS_QUALITY`, which misses the alt-depth threshold
+    # by one (germline `ad_alt >= 3`, somatic `tumor_ad_alt >= 2`).
     if flavour == "germline":
         # `phased` is NOT NULL on the germline occurrence table only.
-        occurrence_columns.append("phased")
-        occurrence_rows = [(*row, False) for row in occurrence_rows]
+        quality_columns = ["gq", "filter", "ad_alt", "phased"]
+        passing, failing = (50, "PASS", 7, False), (50, "PASS", 2, False)
+    else:
+        quality_columns = ["filter", "tumor_ad_alt"]
+        passing, failing = ("PASS", 7), ("PASS", 1)
+    occurrence_columns = ["part", sample_column, "task_id", "locus_id", *quality_columns]
+    occurrence_rows = [
+        (part, seq_id, task_id, locus_id, *(failing if locus_id == _FAILS_QUALITY else passing))
+        for part, seq_id, task_id, locus_id in _SNV_OCCURRENCES
+    ]
 
     _insert_rows(
         starrocks_session,
