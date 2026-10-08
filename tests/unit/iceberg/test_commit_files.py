@@ -5,7 +5,7 @@ from pyiceberg.exceptions import CommitFailedException
 from pyiceberg.expressions import And, EqualTo
 
 from radiant.tasks.iceberg.partition_commit import PartitionCommit, merge_partition_commits
-from radiant.tasks.iceberg.utils import _partition_filter_expr, commit_files
+from radiant.tasks.iceberg.utils import _partition_filter_expr, commit_files, commit_partitions_from_s3
 
 
 @pytest.fixture(autouse=True)
@@ -140,3 +140,42 @@ def test_merge_partition_commits_concatenates_and_skips_empties():
         "radiant.germline_snv_occurrence": [{"id": "go"}],
         "radiant.somatic_snv_occurrence": [{"id": "so"}],
     }
+
+
+def test_commit_partitions_from_s3_commits_then_deletes_the_file(monkeypatch):
+    calls = []
+    partitions = {"radiant.snv_variant": [{"parquet_files": ["s3://b/f.parquet"], "partition_filter": {"task_id": 1}}]}
+    monkeypatch.setattr(
+        "radiant.tasks.utils.download_json_from_s3",
+        lambda path, _local, _logger: calls.append(("download", path)) or partitions,
+    )
+    monkeypatch.setattr(
+        "radiant.tasks.iceberg.utils.commit_partitions",
+        lambda table_partitions, iceberg_catalog_properties=None: calls.append(("commit", table_partitions)),
+    )
+    monkeypatch.setattr("radiant.tasks.utils.delete_s3_object", lambda path, _logger: calls.append(("delete", path)))
+
+    commit_partitions_from_s3("s3://workspace/tmp/commit_partitions_x.json")
+
+    assert calls == [
+        ("download", "s3://workspace/tmp/commit_partitions_x.json"),
+        ("commit", partitions),
+        ("delete", "s3://workspace/tmp/commit_partitions_x.json"),
+    ]
+
+
+def test_commit_partitions_from_s3_keeps_the_file_when_the_commit_fails(monkeypatch):
+    """Clearing only the commit task must be able to retry it, so the file has to survive a failure."""
+    deleted = []
+    monkeypatch.setattr("radiant.tasks.utils.download_json_from_s3", lambda *_args: {"radiant.snv_variant": []})
+
+    def failing_commit(*_args, **_kwargs):
+        raise CommitFailedException("boom")
+
+    monkeypatch.setattr("radiant.tasks.iceberg.utils.commit_partitions", failing_commit)
+    monkeypatch.setattr("radiant.tasks.utils.delete_s3_object", lambda path, _logger: deleted.append(path))
+
+    with pytest.raises(CommitFailedException):
+        commit_partitions_from_s3("s3://workspace/tmp/commit_partitions_x.json")
+
+    assert deleted == []

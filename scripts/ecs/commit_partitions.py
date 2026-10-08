@@ -2,8 +2,7 @@ import argparse
 import logging
 import sys
 
-from radiant.tasks.iceberg.utils import commit_partitions
-from radiant.tasks.utils import delete_s3_object, download_json_from_s3
+from radiant.tasks.iceberg.utils import commit_partitions_from_s3
 
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
@@ -19,16 +18,11 @@ def main():
     args = parser.parse_args()
     logger.info(f"Received argument --table_partitions={args.table_partitions}")
 
-    local_tmp_path = "/tmp/table_partitions.json"
-
     try:
-        partitions = download_json_from_s3(args.table_partitions, local_tmp_path, logger)
-        commit_partitions(partitions)
+        commit_partitions_from_s3(args.table_partitions)
     except Exception as e:
         logger.exception(f"Error while processing partitions: {e}")
         sys.exit(1)
-    finally:
-        delete_s3_object(args.table_partitions, logger)
 
 
 if __name__ == "__main__":

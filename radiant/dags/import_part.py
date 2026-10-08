@@ -148,7 +148,7 @@ def import_part():
 
         # ECS limits the length of the command override, so we need to upload the tasks to S3
         # and pass the S3 path of the file in which the data is stored to the ECS operator instead of the data.
-        s3_path = s3_store_content(content=tasks, ecs_env=ecs_env, prefix="store_tasks")
+        s3_path = s3_store_content(content=tasks, prefix="store_tasks")
         return [{"stored_tasks": s3_path}]
 
     tasks = check_tasks(fetch_sequencing_experiment_delta.output)

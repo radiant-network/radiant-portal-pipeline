@@ -83,7 +83,6 @@ with DAG(
     def merge_commits(
         germline_partitions: list[dict[str, list[dict]]] | list[str],
         somatic_partitions: list[dict[str, list[dict]]] | list[str],
-        ecs_env: ECSEnv | None = None,
     ):
         import json
         import sys
@@ -111,16 +110,18 @@ with DAG(
         merged = merge_partition_commits(parsed)
         logger.info(f"Merged partitions from {len(parsed)} extraction task(s) across {len(merged)} table(s)")
 
-        if IS_AWS:
-            if not merged:
-                logger.info("Nothing to commit — the commit task will be skipped")
-                return []
-            # ECS limits the length of the command override, so we need to upload the merged partitions to S3
-            # and pass the S3 path of the file in which the data is store to the ECS operator instead of the data.
-            s3_path = s3_store_content(content=merged, ecs_env=ecs_env, prefix="commit_partitions")
-            return [{"table_partitions": s3_path}]
+        if not merged:
+            logger.info("Nothing to commit")
+            # ECS: an empty list maps the commit task to zero instances, so it is skipped.
+            return [] if IS_AWS else None
 
-        return merged
+        # The merged partitions list every Parquet file of the part, so they can't be passed inline:
+        # ECS limits the length of the command override, and K8s passes task arguments in a single
+        # env var, which Linux caps at 128 KiB. Upload them to S3 and pass the path instead.
+        s3_path = s3_store_content(content=merged, prefix="commit_partitions")
+        if IS_AWS:
+            return [{"table_partitions": s3_path}]
+        return s3_path
 
     if IS_AWS:
         ecs_env = ECSEnv()
@@ -154,7 +155,7 @@ with DAG(
         germline_commits = create_germline_parquet_files.expand(params=germline_tasks)
         somatic_commits = create_somatic_parquet_files.expand(params=somatic_tasks)
 
-        merged_commits = merge_commits(germline_commits.output, somatic_commits.output, ecs_env)
+        merged_commits = merge_commits(germline_commits.output, somatic_commits.output)
         commit_partitions.expand(params=merged_commits)
     else:
         germline_commits = create_germline_parquet_files.expand(radiant_task=germline_tasks)

@@ -190,10 +190,18 @@ class ImportSNVVCF(RadiantTaskK8SOperator):
             )
             | ImportSNVVCF._get_k8s_context(radiant_namespace, container_resources=_metadata_container_resources()),
         )
-        def k8s_commit_partitions(table_partitions: dict[str, list[dict]]):
-            from radiant.tasks.iceberg.utils import commit_partitions
+        def k8s_commit_partitions(table_partitions: str | None):
+            # `table_partitions` is the S3 path written by `merge_commits`, not the partitions
+            # themselves: they would overflow the env var that carries the task arguments.
+            import logging
 
-            commit_partitions(table_partitions)
+            from radiant.tasks.iceberg.utils import commit_partitions_from_s3
+
+            if not table_partitions:
+                logging.getLogger(__name__).info("Nothing to commit")
+                return
+
+            commit_partitions_from_s3(table_partitions)
 
         return k8s_commit_partitions
 
