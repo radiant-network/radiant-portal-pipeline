@@ -19,8 +19,9 @@ clinical model, and turning its outputs into portal tasks.
 | 7 | **collect_outputs** | Lists what the pipeline published |
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 
-It runs **daily and takes no input**. The parameters below exist for targeted reruns and for
-configuration, not for normal operation.
+It has **no schedule of its own and takes no input**: `radiant-case-status-control` starts it
+daily and moves the case statuses around it. Run it by hand only for a targeted rerun. The
+parameters below exist for targeted reruns and for configuration, not for normal operation.
 
 ---
 
@@ -303,8 +304,8 @@ There is no cap on the number of cases per run. The first scheduled run therefor
 every case ever aligned and never annotated, which can be hundreds of families in a single
 samplesheet and a single multi-day Nextflow run whose failure loses all of it.
 
-Do the first pass by hand, in tranches, with explicit **task_ids** — then let the schedule
-take over on a steady-state delta.
+Do the first pass by hand, in tranches, with explicit **task_ids** — then let
+`radiant-case-status-control` take over on a steady-state delta.
 
 ---
 

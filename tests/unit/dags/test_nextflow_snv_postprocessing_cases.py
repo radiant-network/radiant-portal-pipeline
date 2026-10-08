@@ -31,7 +31,8 @@ def test_it_finds_its_own_work(dag_bag):
     """The point of the whole thing: a scheduled run is given nothing and discovers the
     cases that have been aligned but never annotated."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert dag.schedule_interval == "@daily"
+    # The control DAG starts it; a schedule of its own would race it.
+    assert dag.schedule_interval is None
     assert dag.get_task("discover_scope").upstream_list == []
     # No default would make a scheduled run fail validation at trigger time.
     assert dag.params["task_ids"] == []

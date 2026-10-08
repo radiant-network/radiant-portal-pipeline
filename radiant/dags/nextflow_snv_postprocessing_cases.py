@@ -153,7 +153,9 @@ def _workspace_env() -> dict[str, str]:
     dag_display_name="Radiant - Nextflow SNV Post-processing (from Cases)",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-    schedule="@daily",
+    # Started by `radiant-case-status-control`, which moves the case statuses around it. A
+    # schedule of its own would process cases without moving them, and race that DAG.
+    schedule=None,
     catchup=False,
     # This is the entire concurrency story, and it is why no lock or marker column is
     # needed. A run that overruns a day makes the next one queue rather than start, and
