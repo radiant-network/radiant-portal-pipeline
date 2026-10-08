@@ -154,6 +154,13 @@ def _by_tenant(cases: list[CaseStatus], tenants: list[str], target: str) -> list
     return batches
 
 
+def cases_now_in(results: list[dict], status_code: str) -> list[int]:
+    """The cases the portal reports in `status_code` after the PATCH, whether this call moved
+    them (`updated: true`) or an earlier attempt of the same task did (`updated: false`, already
+    there). A retried task must still notify the cases its first attempt moved."""
+    return sorted({r["case_id"] for r in results if r.get("current_status_code") == status_code})
+
+
 def change_tenant_status(batch: dict, status_code: str) -> list[dict]:
     """Send one tenant's status changes; a tenant the service account is not granted on is
     logged and skipped rather than failed.

@@ -196,3 +196,14 @@ def test_any_other_portal_error_fails_the_task(monkeypatch, status):
     monkeypatch.setattr("radiant.tasks.nextflow.register.update_case_system_status", update)
     with pytest.raises(PortalError):
         case_status.change_tenant_status({"tenant": "radiant", "case_ids": [1]}, case_status.PROCESSING)
+
+
+def test_the_cases_to_notify_include_those_an_earlier_attempt_moved():
+    """A retried `set_in_progress` gets `updated: false` for what its first attempt moved; those
+    cases still reached in_progress in this run and must be in the email."""
+    results = [
+        {"case_id": 2, "updated": True, "current_status_code": "in_progress"},
+        {"case_id": 1, "updated": False, "current_status_code": "in_progress"},
+        {"case_id": 3, "updated": False, "current_status_code": "revoked"},
+    ]
+    assert case_status.cases_now_in(results, case_status.IN_PROGRESS) == [1, 2]

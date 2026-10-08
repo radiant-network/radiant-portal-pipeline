@@ -78,11 +78,46 @@ Status changes are sent once per tenant, as one mapped task each. A tenant missi
 (the service account is not granted `can_ingest_data` at every lab, `'*'`, of that tenant) is
 logged and its task **skipped**, not failed.
 
+## Notification
+
+The laboratories are emailed when their cases reach `in_progress`, not when the pipelines
+register their outputs: the manifest then holds every pipeline's results. The "from Cases" DAGs
+no longer email. `evaluate_cases` is a mapped task group, one chain per tenant, so a tenant
+skipped or failed never holds back another tenant's email:
+
+- **set_in_progress** sends the status change;
+- **create_case_group** POSTs `/{tenant}/case_groups` with the cases now in `in_progress` under
+  the name `results-<run tag>` (the labs see it in the manifest's file name). It counts the cases
+  an earlier attempt of the same task moved too, and is skipped when no case moved. The name is
+  the key and the call overwrites, so a retry lands on the same group;
+- **notify_labs** POSTs `/{tenant}/case_groups/{name}/notify`. The portal emails each diagnosis
+  laboratory the TSV manifest of its cases' documents, read at sending time. Skipped when
+  `notify` is false.
+
+The log holds one line per laboratory:
+
+| Status | Meaning | Task outcome |
+|---|---|---|
+| **sent** | Email sent with the manifest attached | success |
+| **skipped_no_contact** | The organization has no `notification_emails` | warning, success |
+| **skipped_no_documents** | Nothing registered for that laboratory's cases | warning, success |
+| **failed** | The SMTP relay refused the email | task fails |
+
+> **A retry re-sends.** The portal keeps no record of what was emailed: clearing **notify_labs**
+> emails every laboratory of that tenant again. Clear one mapped instance, not the whole group.
+
+A **500** means nothing was sent: the tenant has no notification template mounted, or the SMTP
+settings are invalid. The manual **notify_cases** DAG re-sends an existing group.
+
+A case already `in_progress` (or later) that gets new data is processed and imported, but keeps
+its status, so it is **not** emailed again.
+
 ## Parameters
 
 | Param | Default | Meaning |
 |---|---|---|
 | `status_tenants` | `$NEXTFLOW_POSTPROCESSING_TENANTS` | Tenants the service account may change statuses in. Empty means no filtering. |
+| `notify` | **true** | Email the laboratories of the cases moved to `in_progress`. False still creates the case group, so **notify_cases** can send later. |
 
 Not `tenants`: the discovery tasks set that one to each "from Cases" DAG's own allow-list
 (`$NEXTFLOW_POSTPROCESSING_TENANTS`, `$NEXTFLOW_CNV_TENANTS`, `$NEXTFLOW_QC_TENANTS`), and a run

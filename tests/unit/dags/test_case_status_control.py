@@ -1,4 +1,5 @@
 from airflow.models.mappedoperator import MappedOperator
+from airflow.utils.task_group import MappedTaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
 DAG_ID = "radiant-case-status-control"
@@ -44,7 +45,9 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "rediscover_import_cases",
         "refresh_case_statuses",
         "select_ready_cases",
-        "evaluate_cases",
+        "evaluate_cases.set_in_progress",
+        "evaluate_cases.create_case_group",
+        "evaluate_cases.notify_labs",
         "watcher",
     }
     assert dag.validate() is None
@@ -86,10 +89,22 @@ def test_discover_cases_reads_every_discovery_and_the_statuses(dag_bag):
 
 def test_status_changes_are_mapped_once_per_tenant(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
-    for task_id in ("set_processing", "evaluate_cases"):
-        assert isinstance(dag.get_task(task_id), MappedOperator)
+    assert isinstance(dag.get_task("set_processing"), MappedOperator)
     assert _upstream(dag, "set_processing") == {"discover_cases"}
-    assert _upstream(dag, "evaluate_cases") == {"select_ready_cases"}
+    assert isinstance(dag.task_group_dict["evaluate_cases"], MappedTaskGroup)
+    assert _upstream(dag, "evaluate_cases.set_in_progress") == {"select_ready_cases"}
+
+
+def test_the_labs_are_emailed_per_tenant_once_its_cases_reach_in_progress(dag_bag):
+    """After the status change, so the manifest holds every pipeline's results. One chain per
+    tenant in a mapped group: one tenant skipped (403) or failed must not hold back the others."""
+    dag = dag_bag.get_dag(DAG_ID)
+    assert _upstream(dag, "evaluate_cases.create_case_group") == {
+        "evaluate_cases.set_in_progress",
+        "select_ready_cases",
+    }
+    assert _upstream(dag, "evaluate_cases.notify_labs") == {"evaluate_cases.create_case_group", "select_ready_cases"}
+    assert dag.params["notify"] is True
 
 
 def test_the_pipelines_run_in_parallel_even_if_setting_statuses_failed(dag_bag):
@@ -156,9 +171,17 @@ def test_a_failed_step_fails_the_run(dag_bag):
     watcher = dag.get_task("watcher")
     assert watcher.trigger_rule == TriggerRule.ONE_FAILED
     assert watcher.downstream_list == []
-    assert _upstream(dag, "watcher") == set(dag.task_ids) - {"watcher", "discover_cases", "select_ready_cases"}
+    # The tenant chains reach it through their last task: a failure earlier in a chain leaves
+    # `notify_labs` upstream_failed, which `one_failed` counts.
+    assert _upstream(dag, "watcher") == set(dag.task_ids) - {
+        "watcher",
+        "discover_cases",
+        "select_ready_cases",
+        "evaluate_cases.set_in_progress",
+        "evaluate_cases.create_case_group",
+    }
 
 
 def test_the_status_allow_list_does_not_shadow_the_discovery_one(dag_bag):
     """A run conf key `tenants` would override every discovery task's own allow-list."""
-    assert set(dag_bag.get_dag(DAG_ID).params) == {"status_tenants"}
+    assert set(dag_bag.get_dag(DAG_ID).params) == {"status_tenants", "notify"}

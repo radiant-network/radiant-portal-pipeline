@@ -31,8 +31,7 @@ parameters below exist for targeted reruns and for configuration, not for normal
 |:--|:--|:--|
 | **task_ids** | empty | alignment_germline_variant_calling task ids, for a targeted rerun. Empty means "find everything" |
 | **tenants** | $NEXTFLOW_POSTPROCESSING_TENANTS | Tenants the portal has granted this service account ingest_data on. Empty means no filtering |
-| **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing, and skips the case group and the notification |
-| **notify** | **true** | Email the laboratories after registration. False still creates the case group, so **notify_cases** can send later |
+| **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing |
 
 > **dry_run on a scheduled run is a trap.** A dry run registers nothing, so every case stays
 > eligible and tomorrow's run does the same work again, for ever. Manual runs only.
@@ -236,36 +235,10 @@ The grant is client_credentials — no browser, no device approval.
 
 ## Notification
 
-After registration, two more mapped tasks per tenant, in order:
-
-- **create_case_group** POSTs `/{tenant}/case_groups` with the tenant's case ids under the name
-  `postprocessing-<run tag>`. The name is the key and the call overwrites, so a retry lands on
-  the same group.
-- **notify_labs** POSTs `/{tenant}/case_groups/{name}/notify`. The portal groups the cases by
-  diagnosis laboratory and emails each one the TSV manifest of its output documents (index
-  files included), ready for `radiant-client download -m`. Recipients come from the
-  organization's `notification_emails`, subject and body from the tenant's template.
-
-The log holds one line per laboratory with its status, recipients, the template file used and
-the render context (`has_stat`, `analysis_codes`, `case_ids`, `manifest_filename`):
-
-| Status | Meaning | Task outcome |
-|:--|:--|:--|
-| **sent** | Email sent with the manifest attached | success |
-| **skipped_no_contact** | The organization has no `notification_emails` | warning, success |
-| **skipped_no_documents** | Nothing registered for that laboratory's cases | warning, success |
-| **failed** | The SMTP relay refused the email | task fails |
-
-> **A retry re-sends.** The portal keeps no record of what was emailed, so clearing
-> **notify_labs** emails every laboratory of that tenant again, the ones already served
-> included. Clear one mapped instance, not the whole task, for the same reason as
-> registration.
-
-A **500** from the portal means nothing was sent: the tenant has no notification template
-mounted (the `radiant-notification-templates` ConfigMap), or the SMTP settings are invalid.
-Infrastructure, not pipeline state. Both tasks are skipped on **dry_run**; **notify_labs**
-alone is skipped when **notify** is false. The manual **notify_cases** DAG sends for an
-existing group or an ad-hoc list of cases.
+This DAG does not email the laboratories. **radiant-case-status-control** does, once the cases
+reach `in_progress`, so the manifest holds every pipeline's results (SNV, CNV, QC) rather than
+this run's alone. See its documentation. A manual rerun of this DAG therefore sends nothing; use
+the **notify_cases** DAG to email an ad-hoc list of cases.
 
 ---
 

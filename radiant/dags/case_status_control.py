@@ -12,6 +12,10 @@ red when anything upstream failed, since the `all_done` chain would otherwise en
 `evaluate_cases` takes every `processing` case, not only this run's, and holds back any case
 discovery still finds after the pipelines. A case whose pipeline failed stays `processing`, even
 with some variants in, and is moved by the later run that finishes it.
+
+The laboratories are emailed when their cases reach `in_progress` (`evaluate_cases`, one chain per
+tenant: `set_in_progress` -> `create_case_group` -> `notify_labs`), so the manifest holds every
+pipeline's results. The "from Cases" DAGs no longer email.
 """
 
 import datetime
@@ -20,7 +24,7 @@ import os
 from typing import Any
 
 import pendulum
-from airflow.decorators import dag, task
+from airflow.decorators import dag, task, task_group
 from airflow.exceptions import AirflowFailException
 from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
@@ -44,6 +48,10 @@ SNV_CASES_DAG_ID = f"{NAMESPACE}-nextflow-snv-postprocessing-cases"
 CNV_CASES_DAG_ID = f"{NAMESPACE}-nextflow-cnv-postprocessing-cases"
 QC_CASES_DAG_ID = f"{NAMESPACE}-nextflow-quality-control-cases"
 IMPORT_DAG_ID = f"{NAMESPACE}-import"
+
+# Case group name prefix: `results-<run tag>`, one group per run and tenant. The labs see it,
+# in the manifest's file name.
+CASE_GROUP_PREFIX = "results"
 
 # The QC DAG's workspace root: its DRAGEN metrics probe only accepts directories under it.
 INPUTS_ROOT_ENV = "NEXTFLOW_INPUTS_ROOT"
@@ -76,6 +84,16 @@ dag_params = {
             "Tenants the portal has granted this service account `can_ingest_data` on, at every "
             "laboratory. Cases of any other tenant keep their status, and the tenant is logged. "
             f"Defaults to ${STATUS_TENANTS_ENVS[0]}; empty means no filtering."
+        ),
+    ),
+    "notify": Param(
+        True,
+        type="boolean",
+        title="Notify the laboratories",
+        description=(
+            "Email each diagnosis laboratory the manifest of its cases moved to `in_progress`. "
+            "Disable to move them silently; the case group is still created, so the `notify_cases` "
+            "DAG can send later."
         ),
     ),
 }
@@ -230,15 +248,50 @@ def case_status_control():
         return plan_in_progress(status_rows, still_waiting, get_current_context()["params"]["status_tenants"])
 
     @task(
-        task_id="evaluate_cases",
+        task_id="set_in_progress",
         task_display_name="[PyOp] Move cases to in_progress",
         retries=STATUS_RETRIES,
         retry_delay=STATUS_RETRY_DELAY,
     )
-    def evaluate_cases(batch: dict) -> Any:
+    def set_in_progress(batch: dict) -> Any:
         from radiant.tasks.nextflow.case_status import change_tenant_status
 
         return change_tenant_status(batch, IN_PROGRESS)
+
+    @task(task_id="create_case_group", task_display_name="[PyOp] Group the cases moved to in_progress")
+    def create_case_group(batch: dict, results: Any) -> str:
+        """One group per run and tenant, named after the run tag so a retry overwrites its own."""
+        from airflow.exceptions import AirflowSkipException
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.nextflow.case_status import cases_now_in
+        from radiant.tasks.nextflow.notify import group_name, post_group
+
+        case_ids = cases_now_in(results, IN_PROGRESS)
+        if not case_ids:
+            raise AirflowSkipException(f"no case of tenant '{batch['tenant']}' reached {IN_PROGRESS}")
+        name = group_name(CASE_GROUP_PREFIX, get_current_context()["run_id"])
+        post_group(batch["tenant"], name, case_ids)
+        return name
+
+    @task(task_id="notify_labs", task_display_name="[PyOp] Email the laboratories their manifest")
+    def notify_labs(batch: dict, name: str) -> Any:
+        """Stateless on the portal side: a retry of this instance emails the tenant's labs again."""
+        from airflow.exceptions import AirflowSkipException
+        from airflow.operators.python import get_current_context
+
+        from radiant.tasks.nextflow.notify import send_notification
+
+        if not get_current_context()["params"]["notify"]:
+            raise AirflowSkipException(f"notify=false: case group '{name}' exists, use the notify_cases DAG to send")
+        return send_notification(batch["tenant"], name)
+
+    @task_group(group_id="evaluate_cases", tooltip="Move a tenant's cases to in_progress, then email its labs")
+    def evaluate_cases(batch: dict) -> None:
+        # One chain per tenant, mapped as a group: a tenant skipped on a 403, or failed, must not
+        # hold back the other tenants' emails, as mapping each task on its own would.
+        name = create_case_group(batch, set_in_progress(batch))
+        notify_labs(batch, name)
 
     @task(
         task_id="watcher",
