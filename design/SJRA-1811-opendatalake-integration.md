@@ -374,13 +374,14 @@ from them in the StarRocks' Variant, Consequence and Occurrence tables and for b
   `DISTRIBUTED BY HASH(locus_id) BUCKETS 10` but sit in different databases (tenant vs base), and
   StarRocks scopes colocate groups per database, so they are not colocated and the planner shuffles
 
-The variant table is the per-tenant **`snv__variant`**, and this narrows what `nb_snv` means — accepted
-deliberately. `snv__variant` is restricted, via `LEFT SEMI JOIN tenant_loci` in `snv_variant_insert.sql`,
-to loci that reached a frequency table, and those are built with `gq >= 20`, `filter = 'PASS'` and
-`ad_alt > 3` (germline) or `filter = 'PASS'` and `tumor_ad_alt > 2` (somatic). So `nb_snv` counts the
-**quality-passing** SNVs inside a segment, not every SNV: an occurrence whose locus cleared none of those
-gates is absent from `snv__variant` and drops out of the join, and a segment whose only SNVs are
-non-qualifying now reports NULL rather than a count.
+The variant table is the per-tenant **`snv__variant`**, and `nb_snv` counts only the **quality-passing**
+SNVs inside a segment — accepted deliberately. Originally this came for free: `snv__variant` was restricted,
+via `LEFT SEMI JOIN tenant_loci` in `snv_variant_insert.sql`, to loci that reached a frequency table, which
+were built only from quality-passing occurrences. RAD-57 removed that restriction (it hid low-quality variants
+from the case), so every occurrence locus is now in `snv__variant`, and the `snv` CTE applies the gate
+explicitly instead: `gq >= 20`, `filter = 'PASS'` and `ad_alt >= 3` (germline) or `filter = 'PASS'` and
+`tumor_ad_alt >= 2` (somatic), the same gate as the frequencies. A segment whose only SNVs are
+non-qualifying reports NULL rather than a count.
 
 The alternative was `snv__staging_variant`, which holds every locus ever imported — it is upserted from
 `snv__tmp_variant`, the same table the occurrence insert resolves its `locus_id` through, so an occurrence

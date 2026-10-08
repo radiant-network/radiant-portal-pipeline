@@ -60,7 +60,7 @@ def test_staging_variant_frequencies_calculation(starrocks_session, resources_di
     with open(os.path.join(_SQL_DIR, "radiant/germline_snv_staging_variant_freq_insert.sql")) as f_in:
         variant_freq_insert = jinja2.Template(f_in.read()).render({"mapping": radiant_mapping})
 
-    _select_sql = "SELECT * FROM {{ mapping.starrocks_germline_snv_staging_variant_frequency }}"
+    _select_sql = "SELECT * FROM {{ mapping.starrocks_germline_snv_staging_variant_frequency }} ORDER BY locus_id"
     _select_sql = jinja2.Template(_select_sql).render({"mapping": radiant_mapping})
 
     _params = {"part": 0, "tenant_code": "tenant1"}
@@ -72,9 +72,12 @@ def test_staging_variant_frequencies_calculation(starrocks_session, resources_di
 
         results = cursor.fetchall()
         # Values vetted with the content of test resource staging_sequencing_experiment.tsv. The six trailing
-        # hom_* are 0: the HOM carriers of the fixture sit at the other locus, dropped by `gq` (RAD-22).
+        # hom_* are 0 on the first locus: the HOM carriers of the fixture sit at the other one, whose `gq` is NULL.
+        # That locus fails the quality gate everywhere, so it is kept with zero counts rather than dropped
+        # (RAD-57): dropping it here is what removed its variant from the case.
         assert results == (
             ("tenant1", 0, -8935141392267608062, 5, 10, 3, 7, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+            ("tenant1", 0, -8935141123832152062, 0, 10, 0, 7, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
         )
 
 
@@ -150,8 +153,11 @@ _OCC_ROWS = [
     (0, 103, 5, 2002, "PASS", 7, "HET"),  # tumor-normal carrier on the SHARED tumor sample, patient 3
     (0, 105, 7, 2002, "PASS", 4, "HOM"),  # tumor-normal wxs carrier, patient 4
     (0, 106, 9, 2002, "PASS", 4, "HEM"),  # tumor-only wxs carrier, patient 5
-    (0, 108, 13, 3003, "weak_evidence", 9, "HOM"),  # dropped: filter <> 'PASS'
-    (0, 101, 1, 3003, "PASS", 2, "HOM"),  # dropped: tumor_ad_alt not > 2
+    # 3003: no row qualifies, so the locus is kept with zero counts (RAD-57).
+    (0, 108, 13, 3003, "weak_evidence", 9, "HOM"),  # not counted: filter <> 'PASS'
+    (0, 101, 1, 3003, "PASS", 1, "HOM"),  # not counted: tumor_ad_alt < 2
+    (0, 105, 7, 3003, "PASS", None, "HOM"),  # not counted: tumor_ad_alt unknown
+    (0, 102, 3, 5005, "PASS", 2, "HET"),  # counted: tumor_ad_alt = 2 is the threshold (RAD-57)
     (1, 101, 1, 4004, "PASS", 9, "HOM"),  # dropped: other part
     (0, 110, 17, 1001, "PASS", 9, "HOM"),  # dropped: tenant2 task is absent from somatic_tasks
     (1, 114, 23, 1001, "PASS", 6, "HOM"),  # part 1 — used by the rollup test only
@@ -213,17 +219,23 @@ def test_somatic_staging_variant_frequencies_mixed_cohort(starrocks_session, rad
 
     rows = _fetch_staging_freqs(starrocks_session, radiant_mapping)
 
-    # Locus 3003 (one row fails `filter`, the other `tumor_ad_alt`) and 4004 (other part) are absent
-    # rather than present with zero counts.
-    assert [row[:3] for row in rows] == [("tenant1", 0, 1001), ("tenant1", 0, 2002)]
+    # Locus 3003, where no row qualifies, is present with zero counts (RAD-57). 4004 (other part) is absent.
+    assert [row[:3] for row in rows] == [
+        ("tenant1", 0, 1001),
+        ("tenant1", 0, 2002),
+        ("tenant1", 0, 3003),
+        ("tenant1", 0, 5005),
+    ]
 
     # The trailing hom_tn_wgs, hom_tn_wxs, hom_to_wgs, hom_to_wxs (RAD-22) count the HOM / HEM tumor calls: at
     # 1001 patient 1 (tumor-normal, HOM) and patient 3 (tumor-only, HEM) but not patient 2 (HET); at 2002
-    # patients 4 (tumor-normal wxs, HOM) and 5 (tumor-only wxs, HEM). The dropped rows are all HOM.
+    # patients 4 (tumor-normal wxs, HOM) and 5 (tumor-only wxs, HEM). The rows failing the gate are all HOM.
     #        pc_tn_wgs pn pf     pc_tn_wxs pn pf      pc_to_wgs pn pf      pc_to_wxs pn pf  hom_* x4
     expected = {
         1001: (1, 4, 1 / 4, 0, 2, 0.0, 2, 3, 2 / 3, 0, 1, 0.0, 1, 0, 1, 0),
         2002: (1, 4, 1 / 4, 1, 2, 1 / 2, 0, 3, 0.0, 1, 1, 1.0, 0, 1, 0, 1),
+        3003: (0, 4, 0.0, 0, 2, 0.0, 0, 3, 0.0, 0, 1, 0.0, 0, 0, 0, 0),
+        5005: (0, 4, 0.0, 0, 2, 0.0, 1, 3, 1 / 3, 0, 1, 0.0, 0, 0, 0, 0),
     }
     for row in rows:
         actual = tuple(float(value) for value in row[3:])
@@ -276,6 +288,8 @@ def test_somatic_variant_frequencies_rollup_across_parts(starrocks_session, radi
     expected = {
         1001: (1, 4, 0.25, 0, 2, 0.0, 3, 4, 0.75, 0, 1, 0.0, 1, 0, 2, 0),
         2002: (1, 4, 0.25, 1, 2, 0.5, 0, 4, 0.0, 1, 1, 1.0, 0, 1, 0, 1),
+        3003: (0, 4, 0.0, 0, 2, 0.0, 0, 4, 0.0, 0, 1, 0.0, 0, 0, 0, 0),
+        5005: (0, 4, 0.0, 0, 2, 0.0, 1, 4, 0.25, 0, 1, 0.0, 0, 0, 0, 0),
     }
     assert {row[0] for row in rows} == set(expected)
     for row in rows:
@@ -286,9 +300,11 @@ def test_somatic_variant_frequencies_rollup_across_parts(starrocks_session, radi
 # --- Germline homozygous counts (RAD-22) ---------------------------------------------------------
 #
 # Part 0 holds two loci. At 1001: wgs affected patients p1 (HOM), p2 (HET) and p5, who has two samples, HOM in
-# one and HET in the other; wgs not-affected p3 (HEM) and p4 (HET); wxs affected p7 (HEM) and p9 (HOM, dropped by
+# one and HET in the other; wgs not-affected p3 (HEM) and p4 (HET); wxs affected p7 (HEM) and p9 (HOM, failing
 # `gq`); wxs not-affected p8 (HET). At 2002: only p2 (HET) qualifies, the HOM rows of p4 and p8 fail `filter` and
-# `ad_alt`. Part 1 adds one wgs affected patient, p10, HOM at 1001, for the rollup test.
+# `ad_alt`. At 3003: p1 (HET) with exactly `ad_alt = 3`, the lowest value that counts (RAD-57). At 4004: every row
+# fails one check, NULL `gq` included, so the locus is kept with zero counts (RAD-57). Part 1 adds one wgs affected
+# patient, p10, HOM at 1001, for the rollup test.
 
 _GERMLINE_SEQ_COLUMNS = (
     "case_id",
@@ -327,10 +343,15 @@ _GERMLINE_OCC_ROWS = [
     (0, 6, 206, 1001, 50, "PASS", 7, "HET", False),  # p5, second sample: still one hom patient
     (0, 7, 207, 1001, 50, "PASS", 7, "HEM", False),
     (0, 8, 208, 1001, 50, "PASS", 7, "HET", False),
-    (0, 9, 209, 1001, 10, "PASS", 7, "HOM", False),  # dropped: gq < 20
+    (0, 9, 209, 1001, 10, "PASS", 7, "HOM", False),  # not counted: gq < 20
     (0, 2, 202, 2002, 50, "PASS", 7, "HET", False),
-    (0, 4, 204, 2002, 50, "LowQual", 7, "HOM", False),  # dropped: filter <> 'PASS'
-    (0, 8, 208, 2002, 50, "PASS", 3, "HOM", False),  # dropped: ad_alt not > 3
+    (0, 4, 204, 2002, 50, "LowQual", 7, "HOM", False),  # not counted: filter <> 'PASS'
+    (0, 8, 208, 2002, 50, "PASS", 2, "HOM", False),  # not counted: ad_alt < 3
+    (0, 1, 201, 3003, 50, "PASS", 3, "HET", False),  # counted: ad_alt = 3 is the threshold
+    (0, 2, 202, 4004, 50, "LowQual", 7, "HOM", False),  # 4004: no row qualifies
+    (0, 3, 203, 4004, 10, "PASS", 7, "HEM", False),
+    (0, 7, 207, 4004, 50, "PASS", 2, "HEM", False),
+    (0, 8, 208, 4004, None, "PASS", 7, "HOM", False),
     (1, 10, 210, 1001, 50, "PASS", 7, "HOM", False),  # part 1, rollup test only
 ]
 
@@ -415,6 +436,8 @@ def test_germline_staging_variant_frequencies_hom(starrocks_session, radiant_map
     assert [(row["tenant_code"], row["part"], row["locus_id"]) for row in rows] == [
         ("tenant1", 0, 1001),
         ("tenant1", 0, 2002),
+        ("tenant1", 0, 3003),
+        ("tenant1", 0, 4004),
     ]
     by_locus = {row["locus_id"]: row for row in rows}
 
@@ -438,6 +461,26 @@ def test_germline_staging_variant_frequencies_hom(starrocks_session, radiant_map
     locus_2002 = by_locus[2002]
     assert (locus_2002["pc_wgs"], locus_2002["pc_wxs"]) == (1, 0)
     assert tuple(locus_2002[column] for column in _GERMLINE_HOM_COLUMNS) == (0, 0, 0, 0, 0, 0)
+
+    # ad_alt = 3 counts (RAD-57: it used to take ad_alt > 3).
+    locus_3003 = by_locus[3003]
+    assert (locus_3003["pc_wgs"], locus_3003["pc_wgs_affected"], locus_3003["pc_wxs"]) == (1, 1, 0)
+
+    # A locus where no row qualifies keeps its row, with zero counts and the cohort's denominators (RAD-57).
+    locus_4004 = by_locus[4004]
+    assert all(
+        locus_4004[column] == 0
+        for column in (
+            "pc_wgs",
+            "pc_wgs_affected",
+            "pc_wgs_not_affected",
+            "pc_wxs",
+            "pc_wxs_affected",
+            "pc_wxs_not_affected",
+            *_GERMLINE_HOM_COLUMNS,
+        )
+    )
+    assert (locus_4004["pn_wgs"], locus_4004["pn_wxs"]) == (5, 3)
 
 
 def test_germline_variant_frequencies_hom_rollup_across_parts(starrocks_session, radiant_mapping):
@@ -472,3 +515,63 @@ def test_germline_variant_frequencies_hom_rollup_across_parts(starrocks_session,
     ) == (6, 6, 4, 4)
     assert tuple(locus_1001[column] for column in _GERMLINE_HOM_COLUMNS) == (4, 3, 1, 1, 1, 0)
     assert tuple(by_locus[2002][column] for column in _GERMLINE_HOM_COLUMNS) == (0, 0, 0, 0, 0, 0)
+    assert (by_locus[4004]["pc_wgs"], by_locus[4004]["pn_wgs"]) == (0, 6)
+
+
+# --- Variants whose occurrences all fail the quality gate (RAD-57) -------------------------------
+
+
+def test_snv_variant_keeps_loci_without_qualifying_occurrence(starrocks_session, radiant_mapping):
+    """A locus none of whose occurrences qualifies for the frequencies still reaches `snv__variant`.
+
+    `snv_variant_insert.sql` keeps only the loci of the frequency tables. When the staging inserts filtered
+    on quality, such a locus had no frequency row, hence no variant row, and the portal (which inner-joins
+    the occurrences to `snv__variant`) dropped its occurrences from the case. Germline 4004 and somatic
+    3003 are those loci in the fixtures above.
+    """
+    _seed_germline_cohort(starrocks_session, radiant_mapping)
+    for part in (0, 1):
+        _run_sql(
+            starrocks_session,
+            radiant_mapping,
+            "germline_snv_staging_variant_freq_insert.sql",
+            {"part": part, "tenant_code": "tenant1"},
+        )
+    _run_sql(
+        starrocks_session, radiant_mapping, "germline_snv_variant_frequency_insert.sql", {"tenant_code": "tenant1"}
+    )
+
+    # Reseeds staging_sequencing_experiment with the somatic cohort; the germline frequencies are already built.
+    _seed_somatic_cohort(starrocks_session, radiant_mapping)
+    _reset_table(starrocks_session, "somatic_snv_variant_frequency", radiant_mapping)
+    for part in (0, 1):
+        _run_staging_freq_insert(starrocks_session, radiant_mapping, part=part)
+    _run_sql(
+        starrocks_session, radiant_mapping, "somatic_snv_variant_frequency_insert.sql", {"tenant_code": "tenant1"}
+    )
+
+    loci = (1001, 2002, 3003, 4004, 5005)
+    for table_name in ("snv_staging_variant", "snv_variant"):
+        _reset_table(starrocks_session, table_name, radiant_mapping)
+    with starrocks_session.cursor() as cursor:
+        _seed(
+            cursor,
+            radiant_mapping["starrocks_snv_staging_variant"],
+            ("locus_id", "chromosome", "start", "reference", "alternate"),
+            [(locus_id, "1", locus_id, "A", "T") for locus_id in loci],
+        )
+    _run_sql(starrocks_session, radiant_mapping, "snv_variant_insert.sql", {})
+
+    rows = _fetch_by_name(
+        starrocks_session,
+        radiant_mapping["starrocks_snv_variant"],
+        ("locus_id", "germline_pc_wgs", "germline_pc_wxs", "somatic_pc_tn_wgs", "somatic_pc_to_wgs"),
+        "locus_id",
+    )
+    by_locus = {row["locus_id"]: row for row in rows}
+
+    assert set(by_locus) == set(loci)
+    # Germline 4004: every occurrence fails the gate. 3003 has no germline zero-count row only because it
+    # qualifies (ad_alt = 3); somatically it is the all-failing locus.
+    assert (by_locus[4004]["germline_pc_wgs"], by_locus[4004]["germline_pc_wxs"]) == (0, 0)
+    assert (by_locus[3003]["somatic_pc_tn_wgs"], by_locus[3003]["somatic_pc_to_wgs"]) == (0, 0)

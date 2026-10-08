@@ -18,6 +18,8 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
              JOIN {{ mapping.starrocks_snv_variant }} v ON v.locus_id = s.locus_id
                     AND v.chromosome = o.chromosome AND v.start <= o.end AND v.start >= o.start
              WHERE s.seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s
+               -- RAD-57: same quality gate as the frequencies, so nb_snv counts quality-passing SNVs only.
+               AND s.gq >= 20 AND s.filter = 'PASS' AND s.ad_alt >= 3
                AND o.tenant_code = %(tenant_code)s
              GROUP BY o.name, o.seq_id),
     gnomad_overlaps AS (
