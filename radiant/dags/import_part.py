@@ -142,17 +142,26 @@ def import_part():
     def check_tasks(tasks: Any) -> Any:
         return tasks
 
-    @task(task_id="ecs_store_tasks", task_display_name="[PyOp] ECS Store Tasks")
-    def ecs_store_tasks(tasks: Any) -> Any:
+    @task(task_id="store_tasks", task_display_name="[PyOp] Store Tasks")
+    def store_tasks(tasks: Any) -> Any:
         from radiant.dags.operators.utils import s3_store_content
 
-        # ECS limits the length of the command override, so we need to upload the tasks to S3
-        # and pass the S3 path of the file in which the data is stored to the ECS operator instead of the data.
+        # The tasks of a part can't be passed inline to the CNV imports: ECS limits the length of the
+        # command override, and K8s passes task arguments in a single env var, which Linux caps at
+        # 128 KiB. Upload them to S3 and pass the path instead.
         s3_path = s3_store_content(content=tasks, prefix="store_tasks")
-        return [{"stored_tasks": s3_path}]
+        if IS_AWS:
+            return [{"stored_tasks": s3_path}]
+        return s3_path
+
+    @task(task_id="cleanup_tasks_files", task_display_name="[PyOp] Cleanup tasks files")
+    def cleanup_tasks_files(s3_path: str) -> None:
+        from radiant.tasks.utils import delete_s3_object
+
+        delete_s3_object(s3_path, LOGGER)
 
     tasks = check_tasks(fetch_sequencing_experiment_delta.output)
-    stored_tasks = ecs_store_tasks(tasks) if IS_AWS else None
+    stored_tasks = store_tasks(tasks)
 
     @task(task_id="prepare_config", task_display_name="[PyOp] Prepare Config")
     def prepare_config(tasks: Any) -> Any:
@@ -650,15 +659,19 @@ def import_part():
     )
 
     # Parallel VCF Imports
-    # Every ECS member must be listed here: `cleanup` below deletes the `stored_tasks` S3 file those
-    # containers read, and it only waits on the imports this list holds.
+    # Every CNV import must be listed here: `cleanup` below deletes the `stored_tasks` S3 file they
+    # read, and it only waits on the imports this list holds.
     vcf_imports = [
         import_snv_vcf,
-        import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(tasks=tasks),
-        import_somatic_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_somatic_cnv_vcf(tasks=tasks),
+        import_cnv_vcf.expand(params=stored_tasks) if IS_AWS else import_cnv_vcf(stored_tasks=stored_tasks),
+        import_somatic_cnv_vcf.expand(params=stored_tasks)
+        if IS_AWS
+        else import_somatic_cnv_vcf(stored_tasks=stored_tasks),
     ]
     if IS_AWS:
         vcf_imports >> cleanup.expand(params=stored_tasks)
+    else:
+        vcf_imports >> cleanup_tasks_files(stored_tasks)
 
     # --- DAG Flow ---
 
