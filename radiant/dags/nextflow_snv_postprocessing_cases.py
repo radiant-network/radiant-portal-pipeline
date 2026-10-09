@@ -64,9 +64,6 @@ OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "3
 
 PORTAL_CONN_ID = "radiant_api_conn"
 
-# Case group name prefix: `postprocessing-<run tag>`, one group per run and tenant.
-CASE_GROUP_PREFIX = "postprocessing"
-
 # Under the shared roots, apart from quality control (`qc-runs/`, `qc/`).
 INPUTS_SUBDIR = "snv-runs"
 OUTPUTS_SUBDIR = "snv"
@@ -116,16 +113,6 @@ dag_params = {
             "eligible, so a *scheduled* run must not use it."
         ),
     ),
-    "notify": Param(
-        True,
-        type="boolean",
-        title="Notify the laboratories",
-        description=(
-            "After registration, email each diagnosis laboratory the manifest of its new files. "
-            "Disable to register silently; the case group is still created, so the `notify_cases` "
-            "DAG can send later."
-        ),
-    ),
 }
 
 
@@ -153,7 +140,9 @@ def _workspace_env() -> dict[str, str]:
     dag_display_name="Radiant - Nextflow SNV Post-processing (from Cases)",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-    schedule="@daily",
+    # Started by `radiant-case-status-control`, which moves the case statuses around it. A
+    # schedule of its own would process cases without moving them, and race that DAG.
+    schedule=None,
     catchup=False,
     # This is the entire concurrency story, and it is why no lock or marker column is
     # needed. A run that overruns a day makes the next one queue rather than start, and
@@ -405,43 +394,6 @@ def nextflow_snv_postprocessing_cases():
             raise AirflowFailException(f"batch {batch_id} did not succeed: status={report.get('status')}")
         return report
 
-    @task(
-        task_id="create_case_group",
-        task_display_name="[PyOp] Group the run's cases in the portal",
-        max_active_tis_per_dagrun=1,
-    )
-    def create_case_group(tenant: str, families: Any) -> Any:
-        """One group per run and tenant, named after the run tag so a retry overwrites its own."""
-        from airflow.exceptions import AirflowSkipException
-        from airflow.operators.python import get_current_context
-
-        from radiant.tasks.nextflow.notify import group_name, post_group
-
-        context = get_current_context()
-        if context["params"]["dry_run"]:
-            raise AirflowSkipException("dry run: nothing was registered, so there is nothing to group")
-        case_ids = sorted({f["case_id"] for f in families if f["tenant_code"] == tenant})
-        return post_group(tenant, group_name(CASE_GROUP_PREFIX, context["run_id"]), case_ids)
-
-    @task(
-        task_id="notify_labs",
-        task_display_name="[PyOp] Email the laboratories their manifest",
-        max_active_tis_per_dagrun=1,
-    )
-    def notify_labs(tenant: str) -> Any:
-        """Stateless on the portal side: a retry of this instance emails the tenant's labs again."""
-        from airflow.exceptions import AirflowSkipException
-        from airflow.operators.python import get_current_context
-
-        from radiant.tasks.nextflow.notify import group_name, send_notification
-
-        context = get_current_context()
-        if context["params"]["dry_run"]:
-            raise AirflowSkipException("dry run: nothing to notify")
-        if not context["params"]["notify"]:
-            raise AirflowSkipException("notify=false: the case group exists, use the notify_cases DAG to send later")
-        return send_notification(tenant, group_name(CASE_GROUP_PREFIX, context["run_id"]))
-
     families = resolve_cases(selection, fetch_phenotypes.output)
     paths = generate_inputs(families)
 
@@ -464,11 +416,9 @@ def nextflow_snv_postprocessing_cases():
     )
 
     collected = collect_outputs(families, paths)
-    tenants = list_tenants(families)
-    registered = register_tasks.partial(families=families, collected=collected).expand(tenant=tenants)
-    grouped = create_case_group.partial(families=families).expand(tenant=tenants)
-    notified = notify_labs.expand(tenant=tenants)
-    registered >> grouped >> notified
+    # The laboratories are emailed by `radiant-case-status-control`, once the cases reach
+    # `in_progress` with every pipeline's results registered, not by this DAG.
+    register_tasks.partial(families=families, collected=collected).expand(tenant=list_tenants(families))
 
     selection >> fetch_phenotypes
     paths >> run_pipeline >> collected

@@ -2,7 +2,7 @@
 
 Emails each diagnosis laboratory of a case group the TSV manifest of its output documents,
 through the portal's `POST /{tenant}/case_groups/{name}/notify`. This is the manual counterpart
-of the **notify_labs** step of the post-processing DAG: use it to send a run's notification
+of the **notify_labs** step of the case status control DAG: use it to send a run's notification
 again, or to notify an ad-hoc set of cases.
 
 **Every run sends.** The portal keeps no record of earlier emails, so triggering this twice on
@@ -13,7 +13,7 @@ the same group emails the laboratories twice.
 | Param | Default | Meaning |
 |:--|:--|:--|
 | **tenant** | required | Tenant code of the group |
-| **case_group_name** | `manual-<run tag>` | Group to notify. The post-processing DAG names its groups `postprocessing-<run tag>` |
+| **case_group_name** | `manual-<run tag>` | Group to notify. The case status control DAG names its groups `results-<run tag>` (groups from before it are `postprocessing-<run tag>`) |
 | **case_ids** | empty | When given, the group is created (or its case list overwritten) with these cases before notifying |
 
 ## What the report says
@@ -36,5 +36,5 @@ state. A **404** means the group does not exist in that tenant.
 
 ## Authentication
 
-Same **radiant_api_conn** connection and `ingest_data` grant as the post-processing DAG's
-registration step; see its documentation.
+Same **radiant_api_conn** connection and `ingest_data` grant as the case status control DAG and
+the post-processing DAG's registration step; see their documentation.

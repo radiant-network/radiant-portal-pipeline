@@ -144,7 +144,9 @@ def _group_paths(env: dict[str, str], run_tag: str) -> dict:
     dag_display_name="Radiant - Nextflow Quality Control (from Cases)",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-    schedule="@daily",
+    # Started by `radiant-case-status-control`, which moves the case statuses around it. A
+    # schedule of its own would process cases without moving them, and race that DAG.
+    schedule=None,
     catchup=False,
     # The entire concurrency story: discovery runs at the start of a run, so a queued run
     # re-queries after the previous one has registered and sees the shorter list.
