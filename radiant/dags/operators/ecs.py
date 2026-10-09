@@ -291,6 +291,52 @@ class CosmicMutationSet(RadiantTaskECSOperator):
         )
 
 
+def _igv_tracks_ephemeral_storage_gib() -> int:
+    """Fargate scratch disk of one IGV track task, overridable without a deploy like the K8s profiles."""
+    return int(os.getenv("RADIANT_TASK_OPERATOR_IGV_TRACKS_EPHEMERAL_STORAGE_GIB", "30"))
+
+
+class IgvTracks(RadiantTaskECSOperator):
+    @staticmethod
+    def get_build_track(ecs_env: ECSEnv):
+        return ecs.EcsRunTaskOperator.partial(
+            **dict(
+                task_id="build_igv_track_ecs",
+                task_display_name="[ECS] Build IGV Track",
+                # Rendered after the task unmaps, so the expanded params are in the context.
+                map_index_template="{{ params.track_id }}",
+                # Upstream servers are the flaky part: a failed download retries alone, a few at a time.
+                retries=2,
+                retry_delay=timedelta(minutes=5),
+                max_active_tis_per_dagrun=4,
+                overrides={
+                    "containerOverrides": [
+                        {
+                            "name": "radiant-operator-qa-etl-container",
+                            "command": [
+                                "python /opt/radiant/build_igv_track.py "
+                                "--track_id '{{ params.track_id }}' "
+                                "--prefix '{{ params.igv_tracks_prefix }}'"
+                            ],
+                            "environment": [
+                                {"name": "PYTHONPATH", "value": "/opt/radiant"},
+                                {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
+                            ],
+                        }
+                    ],
+                    # Same budget as the K8s pod, on Fargate's own scale (21-200 GiB, platform >= 1.4.0):
+                    # chainSelf peaks at ~6.6 GB of download, sort spill and output (measured 2026-10-09).
+                    "ephemeralStorage": {"sizeInGiB": _igv_tracks_ephemeral_storage_gib()},
+                },
+            )
+            | IgvTracks._get_ecs_context(
+                ecs_cluster=ecs_env.ECS_CLUSTER,
+                ecs_subnets=ecs_env.ECS_SUBNETS,
+                ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
+            )
+        )
+
+
 class Toolbox:
     @staticmethod
     def get_run_command(

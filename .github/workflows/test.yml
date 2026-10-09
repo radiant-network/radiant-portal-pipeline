@@ -17,6 +17,9 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: make install-dev
+      # bgzip and tabix: the IGV tracks tests that sort, compress and index skip without them
+      - name: Install htslib tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends tabix
       - name: Run static tests
         run: make test-static
       - name: Run unit tests

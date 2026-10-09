@@ -113,6 +113,15 @@ dag_params = {
         ),
         type=["string", "null"],
     ),
+    "import_igv_tracks": Param(
+        default=False,
+        description=(
+            "Rebuild the public IGV tracks (ClinVar, DGV, gnomAD SV/CNV, ClinGen, UCSC repeats, ...) by "
+            "triggering radiant-import-igv-tracks. Off by default: the re-annotation DAG triggers this one and "
+            "must not rebuild the files each time."
+        ),
+        type="boolean",
+    ),
 }
 
 with DAG(
@@ -317,6 +326,29 @@ with DAG(
 
         has_cosmic_mutation_set_filepath() >> cosmic_mutation_set_conf() >> trigger_import_cosmic_mutation_set
 
+    # The public IGV tracks are files, not tables: their own DAG downloads, converts and indexes them.
+    with TaskGroup(group_id="igv_tracks") as tg_igv_tracks:
+
+        @task.short_circuit(
+            task_id="should_import_igv_tracks",
+            task_display_name="[PyOp] Import IGV Tracks?",
+            ignore_downstream_trigger_rules=False,
+        )
+        def should_import_igv_tracks(params: dict | None = None) -> bool:
+            return bool((params or {}).get("import_igv_tracks"))
+
+        # No conf: the triggered DAG's igv_tracks_prefix default (RADIANT_IGV_TRACKS_S3_PREFIX) applies.
+        trigger_import_igv_tracks = TriggerDagRunOperator(
+            task_id="trigger_import_igv_tracks",
+            task_display_name="[DAG] Import IGV Tracks",
+            trigger_dag_id=f"{NAMESPACE}-import-igv-tracks",
+            reset_dag_run=True,
+            wait_for_completion=True,
+            poke_interval=30,
+        )
+
+        should_import_igv_tracks() >> trigger_import_igv_tracks
+
     @task(task_id="build_import_rows", task_display_name="[PyOp] Build Open Data Release Rows")
     def build_import_rows() -> list[dict[str, str]]:
         from airflow.operators.python import get_current_context
@@ -360,5 +392,6 @@ with DAG(
     data_tasks[-1] >> has_cytoband_filepath() >> load_cytoband
     data_tasks[-1] >> tg_cosmic_gene_set
     data_tasks[-1] >> tg_cosmic_mutation_set
+    data_tasks[-1] >> tg_igv_tracks
 
     tg_clinvar_rcv_summary >> _import_rows >> record_import

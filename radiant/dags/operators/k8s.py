@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 from airflow.decorators import task
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
@@ -81,6 +82,15 @@ def _cosmic_container_resources() -> k8s.V1ResourceRequirements:
     the ephemeral-storage request.
     """
     return _container_resources("COSMIC", cpu="1", memory="2Gi", memory_limit="4Gi", ephemeral_storage="8Gi")
+
+
+def _igv_tracks_container_resources() -> k8s.V1ResourceRequirements:
+    """One IGV track per pod, streamed end to end (download to disk, convert line by line into GNU sort,
+    sort into bgzip), so memory is the sort buffer plus Python. Disk is the constraint: the largest track,
+    UCSC chainSelf, is a 0.8 GB download that becomes ~5 GB of GFF3 for sort to spill (33M rows, measured
+    2026-10-09), and gnomAD SV is a 1.7 GB download recompressed next to itself.
+    """
+    return _container_resources("IGV_TRACKS", cpu="1", memory="1Gi", memory_limit="2Gi", ephemeral_storage="16Gi")
 
 
 def _nextflow_container_resources() -> k8s.V1ResourceRequirements:
@@ -411,6 +421,31 @@ class CosmicMutationSet(RadiantTaskK8SOperator):
             return normalize_cosmic_mutation_set(input_filepath, reference_fasta_filepath, output_filepath)
 
         return k8s_normalize_cosmic_mutation_set
+
+
+class IgvTracks(RadiantTaskK8SOperator):
+    @staticmethod
+    def get_build_track(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                task_id="build_igv_track_k8s",
+                task_display_name="[K8s] Build IGV Track",
+                # Upstream servers are the flaky part: a failed download retries alone, a few at a time.
+                retries=2,
+                retry_delay=timedelta(minutes=5),
+                max_active_tis_per_dagrun=4,
+                map_index_template="{{ task.op_kwargs['track_id'] }}",
+                name="build-igv-track",
+                do_xcom_push=True,
+            )
+            | IgvTracks._get_k8s_context(radiant_namespace, container_resources=_igv_tracks_container_resources()),
+        )
+        def k8s_build_igv_track(track_id: str, igv_tracks_prefix: str) -> dict:
+            from radiant.tasks.open_data.igv_tracks import build_igv_track
+
+            return build_igv_track(track_id, igv_tracks_prefix)
+
+        return k8s_build_igv_track
 
 
 class CheckDataIntegrity:
