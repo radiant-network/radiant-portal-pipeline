@@ -1,7 +1,7 @@
 -- One row per case the pipeline may move: every `submitted` or `processing` case, its tenant,
 -- and whether it has variant data.
 --
--- Consumed by `radiant-case-status-control` twice: at the start (`fetch_case_statuses`, for
+-- Consumed by `radiant-case-scheduler` twice: at the start (`fetch_case_statuses`, for
 -- `submitted` -> `processing`) and after the pipelines (`refresh_case_statuses`, for
 -- `processing` -> `in_progress`). Unscoped on purpose: a case whose pipeline failed on an
 -- earlier run must still be found once its variants are in.

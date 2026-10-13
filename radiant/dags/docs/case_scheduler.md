@@ -1,4 +1,4 @@
-# Case Status Control
+# Case Scheduler
 
 The single scheduled entry point for case processing (**daily**, one run at a time). It moves
 the cases with work waiting to `processing`, runs the pipelines, then moves to `in_progress` the

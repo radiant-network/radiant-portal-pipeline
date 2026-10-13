@@ -40,7 +40,7 @@ CASE_GROUP_PREFIX = "manual"
             type="string",
             title="Case group name",
             description=(
-                "An existing group to notify again (the case status control DAG names its groups "
+                "An existing group to notify again (the case scheduler DAG names its groups "
                 "`results-<run tag>`), or the name to give the group created from "
                 "**case_ids**. Empty means `manual-<run tag>`."
             ),

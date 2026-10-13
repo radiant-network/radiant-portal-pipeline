@@ -18,7 +18,7 @@ discover_scope -> select_cases -> fetch_phenotypes -> resolve_cases -> generate_
           register_tasks (one per tenant) <- collect_outputs <----------------+
 ```
 
-It has **no schedule of its own and takes no input**: `radiant-case-status-control` starts it
+It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
 daily and moves the case statuses around it. Run it by hand only for a targeted rerun. The
 parameters exist for targeted reruns and for configuration, not for normal operation.
 

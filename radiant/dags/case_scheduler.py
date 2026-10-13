@@ -180,8 +180,8 @@ def _cases_with_work(snv_rows: Any, cnv_rows: Any, qc_rows: Any, import_rows: An
 
 
 @dag(
-    dag_id=f"{NAMESPACE}-case-status-control",
-    dag_display_name="Radiant - Case Status Control",
+    dag_id=f"{NAMESPACE}-case-scheduler",
+    dag_display_name="Radiant - Case Scheduler",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     schedule="@daily",
@@ -191,12 +191,12 @@ def _cases_with_work(snv_rows: Any, cnv_rows: Any, qc_rows: Any, import_rows: An
     max_active_runs=1,
     tags=["radiant", "scheduled", "nextflow"],
     params=dag_params,
-    doc_md=load_docs_md("case_status_control.md"),
+    doc_md=load_docs_md("case_scheduler.md"),
     render_template_as_native_obj=True,
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
     user_defined_macros={"sanitize_run_tag": sanitize_run_tag},
 )
-def case_status_control():
+def case_scheduler():
     discovered = _discovery("discover", TriggerRule.ALL_SUCCESS)
     fetch_case_statuses = RadiantStarRocksOperator(
         task_id="fetch_case_statuses",
@@ -340,4 +340,4 @@ def case_status_control():
     ] >> watcher()
 
 
-case_status_control()
+case_scheduler()

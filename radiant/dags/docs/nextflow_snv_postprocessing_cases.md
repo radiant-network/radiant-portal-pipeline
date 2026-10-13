@@ -19,7 +19,7 @@ clinical model, and turning its outputs into portal tasks.
 | 7 | **collect_outputs** | Lists what the pipeline published |
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 
-It has **no schedule of its own and takes no input**: `radiant-case-status-control` starts it
+It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
 daily and moves the case statuses around it. Run it by hand only for a targeted rerun. The
 parameters below exist for targeted reruns and for configuration, not for normal operation.
 
@@ -235,7 +235,7 @@ The grant is client_credentials — no browser, no device approval.
 
 ## Notification
 
-This DAG does not email the laboratories. **radiant-case-status-control** does, once the cases
+This DAG does not email the laboratories. **radiant-case-scheduler** does, once the cases
 reach `in_progress`, so the manifest holds every pipeline's results (SNV, CNV, QC) rather than
 this run's alone. See its documentation. A manual rerun of this DAG therefore sends nothing; use
 the **notify_cases** DAG to email an ad-hoc list of cases.
@@ -278,7 +278,7 @@ every case ever aligned and never annotated, which can be hundreds of families i
 samplesheet and a single multi-day Nextflow run whose failure loses all of it.
 
 Do the first pass by hand, in tranches, with explicit **task_ids** — then let
-`radiant-case-status-control` take over on a steady-state delta.
+`radiant-case-scheduler` take over on a steady-state delta.
 
 ---
 

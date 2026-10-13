@@ -20,7 +20,7 @@ annotation.
 | 7 | **collect_outputs** | Lists what the pipeline published |
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 
-It has **no schedule of its own and takes no input**: `radiant-case-status-control` starts it
+It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
 daily and moves the case statuses around it. Run it by hand only for a targeted rerun. The
 parameters exist for targeted reruns and for configuration, not for normal operation.
 

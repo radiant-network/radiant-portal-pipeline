@@ -1,4 +1,4 @@
-"""Which cases the case status control DAG moves, and to what.
+"""Which cases the case scheduler DAG moves, and to what.
 
 The pipeline only ever makes two status changes: `submitted` -> `processing` when a case has
 work waiting, and `processing` -> `in_progress` once every pipeline is done with it and it has

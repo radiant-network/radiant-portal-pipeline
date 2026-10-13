@@ -140,7 +140,7 @@ def _workspace_env() -> dict[str, str]:
     dag_display_name="Radiant - Nextflow SNV Post-processing (from Cases)",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-    # Started by `radiant-case-status-control`, which moves the case statuses around it. A
+    # Started by `radiant-case-scheduler`, which moves the case statuses around it. A
     # schedule of its own would process cases without moving them, and race that DAG.
     schedule=None,
     catchup=False,
@@ -416,7 +416,7 @@ def nextflow_snv_postprocessing_cases():
     )
 
     collected = collect_outputs(families, paths)
-    # The laboratories are emailed by `radiant-case-status-control`, once the cases reach
+    # The laboratories are emailed by `radiant-case-scheduler`, once the cases reach
     # `in_progress` with every pipeline's results registered, not by this DAG.
     register_tasks.partial(families=families, collected=collected).expand(tenant=list_tenants(families))
 

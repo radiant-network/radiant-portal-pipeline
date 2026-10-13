@@ -65,7 +65,7 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
 
 
 def test_it_does_not_email_the_laboratories(dag_bag):
-    """`radiant-case-status-control` emails them once the cases reach `in_progress`, with
+    """`radiant-case-scheduler` emails them once the cases reach `in_progress`, with
     every pipeline's results in the manifest; an email from here would only carry SNV's."""
     dag = dag_bag.get_dag(DAG_ID)
     assert not {"create_case_group", "notify_labs"} & set(dag.task_ids)

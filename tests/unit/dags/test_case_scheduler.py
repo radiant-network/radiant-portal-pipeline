@@ -2,7 +2,7 @@ from airflow.models.mappedoperator import MappedOperator
 from airflow.utils.task_group import MappedTaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
-DAG_ID = "radiant-case-status-control"
+DAG_ID = "radiant-case-scheduler"
 
 CASES_DAG_IDS = {
     "trigger_snv_postprocessing": "radiant-nextflow-snv-postprocessing-cases",
@@ -55,7 +55,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
 
 def test_it_is_the_daily_entry_point_one_run_at_a_time(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
-    assert dag.dag_display_name == "Radiant - Case Status Control"
+    assert dag.dag_display_name == "Radiant - Case Scheduler"
     assert dag.schedule_interval == "@daily"
     assert dag.max_active_runs == 1
     assert not dag.catchup
