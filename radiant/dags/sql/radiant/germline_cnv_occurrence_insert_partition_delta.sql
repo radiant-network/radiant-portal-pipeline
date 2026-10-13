@@ -11,15 +11,20 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
                WHERE o.seq_id IN %(seq_ids)s
                  AND o.tenant_code = %(tenant_code)s
                GROUP BY o.name, o.seq_id),
-     snv AS (SELECT o.name, o.seq_id, COUNT(DISTINCT s.locus_id) AS nb_snv
+     -- Position first, then overlap on (seq_id, chromosome). Occurrence and variant are colocated on locus_id,
+     -- so `snv_pos` is a local join. Joining the CNVs on the sample alone paired every CNV with every SNV of the
+     -- sample, on every chromosome, before the interval filter: a BE ran out of memory on a WGS part (RAD-61).
+     snv_pos AS (SELECT s.seq_id, s.locus_id, v.chromosome, v.start
+                 FROM {{ mapping.starrocks_germline_snv_occurrence }} s
+                 JOIN {{ mapping.starrocks_snv_variant }} v ON v.locus_id = s.locus_id
+                 WHERE s.part = {{ partition }} AND s.seq_id IN %(seq_ids)s
+                   -- RAD-57: same quality gate as the frequencies, so nb_snv counts quality-passing SNVs only.
+                   AND s.gq >= 20 AND s.filter = 'PASS' AND s.ad_alt >= 3),
+     snv AS (SELECT o.name, o.seq_id, COUNT(DISTINCT p.locus_id) AS nb_snv
              FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
-             JOIN {{ mapping.starrocks_germline_snv_occurrence }} s ON s.seq_id = o.seq_id
-                    AND s.part = {{ partition }}
-             JOIN {{ mapping.starrocks_snv_variant }} v ON v.locus_id = s.locus_id
-                    AND v.chromosome = o.chromosome AND v.start <= o.end AND v.start >= o.start
-             WHERE s.seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s
-               -- RAD-57: same quality gate as the frequencies, so nb_snv counts quality-passing SNVs only.
-               AND s.gq >= 20 AND s.filter = 'PASS' AND s.ad_alt >= 3
+             JOIN snv_pos p ON p.seq_id = o.seq_id AND p.chromosome = o.chromosome
+                    AND p.start <= o.end AND p.start >= o.start
+             WHERE o.seq_id IN %(seq_ids)s
                AND o.tenant_code = %(tenant_code)s
              GROUP BY o.name, o.seq_id),
     gnomad_overlaps AS (

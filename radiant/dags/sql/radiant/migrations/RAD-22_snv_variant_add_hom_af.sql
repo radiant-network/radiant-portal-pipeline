@@ -38,7 +38,7 @@
 -- No UPDATE: the new columns start NULL. Parts imported after the migration get their `hom` straight away,
 -- but the parts imported before keep a NULL `hom` in the staging frequency tables, so the tenant roll-up
 -- and snv__variant under-count `hom` and `af` is too low, with no error, until the frequencies are
--- recomputed (reannotate_open_data with force_reannotation and recompute_frequencies, RAD-46).
+-- recomputed (reannotate_open_data with recompute_frequencies, RAD-46).
 
 
 -- ---------------------------------------------------------------------------------------------------

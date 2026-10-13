@@ -190,10 +190,18 @@ class ImportSNVVCF(RadiantTaskK8SOperator):
             )
             | ImportSNVVCF._get_k8s_context(radiant_namespace, container_resources=_metadata_container_resources()),
         )
-        def k8s_commit_partitions(table_partitions: dict[str, list[dict]]):
-            from radiant.tasks.iceberg.utils import commit_partitions
+        def k8s_commit_partitions(table_partitions: str | None):
+            # `table_partitions` is the S3 path written by `merge_commits`, not the partitions
+            # themselves: they would overflow the env var that carries the task arguments.
+            import logging
 
-            commit_partitions(table_partitions)
+            from radiant.tasks.iceberg.utils import commit_partitions_from_s3
+
+            if not table_partitions:
+                logging.getLogger(__name__).info("Nothing to commit")
+                return
+
+            commit_partitions_from_s3(table_partitions)
 
         return k8s_commit_partitions
 
@@ -210,11 +218,18 @@ class ImportPart(RadiantTaskK8SOperator):
             )
             | ImportPart._get_k8s_context(radiant_namespace, container_resources=_cnv_container_resources())
         )
-        def import_cnv_vcf(tasks: list[dict]) -> None:
+        def import_cnv_vcf(stored_tasks: str) -> None:
+            # `stored_tasks` is the S3 path written by `store_tasks`, not the tasks themselves:
+            # they would overflow the env var that carries the task arguments.
+            import logging
             import os
+            import tempfile
 
+            from radiant.tasks.utils import download_json_from_s3
             from radiant.tasks.vcf.cnv.germline.process import import_cnv_vcf as _import_cnv_vcf
 
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                tasks = download_json_from_s3(stored_tasks, f"{tmp_dir}/tasks.json", logging.getLogger(__name__))
             namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
             _import_cnv_vcf(tasks=tasks, namespace=namespace)
 
@@ -233,11 +248,18 @@ class ImportPart(RadiantTaskK8SOperator):
             # (~304 segments for a WES sample), so it is no heavier than the germline one.
             | ImportPart._get_k8s_context(radiant_namespace, container_resources=_cnv_container_resources())
         )
-        def import_somatic_cnv_vcf(tasks: list[dict]) -> None:
+        def import_somatic_cnv_vcf(stored_tasks: str) -> None:
+            # `stored_tasks` is the S3 path written by `store_tasks`, not the tasks themselves:
+            # they would overflow the env var that carries the task arguments.
+            import logging
             import os
+            import tempfile
 
+            from radiant.tasks.utils import download_json_from_s3
             from radiant.tasks.vcf.cnv.somatic.process import import_somatic_cnv_vcf as _import_somatic_cnv_vcf
 
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                tasks = download_json_from_s3(stored_tasks, f"{tmp_dir}/tasks.json", logging.getLogger(__name__))
             namespace = os.getenv("RADIANT_ICEBERG_NAMESPACE")
             _import_somatic_cnv_vcf(tasks=tasks, namespace=namespace)
 

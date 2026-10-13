@@ -19,14 +19,16 @@ derived from them. Design: design/SJRA-1811-opendatalake-integration.md, section
 | | | **compute_reannotation_gates** | Which branches have a source that moved. See below |
 | 4 | P2 | **reannotate_accumulators** | snv\_\_staging_variant, then snv\_\_consequence. Upsert in place |
 | | | *CHECKPOINT* | Accumulators re-annotated |
-| 5 | P3a | **snv_variant** | snv\_\_variant into its partitioned copy |
+| 5 | P3a | **snv_frequency** | Off unless **recompute_frequencies**. Germline then somatic: per tenant and part, then the tenant roll-up |
+| | | *CHECKPOINT* | Frequencies recomputed |
+| 6 | P3a | **snv_variant** | snv\_\_variant into its partitioned copy |
 | | | *CHECKPOINT* | SNV variants rebuilt |
-| 6 | P3a | **snv_consequence** | snv\_\_consequence_filter into its partitioned copy |
+| 7 | P3a | **snv_consequence** | snv\_\_consequence_filter into its partitioned copy |
 | | | *CHECKPOINT* | SNV consequences rebuilt |
-| 7 | P3b | **cnv_occurrence** | Germline then somatic, per tenant and part |
+| 8 | P3b | **cnv_occurrence** | Germline then somatic, per tenant and part |
 | | | *CHECKPOINT* | Every rebuild done |
-| 8 | P4 | **record_open_data_release** | Promotes what P1 imported to annotated. One UPDATE |
-| 9 | | **release_import_lock** | Gives the mutex back |
+| 9 | P4 | **record_open_data_release** | Promotes what P1 imported to annotated. One UPDATE |
+| 10 | | **release_import_lock** | Gives the mutex back |
 
 A checkpoint sits between every group of StarRocks work. They run nothing — they are there so
 the graph reads as the serial sequence it is, with each group bracketed by a marker rather
@@ -46,6 +48,7 @@ max_active_tis_per_dagrun, which cannot work here.
 Only some of that order is a data dependency:
 
 - Each P3a chain reads the accumulator above it.
+- snv\_\_variant reads the two frequency roll-ups, and each roll-up sums the staging rows of its kind.
 - A partitioned table is a partitioned copy of the unpartitioned one above it.
 - P3b joins snv\_\_variant to count the quality-passing SNVs in each segment (**nb_snv**),
   which P3a rebuilds with INSERT OVERWRITE.
@@ -63,9 +66,9 @@ anything new to annotate against. Each statement in a gated-out branch skips its
 
 | Branch | Watches | Statements it gates |
 |:--|:--|:--|
-| **snv_variant** | 1000_genomes, clinvar, dbsnp, gnomad_joint, omim_gene_set, topmed_bravo | The staging-variant re-annotation and both snv\_\_variant inserts |
+| **snv_variant** | 1000_genomes, clinvar, dbsnp, gnomad_joint, omim_gene_set, topmed_bravo | The staging-variant re-annotation and both snv\_\_variant inserts. **recompute_frequencies** also opens the two inserts |
 | **snv_consequence** | dbnsfp, gnomad_constraint, spliceai | The consequence re-annotation and both consequence-filter inserts |
-| **cnv_occurrence** | ensembl_gene, gnomad_sv | Germline then somatic CNV occurrences |
+| **cnv_occurrence** | ensembl_gene, gnomad_sv | Germline then somatic CNV occurrences. **recompute_frequencies** also opens them |
 
 The watch lists live in **REANNOTATION_SOURCES** in radiant.tasks.data.open_data and are copied
 by hand from the FROM and JOIN lists of the statements. **Change a statement's joins and you have
@@ -156,6 +159,8 @@ moved — the same dependency the P3a-before-P3b ordering exists for.
 > **The gate watches data, not code.** It cannot see that you edited a statement, added a column,
 > or fixed a join. After any change to the re-annotation SQL, run with
 > **force_reannotation** set to true, or the run will skip the very branch you changed.
+> A change to the **frequency** SQL is the exception: use **recompute_frequencies** instead, see
+> below. force_reannotation does not rerun the frequencies.
 
 ### Required setup on an existing deployment: the snapshot-column migration
 
@@ -255,10 +260,63 @@ A few of those need explaining:
 
 ---
 
+## Recomputing the frequencies
+
+The SNV frequencies (**pc**, **pn**, **pf**, **hom**, **af**) are computed by radiant-import-part,
+only for the parts an import touches. No open-data source feeds them, so no gate can see a change
+to their SQL, and **force_reannotation** does not rerun them either. **recompute_frequencies**
+does, over every tenant and part:
+
+1. **snv_frequency**: for every (tenant, part), germline_snv_staging_variant_freq_insert.sql, then
+   per tenant germline_snv_variant_frequency_insert.sql; then the same two for somatic.
+2. **snv_variant**: snv\_\_variant and every variant part of its partitioned copy, opened by the
+   param even when the gate is closed.
+3. **cnv_occurrence**: opened too, because **nb_snv** counts rows of the rebuilt snv\_\_variant (see
+   above).
+
+The staging-variant and consequence re-annotations stay on their gates: the recompute reads
+neither.
+
+Use it after any change to a frequency statement. Run config:
+
+```json
+{"recompute_frequencies": true}
+```
+
+Like any run of this DAG it takes the import mutex, so no import runs meanwhile. It is as long as
+re-importing the frequencies of every part, plus the snv\_\_variant and CNV rebuilds. Run it on QA
+first and time it before prod.
+
+
+```sql
+-- A qualifying homozygous carrier at a locus that reads hom = 0 (RAD-22).
+SELECT COUNT(DISTINCT o.locus_id) FROM germline__snv__occurrence o
+JOIN <base>.staging_sequencing_experiment s ON s.seq_id = o.seq_id AND s.experimental_strategy = 'wgs'
+JOIN snv__variant v ON v.locus_id = o.locus_id
+WHERE o.zygosity IN ('HOM', 'HEM') AND o.gq >= 20 AND o.filter = 'PASS' AND o.ad_alt >= 3
+  AND v.germline_hom_wgs = 0;
+
+-- The partitioned copy disagrees with snv__variant on the new columns.
+SELECT COUNT(*) FROM snv__variant v
+JOIN snv__variant_partitioned p ON p.locus_id = v.locus_id
+WHERE p.germline_hom_wgs <> v.germline_hom_wgs OR p.germline_af_wgs <> v.germline_af_wgs
+   OR p.somatic_hom_tn_wgs <> v.somatic_hom_tn_wgs OR p.somatic_af_tn_wgs <> v.somatic_af_tn_wgs;
+
+-- An occurrence locus missing from snv__variant (RAD-57). Same check on somatic__snv__occurrence.
+SELECT COUNT(DISTINCT o.locus_id) FROM germline__snv__occurrence o
+LEFT ANTI JOIN snv__variant v ON v.locus_id = o.locus_id;
+```
+
+---
+
 ## Parameters
 
-One. **force_reannotation**, default false — rebuild every branch whether or not its sources
-moved. Set it after editing a re-annotation statement; see the gate section above.
+Two.
+
+- **force_reannotation**, default false — rebuild every branch whether or not its sources
+  moved. Set it after editing a re-annotation statement; see the gate section above.
+- **recompute_frequencies**, default false — recompute the SNV frequencies of every tenant and
+  part, then rebuild snv\_\_variant and the CNV occurrences. See the section above.
 
 Tenants and parts take no parameter: they are discovered from **staging_sequencing_experiment**
 at run time (radiant.tasks.data.tenants), so the fan-out follows the data rather than a

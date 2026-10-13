@@ -185,6 +185,8 @@ def test_dag_contains_all_tasks(dag_bag):
         "get_tables_to_refresh",
         "fetch_sequencing_experiment_delta",
         "sanity_check_tasks",
+        "store_tasks",
+        "cleanup_tasks_files",
         "prepare_config",
         "build_tenant_params",
         "extract_tenants",

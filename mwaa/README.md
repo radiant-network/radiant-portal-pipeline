@@ -177,7 +177,6 @@ Provisioned automatically by
   - `AWS_ECS_CLUSTER`
   - `AWS_ECS_SUBNETS`
   - `AWS_ECS_SECURITY_GROUPS`
-  - `AWS_ECS_S3_WORKSPACE`
    You do **not** configure these in the Airflow UI. Their values come
    from `variables.tfvars` for the target environment.
 
@@ -200,6 +199,7 @@ This ensure that they have the right environment when they start. The current va
 | `RADIANT_OPEN_DATA_DATABASE`            | Iceberg database inside that catalog. Per-environment (ex: `opendatalake_qa`), so every deployment must set it -- the default, `reference`, is the name OpenDataLake uses locally. |
 | `RADIANT_OPEN_DATA_REF`                 | Iceberg ref every open-data read is pinned to. Defaults to `latest`, the tag OpenDataLake moves onto each publish; set it to a `dataset_version` to pin one release. It may not be empty: OpenDataLake keeps `main` permanently empty, so an unpinned read would return no rows on every source at once and the `INSERT OVERWRITE` downstream would empty the StarRocks target. An empty value is rejected when the mapping is built. |
 | `RADIANT_OPEN_DATA_USE_LEGACY_TABLES`   | Sources held back on their pre-contract Radiant Iceberg tables instead of read from OpenDataLake. **Defaults to `*` -- every source held back**, so deploying this wheel into an environment that is not configured for OpenDataLake reads exactly what it read before; the cutover is an explicit config change, never a side effect of a deploy. Set it to the empty string for the target state (all 17 contract tables from OpenDataLake), or to a comma-separated list to migrate part way -- for a partial environment, or one whose publish is not ready. Accepts either name a source answers to (`mondo` or `mondo_term`). An unknown name is rejected rather than silently ignored, and `*` is honoured only as the whole value. |
+| `RADIANT_S3_WORKSPACE`                  | Bucket for the temporary files Airflow hands to the Radiant tasks when the payload is too large to pass inline (ex: the merged partitions committed by `import_snv_vcf`). Set it to the data-lake bucket (`var.radiant_datalake_bucket`). Replaces the former `AWS_ECS_S3_WORKSPACE` Airflow Variable (SJRA-2006). Defaults to `warehouse`, the local/CI MinIO bucket. |
 | `RADIANT_TASK_OPERATOR_TASK_DEFINITION` | ECS task definition for Radiant operator. |
 | `RADIANT_TASK_OPERATOR_LOG_GROUP`       | CloudWatch log group  for Radiant operator. |
 | `RADIANT_TASK_OPERATOR_LOG_REGION`      | AWS region  for radiant operator logs | 
@@ -219,7 +219,6 @@ You don't set these by hand — Terraform reads them from your tfvars and writes
 | `AWS_ECS_CLUSTER`         | `var.ecs_cluster_name`                   |  Name of the ECS cluster where Radiant tasks will run. |
 | `AWS_ECS_SUBNETS`         | `var.private_subnets` (joined with `,`)  |  Comma-separated list of subnet IDs for ECS tasks. |
 | `AWS_ECS_SECURITY_GROUPS` | `var.ecs_security_groups` (joined with `,`) | Comma-separated list of security group IDs used by ECS tasks. |
-| `AWS_ECS_S3_WORKSPACE`    | `var.radiant_datalake_bucket`            |  S3 bucket path for Radiant workspace. |
 
 
 ## Reference Airflow Connections

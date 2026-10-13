@@ -14,15 +14,20 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
      -- Somatic segments are counted against somatic SNVs: germline SNVs inside a tumour segment would be a
      -- meaningless number. COUNT(DISTINCT locus_id) because a tumour sample analysed both tumour-only and
      -- tumour-normal holds each locus under two task_ids. See SJRA-1811 Decision 3 for the join.
-     snv AS (SELECT o.name, o.seq_id, COUNT(DISTINCT s.locus_id) AS nb_snv
+     -- Position first, then overlap on (seq_id, chromosome). Occurrence and variant are colocated on locus_id,
+     -- so `snv_pos` is a local join. Joining the CNVs on the sample alone paired every CNV with every SNV of the
+     -- sample, on every chromosome, before the interval filter: a BE ran out of memory on a WGS part (RAD-61).
+     snv_pos AS (SELECT s.tumor_seq_id AS seq_id, s.locus_id, v.chromosome, v.start
+                 FROM {{ mapping.starrocks_somatic_snv_occurrence }} s
+                 JOIN {{ mapping.starrocks_snv_variant }} v ON v.locus_id = s.locus_id
+                 WHERE s.part = {{ partition }} AND s.tumor_seq_id IN %(seq_ids)s
+                   -- RAD-57: same quality gate as the frequencies, so nb_snv counts quality-passing SNVs only.
+                   AND s.filter = 'PASS' AND s.tumor_ad_alt >= 2),
+     snv AS (SELECT o.name, o.seq_id, COUNT(DISTINCT p.locus_id) AS nb_snv
              FROM {{ mapping.iceberg_somatic_cnv_occurrence }} o
-             JOIN {{ mapping.starrocks_somatic_snv_occurrence }} s ON s.tumor_seq_id = o.seq_id
-                    AND s.part = {{ partition }}
-             JOIN {{ mapping.starrocks_snv_variant }} v ON v.locus_id = s.locus_id
-                    AND v.chromosome = o.chromosome AND v.start <= o.end AND v.start >= o.start
-             WHERE s.tumor_seq_id IN %(seq_ids)s AND o.seq_id IN %(seq_ids)s
-               -- RAD-57: same quality gate as the frequencies, so nb_snv counts quality-passing SNVs only.
-               AND s.filter = 'PASS' AND s.tumor_ad_alt >= 2
+             JOIN snv_pos p ON p.seq_id = o.seq_id AND p.chromosome = o.chromosome
+                    AND p.start <= o.end AND p.start >= o.start
+             WHERE o.seq_id IN %(seq_ids)s
                AND o.tenant_code = %(tenant_code)s
              GROUP BY o.name, o.seq_id),
     gnomad_overlaps AS (
