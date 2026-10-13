@@ -18,6 +18,15 @@ _PARQUET_FILE_SIZE_ENV = {
 
 class RadiantTaskECSOperator:
     @staticmethod
+    def _container_name() -> str:
+        # Must match the container name of the task definition built by terraform
+        # (`${project}-operator-${environment}-etl-container`, project defaults to `radiant`).
+        environment = os.getenv("RADIANT_ENVIRONMENT")
+        if not environment:
+            raise ValueError("RADIANT_ENVIRONMENT must be set to name the Radiant operator ECS container")
+        return f"radiant-operator-{environment}-etl-container"
+
+    @staticmethod
     def _get_ecs_context(ecs_cluster: str, ecs_subnets: list[str], ecs_security_groups: list[str]):
         return dict(
             cluster=ecs_cluster,
@@ -50,7 +59,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-operator-qa-etl-container",
+                            "name": RadiantTaskECSOperator._container_name(),
                             "command": [
                                 "python /opt/radiant/import_germline_snv_vcf_for_task.py "
                                 "--task '{{ params.radiant_task | tojson }}'"
@@ -84,7 +93,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-operator-qa-etl-container",
+                            "name": RadiantTaskECSOperator._container_name(),
                             "command": [
                                 "python /opt/radiant/import_somatic_snv_vcf_for_task.py "
                                 "--task '{{ params.radiant_task | tojson }}'"
@@ -117,7 +126,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-operator-qa-etl-container",
+                            "name": RadiantTaskECSOperator._container_name(),
                             "command": [
                                 "python "
                                 "/opt/radiant/commit_partitions.py --table_partitions '{{ params.table_partitions }}'"
@@ -151,7 +160,7 @@ class InitIcebergTables(RadiantTaskECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-operator-qa-etl-container",
+                            "name": RadiantTaskECSOperator._container_name(),
                             "command": [f"python /opt/radiant/init_iceberg_table.py --table_name '{table_name}'"],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
@@ -181,7 +190,7 @@ class ImportPart(RadiantTaskECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-operator-qa-etl-container",
+                            "name": RadiantTaskECSOperator._container_name(),
                             "command": ["python /opt/radiant/import_cnv_vcf.py --tasks '{{ params.stored_tasks }}'"],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
@@ -209,7 +218,7 @@ class ImportPart(RadiantTaskECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-operator-qa-etl-container",
+                            "name": RadiantTaskECSOperator._container_name(),
                             "command": [
                                 "python /opt/radiant/import_somatic_cnv_vcf.py --tasks '{{ params.stored_tasks }}'"
                             ],
@@ -239,7 +248,7 @@ class ImportPart(RadiantTaskECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-operator-qa-etl-container",
+                            "name": RadiantTaskECSOperator._container_name(),
                             "command": ["python /opt/radiant/cleanup.py --path '{{ params.stored_tasks }}'"],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
@@ -267,7 +276,7 @@ class CosmicMutationSet(RadiantTaskECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-operator-qa-etl-container",
+                            "name": RadiantTaskECSOperator._container_name(),
                             "command": [
                                 "python /opt/radiant/normalize_cosmic_mutation_set.py "
                                 "--input '{{ params.cosmic_mutation_set_filepath }}' "
