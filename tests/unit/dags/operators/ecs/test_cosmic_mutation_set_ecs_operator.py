@@ -10,7 +10,8 @@ def test_get_normalize():
         "RADIANT_TASK_OPERATOR_TASK_DEFINITION": "radiant-operator",
         "RADIANT_TASK_OPERATOR_LOG_GROUP": "apps-qa/radiant-etl",
         "RADIANT_TASK_OPERATOR_LOG_REGION": "us-east-1",
-        "RADIANT_TASK_OPERATOR_LOG_PREFIX": "ecs/radiant-operator-qa-etl-container",
+        "RADIANT_TASK_OPERATOR_LOG_PREFIX": "ecs/radiant-operator-mock-etl-container",
+        "RADIANT_ENVIRONMENT": "mock",
     }
     ecs_env = SimpleNamespace(ECS_CLUSTER="my-cluster", ECS_SUBNETS=["subnet-1"], ECS_SECURITY_GROUPS=["sg-1"])
     with patch.dict(os.environ, fake_env, clear=True):
@@ -22,11 +23,11 @@ def test_get_normalize():
     # Same task definition (and image) as the VCF extraction: bcftools ships in the radiant-operator image.
     assert op.task_definition == "radiant-operator"
     assert op.awslogs_group == "apps-qa/radiant-etl"
-    assert op.awslogs_stream_prefix == "ecs/radiant-operator-qa-etl-container"
+    assert op.awslogs_stream_prefix == "ecs/radiant-operator-mock-etl-container"
     assert op.aws_conn_id == "aws_default"
 
     (container,) = op.overrides["containerOverrides"]
-    assert container["name"] == "radiant-operator-qa-etl-container"
+    assert container["name"] == "radiant-operator-mock-etl-container"
     (command,) = container["command"]
     assert command.startswith("python /opt/radiant/normalize_cosmic_mutation_set.py ")
     assert "--input '{{ params.cosmic_mutation_set_filepath }}'" in command
