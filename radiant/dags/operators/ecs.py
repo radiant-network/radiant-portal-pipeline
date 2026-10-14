@@ -300,14 +300,9 @@ class CosmicMutationSet(RadiantTaskECSOperator):
         )
 
 
-def _igv_tracks_ephemeral_storage_gib() -> int:
-    """Fargate scratch disk of one IGV track task, overridable without a deploy like the K8s profiles."""
-    return int(os.getenv("RADIANT_TASK_OPERATOR_IGV_TRACKS_EPHEMERAL_STORAGE_GIB", "30"))
-
-
 class IgvTracks(RadiantTaskECSOperator):
     @staticmethod
-    def get_build_track(ecs_env: ECSEnv):
+    def get_build_track(ecs_env: ECSEnv, ephemeral_storage_gib: int):
         return ecs.EcsRunTaskOperator.partial(
             **dict(
                 task_id="build_igv_track_ecs",
@@ -333,9 +328,8 @@ class IgvTracks(RadiantTaskECSOperator):
                             ],
                         }
                     ],
-                    # Same budget as the K8s pod, on Fargate's own scale (21-200 GiB, platform >= 1.4.0):
-                    # chainSelf peaks at ~6.6 GB of download, sort spill and output (measured 2026-10-09).
-                    "ephemeralStorage": {"sizeInGiB": _igv_tracks_ephemeral_storage_gib()},
+                    # Fargate scratch disk (21-200 GiB, platform >= 1.4.0); the DAG sets the size.
+                    "ephemeralStorage": {"sizeInGiB": ephemeral_storage_gib},
                 },
             )
             | IgvTracks._get_ecs_context(

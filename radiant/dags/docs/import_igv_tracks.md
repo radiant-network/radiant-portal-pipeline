@@ -79,8 +79,8 @@ radiant/tasks/open_data/igv_tracks.py points here):
 The largest track is self_chain: a 0.8 GB download that becomes about 5 GB of GFF3 to sort (33 million
 rows). On K8s each pod requests 16Gi of ephemeral storage (override:
 **RADIANT_TASK_OPERATOR_IGV_TRACKS_EPHEMERAL_STORAGE**). On ECS each task sets 30 GiB of Fargate ephemeral
-storage in its run overrides, whatever the radiant-operator task definition says (override:
-**RADIANT_TASK_OPERATOR_IGV_TRACKS_EPHEMERAL_STORAGE_GIB**, 21 to 200; needs Fargate platform 1.4.0 or later).
+storage in its run overrides, whatever the radiant-operator task definition says (fixed in the DAG, 21 to 200;
+needs Fargate platform 1.4.0 or later).
 The measured peak is 6.6 GB.
 
 When a disk fills up, the task fails with the error of sort or bgzip (for example "No space left on

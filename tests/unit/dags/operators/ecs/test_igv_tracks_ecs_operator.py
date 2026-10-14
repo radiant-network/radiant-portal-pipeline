@@ -15,7 +15,7 @@ def test_get_build_track():
     }
     ecs_env = SimpleNamespace(ECS_CLUSTER="my-cluster", ECS_SUBNETS=["subnet-1"], ECS_SECURITY_GROUPS=["sg-1"])
     with patch.dict(os.environ, fake_env, clear=True):
-        partial = IgvTracks.get_build_track(ecs_env=ecs_env)
+        partial = IgvTracks.get_build_track(ecs_env=ecs_env, ephemeral_storage_gib=42)
 
     kwargs = partial.kwargs
     assert kwargs["task_id"] == "build_igv_track_ecs"
@@ -36,16 +36,5 @@ def test_get_build_track():
     assert "--prefix '{{ params.igv_tracks_prefix }}'" in command
     env = {e["name"]: e["value"] for e in container["environment"]}
     assert env["PYTHONPATH"] == "/opt/radiant"
-    # The shared task definition is not sized for chainSelf's sort spill: the task sets its own disk.
-    assert kwargs["overrides"]["ephemeralStorage"] == {"sizeInGiB": 30}
-
-
-def test_ephemeral_storage_is_overridable():
-    ecs_env = SimpleNamespace(ECS_CLUSTER="c", ECS_SUBNETS=["s"], ECS_SECURITY_GROUPS=["g"])
-    with patch.dict(
-        os.environ,
-        {"RADIANT_TASK_OPERATOR_IGV_TRACKS_EPHEMERAL_STORAGE_GIB": "50", "RADIANT_ENVIRONMENT": "mock"},
-        clear=True,
-    ):
-        partial = IgvTracks.get_build_track(ecs_env=ecs_env)
-    assert partial.kwargs["overrides"]["ephemeralStorage"] == {"sizeInGiB": 50}
+    # The shared task definition is not sized for chainSelf's sort spill: the task sets the disk the DAG asks for.
+    assert kwargs["overrides"]["ephemeralStorage"] == {"sizeInGiB": 42}

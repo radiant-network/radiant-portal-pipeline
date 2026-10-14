@@ -56,7 +56,13 @@ with DAG(
     tracks = list_igv_tracks()
 
     if IS_AWS:
-        operators.IgvTracks.get_build_track(ecs_env=ECSEnv()).expand(params=tracks)
+        # Fargate scratch disk of one ECS track task, on Fargate's own scale (21-200 GiB, platform >= 1.4.0): chainSelf peaks
+        # at ~6.6 GB of download, sort spill and output (measured 2026-10-09).
+        ECS_EPHEMERAL_STORAGE_GIB = 30
+
+        operators.IgvTracks.get_build_track(ecs_env=ECSEnv(), ephemeral_storage_gib=ECS_EPHEMERAL_STORAGE_GIB).expand(
+            params=tracks
+        )
     else:
         # The Iceberg namespace is only part of the shared pod context; this task never touches Iceberg.
         operators.IgvTracks.get_build_track(radiant_namespace=ICEBERG_NAMESPACE).expand_kwargs(tracks)
