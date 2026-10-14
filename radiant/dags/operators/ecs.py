@@ -321,7 +321,7 @@ class IgvTracks(RadiantTaskECSOperator):
                 overrides={
                     "containerOverrides": [
                         {
-                            "name": "radiant-operator-qa-etl-container",
+                            "name": RadiantTaskECSOperator._container_name(),
                             "command": [
                                 "python /opt/radiant/build_igv_track.py "
                                 "--track_id '{{ params.track_id }}' "

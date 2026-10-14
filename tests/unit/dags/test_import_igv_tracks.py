@@ -45,6 +45,8 @@ def test_on_aws_the_dag_maps_the_ecs_task_over_the_listed_tracks(monkeypatch):
     from radiant.dags import import_igv_tracks
 
     monkeypatch.setattr(radiant.dags, "IS_AWS", True)
+    # Names the operator container; the ECS operators refuse to build without it.
+    monkeypatch.setenv("RADIANT_ENVIRONMENT", "mock")
     monkeypatch.setattr(
         radiant.dags.Variable,
         "get",

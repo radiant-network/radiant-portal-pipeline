@@ -5,24 +5,8 @@ file names, so the portal can map its fixed track ids to them. Each track is dow
 the upstream format is a TSV or a UCSC table dump, sorted, bgzipped and tabix-indexed, then written with its
 ``.tbi`` under one S3 prefix. The portal API presigns those objects; nothing here is a table.
 
-Differences with the Qlin port, all on the output's validity rather than its content (the same list as
-radiant/dags/docs/import_igv_tracks.md; keep the two in sync):
-
-- Every GFF3 is sorted on (seqid, start). Qlin skips the sort for the UCSC dumps, which are ordered by
-  ``bin`` within a chromosome, not by ``chromStart`` (e.g. ``genomicSuperDups``: chr1:10000 bin 585 comes first).
-- VCFs are indexed with the ``vcf`` preset. Qlin indexes them with ``-p gff``, which reads REF as the end.
-- VCFs already in BGZF (all four upstreams) are copied as is instead of recompressed: same records.
-- Attribute values are percent-encoded for the GFF3 reserved characters (``; = & ,``, tab, newline, ``%``).
-  igv.js decodes exactly these (``decodeGFFAttribute`` in js/feature/gff/parseAttributeString.js), so the
-  values the portal colors on read as published; today's ClinGen descriptions hold none of them anyway.
-- The two UCSC tables that Qlin writes with an empty type column (genomicSuperDups, simpleRepeat) get the
-  type ``segmental_duplication`` / ``tandem_repeat``: an empty column 3 is not GFF3.
-- A UCSC strand other than ``+``/``-`` is written ``.`` (GFF3 allows ``+ - . ?`` only); hg38 rmsk and
-  genomicSuperDups hold only ``+``/``-``, so no row changes today.
-- DGV gets the ``##gff-version 3`` line, which upstream lacks, like every other GFF3 track. The ClinGen files
-  keep one ``#`` comment naming their source; Qlin's longer comment block is not carried.
-- ClinGen is read over HTTPS; ftp.clinicalgenome.org serves both, and Qlin's scheme-less curl falls back to FTP.
-- Run settings: Qlin runs at most 4 tasks at a time, so does this DAG; each track here also retries twice.
+The differences with the Qlin port (all on the output's validity, not its content) are listed in
+radiant/dags/docs/import_igv_tracks.md, "Differences with the Qlin DAG".
 
 Runs inside the radiant-operator image (which carries ``bgzip``, ``tabix`` and GNU ``sort``), on Kubernetes or
 ECS; one call builds one track, so a failed download retries alone.
@@ -43,6 +27,8 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
+from radiant.tasks.nextflow.paths import join_s3
+
 logger = logging.getLogger(__name__)
 
 GFF3_HEADER = "##gff-version 3"
@@ -58,13 +44,30 @@ _GFF3_RESERVED_RE = re.compile("|".join(re.escape(c) for c in _GFF3_RESERVED))
 _STRAY_PERCENT_RE = re.compile(r"%(?![0-9a-fA-F]{2})")
 _LOCATION_RE = re.compile(r"^([^:]+):(\d+)-(\d+)$")
 
+IGV_TRACKS_PREFIX_ENV = "RADIANT_IGV_TRACKS_S3_PREFIX"
+# Bucket + key characters only: on ECS the prefix is spliced into a single-quoted shell command.
+_IGV_TRACKS_PREFIX_RE = re.compile(r"^s3://[A-Za-z0-9.\-]+(/[A-Za-z0-9._\-/]*)?$")
+
 
 class IgvTrackError(Exception):
     """Raised when a track cannot be built (unknown id, upstream failure, or a tool that failed)."""
 
 
+def check_igv_tracks_prefix(prefix: str | None) -> str:
+    """Returns ``prefix`` when it is an s3:// URI safe to pass through a shell command; raises ValueError otherwise."""
+    if not _IGV_TRACKS_PREFIX_RE.match(prefix or ""):
+        raise ValueError(
+            f"igv_tracks_prefix must be an s3:// URI of letters, digits and . _ - / only, got {prefix!r}: "
+            f"set the param or {IGV_TRACKS_PREFIX_ENV}"
+        )
+    return prefix
+
+
 def escape_gff3_value(value: str) -> str:
     """Percent-encode the characters GFF3 reserves in an attribute value."""
+    # Most values hold none (numbers we format ourselves): skip the per-match callback, ~165M values on chainSelf.
+    if not _GFF3_RESERVED_RE.search(value):
+        return value
     return _GFF3_RESERVED_RE.sub(lambda m: _GFF3_RESERVED[m.group(0)], value)
 
 
@@ -97,6 +100,25 @@ def _cell(row: list[str], column: int) -> str:
     return row[column - 1] if len(row) >= column else ""
 
 
+def _gff3_strand(strand: str) -> str:
+    """GFF3 allows ``+ - . ?`` only: any other UCSC strand is written ``.``."""
+    return strand if strand in ("+", "-") else "."
+
+
+def _clingen_dosage_attributes(row: list[str]) -> list[tuple[str, str]]:
+    """The dosage columns the gene and region lists share (3, 5/6, 13/14, 21, 22/23)."""
+    return [
+        ("cytoband", _cell(row, 3)),
+        ("haploinsufficiency_score", _cell(row, 5)),
+        ("haploinsufficiency_description", _cell(row, 6).replace(" ", "_")),
+        ("triplosensitivity_score", _cell(row, 13)),
+        ("triplosensitivity_description", _cell(row, 14).replace(" ", "_")),
+        ("date_last_evaluated", _cell(row, 21)),
+        ("haploinsufficiency_disease_id", _cell(row, 22)),
+        ("triplosensitivity_disease_id", _cell(row, 23)),
+    ]
+
+
 def clingen_gene_to_gff3(lines: Iterable[str]) -> Iterator[str]:
     """ClinGen gene dosage curation list (GRCh38 TSV) -> one ``gene`` feature per curated gene.
 
@@ -113,19 +135,7 @@ def clingen_gene_to_gff3(lines: Iterable[str]) -> Iterator[str]:
         seqid, start, end = location
         symbol, gene_id = _cell(row, 1), _cell(row, 2)
         attrs = gff3_attributes(
-            [
-                ("ID", f"{symbol}_{gene_id}"),
-                ("Name", symbol),
-                ("gene_id", gene_id),
-                ("cytoband", _cell(row, 3)),
-                ("haploinsufficiency_score", _cell(row, 5)),
-                ("haploinsufficiency_description", _cell(row, 6).replace(" ", "_")),
-                ("triplosensitivity_score", _cell(row, 13)),
-                ("triplosensitivity_description", _cell(row, 14).replace(" ", "_")),
-                ("date_last_evaluated", _cell(row, 21)),
-                ("haploinsufficiency_disease_id", _cell(row, 22)),
-                ("triplosensitivity_disease_id", _cell(row, 23)),
-            ]
+            [("ID", f"{symbol}_{gene_id}"), ("Name", symbol), ("gene_id", gene_id), *_clingen_dosage_attributes(row)]
         )
         yield gff3_line(seqid, "ClinGen", "gene", start, end, ".", ".", attrs)
 
@@ -144,19 +154,8 @@ def clingen_region_to_gff3(lines: Iterable[str]) -> Iterator[str]:
         seqid, start, end = location
         isca_id = _cell(row, 1)
         name = re.sub(r"[();,]", "", _cell(row, 2).replace(" ", "_"))
-        optional = [
-            ("cytoband", _cell(row, 3)),
-            ("haploinsufficiency_score", _cell(row, 5)),
-            ("haploinsufficiency_description", _cell(row, 6).replace(" ", "_")),
-            ("triplosensitivity_score", _cell(row, 13)),
-            ("triplosensitivity_description", _cell(row, 14).replace(" ", "_")),
-            ("date_last_evaluated", _cell(row, 21)),
-            ("haploinsufficiency_disease_id", _cell(row, 22)),
-            ("triplosensitivity_disease_id", _cell(row, 23)),
-        ]
-        attrs = gff3_attributes(
-            [("ID", isca_id), ("Name", name), ("isca_id", isca_id), *[(k, v) for k, v in optional if v]]
-        )
+        optional = [(k, v) for k, v in _clingen_dosage_attributes(row) if v]
+        attrs = gff3_attributes([("ID", isca_id), ("Name", name), ("isca_id", isca_id), *optional])
         yield gff3_line(seqid, "ClinGen", "region", start, end, ".", ".", attrs)
 
 
@@ -201,9 +200,15 @@ def ucsc_genomic_superdups_to_gff3(lines: Iterable[str]) -> Iterator[str]:
                 ("mismatch_bases", row[23]),
             ]
         )
-        strand = row[6] if row[6] in ("+", "-") else "."
         return gff3_line(
-            row[1], "UCSC_SuperDups", "segmental_duplication", int(row[2]) + 1, int(row[3]), row[5], strand, attrs
+            row[1],
+            "UCSC_SuperDups",
+            "segmental_duplication",
+            int(row[2]) + 1,
+            int(row[3]),
+            row[5],
+            _gff3_strand(row[6]),
+            attrs,
         )
 
     return _convert_ucsc_rows(lines, "genomicSuperDups", convert_row)
@@ -227,8 +232,9 @@ def ucsc_repeat_masker_to_gff3(lines: Iterable[str]) -> Iterator[str]:
                 ("milli_ins", row[4]),
             ]
         )
-        strand = row[9] if row[9] in ("+", "-") else "."
-        return gff3_line(row[5], "RepeatMasker", row[11], int(row[6]) + 1, int(row[7]), row[1], strand, attrs)
+        return gff3_line(
+            row[5], "RepeatMasker", row[11], int(row[6]) + 1, int(row[7]), row[1], _gff3_strand(row[9]), attrs
+        )
 
     return _convert_ucsc_rows(lines, "rmsk", convert_row)
 
@@ -287,9 +293,13 @@ class IgvTrackSource:
     track_id: str  # the key the portal API returns the file under (public_tracks)
     url: str
     file_name: str  # written under the tracks prefix; the portal backend lists the same names
-    preset: Literal["vcf", "gff"]
     convert: Converter | None = None  # None: a VCF, copied as is (recompressed if not BGZF)
-    header: tuple[str, ...] = ()  # GFF3 lines written before the sorted features
+    comments: tuple[str, ...] = ()  # GFF3 comment lines written after ``##gff-version 3``, before the features
+
+    @property
+    def preset(self) -> Literal["vcf", "gff"]:
+        """The tabix preset: a converted track is GFF3, the others are VCFs."""
+        return "vcf" if self.convert is None else "gff"
 
 
 _UCSC = "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database"
@@ -299,88 +309,69 @@ IGV_TRACK_SOURCES: dict[str, IgvTrackSource] = {
     s.track_id: s
     for s in (
         IgvTrackSource(
-            "clinvar", "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz", "clinvar.vcf.gz", "vcf"
+            "clinvar", "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz", "clinvar.vcf.gz"
         ),
         IgvTrackSource(
             "clinvar_sv",
             "https://ftp.ncbi.nlm.nih.gov/pub/dbVar/data/Homo_sapiens/by_study/vcf/nstd102.GRCh38.variant_call.vcf.gz",
             "nstd102.GRCh38.variant_call.vcf.gz",
-            "vcf",
         ),
         IgvTrackSource(
             "gnomad_sv",
             "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/genome_sv/gnomad.v4.1.sv.sites.vcf.gz",
             "gnomad.v4.1.sv.sites.vcf.gz",
-            "vcf",
         ),
         IgvTrackSource(
             "gnomad_cnv",
             "https://storage.googleapis.com/gcp-public-data--gnomad/release/4.1/exome_cnv/gnomad.v4.1.cnv.all.vcf.gz",
             "gnomad.v4.1.cnv.all.vcf.gz",
-            "vcf",
         ),
         IgvTrackSource(
             "dgv",
             "https://dgv.tcag.ca/dgv/docs/DGV.GS.hg38.gff3",
             "DGV_GS_hg38.cleaned.sorted.gff3.gz",
-            "gff",
             convert=dgv_gold_standard_to_gff3,
-            header=(GFF3_HEADER,),  # upstream has none; written like the other GFF3 tracks
         ),
         IgvTrackSource(
             "clingen_gene",
             f"{_CLINGEN}/ClinGen_gene_curation_list_GRCh38.tsv",
             "ClinGen_gene_curation_list_GRCh38.sorted.gff3.gz",
-            "gff",
             convert=clingen_gene_to_gff3,
-            header=(GFF3_HEADER, "# Converted from ClinGen Gene Curation List (GRCh38)"),
+            comments=("# Converted from ClinGen Gene Curation List (GRCh38)",),
         ),
         IgvTrackSource(
             "clingen_region",
             f"{_CLINGEN}/ClinGen_region_curation_list_GRCh38.tsv",
             "ClinGen_region_curation_list_GRCh38.sorted.gff3.gz",
-            "gff",
             convert=clingen_region_to_gff3,
-            header=(GFF3_HEADER, "# Converted from ClinGen Region Curation List (GRCh38)"),
+            comments=("# Converted from ClinGen Region Curation List (GRCh38)",),
         ),
         IgvTrackSource(
             "segmental_duplications",
             f"{_UCSC}/genomicSuperDups.txt.gz",
             "hg38.genomicSuperDups.gff3.gz",
-            "gff",
             convert=ucsc_genomic_superdups_to_gff3,
-            header=(GFF3_HEADER,),
         ),
         IgvTrackSource(
             "repeat_masker",
             f"{_UCSC}/rmsk.txt.gz",
             "hg38.rmsk.gff3.gz",
-            "gff",
             convert=ucsc_repeat_masker_to_gff3,
-            header=(GFF3_HEADER,),
         ),
         IgvTrackSource(
             "simple_repeats",
             f"{_UCSC}/simpleRepeat.txt.gz",
             "hg38.simpleRepeat.gff3.gz",
-            "gff",
             convert=ucsc_simple_repeat_to_gff3,
-            header=(GFF3_HEADER,),
         ),
         IgvTrackSource(
             "self_chain",
             f"{_UCSC}/chainSelf.txt.gz",
             "hg38.chainSelf.gff3.gz",
-            "gff",
             convert=ucsc_chain_self_to_gff3,
-            header=(GFF3_HEADER,),
         ),
     )
 }
-
-
-def track_s3_uri(prefix: str, file_name: str) -> str:
-    return f"{prefix.rstrip('/')}/{file_name}"
 
 
 def download(url: str, dest_path: str) -> int:
@@ -415,10 +406,11 @@ def write_bgzipped(source: IgvTrackSource, raw_path: str, out_path: str, work_di
     """Writes ``out_path`` as BGZF: a VCF recompressed as is, a GFF3 as header + features sorted on
     (seqid, start). Returns the number of features (0 for a VCF, which is not parsed).
 
-    A VCF already in BGZF (all four upstreams do, checked 2026-10-09) is copied as is: recompressing gnomAD SV (1.7 GB)
-    on one bgzip thread costs minutes for the same bytes. tabix rejects a file that is not BGZF throughout."""
+    A VCF already in BGZF (all four upstreams do, checked 2026-10-09) is moved to ``out_path`` as is: recompressing
+    gnomAD SV (1.7 GB) on one bgzip thread costs minutes for the same bytes. tabix rejects a file that is not BGZF
+    throughout."""
     if source.convert is None and is_bgzf(raw_path):
-        shutil.copyfile(raw_path, out_path)
+        os.replace(raw_path, out_path)  # same directory in build_igv_track: a rename, not a 1.7 GB copy
         return 0
 
     bgzip_err = os.path.join(work_dir, "bgzip.stderr")
@@ -435,7 +427,8 @@ def write_bgzipped(source: IgvTrackSource, raw_path: str, out_path: str, work_di
                 if source.convert is None:
                     shutil.copyfileobj(raw, bgzip.stdin, DOWNLOAD_CHUNK_BYTES)
                 else:
-                    for line in source.header:
+                    # Every GFF3 track gets the version line, DGV included (upstream lacks it).
+                    for line in (GFF3_HEADER, *source.comments):
                         bgzip.stdin.write(f"{line}\n".encode())
                     bgzip.stdin.flush()
                     # C collation sorts the seqids bytewise: tabix needs each seqid contiguous, not a given order.
@@ -489,8 +482,7 @@ def build_igv_track(track_id: str, igv_tracks_prefix: str, work_dir: str | None 
     ``igv_tracks_prefix``. A rerun replaces both objects with the latest upstream release."""
     if track_id not in IGV_TRACK_SOURCES:
         raise IgvTrackError(f"Unknown IGV track {track_id!r}; expected one of {sorted(IGV_TRACK_SOURCES)}")
-    if not igv_tracks_prefix.startswith("s3://"):
-        raise IgvTrackError(f"igv_tracks_prefix must be an s3:// URI, got {igv_tracks_prefix!r}")
+    check_igv_tracks_prefix(igv_tracks_prefix)
     source = IGV_TRACK_SOURCES[track_id]
 
     with tempfile.TemporaryDirectory(prefix=f"igv_{track_id}_", dir=work_dir) as tmp:
@@ -501,13 +493,20 @@ def build_igv_track(track_id: str, igv_tracks_prefix: str, work_dir: str | None 
 
         out_path = os.path.join(tmp, source.file_name)
         features = write_bgzipped(source, raw_path, out_path, tmp)
-        os.remove(raw_path)
+        # A converter skips the rows it cannot place (ClinGen "tbd" locations): an upstream format change would
+        # skip them all and publish a header-only track over the good one. Fail before the upload instead.
+        if source.convert is not None and features == 0:
+            raise IgvTrackError(
+                f"{track_id}: no feature converted from {source.url}; the upstream format may have changed"
+            )
+        if os.path.exists(raw_path):  # a BGZF VCF was renamed to out_path
+            os.remove(raw_path)
         index_path = tabix_index(out_path, source.preset)
 
         # Imported here: the DAG reads IGV_TRACK_SOURCES at parse time, in an interpreter without wurlitzer.
         from radiant.tasks.utils import upload_s3_file
 
-        file_uri = track_s3_uri(igv_tracks_prefix, source.file_name)
+        file_uri = join_s3(igv_tracks_prefix, source.file_name)
         index_uri = f"{file_uri}.tbi"
         # The data file first, so the window where the two disagree ends with the index upload.
         upload_s3_file(out_path, file_uri)

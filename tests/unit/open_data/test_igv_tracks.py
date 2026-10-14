@@ -10,11 +10,11 @@ from radiant.tasks.open_data.igv_tracks import (
     IGV_TRACK_SOURCES,
     IgvTrackError,
     build_igv_track,
+    check_igv_tracks_prefix,
     clingen_gene_to_gff3,
     clingen_region_to_gff3,
     dgv_gold_standard_to_gff3,
     escape_gff3_value,
-    track_s3_uri,
     ucsc_chain_self_to_gff3,
     ucsc_genomic_superdups_to_gff3,
     ucsc_repeat_masker_to_gff3,
@@ -67,12 +67,10 @@ def test_escape_gff3_value():
     assert escape_gff3_value("Not yet evaluated") == "Not yet evaluated"
 
 
-@pytest.mark.parametrize(
-    ("prefix", "expected"),
-    [("s3://b/igv/", "s3://b/igv/clinvar.vcf.gz"), ("s3://b/igv", "s3://b/igv/clinvar.vcf.gz")],
-)
-def test_track_s3_uri(prefix, expected):
-    assert track_s3_uri(prefix, "clinvar.vcf.gz") == expected
+@pytest.mark.parametrize("prefix", ["/tmp/igv/", "s3://b/igv/' ; rm -rf / '", "", None])
+def test_check_igv_tracks_prefix_refuses_non_s3_or_shell_unsafe_prefixes(prefix):
+    with pytest.raises(ValueError, match="igv_tracks_prefix must be an s3:// URI"):
+        check_igv_tracks_prefix(prefix)
 
 
 def test_clingen_gene_to_gff3():
@@ -176,7 +174,7 @@ def test_ucsc_chain_self_to_gff3():
 def test_build_refuses_unknown_track_and_non_s3_prefix():
     with pytest.raises(IgvTrackError, match="Unknown IGV track"):
         build_igv_track("nope", "s3://b/igv/")
-    with pytest.raises(IgvTrackError, match="s3://"):
+    with pytest.raises(ValueError, match="s3://"):
         build_igv_track("clinvar", "/tmp/igv/")
 
 
@@ -254,10 +252,12 @@ def test_a_tool_dying_mid_stream_reports_its_own_error_not_a_broken_pipe(tmp_pat
         write_bgzipped(source, str(raw), str(tmp_path / "out.gz"), str(tmp_path))
 
 
-def test_dgv_gets_the_gff3_header_like_the_other_gff3_tracks():
-    for source in IGV_TRACK_SOURCES.values():
-        if source.preset == "gff":
-            assert source.header[0] == "##gff-version 3", source.track_id
+def test_dgv_gets_the_gff3_header_like_the_other_gff3_tracks(tmp_path, cat_as_bgzip):
+    raw = tmp_path / "raw.gff3"
+    raw.write_text("chr1\tdgv\tgain\t10\t20\t.\t+\t.\tID=gssvG1\n")
+    out = tmp_path / "out"
+    assert write_bgzipped(IGV_TRACK_SOURCES["dgv"], str(raw), str(out), str(tmp_path)) == 1
+    assert out.read_text().splitlines()[0] == "##gff-version 3"
 
 
 @pytest.mark.parametrize(
@@ -316,3 +316,43 @@ def test_a_non_utf8_byte_passes_through_unchanged(tmp_path, cat_as_bgzip):
     out = tmp_path / "out"
     assert write_bgzipped(IGV_TRACK_SOURCES["segmental_duplications"], str(raw), str(out), str(tmp_path)) == 1
     assert b"Name=n\xe9;" in out.read_bytes()
+
+
+def test_a_bgzf_vcf_is_moved_indexed_and_uploaded_data_first(tmp_path, monkeypatch, failing_bgzip):
+    """The path all four upstream VCFs take: no bgzip (the failing one on PATH would fail it), the download is
+    moved to the output name, and the data file is uploaded before its index."""
+    content = bytes.fromhex("1f8b08040000000000ff06004243") + b"payload"
+    monkeypatch.setattr(igv_tracks, "download", lambda url, dest: pathlib.Path(dest).write_bytes(content))
+
+    def fake_tabix(path, preset):
+        assert preset == "vcf"
+        assert pathlib.Path(path).read_bytes() == content
+        assert not (pathlib.Path(path).parent / "download").exists()  # moved, not copied
+        pathlib.Path(f"{path}.tbi").write_bytes(b"tbi")
+        return f"{path}.tbi"
+
+    monkeypatch.setattr(igv_tracks, "tabix_index", fake_tabix)
+    uploads = []
+    monkeypatch.setattr("radiant.tasks.utils.upload_s3_file", lambda path, uri: uploads.append(uri) or uri)
+
+    summary = build_igv_track("gnomad_sv", "s3://bucket/igv", work_dir=str(tmp_path))
+
+    assert uploads == [
+        "s3://bucket/igv/gnomad.v4.1.sv.sites.vcf.gz",
+        "s3://bucket/igv/gnomad.v4.1.sv.sites.vcf.gz.tbi",
+    ]
+    assert summary["features"] == 0
+    assert summary["file_bytes"] == len(content)
+
+
+def test_a_gff3_track_with_no_feature_fails_before_its_upload(tmp_path, monkeypatch, cat_as_bgzip):
+    """Every row skipped (here all ClinGen locations are "tbd", as after a column change upstream): the track
+    fails instead of publishing a header-only file over the good one."""
+    rows = "#Gene Symbol\tGene ID\tcytoBand\tGenomic Location\nMOCK1\t1\t1p36\ttbd\nMOCK2\t2\t2p1\ttbd\n"
+    monkeypatch.setattr(igv_tracks, "download", lambda url, dest: pathlib.Path(dest).write_text(rows))
+    uploads = []
+    monkeypatch.setattr("radiant.tasks.utils.upload_s3_file", lambda path, uri: uploads.append(uri) or uri)
+
+    with pytest.raises(IgvTrackError, match="clingen_gene: no feature converted"):
+        build_igv_track("clingen_gene", "s3://bucket/igv/", work_dir=str(tmp_path))
+    assert uploads == []

@@ -118,7 +118,8 @@ dag_params = {
         description=(
             "Rebuild the public IGV tracks (ClinVar, DGV, gnomAD SV/CNV, ClinGen, UCSC repeats, ...) by "
             "triggering radiant-import-igv-tracks. Off by default: the re-annotation DAG triggers this one and "
-            "must not rebuild the files each time."
+            "must not rebuild the files each time. A failed track fails this run after the tables are loaded: "
+            "retry the track in radiant-import-igv-tracks, not this import."
         ),
         type="boolean",
     ),

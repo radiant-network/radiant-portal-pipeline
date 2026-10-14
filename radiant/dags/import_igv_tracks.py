@@ -8,23 +8,18 @@ docs/import_igv_tracks.md.
 """
 
 import os
-import re
 
 from airflow import DAG
 from airflow.decorators import task
 from airflow.models import Param
 
 from radiant.dags import DEFAULT_ARGS, ICEBERG_NAMESPACE, IS_AWS, NAMESPACE, ECSEnv, load_docs_md
-from radiant.tasks.open_data.igv_tracks import IGV_TRACK_SOURCES
+from radiant.tasks.open_data.igv_tracks import IGV_TRACK_SOURCES, IGV_TRACKS_PREFIX_ENV, check_igv_tracks_prefix
 
 if IS_AWS:
     from radiant.dags.operators import ecs as operators
 else:
     from radiant.dags.operators import k8s as operators
-
-IGV_TRACKS_PREFIX_ENV = "RADIANT_IGV_TRACKS_S3_PREFIX"
-# Bucket + key characters only: on ECS the prefix is spliced into a single-quoted shell command.
-IGV_TRACKS_PREFIX_RE = re.compile(r"^s3://[A-Za-z0-9.\-]+(/[A-Za-z0-9._\-/]*)?$")
 
 dag_params = {
     "igv_tracks_prefix": Param(
@@ -55,12 +50,7 @@ with DAG(
 
     @task(task_id="list_igv_tracks", task_display_name="[PyOp] List IGV Tracks")
     def list_igv_tracks(params: dict | None = None) -> list[dict[str, str]]:
-        prefix = (params or {}).get("igv_tracks_prefix") or ""
-        if not IGV_TRACKS_PREFIX_RE.match(prefix):
-            raise ValueError(
-                f"igv_tracks_prefix must be an s3:// URI of letters, digits and . _ - / only, got {prefix!r}: "
-                f"set the param or {IGV_TRACKS_PREFIX_ENV}"
-            )
+        prefix = check_igv_tracks_prefix((params or {}).get("igv_tracks_prefix"))
         return [{"track_id": track_id, "igv_tracks_prefix": prefix} for track_id in IGV_TRACK_SOURCES]
 
     tracks = list_igv_tracks()

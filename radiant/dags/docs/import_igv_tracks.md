@@ -32,7 +32,9 @@ next to the previous index until the retry rebuilds the track, and IGV reads wro
 the meantime. A rerun of the failed track fixes it.
 
 The four VCFs are already BGZF upstream, so they are copied as is and only indexed. A row of a UCSC table that
-cannot be read fails its track with the row number; a byte that is not UTF-8 passes through unchanged.
+cannot be read fails its track with the row number; a byte that is not UTF-8 passes through unchanged. A GFF3
+track with no feature at all (e.g. after an upstream format change) fails before its upload, so the previous
+file stays in place.
 
 ## Tracks
 
@@ -55,8 +57,8 @@ names. Change both sides together.
 
 ## Differences with the Qlin DAG
 
-The content is the same. These changes make the files valid for tabix and GFF3 (the same list as the
-docstring of radiant/tasks/open_data/igv_tracks.py; keep the two in sync):
+The content is the same. These changes make the files valid for tabix and GFF3 (the docstring of
+radiant/tasks/open_data/igv_tracks.py points here):
 
 - Every GFF3 file is sorted on chromosome and start. The UCSC tables are ordered by bin, not by start.
 - The VCFs are indexed as VCF. Qlin indexes them with the GFF preset.
@@ -90,5 +92,9 @@ device"), not with a broken pipe.
 triggers this DAG after its other sources and waits for it; the prefix comes from this DAG's default. It is
 off by default because **radiant-reannotate-open-data** triggers the import and must not rebuild the files
 each time.
+
+A failed track fails this run, and so the import run too. The open-data tables of that import are already
+loaded and recorded, so do not rerun the import: clear the failed **build_igv_track** instance here, or
+trigger this DAG alone.
 
 > Example conf for radiant-import-open-data: {"import_igv_tracks": true}

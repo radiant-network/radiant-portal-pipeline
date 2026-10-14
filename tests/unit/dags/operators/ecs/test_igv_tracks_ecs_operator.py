@@ -10,7 +10,8 @@ def test_get_build_track():
         "RADIANT_TASK_OPERATOR_TASK_DEFINITION": "radiant-operator",
         "RADIANT_TASK_OPERATOR_LOG_GROUP": "apps-qa/radiant-etl",
         "RADIANT_TASK_OPERATOR_LOG_REGION": "us-east-1",
-        "RADIANT_TASK_OPERATOR_LOG_PREFIX": "ecs/radiant-operator-qa-etl-container",
+        "RADIANT_TASK_OPERATOR_LOG_PREFIX": "ecs/radiant-operator-mock-etl-container",
+        "RADIANT_ENVIRONMENT": "mock",
     }
     ecs_env = SimpleNamespace(ECS_CLUSTER="my-cluster", ECS_SUBNETS=["subnet-1"], ECS_SECURITY_GROUPS=["sg-1"])
     with patch.dict(os.environ, fake_env, clear=True):
@@ -27,7 +28,8 @@ def test_get_build_track():
     assert kwargs["map_index_template"] == "{{ params.track_id }}"
 
     (container,) = kwargs["overrides"]["containerOverrides"]
-    assert container["name"] == "radiant-operator-qa-etl-container"
+    # Named after RADIANT_ENVIRONMENT, like the terraform task definition: a fixed name breaks every other env.
+    assert container["name"] == "radiant-operator-mock-etl-container"
     (command,) = container["command"]
     assert command.startswith("python /opt/radiant/build_igv_track.py ")
     assert "--track_id '{{ params.track_id }}'" in command
@@ -40,6 +42,10 @@ def test_get_build_track():
 
 def test_ephemeral_storage_is_overridable():
     ecs_env = SimpleNamespace(ECS_CLUSTER="c", ECS_SUBNETS=["s"], ECS_SECURITY_GROUPS=["g"])
-    with patch.dict(os.environ, {"RADIANT_TASK_OPERATOR_IGV_TRACKS_EPHEMERAL_STORAGE_GIB": "50"}, clear=True):
+    with patch.dict(
+        os.environ,
+        {"RADIANT_TASK_OPERATOR_IGV_TRACKS_EPHEMERAL_STORAGE_GIB": "50", "RADIANT_ENVIRONMENT": "mock"},
+        clear=True,
+    ):
         partial = IgvTracks.get_build_track(ecs_env=ecs_env)
     assert partial.kwargs["overrides"]["ephemeralStorage"] == {"sizeInGiB": 50}
