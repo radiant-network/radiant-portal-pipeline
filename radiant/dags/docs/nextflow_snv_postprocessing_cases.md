@@ -20,7 +20,8 @@ clinical model, and turning its outputs into portal tasks.
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 
 It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
-daily and moves the case statuses around it. Run it by hand only for a targeted rerun. The
+daily with no tenant filter (`tenants` empty), and moves the case statuses around it. Run
+it by hand only for a targeted rerun: the `tenants` default below applies to a manual run only. The
 parameters below exist for targeted reruns and for configuration, not for normal operation.
 
 ---

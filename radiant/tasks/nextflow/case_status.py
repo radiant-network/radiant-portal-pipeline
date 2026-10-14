@@ -12,7 +12,6 @@ importable from plain unit tests.
 """
 
 import logging
-import os
 from collections.abc import Callable
 
 from pydantic import BaseModel
@@ -28,19 +27,6 @@ LOGGER = logging.getLogger(__name__)
 SUBMITTED = "submitted"
 PROCESSING = "processing"
 IN_PROGRESS = "in_progress"
-
-# The tenant allow-lists of the three "from Cases" DAGs, in their order of precedence. Discovery
-# filters with the same lists, so a case the DAG would exclude as `tenant_not_granted` is not
-# counted as work waiting.
-SNV_TENANTS_ENVS = ("NEXTFLOW_POSTPROCESSING_TENANTS",)
-CNV_TENANTS_ENVS = ("NEXTFLOW_CNV_TENANTS", "NEXTFLOW_POSTPROCESSING_TENANTS")
-QC_TENANTS_ENVS = ("NEXTFLOW_QC_TENANTS", "NEXTFLOW_POSTPROCESSING_TENANTS")
-
-
-def tenants_from_env(*env_names: str) -> list[str]:
-    """The first of `env_names` that is set, split on commas. Empty means "do not filter"."""
-    raw = next((os.getenv(name) for name in env_names if os.getenv(name)), "")
-    return [tenant.strip() for tenant in raw.split(",") if tenant.strip()]
 
 
 class CaseStatus(BaseModel):
@@ -77,7 +63,7 @@ def cases_with_work(
 
     The Nextflow candidates go through the DAGs' own `select_cases`, lenient as on a scheduled
     run, and the QC ones through its DRAGEN metrics probe too (`locate_qc`). A case they exclude
-    (sequencing pending, no gVCF, tenant not granted, metrics not found...) is not counted:
+    (sequencing pending, no gVCF, metrics not found...) is not counted:
     it would sit in `processing` with nothing running for it, and never reach `in_progress`.
     """
     qc = select_qc_cases(qc_rows, strict=False)
@@ -93,7 +79,7 @@ def cases_with_work(
     return {case_id for case_ids in selected.values() for case_id in case_ids}
 
 
-def plan_processing(status_rows: list[dict], waiting: set[int], tenants: list[str]) -> list[dict]:
+def plan_processing(status_rows: list[dict], waiting: set[int]) -> list[dict]:
     """The `submitted` cases to move to `processing`, one `{tenant, case_ids}` per tenant.
 
     The cases with work waiting, and also the ones that already have variants: work done before
@@ -103,12 +89,11 @@ def plan_processing(status_rows: list[dict], waiting: set[int], tenants: list[st
     cases = [CaseStatus(**row) for row in status_rows]
     return _by_tenant(
         [c for c in cases if c.status_code == SUBMITTED and (c.case_id in waiting or c.has_variants)],
-        tenants,
         PROCESSING,
     )
 
 
-def plan_in_progress(status_rows: list[dict], waiting: set[int], tenants: list[str]) -> list[dict]:
+def plan_in_progress(status_rows: list[dict], waiting: set[int]) -> list[dict]:
     """Every `processing` case whose pipelines are all done and that has variant data.
 
     `waiting` is discovery run again after the pipelines: a case still in it has a pipeline
@@ -128,10 +113,12 @@ def plan_in_progress(status_rows: list[dict], waiting: set[int], tenants: list[s
         LOGGER.warning(
             "%d processing case(s) with no pipeline left to run but no variant data: %s", len(no_variants), no_variants
         )
-    return _by_tenant([c for c in cases if c.case_id not in waiting and c.has_variants], tenants, IN_PROGRESS)
+    return _by_tenant([c for c in cases if c.case_id not in waiting and c.has_variants], IN_PROGRESS)
 
 
-def _by_tenant(cases: list[CaseStatus], tenants: list[str], target: str) -> list[dict]:
+def _by_tenant(cases: list[CaseStatus], target: str) -> list[dict]:
+    """One `{tenant, case_ids}` per tenant. No allow-list: a tenant the service account is not
+    granted on gets a 403 from the portal, and `change_tenant_status` skips it."""
     by_tenant: dict[str, list[int]] = {}
     for case in cases:
         by_tenant.setdefault(case.tenant_code, []).append(case.case_id)
@@ -139,16 +126,6 @@ def _by_tenant(cases: list[CaseStatus], tenants: list[str], target: str) -> list
     batches = []
     for tenant in sorted(by_tenant):
         case_ids = sorted(set(by_tenant[tenant]))
-        if tenants and tenant not in tenants:
-            LOGGER.warning(
-                "tenant '%s' is not in the allow-list %s: %d case(s) left out of %s: %s",
-                tenant,
-                tenants,
-                len(case_ids),
-                target,
-                case_ids,
-            )
-            continue
         LOGGER.info("tenant '%s': %d case(s) to move to %s: %s", tenant, len(case_ids), target, case_ids)
         batches.append({"tenant": tenant, "case_ids": case_ids})
     return batches

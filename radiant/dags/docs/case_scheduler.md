@@ -18,9 +18,9 @@ still be run by hand for a targeted rerun, which leaves the case statuses alone.
 
 ## The only status changes
 
-| From | To | When | Task |
-|---|---|---|---|
-| `submitted` | `processing` | the case has work waiting, or already has variant data | `set_processing` |
+| From         | To            | When                                                                        | Task             |
+| ------------ | ------------- | --------------------------------------------------------------------------- | ---------------- |
+| `submitted`  | `processing`  | the case has work waiting, or already has variant data                      | `set_processing` |
 | `processing` | `in_progress` | no pipeline has work waiting for the case any more, and it has variant data | `evaluate_cases` |
 
 Each change is sent to `PATCH /{tenant}/cases/status` with the status it is expected to be in.
@@ -33,8 +33,8 @@ The portal checks it under a row lock: a case a geneticist moved in the meantime
 The union of:
 
 - the cases each "from Cases" DAG would run: its own `pending_*_select.sql` query and its own
-  `select_cases`, with the tenant allow-list that DAG uses, plus, for QC, its S3 probe for the
-  DRAGEN metrics (`locate_metrics`, under `$NEXTFLOW_INPUTS_ROOT`). A case that DAG would exclude
+  `select_cases`, over every tenant (as that DAG runs when started from here), plus, for QC, its S3
+  probe for the DRAGEN metrics (`locate_metrics`, under `$NEXTFLOW_INPUTS_ROOT`). A case that DAG would exclude
   (sequencing pending, no gVCF, tenant not granted, metrics not found...) is **not** counted: it
   would sit in `processing` with nothing running for it, and never reach `in_progress`;
 - the cases in the import delta view, `staging_sequencing_experiment_delta`.
@@ -73,10 +73,18 @@ failed. Look at the failed task and at the child runs.
 
 ## Tenants
 
-Status changes are sent once per tenant, as one mapped task each. A tenant missing from
-`status_tenants` keeps its cases' statuses and is logged. A tenant the portal refuses with a 403
-(the service account is not granted `can_ingest_data` at every lab, `'*'`, of that tenant) is
-logged and its task **skipped**, not failed.
+Every tenant is discovered, and the three "from Cases" DAGs are started
+with an empty `tenants` (no filtering), so they run exactly what discovery counted. The import
+takes every tenant's delta.
+
+Status changes are sent once per tenant, as one mapped task each. A tenant the portal refuses with
+a 403 (the service account is not granted `can_ingest_data` at every lab, `'*'`, of that tenant)
+is logged and its task **skipped**, not failed; the other tenants carry on.
+
+The trade-off, accepted on purpose: for a tenant the service account is not granted on, the
+"from Cases" DAGs still run Nextflow on its cases, and their registration (`register_tasks`) gets
+the 403 only at the end. Nothing is registered, so those cases stay eligible and are processed
+again on every run until the grant is given. Grant `can_ingest_data` at `'*'` in every tenant.
 
 ## Notification
 
@@ -96,12 +104,12 @@ skipped or failed never holds back another tenant's email:
 
 The log holds one line per laboratory:
 
-| Status | Meaning | Task outcome |
-|---|---|---|
-| **sent** | Email sent with the manifest attached | success |
-| **skipped_no_contact** | The organization has no `notification_emails` | warning, success |
+| Status                   | Meaning                                        | Task outcome     |
+| ------------------------ | ---------------------------------------------- | ---------------- |
+| **sent**                 | Email sent with the manifest attached          | success          |
+| **skipped_no_contact**   | The organization has no `notification_emails`  | warning, success |
 | **skipped_no_documents** | Nothing registered for that laboratory's cases | warning, success |
-| **failed** | The SMTP relay refused the email | task fails |
+| **failed**               | The SMTP relay refused the email               | task fails       |
 
 > **A retry re-sends.** The portal keeps no record of what was emailed: clearing **notify_labs**
 > emails every laboratory of that tenant again. Clear one mapped instance, not the whole group.
@@ -114,14 +122,9 @@ its status, so it is **not** emailed again.
 
 ## Parameters
 
-| Param | Default | Meaning |
-|---|---|---|
-| `status_tenants` | `$NEXTFLOW_POSTPROCESSING_TENANTS` | Tenants the service account may change statuses in. Empty means no filtering. |
+| Param    | Default  | Meaning                                                                                                                             |
+| -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `notify` | **true** | Email the laboratories of the cases moved to `in_progress`. False still creates the case group, so **notify_cases** can send later. |
-
-Not `tenants`: the discovery tasks set that one to each "from Cases" DAG's own allow-list
-(`$NEXTFLOW_POSTPROCESSING_TENANTS`, `$NEXTFLOW_CNV_TENANTS`, `$NEXTFLOW_QC_TENANTS`), and a run
-conf key of that name would override them.
 
 ## Child runs
 

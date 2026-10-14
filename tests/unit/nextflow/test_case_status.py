@@ -91,7 +91,7 @@ def test_only_submitted_cases_with_work_or_variants_move_to_processing():
         status_row(4, status_code="processing"),  # already there
         status_row(5, status_code="processing", has_variants=True),
     ]
-    assert case_status.plan_processing(rows, waiting={1, 4}, tenants=[]) == [{"tenant": "radiant", "case_ids": [1, 2]}]
+    assert case_status.plan_processing(rows, waiting={1, 4}) == [{"tenant": "radiant", "case_ids": [1, 2]}]
 
 
 def test_every_done_processing_case_with_variants_moves_to_in_progress_not_only_this_runs():
@@ -100,7 +100,7 @@ def test_every_done_processing_case_with_variants_moves_to_in_progress_not_only_
         status_row(2, status_code="processing"),  # no variants imported yet: stays
         status_row(3, status_code="submitted", has_variants=True),  # its tenant refused processing
     ]
-    assert case_status.plan_in_progress(rows, waiting=set(), tenants=[]) == [{"tenant": "radiant", "case_ids": [1]}]
+    assert case_status.plan_in_progress(rows, waiting=set()) == [{"tenant": "radiant", "case_ids": [1]}]
 
 
 def test_a_case_with_a_pipeline_still_pending_stays_processing_even_with_variants(caplog):
@@ -111,7 +111,7 @@ def test_a_case_with_a_pipeline_still_pending_stays_processing_even_with_variant
         status_row(2, status_code="processing", has_variants=True),
     ]
     with caplog.at_level(logging.INFO):
-        batches = case_status.plan_in_progress(rows, waiting={2}, tenants=[])
+        batches = case_status.plan_in_progress(rows, waiting={2})
     assert batches == [{"tenant": "radiant", "case_ids": [1]}]
     assert "kept in processing, a pipeline still has work for them: [2]" in caplog.text
 
@@ -119,7 +119,7 @@ def test_a_case_with_a_pipeline_still_pending_stays_processing_even_with_variant
 def test_a_done_case_with_no_variants_stays_processing_and_is_reported(caplog):
     rows = [status_row(1, status_code="processing", has_variants=False)]
     with caplog.at_level(logging.WARNING):
-        assert case_status.plan_in_progress(rows, waiting=set(), tenants=[]) == []
+        assert case_status.plan_in_progress(rows, waiting=set()) == []
     assert "no pipeline left to run but no variant data: [1]" in caplog.text
 
 
@@ -129,7 +129,7 @@ def test_has_variants_is_read_from_the_query_s_integer():
         status_row(1, status_code="processing", has_variants=1),
         status_row(2, status_code="processing", has_variants=0),
     ]
-    assert case_status.plan_in_progress(rows, waiting=set(), tenants=[]) == [{"tenant": "radiant", "case_ids": [1]}]
+    assert case_status.plan_in_progress(rows, waiting=set()) == [{"tenant": "radiant", "case_ids": [1]}]
 
 
 def test_changes_are_batched_once_per_tenant():
@@ -138,31 +138,10 @@ def test_changes_are_batched_once_per_tenant():
         status_row(1, tenant_code="qlin"),
         status_row(2, tenant_code="radiant"),
     ]
-    assert case_status.plan_processing(rows, waiting={1, 2, 3}, tenants=[]) == [
+    assert case_status.plan_processing(rows, waiting={1, 2, 3}) == [
         {"tenant": "qlin", "case_ids": [1]},
         {"tenant": "radiant", "case_ids": [2, 3]},
     ]
-
-
-def test_a_tenant_outside_the_allow_list_is_skipped_and_logged(caplog):
-    rows = [status_row(1, tenant_code="radiant"), status_row(2, tenant_code="qlin")]
-    with caplog.at_level(logging.WARNING):
-        batches = case_status.plan_processing(rows, waiting={1, 2}, tenants=["radiant"])
-    assert batches == [{"tenant": "radiant", "case_ids": [1]}]
-    assert "tenant 'qlin' is not in the allow-list" in caplog.text
-
-
-def test_tenants_from_env_takes_the_first_set_variable(monkeypatch):
-    monkeypatch.setenv("NEXTFLOW_CNV_TENANTS", "")
-    monkeypatch.setenv("NEXTFLOW_POSTPROCESSING_TENANTS", " radiant , qlin,")
-    assert case_status.tenants_from_env(*case_status.CNV_TENANTS_ENVS) == ["radiant", "qlin"]
-    monkeypatch.setenv("NEXTFLOW_CNV_TENANTS", "cnv-only")
-    assert case_status.tenants_from_env(*case_status.CNV_TENANTS_ENVS) == ["cnv-only"]
-
-
-def test_tenants_from_env_is_empty_when_nothing_is_set(monkeypatch):
-    monkeypatch.delenv("NEXTFLOW_POSTPROCESSING_TENANTS", raising=False)
-    assert case_status.tenants_from_env(*case_status.SNV_TENANTS_ENVS) == []
 
 
 def test_change_tenant_status_sends_the_batch(monkeypatch):
