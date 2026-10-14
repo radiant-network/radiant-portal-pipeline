@@ -19,8 +19,8 @@ discover_scope -> select_cases -> fetch_phenotypes -> resolve_cases -> generate_
 ```
 
 It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
-daily with no tenant filter (`tenants` empty), and moves the case statuses around it. Run
-it by hand only for a targeted rerun: the `tenants` default below applies to a manual run only. The
+daily with its own `excluded_tenants`, and moves the case statuses around it. Run
+it by hand only for a targeted rerun: the `excluded_tenants` default below applies to a manual run only. The
 parameters exist for targeted reruns and for configuration, not for normal operation.
 
 ## Parameters
@@ -28,7 +28,7 @@ parameters exist for targeted reruns and for configuration, not for normal opera
 | Param | Default | Meaning |
 |---|---|---|
 | `task_ids` | empty | `alignment_germline_variant_calling` task ids, for a targeted rerun. Empty means "find everything". |
-| `tenants` | `$NEXTFLOW_CNV_TENANTS`, else `$NEXTFLOW_POSTPROCESSING_TENANTS` | Tenants the portal has granted this service account `ingest_data` on. Empty means no filtering. |
+| `excluded_tenants` | `$RADIANT_ETL_EXCLUDED_TENANTS` | Tenants left out of case processing, reported as `tenant_excluded`. Empty excludes none. |
 | `dry_run` | **false** | Passed to the batch PATCH. True validates and writes nothing. |
 
 **`dry_run` on a scheduled run is a trap.** Nothing gets registered, so every case stays
@@ -86,7 +86,7 @@ A candidate that cannot be run is dropped with a reason and the rest continues.
 | `proband_count` | two different patients are marked proband on the case | no, fix the data |
 | `unsupported_strategy` | a strategy outside `{wgs, wxs, wes}`, or members spanning several | no |
 | `no_project_code` | `cases.project_id` did not resolve; the batch PATCH needs it | no |
-| `tenant_not_granted` | the tenant is not in `tenants` | no, grant it |
+| `tenant_excluded` | the tenant is in `excluded_tenants` | no, by configuration |
 
 If every candidate is excluded the run **skips**. A skipped run is not a failed one.
 
@@ -127,7 +127,7 @@ alongside the first.
 | `NEXTFLOW_OUTPUTS_ROOT` | -- | `collect_outputs` lists here (an `s3://` uri) |
 | `NEXTFLOW_INPUTS_MOUNT` | `/workspace/inputs` | the pod path the inputs bucket appears at |
 | `NEXTFLOW_OUTPUTS_MOUNT` | `/workspace/outputs` | the pod path the outputs bucket appears at |
-| `NEXTFLOW_CNV_TENANTS` | `$NEXTFLOW_POSTPROCESSING_TENANTS` | comma-separated default for the `tenants` param |
+| `RADIANT_ETL_EXCLUDED_TENANTS` | empty | comma-separated default for the `excluded_tenants` param, shared with the case scheduler and the other cases DAGs |
 
 ```
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/samplesheet.csv

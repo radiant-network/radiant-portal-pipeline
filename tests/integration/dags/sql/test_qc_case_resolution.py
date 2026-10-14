@@ -28,7 +28,7 @@ def _render(radiant_mapping, params=None):
     with open(os.path.join(_CLINICAL_SQL, DISCOVERY)) as f:
         return jinja2.Template(f.read()).render(
             mapping=radiant_mapping,
-            params=params if params is not None else {"task_ids": [], "tenants": []},
+            params=params if params is not None else {"task_ids": [], "excluded_tenants": []},
         )
 
 
@@ -89,18 +89,18 @@ def test_a_targeted_run_returns_the_whole_case(postgres_clinical_seeds, starrock
         starrocks_session,
         radiant_mapping,
         parameters={"task_ids": [TRIO_PROBAND_ALIGNMENT_TASK]},
-        params={"task_ids": [TRIO_PROBAND_ALIGNMENT_TASK], "tenants": []},
+        params={"task_ids": [TRIO_PROBAND_ALIGNMENT_TASK], "excluded_tenants": []},
     )
     assert {r["case_id"] for r in rows} == {TRIO_CASE_ID}
     assert {r["patient_id"] for r in rows} == {44, 45, 46}
 
 
-def test_an_ungranted_tenant_is_reported_not_hidden(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+def test_an_excluded_tenant_is_reported_not_hidden(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     rows = _discover(
         starrocks_session,
         radiant_mapping,
         TRIO_CASE_ID,
-        parameters={"tenants": ["some_other_tenant"]},
-        params={"task_ids": [], "tenants": ["some_other_tenant"]},
+        parameters={"excluded_tenants": ["radiant"]},
+        params={"task_ids": [], "excluded_tenants": ["radiant"]},
     )
-    assert rows and all(r["exclusion_reason"] == "tenant_not_granted" for r in rows)
+    assert rows and all(r["exclusion_reason"] == "tenant_excluded" for r in rows)

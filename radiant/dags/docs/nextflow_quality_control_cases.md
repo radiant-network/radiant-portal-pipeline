@@ -21,8 +21,8 @@ annotation.
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 
 It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
-daily with no tenant filter (`tenants` empty), and moves the case statuses around it. Run
-it by hand only for a targeted rerun: the `tenants` default below applies to a manual run only. The
+daily with its own `excluded_tenants`, and moves the case statuses around it. Run
+it by hand only for a targeted rerun: the `excluded_tenants` default below applies to a manual run only. The
 parameters exist for targeted reruns and for configuration, not for normal operation.
 
 ---
@@ -32,7 +32,7 @@ parameters exist for targeted reruns and for configuration, not for normal opera
 | Param | Default | Meaning |
 |:--|:--|:--|
 | **task_ids** | empty | alignment_germline_variant_calling task ids, for a targeted rerun. Empty means "find everything" |
-| **tenants** | $NEXTFLOW_QC_TENANTS, else $NEXTFLOW_POSTPROCESSING_TENANTS | Tenants the portal has granted this service account ingest_data on. Empty means no filtering |
+| **excluded_tenants** | $RADIANT_ETL_EXCLUDED_TENANTS | Tenants left out of case processing, reported as **tenant_excluded**. Empty excludes none |
 | **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing |
 
 > **dry_run on a scheduled run is a trap.** Nothing gets registered, so every case stays
@@ -108,7 +108,7 @@ A candidate that cannot be run is dropped with a reason and the rest continues.
 | **proband_count** | Two different patients are marked proband on the case | No, fix the data |
 | **unsupported_strategy** | A strategy outside {wgs, wxs, wes} | No |
 | **no_project_code** | cases.project_id did not resolve, and the batch PATCH needs it | No |
-| **tenant_not_granted** | The tenant is not in **tenants** | No, grant it |
+| **tenant_excluded** | The tenant is in **excluded_tenants** | No, by configuration |
 | **no_dragen_metrics** | No mapping_metrics.csv for the aliquot in any candidate directory | Until the metrics land |
 | **ambiguous_dragen_metrics** | The aliquot's metrics are in two candidate directories | No, fix the data |
 | **metrics_not_on_workspace** | The metrics are in a bucket the FSx mount does not import | No |
@@ -150,7 +150,7 @@ first.
 | **NEXTFLOW_OUTPUTS_ROOT** | — | **collect_outputs** lists here. An s3:// uri |
 | **NEXTFLOW_INPUTS_MOUNT** | /workspace/inputs | The pod path the inputs bucket appears at |
 | **NEXTFLOW_OUTPUTS_MOUNT** | /workspace/outputs | The pod path the outputs bucket appears at |
-| **NEXTFLOW_QC_TENANTS** | $NEXTFLOW_POSTPROCESSING_TENANTS | Comma-separated default for the **tenants** param |
+| **RADIANT_ETL_EXCLUDED_TENANTS** | empty | Comma-separated default for the **excluded_tenants** param, shared with the case scheduler and the other cases DAGs |
 
 Each group — each child run — gets its own subdirectory, named after this run and the group
 index:

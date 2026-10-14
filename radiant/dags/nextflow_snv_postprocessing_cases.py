@@ -43,7 +43,7 @@ from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
+from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
 LOGGER = logging.getLogger(__name__)
@@ -67,17 +67,6 @@ PORTAL_CONN_ID = "radiant_api_conn"
 INPUTS_SUBDIR = "snv-runs"
 OUTPUTS_SUBDIR = "snv"
 
-# Tenants the service account has been granted `ingest_data` on, comma separated. Empty
-# means "do not filter", which is right for a single-tenant deployment and wrong the moment
-# a second tenant exists: an ungranted tenant's cases get a flat 403 from the batch PATCH
-# *after* the pipeline has spent hours on them, and stay eligible, so the next run does it
-# again. Filtering here turns that into a line in the exclusion report.
-TENANTS_ENV = "NEXTFLOW_POSTPROCESSING_TENANTS"
-
-
-def _default_tenants() -> list[str]:
-    return [tenant.strip() for tenant in os.getenv(TENANTS_ENV, "").split(",") if tenant.strip()]
-
 
 dag_params = {
     "task_ids": Param(
@@ -91,15 +80,15 @@ dag_params = {
             "annotated. A task shared by several cases runs all of them."
         ),
     ),
-    "tenants": Param(
-        _default_tenants(),
+    "excluded_tenants": Param(
+        excluded_tenants_from_env(),
         type="array",
         items={"type": "string"},
-        title="Tenant allow-list",
+        title="Excluded tenants",
         description=(
-            "Tenants the portal has granted this service account `ingest_data` on. Cases in any "
-            "other tenant are excluded before the pipeline runs, rather than failing at "
-            f"registration. Defaults to ${TENANTS_ENV}; empty means no filtering."
+            "Tenants left out of case processing: their cases are excluded before the pipeline "
+            f"runs, as `tenant_excluded`. Defaults to ${EXCLUDED_TENANTS_ENV}; empty excludes none. "
+            "The case scheduler passes its own."
         ),
     ),
     "dry_run": Param(
@@ -159,7 +148,7 @@ def nextflow_snv_postprocessing_cases():
         sql="./sql/clinical/pending_annotation_select.sql",
         parameters={
             "task_ids": "{{ params.task_ids }}",
-            "tenants": "{{ params.tenants }}",
+            "excluded_tenants": "{{ params.excluded_tenants }}",
         },
         output_processor=rows_output_processor,
         do_xcom_push=True,

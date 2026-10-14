@@ -30,7 +30,7 @@ def test_it_finds_its_own_work(dag_bag):
     # The control DAG starts it; a schedule of its own would race it.
     assert dag.schedule_interval is None
     assert dag.get_task("discover_scope").upstream_list == []
-    assert set(dag.params) == {"task_ids", "tenants", "dry_run"}
+    assert set(dag.params) == {"task_ids", "excluded_tenants", "dry_run"}
     assert dag.params["task_ids"] == []
     assert dag.params["dry_run"] is False
 

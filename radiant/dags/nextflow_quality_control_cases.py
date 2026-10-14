@@ -35,7 +35,7 @@ from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
+from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
 LOGGER = logging.getLogger(__name__)
@@ -50,11 +50,6 @@ DEFAULT_OUTPUTS_MOUNT = "/workspace/outputs"
 OUTPUT_POLL_ATTEMPTS = max(1, int(os.getenv("NEXTFLOW_OUTPUT_POLL_ATTEMPTS", "10")))
 OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "30"))
 
-# Tenants the service account has `ingest_data` on. Defaults to the post-processing list: it
-# is the same service account, and a grant for one registration is a grant for the other.
-TENANTS_ENV = "NEXTFLOW_QC_TENANTS"
-FALLBACK_TENANTS_ENV = "NEXTFLOW_POSTPROCESSING_TENANTS"
-
 PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-quality-control"
 
 # Under the shared roots, apart from post-processing (`snv-runs/`, `snv/`).
@@ -63,11 +58,6 @@ OUTPUTS_SUBDIR = "qc"
 
 # The launcher accepts this many concurrent runs; each has its own launch dir and outdir.
 LAUNCHER_MAX_ACTIVE_RUNS = 5
-
-
-def _default_tenants() -> list[str]:
-    raw = os.getenv(TENANTS_ENV) or os.getenv(FALLBACK_TENANTS_ENV, "")
-    return [tenant.strip() for tenant in raw.split(",") if tenant.strip()]
 
 
 dag_params = {
@@ -82,15 +72,15 @@ dag_params = {
             "QC'd. A task shared by several cases runs all of them."
         ),
     ),
-    "tenants": Param(
-        _default_tenants(),
+    "excluded_tenants": Param(
+        excluded_tenants_from_env(),
         type="array",
         items={"type": "string"},
-        title="Tenant allow-list",
+        title="Excluded tenants",
         description=(
-            "Tenants the portal has granted this service account `ingest_data` on. Cases in any "
-            "other tenant are excluded before the pipeline runs, rather than failing at "
-            f"registration. Defaults to ${TENANTS_ENV}, then ${FALLBACK_TENANTS_ENV}; empty means no filtering."
+            "Tenants left out of case processing: their cases are excluded before the pipeline "
+            f"runs, as `tenant_excluded`. Defaults to ${EXCLUDED_TENANTS_ENV}; empty excludes none. "
+            "The case scheduler passes its own."
         ),
     ),
     "dry_run": Param(
@@ -157,7 +147,7 @@ def nextflow_quality_control_cases():
         sql="./sql/clinical/pending_quality_control_select.sql",
         parameters={
             "task_ids": "{{ params.task_ids }}",
-            "tenants": "{{ params.tenants }}",
+            "excluded_tenants": "{{ params.excluded_tenants }}",
         },
         output_processor=rows_output_processor,
         do_xcom_push=True,

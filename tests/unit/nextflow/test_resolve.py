@@ -178,8 +178,9 @@ def test_a_run_may_span_several_tenants(trio_rows, singleton_rows):
     assert tenants_of(families) == ["other", "radiant"]
 
 
-def test_an_ungranted_tenant_is_excluded_before_the_pipeline_runs(singleton_rows):
-    """A 403 after hours of WGS is the expensive way to learn this."""
-    singleton_rows[0]["exclusion_reason"] = "tenant_not_granted"
+def test_an_excluded_tenant_is_left_out_before_the_pipeline_runs(singleton_rows):
+    """Reported with its reason, so the log says why the case never ran."""
+    singleton_rows[0]["exclusion_reason"] = "tenant_excluded"
     (excluded,) = select_cases(singleton_rows).excluded
-    assert "403" in excluded.detail
+    assert excluded.reason == "tenant_excluded"
+    assert "RADIANT_ETL_EXCLUDED_TENANTS" in excluded.detail

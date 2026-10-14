@@ -20,8 +20,8 @@ clinical model, and turning its outputs into portal tasks.
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 
 It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
-daily with no tenant filter (`tenants` empty), and moves the case statuses around it. Run
-it by hand only for a targeted rerun: the `tenants` default below applies to a manual run only. The
+daily with its own `excluded_tenants`, and moves the case statuses around it. Run
+it by hand only for a targeted rerun: the `excluded_tenants` default below applies to a manual run only. The
 parameters below exist for targeted reruns and for configuration, not for normal operation.
 
 ---
@@ -31,7 +31,7 @@ parameters below exist for targeted reruns and for configuration, not for normal
 | Param | Default | Meaning |
 |:--|:--|:--|
 | **task_ids** | empty | alignment_germline_variant_calling task ids, for a targeted rerun. Empty means "find everything" |
-| **tenants** | $NEXTFLOW_POSTPROCESSING_TENANTS | Tenants the portal has granted this service account ingest_data on. Empty means no filtering |
+| **excluded_tenants** | $RADIANT_ETL_EXCLUDED_TENANTS | Tenants left out of case processing, reported as **tenant_excluded**. Empty excludes none |
 | **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing |
 
 > **dry_run on a scheduled run is a trap.** A dry run registers nothing, so every case stays
@@ -89,7 +89,7 @@ one; grep its task log for "excluded".
 | **proband_count** | Two different patients are marked proband on the case | No, fix the data |
 | **unsupported_strategy** | A strategy outside {wgs, wxs, wes}, or several within one case | No |
 | **no_project_code** | cases.project_id did not resolve, and the batch PATCH needs it to look the case up | No |
-| **tenant_not_granted** | The tenant is not in **tenants**. Caught here rather than as a 403 after hours of pipeline | No, grant it |
+| **tenant_excluded** | The tenant is in **excluded_tenants** | No, by configuration |
 
 The two pending reasons are normal traffic, not errors. A member whose newest experiment has
 no alignment yet makes the case **wait**, rather than run against the superseded one and
@@ -115,7 +115,7 @@ Both roots are environment, not params:
 | **NEXTFLOW_OUTPUTS_ROOT** | — | **collect_outputs** lists here. An s3:// uri |
 | **NEXTFLOW_INPUTS_MOUNT** | /workspace/inputs | The pod path the inputs bucket appears at |
 | **NEXTFLOW_OUTPUTS_MOUNT** | /workspace/outputs | The pod path the outputs bucket appears at |
-| **NEXTFLOW_POSTPROCESSING_TENANTS** | empty | Comma-separated default for the **tenants** param |
+| **RADIANT_ETL_EXCLUDED_TENANTS** | empty | Comma-separated default for the **excluded_tenants** param, shared with the case scheduler and the other cases DAGs |
 
 Each root gets a subdirectory named after the run:
 
@@ -229,7 +229,7 @@ The grant is client_credentials — no browser, no device approval.
 > — tenant access plus the ingest_data action — not against realm roles, so a service-account
 > client that has not been granted those receives a flat 403 before any validation runs. If
 > **register_tasks** fails with a 403 and no error codes, that grant is what is missing, not
-> the payload — and the tenant should come out of **tenants** until it is fixed, so the
+> the payload — and the tenant should go into **excluded_tenants** until it is fixed, so the
 > pipeline stops spending hours on cases it cannot register.
 
 ---

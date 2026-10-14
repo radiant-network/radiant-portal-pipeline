@@ -69,26 +69,39 @@ def test_the_cases_dags_have_no_schedule_of_their_own(dag_bag):
         assert dag_bag.get_dag(dag_id).schedule_interval is None
 
 
-def test_discovery_uses_each_cases_dag_query_over_every_tenant(dag_bag):
-    """Only count what the DAG would actually run: same query, and no tenant filter, as the DAG
-    is started with none."""
+def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
+    """Only count what the DAG would actually run: same query, same excluded tenants."""
     dag = dag_bag.get_dag(DAG_ID)
     for task_id, cases_dag_id in DISCOVERY.items():
         discover = dag.get_task(task_id)
         assert discover.sql == dag_bag.get_dag(cases_dag_id).get_task("discover_scope").sql
-        assert discover.params["tenants"] == []
+        assert discover.parameters == {"excluded_tenants": "{{ params.excluded_tenants }}"}
+        # Inherited from the DAG, not set per task: a run conf `excluded_tenants` must reach it.
+        assert discover.params["excluded_tenants"] == dag.params["excluded_tenants"]
         assert discover.params["task_ids"] == []
     assert "staging_sequencing_experiment_delta" in dag.get_task("discover_import_cases").sql
 
 
-def test_the_cases_dags_are_started_with_no_tenant_filter(dag_bag):
-    """Their own `tenants` default would otherwise exclude cases discovery counted, which would
-    sit in `processing` with nothing running for them. An ungranted tenant gets a 403 instead."""
+def test_the_cases_dags_are_given_the_run_s_block_list(dag_bag):
+    """So each leaves out exactly the tenants discovery left out: a case discovery counted but the
+    DAG excluded would sit in `processing` with nothing running for it."""
     dag = dag_bag.get_dag(DAG_ID)
     for task_id, cases_dag_id in CASES_DAG_IDS.items():
-        assert dag.get_task(task_id).conf == {"tenants": []}
-        assert "tenants" in dag_bag.get_dag(cases_dag_id).params
+        assert dag.get_task(task_id).conf == {"excluded_tenants": "{{ params.excluded_tenants }}"}
+        assert "excluded_tenants" in dag_bag.get_dag(cases_dag_id).params
     assert not dag.get_task("trigger_import").conf
+
+
+def test_the_block_list_defaults_to_the_env_var(dag_bag, monkeypatch):
+    """One env var for the scheduler and the three cases DAGs, read when the DAGs are parsed."""
+    from radiant.dags import excluded_tenants_from_env
+
+    monkeypatch.setenv("RADIANT_ETL_EXCLUDED_TENANTS", " radiant , qlin,")
+    assert excluded_tenants_from_env() == ["radiant", "qlin"]
+    monkeypatch.delenv("RADIANT_ETL_EXCLUDED_TENANTS")
+    assert excluded_tenants_from_env() == []
+    for dag_id in (DAG_ID, *CASES_DAG_IDS.values()):
+        assert dag_bag.get_dag(dag_id).params["excluded_tenants"] == []
 
 
 def test_discover_cases_reads_every_discovery_and_the_statuses(dag_bag):
@@ -193,4 +206,4 @@ def test_a_failed_step_fails_the_run(dag_bag):
 
 
 def test_params(dag_bag):
-    assert set(dag_bag.get_dag(DAG_ID).params) == {"notify"}
+    assert set(dag_bag.get_dag(DAG_ID).params) == {"excluded_tenants", "notify"}

@@ -77,7 +77,7 @@ def test_dag_asks_for_nothing_it_can_work_out_itself(dag_bag):
     schema, so the tenant is read off the cases. What is left is intent: which tasks (none,
     normally), where writes are permitted, and whether to write at all."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert set(dag.params) == {"task_ids", "tenants", "dry_run"}
+    assert set(dag.params) == {"task_ids", "excluded_tenants", "dry_run"}
 
 
 def test_a_scheduled_run_actually_writes(dag_bag):
@@ -129,5 +129,5 @@ def test_the_queries_resolve_from_the_sql_search_path(dag_bag):
     # DagBag resolves template files at parse time, so `sql` is already the query itself.
     assert "{{ mapping.clinical_case }}" in dag.get_task("discover_scope").sql
     assert "{{ mapping.starrocks_hpo_term }}" in dag.get_task("fetch_phenotypes").sql
-    assert set(dag.get_task("discover_scope").parameters) == {"task_ids", "tenants"}
+    assert set(dag.get_task("discover_scope").parameters) == {"task_ids", "excluded_tenants"}
     assert set(dag.get_task("fetch_phenotypes").parameters) == {"case_ids"}

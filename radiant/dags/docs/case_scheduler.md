@@ -33,7 +33,7 @@ The portal checks it under a row lock: a case a geneticist moved in the meantime
 The union of:
 
 - the cases each "from Cases" DAG would run: its own `pending_*_select.sql` query and its own
-  `select_cases`, over every tenant (as that DAG runs when started from here), plus, for QC, its S3
+  `select_cases`, with the run's `excluded_tenants` (the list that DAG is given), plus, for QC, its S3
   probe for the DRAGEN metrics (`locate_metrics`, under `$NEXTFLOW_INPUTS_ROOT`). A case that DAG would exclude
   (sequencing pending, no gVCF, tenant not granted, metrics not found...) is **not** counted: it
   would sit in `processing` with nothing running for it, and never reach `in_progress`;
@@ -73,18 +73,17 @@ failed. Look at the failed task and at the child runs.
 
 ## Tenants
 
-Every tenant is discovered, and the three "from Cases" DAGs are started
-with an empty `tenants` (no filtering), so they run exactly what discovery counted. The import
-takes every tenant's delta.
+A block list, `excluded_tenants`: tenants left out of case processing. It defaults to `$RADIANT_ETL_EXCLUDED_TENANTS` (comma separated, empty excludes none) and can
+be overridden per run. Discovery reports an excluded tenant's cases as `tenant_excluded`, the
+scheduler passes the same list to the three "from Cases" DAGs so they leave out exactly the same
+tenants, and the status changes skip them. The import is not filtered: it takes every tenant's
+delta, but an excluded tenant's case statuses are still left alone.
 
-Status changes are sent once per tenant, as one mapped task each. A tenant the portal refuses with
-a 403 (the service account is not granted `can_ingest_data` at every lab, `'*'`, of that tenant)
-is logged and its task **skipped**, not failed; the other tenants carry on.
-
-The trade-off, accepted on purpose: for a tenant the service account is not granted on, the
-"from Cases" DAGs still run Nextflow on its cases, and their registration (`register_tasks`) gets
-the 403 only at the end. Nothing is registered, so those cases stay eligible and are processed
-again on every run until the grant is given. Grant `can_ingest_data` at `'*'` in every tenant.
+Status changes are sent once per tenant, as one mapped task each. A tenant that is not excluded
+but that the portal refuses with a 403 (the service account is not granted `can_ingest_data` at
+every lab, `'*'`, of that tenant) is logged and its task **skipped**, not failed; the other tenants
+carry on. The "from Cases" DAGs would still run Nextflow on its cases and fail at registration, so
+grant `can_ingest_data` at `'*'`, or add the tenant to `excluded_tenants`.
 
 ## Notification
 
@@ -122,9 +121,10 @@ its status, so it is **not** emailed again.
 
 ## Parameters
 
-| Param    | Default  | Meaning                                                                                                                             |
-| -------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `notify` | **true** | Email the laboratories of the cases moved to `in_progress`. False still creates the case group, so **notify_cases** can send later. |
+| Param              | Default                         | Meaning                                                                                                                             |
+| ------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `excluded_tenants` | `$RADIANT_ETL_EXCLUDED_TENANTS` | Tenants left out of case processing, see Tenants. Empty excludes none.                                                              |
+| `notify`           | **true**                        | Email the laboratories of the cases moved to `in_progress`. False still creates the case group, so **notify_cases** can send later. |
 
 ## Child runs
 

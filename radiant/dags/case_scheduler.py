@@ -30,7 +30,7 @@ from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.trigger_rule import TriggerRule
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
+from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
 from radiant.tasks.nextflow.case_status import IN_PROGRESS, PROCESSING
 from radiant.tasks.nextflow.paths import sanitize_run_tag
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
@@ -49,10 +49,10 @@ CASE_GROUP_PREFIX = "results"
 # The QC DAG's workspace root: its DRAGEN metrics probe only accepts directories under it.
 INPUTS_ROOT_ENV = "NEXTFLOW_INPUTS_ROOT"
 
-# No tenant allow-list: every tenant is discovered and processed, and the three "from Cases" DAGs
-# are started with an empty `tenants` (no filtering) so they run exactly what discovery counted.
-# A tenant the service account is not granted on gets a 403 from the portal, logged and skipped.
-NO_TENANT_FILTER = {"tenants": []}
+# The run's block list, passed to the three "from Cases" DAGs so they leave out exactly the tenants
+# discovery left out. A tenant that is not excluded but not granted to the service account gets a
+# 403 from the portal instead, logged and skipped.
+EXCLUDED_TENANTS_CONF = {"excluded_tenants": "{{ params.excluded_tenants }}"}
 
 # The status PATCH is guarded by the expected status, so a retry can only report
 # `updated: false` for what the first attempt already changed.
@@ -61,6 +61,17 @@ STATUS_RETRY_DELAY = datetime.timedelta(minutes=1)
 
 
 dag_params = {
+    "excluded_tenants": Param(
+        excluded_tenants_from_env(),
+        type="array",
+        items={"type": "string"},
+        title="Excluded tenants",
+        description=(
+            "Tenants left out of case processing: not discovered, not processed by the three "
+            '"from Cases" DAGs, and their case statuses are left alone. Defaults to '
+            f"${EXCLUDED_TENANTS_ENV}; empty excludes none."
+        ),
+    ),
     "notify": Param(
         True,
         type="boolean",
@@ -93,8 +104,8 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
     """The four "work waiting" queries, `{prefix}_{snv,cnv,qc,import}_cases`.
 
     Built once before the pipelines (`discover`) and once after (`rediscover`), so the question
-    asked both times cannot drift. Each "from Cases" DAG's own query, unfiltered, as that DAG
-    runs it when started from here.
+    asked both times cannot drift. Each "from Cases" DAG's own query, with the run's
+    `excluded_tenants`: the same block list this DAG passes to that DAG.
     """
 
     def query(name: str, display_name: str, sql: str):
@@ -105,8 +116,9 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
             output_processor=rows_output_processor,
             do_xcom_push=True,
             trigger_rule=trigger_rule,
-            # The `pending_*` queries read both; empty is a discovery run over every tenant.
-            params={"task_ids": [], **NO_TENANT_FILTER},
+            # `task_ids` empty, as on a discovery run; `excluded_tenants` is the DAG's param.
+            params={"task_ids": []},
+            parameters=EXCLUDED_TENANTS_CONF,
         )
 
     return [
@@ -164,10 +176,12 @@ def case_scheduler():
 
     @task(task_id="discover_cases", task_display_name="[PyOp] Select the submitted cases with work waiting")
     def discover_cases(snv_rows: Any, cnv_rows: Any, qc_rows: Any, import_rows: Any, status_rows: Any) -> Any:
+        from airflow.operators.python import get_current_context
+
         from radiant.tasks.nextflow.case_status import plan_processing
 
         waiting = _cases_with_work(snv_rows, cnv_rows, qc_rows, import_rows)
-        return plan_processing(status_rows, waiting)
+        return plan_processing(status_rows, waiting, get_current_context()["params"]["excluded_tenants"])
 
     @task(
         task_id="set_processing",
@@ -194,10 +208,12 @@ def case_scheduler():
         task_display_name="[PyOp] Select the processing cases that are done and have variants",
     )
     def select_ready_cases(snv_rows: Any, cnv_rows: Any, qc_rows: Any, import_rows: Any, status_rows: Any) -> Any:
+        from airflow.operators.python import get_current_context
+
         from radiant.tasks.nextflow.case_status import plan_in_progress
 
         still_waiting = _cases_with_work(snv_rows, cnv_rows, qc_rows, import_rows)
-        return plan_in_progress(status_rows, still_waiting)
+        return plan_in_progress(status_rows, still_waiting, get_current_context()["params"]["excluded_tenants"])
 
     @task(
         task_id="set_in_progress",
@@ -260,19 +276,19 @@ def case_scheduler():
         "trigger_snv_postprocessing",
         "[DAG] Nextflow SNV Post-processing (from Cases)",
         SNV_CASES_DAG_ID,
-        NO_TENANT_FILTER,
+        EXCLUDED_TENANTS_CONF,
     )
     trigger_cnv = _trigger(
         "trigger_cnv_postprocessing",
         "[DAG] Nextflow CNV Post-processing (from Cases)",
         CNV_CASES_DAG_ID,
-        NO_TENANT_FILTER,
+        EXCLUDED_TENANTS_CONF,
     )
     trigger_qc = _trigger(
         "trigger_quality_control",
         "[DAG] Nextflow Quality Control (from Cases)",
         QC_CASES_DAG_ID,
-        NO_TENANT_FILTER,
+        EXCLUDED_TENANTS_CONF,
     )
     # The import picks up what post-processing registered, so it waits for it, success or not.
     trigger_import = _trigger("trigger_import", "[DAG] Scheduled Import", IMPORT_DAG_ID)
