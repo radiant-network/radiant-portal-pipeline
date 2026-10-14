@@ -17,7 +17,7 @@
 -- decides eligibility.
 --
 -- The tenant is returned, not filtered on: clinical is one shared schema and `cases.id` is
--- unique across it. `params.tenants` is a grant list, not a scope.
+-- unique across it. `params.excluded_tenants` is a block list, not a scope.
 WITH germline_case AS (
     -- `revoke` excluded deliberately: a revoked case is often one left alone on purpose, and
     -- admitting it would resurrect every one of them nightly.
@@ -165,8 +165,8 @@ SELECT gc.case_id                      AS case_id,
            WHEN g.matches  IS NULL THEN 'no_gcnv'
            WHEN g.matches > 1      THEN 'ambiguous_gcnv'
            WHEN pr.code    IS NULL THEN 'no_project_code'
-           {% if params.tenants %}
-           WHEN gc.tenant_code NOT IN %(tenants)s THEN 'tenant_not_granted'
+           {% if params.excluded_tenants %}
+           WHEN gc.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'
            {% endif %}
            ELSE NULL
        END                             AS exclusion_reason

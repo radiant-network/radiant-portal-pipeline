@@ -13,7 +13,7 @@ _TEMPLATES = ["pending_annotation_select.sql", "case_phenotypes_select.sql"]
 
 # What Airflow puts in the Jinja context. The discovery query branches on both, so every
 # render has to say which branch it is exercising.
-_NO_PARAMS = {"task_ids": [], "tenants": []}
+_NO_PARAMS = {"task_ids": [], "excluded_tenants": []}
 
 
 def _render(filename: str, params: dict | None = None) -> str:
@@ -38,27 +38,29 @@ def test_every_mapping_key_used_exists(filename):
 
 
 def test_discovery_is_unscoped_by_default():
-    """A scheduled run supplies no ids and no tenants, and must then look at everything."""
+    """A scheduled run supplies no ids and excludes no tenant, and must then look at everything."""
     sql = _without_comments(_render("pending_annotation_select.sql"))
     assert "%(task_ids)s" not in sql
-    assert "%(tenants)s" not in sql
+    assert "%(excluded_tenants)s" not in sql
 
 
 def test_named_tasks_narrow_candidacy_not_membership():
     """`task_ids` restricts which cases become candidates. It must not reach the member
     rows, or a shared alignment task would return a family missing everyone else."""
-    sql = _without_comments(_render("pending_annotation_select.sql", {"task_ids": [1], "tenants": []}))
+    sql = _without_comments(_render("pending_annotation_select.sql", {"task_ids": [1], "excluded_tenants": []}))
     assert sql.count("%(task_ids)s") == 1
     # Not split on ")": `%(task_ids)s` carries one, and the naive split truncates on it.
     candidate_block = sql.split("candidate AS (")[1].split("SELECT gc.case_id")[0]
     assert "%(task_ids)s" in candidate_block
 
 
-def test_the_tenant_allow_list_is_a_reason_not_a_filter():
-    """An ungranted tenant is *reported*, not hidden -- otherwise its cases would go missing
+def test_the_tenant_block_list_is_a_reason_not_a_filter():
+    """An excluded tenant is *reported*, not hidden -- otherwise its cases would go missing
     with nothing saying why the annotation never happened."""
-    sql = _without_comments(_render("pending_annotation_select.sql", {"task_ids": [], "tenants": ["radiant"]}))
-    assert "'tenant_not_granted'" in sql
+    sql = _without_comments(
+        _render("pending_annotation_select.sql", {"task_ids": [], "excluded_tenants": ["radiant"]})
+    )
+    assert "'tenant_excluded'" in sql
     assert "WHERE gc.tenant_code" not in sql
 
 
@@ -68,7 +70,7 @@ def test_no_stray_percent_survives_parameter_binding(filename):
     then runs `sql % params` over the *whole* statement. Any percent sign that is not part
     of `%%` or a `%(name)s` placeholder raises there -- including one inside a comment,
     which is exactly how this test earned its place."""
-    sql = _render(filename, {"task_ids": [1], "tenants": ["radiant"]} if "pending" in filename else None)
+    sql = _render(filename, {"task_ids": [1], "excluded_tenants": ["radiant"]} if "pending" in filename else None)
     without_placeholders = re.sub(r"%\(\w+\)s", "", sql).replace("%%", "")
     assert "%" not in without_placeholders
 
