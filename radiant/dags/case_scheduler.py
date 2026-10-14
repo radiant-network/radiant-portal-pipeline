@@ -40,7 +40,7 @@ from radiant.tasks.nextflow.case_status import (
     tenants_from_env,
 )
 from radiant.tasks.nextflow.paths import sanitize_run_tag
-from radiant.tasks.starrocks.operator import RadiantStarRocksOperator
+from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -64,12 +64,6 @@ STATUS_TENANTS_ENVS = ("NEXTFLOW_POSTPROCESSING_TENANTS",)
 # `updated: false` for what the first attempt already changed.
 STATUS_RETRIES = 2
 STATUS_RETRY_DELAY = datetime.timedelta(minutes=1)
-
-
-def rows_output_processor(results: list[Any], descriptions: list[Any]) -> list[Any]:
-    """Cursor rows to a list of dicts."""
-    column_names = [desc[0] for desc in descriptions[0]]
-    return [[dict(zip(column_names, row, strict=False)) for row in results[0]]]
 
 
 dag_params = {

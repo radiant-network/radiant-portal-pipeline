@@ -28,7 +28,6 @@ Full analysis: `design/SJRA-1879-nextflow-quality-control-automation.md`.
 
 import logging
 import os
-from collections.abc import Sequence
 from typing import Any
 
 import pendulum
@@ -37,7 +36,7 @@ from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE, load_docs_md
-from radiant.tasks.starrocks.operator import RadiantStarRocksOperator
+from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -104,12 +103,6 @@ dag_params = {
         ),
     ),
 }
-
-
-def rows_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
-    """Cursor rows to a list of dicts, following `import_radiant.py`."""
-    column_names = [desc[0] for desc in descriptions[0]]
-    return [[dict(zip(column_names, row, strict=False)) for row in results[0]]]
 
 
 def _workspace_env() -> dict[str, str]:
