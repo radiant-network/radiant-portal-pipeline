@@ -8,10 +8,12 @@
 --
 -- `has_variants`: at least one experiment of the case has been imported (`ingested_at`, set by
 -- `import_part`) from an SNV or CNV VCF, and is not deleted. An Exomiser-only row does not count.
+-- A row is inserted with `ingested_at` at the epoch (`DT_EPOCH` in `partition.py`), not NULL, and
+-- only gets a real date once `import_part` has loaded it: so imported means after the epoch.
 WITH imported AS (
     SELECT DISTINCT se.case_id AS case_id
     FROM {{ mapping.starrocks_staging_sequencing_experiment }} se
-    WHERE se.ingested_at IS NOT NULL
+    WHERE se.ingested_at > '1970-01-01 00:00:00'
       AND NOT se.deleted
       AND (se.vcf_filepath IS NOT NULL OR se.cnv_vcf_filepath IS NOT NULL)
 )

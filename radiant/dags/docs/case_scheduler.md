@@ -37,7 +37,11 @@ The union of:
   probe for the DRAGEN metrics (`locate_metrics`, under `$NEXTFLOW_INPUTS_ROOT`). A case that DAG would exclude
   (sequencing pending, no gVCF, tenant not granted, metrics not found...) is **not** counted: it
   would sit in `processing` with nothing running for it, and never reach `in_progress`;
-- the cases in the import delta view, `staging_sequencing_experiment_delta`.
+- the cases the import still has work for (`sql/radiant/import_pending_case_select.sql`): those in
+  the delta view, `staging_sequencing_experiment_delta`, and those already inserted into
+  `staging_sequencing_experiment` but not loaded by `import_part` yet, with the import's own
+  predicate. A row leaves the delta as soon as it is inserted, so without the second part a case
+  whose `import_part` failed would look done.
 
 The question is asked twice with the same queries: before the pipelines (`discover_*`), to pick
 the cases to move to `processing`, and after them (`rediscover_*`), to hold back the cases a
@@ -51,7 +55,9 @@ nothing is pending for them.
 ## Variant data
 
 `has_variants`, in `sql/clinical/case_status_select.sql`: at least one experiment of the case
-has been imported (`ingested_at` set by `import_part`) from an SNV or CNV VCF, and is not deleted.
+has been imported from an SNV or CNV VCF, and is not deleted. Imported means `ingested_at` after
+the epoch: a row is inserted with `ingested_at` at 1970-01-01 (not NULL) and only gets a real date
+once `import_part` has loaded it.
 
 ## Failures do not block the data
 

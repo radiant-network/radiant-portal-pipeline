@@ -25,7 +25,9 @@ def test_only_the_statuses_the_pipeline_moves_from_are_read():
 def test_variants_are_imported_snv_or_cnv_vcfs_that_are_not_deleted():
     imported = _render().split("imported AS (")[1].split(")\nSELECT")[0]
     assert "radiant.staging_sequencing_experiment " in imported
-    assert "ingested_at IS NOT NULL" in imported
+    # Rows are inserted with `ingested_at` at the epoch, not NULL: only a later date means imported.
+    assert "se.ingested_at > '1970-01-01 00:00:00'" in imported
+    assert "IS NOT NULL\n      AND NOT se.deleted" not in imported
     assert "NOT se.deleted" in imported
     assert "se.vcf_filepath IS NOT NULL OR se.cnv_vcf_filepath IS NOT NULL" in imported
     # An Exomiser-only row is not variant data.

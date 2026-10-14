@@ -79,7 +79,10 @@ def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
         # Inherited from the DAG, not set per task: a run conf `excluded_tenants` must reach it.
         assert discover.params["excluded_tenants"] == dag.params["excluded_tenants"]
         assert discover.params["task_ids"] == []
-    assert "staging_sequencing_experiment_delta" in dag.get_task("discover_import_cases").sql
+    import_sql = dag.get_task("discover_import_cases").sql
+    assert "staging_sequencing_experiment_delta" in import_sql
+    # A row leaves the delta once inserted: the ones `import_part` has not loaded are still pending.
+    assert "se.updated_at >= COALESCE(se.ingested_at, '1970-01-01 00:00:00') OR se.deleted" in import_sql
 
 
 def test_the_cases_dags_are_given_the_run_s_block_list(dag_bag):

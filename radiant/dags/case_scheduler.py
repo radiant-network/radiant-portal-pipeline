@@ -127,8 +127,8 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
         query("qc", "Cases pending quality control", "./sql/clinical/pending_quality_control_select.sql"),
         query(
             "import",
-            "Cases in the import delta",
-            "SELECT DISTINCT case_id FROM {{ mapping.starrocks_staging_sequencing_experiment_delta }}",
+            "Cases the import has work for",
+            "./sql/radiant/import_pending_case_select.sql",
         ),
     ]
 
