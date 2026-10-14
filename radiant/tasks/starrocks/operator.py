@@ -2,7 +2,7 @@ import os
 import time
 import uuid
 from abc import abstractmethod
-from collections.abc import MutableMapping
+from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -153,6 +153,13 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
                 method_name=method_name,
                 timeout=timedelta(seconds=self.submit_task_options.get_defer_timeout()),
             )
+
+
+def rows_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
+    """`output_processor` for `RadiantStarRocksOperator`: the cursor rows as a list of dicts keyed by
+    column name, so the XCom is `[{column: value}, ...]`."""
+    column_names = [desc[0] for desc in descriptions[0]]
+    return [[dict(zip(column_names, row, strict=False)) for row in results[0]]]
 
 
 class RadiantStarRocksOperator(RadiantStarRocksBaseOperator, SQLExecuteQueryOperator):

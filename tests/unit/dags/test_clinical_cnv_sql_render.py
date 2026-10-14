@@ -11,7 +11,7 @@ _CLINICAL_SQL = DAGS_DIR / "sql" / "clinical"
 _CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
 _TEMPLATE = "pending_cnv_annotation_select.sql"
 _ANNOTATION_TEMPLATE = "pending_annotation_select.sql"
-_NO_PARAMS = {"task_ids": [], "tenants": []}
+_NO_PARAMS = {"task_ids": [], "excluded_tenants": []}
 
 
 def _render(filename: str, params: dict | None = None) -> str:
@@ -37,25 +37,25 @@ def test_every_mapping_key_used_exists():
 def test_discovery_is_unscoped_by_default():
     sql = _without_comments(_render(_TEMPLATE))
     assert "%(task_ids)s" not in sql
-    assert "%(tenants)s" not in sql
+    assert "%(excluded_tenants)s" not in sql
 
 
 def test_named_tasks_narrow_candidacy_not_membership():
-    sql = _without_comments(_render(_TEMPLATE, {"task_ids": [1], "tenants": []}))
+    sql = _without_comments(_render(_TEMPLATE, {"task_ids": [1], "excluded_tenants": []}))
     assert sql.count("%(task_ids)s") == 1
     assert "%(task_ids)s" in sql.split("candidate AS (")[1].split("SELECT gc.case_id")[0]
 
 
-def test_the_tenant_allow_list_is_a_reason_not_a_filter():
-    sql = _without_comments(_render(_TEMPLATE, {"task_ids": [], "tenants": ["radiant"]}))
-    assert "'tenant_not_granted'" in sql
+def test_the_tenant_block_list_is_a_reason_not_a_filter():
+    sql = _without_comments(_render(_TEMPLATE, {"task_ids": [], "excluded_tenants": ["radiant"]}))
+    assert "'tenant_excluded'" in sql
     assert "WHERE gc.tenant_code" not in sql
 
 
 def test_no_stray_percent_survives_parameter_binding():
     """`cursor.execute(sql, parameters)` runs `sql % params` over the whole statement, so
     every literal `%` -- comments included -- must be doubled (SJRA-1843 annex C)."""
-    sql = _render(_TEMPLATE, {"task_ids": [1], "tenants": ["radiant"]})
+    sql = _render(_TEMPLATE, {"task_ids": [1], "excluded_tenants": ["radiant"]})
     assert "%" not in re.sub(r"%\(\w+\)s", "", sql).replace("%%", "")
 
 

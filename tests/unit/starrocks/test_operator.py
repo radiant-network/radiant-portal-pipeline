@@ -11,6 +11,7 @@ from radiant.tasks.starrocks.operator import (
     RadiantStarRocksPartitionSwapOperator,
     SubmitTaskOptions,
     SwapPartition,
+    rows_output_processor,
 )
 from radiant.tasks.starrocks.trigger import StarRocksTaskCompleteTrigger
 
@@ -173,3 +174,15 @@ def test_mapped_render_partition_swap_resolves_table_per_tenant():
     )
     op._do_render_template_fields(op, op.template_fields, _ctx(_SHARED_CONF), _native_env(), set())
     assert op.table == "chusj_tenant.germline__cnv__occurrence"
+
+
+def test_rows_output_processor_keys_each_row_by_column_name():
+    results = [[(1, "radiant"), (2, "qlin")]]
+    descriptions = [[("case_id", 3, None), ("tenant_code", 253, None)]]
+    assert rows_output_processor(results, descriptions) == [
+        [{"case_id": 1, "tenant_code": "radiant"}, {"case_id": 2, "tenant_code": "qlin"}]
+    ]
+
+
+def test_rows_output_processor_handles_an_empty_result():
+    assert rows_output_processor([[]], [[("case_id", 3, None)]]) == [[]]
