@@ -25,3 +25,14 @@ def s3_store_content(content: dict | list, prefix: str = "tmp") -> str:
 
     os.remove(tmpfile_path)
     return s3_path
+
+
+def s3_delete_content(s3_path: str) -> None:
+    # Runs on the Airflow worker, which lacks the task image's dependencies: `radiant.tasks.utils`
+    # (and its `delete_s3_object`) imports `wurlitzer`, so it can't be used here.
+    bucket_name, key = s3_path[len("s3://") :].split("/", 1)
+    try:
+        boto3.client("s3").delete_object(Bucket=bucket_name, Key=key)
+        logger.info(f"Deleted S3 content: {s3_path}")
+    except Exception as e:
+        logger.warning(f"Failed to delete S3 content {s3_path}: {e}")
