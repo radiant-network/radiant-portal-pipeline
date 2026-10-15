@@ -47,6 +47,17 @@ _WRONG_PART = 1811109
 # `snv` CTE itself: this is what keeps nb_snv a count of quality-passing SNVs.
 _FAILS_QUALITY = 1811110
 
+# RAD-61: the overlap join is keyed on 1 Mb bins (`start DIV 1000000`), so a segment spanning several bins must
+# find the SNVs of each of them, once. Chromosome 4, 999_500-2_000_500: bins 0, 1 and 2.
+_MULTI_BIN_START = 999_500
+_MULTI_BIN_END = 2_000_500
+_MB_AT_START = 1811111  # bin 0, first base of the segment
+_MB_BIN_BOUNDARY = 1811112  # bin 1, first base of the bin
+_MB_MIDDLE = 1811113  # bin 1
+_MB_AT_END = 1811114  # bin 2, last base of the segment
+_MB_BEFORE = 1811115  # bin 0, one base before the segment
+_MB_AFTER = 1811116  # bin 2, one base after the segment
+
 # (locus_id, chromosome, start) -- the only source of coordinates; the occurrence row has none.
 _VARIANTS = [
     (_INSIDE, "1", 1500),
@@ -59,6 +70,12 @@ _VARIANTS = [
     (_OTHER_SAMPLE, "1", 1500),
     (_WRONG_PART, "1", 1500),
     (_FAILS_QUALITY, "1", 1700),
+    (_MB_AT_START, "4", _MULTI_BIN_START),
+    (_MB_BIN_BOUNDARY, "4", 1_000_000),
+    (_MB_MIDDLE, "4", 1_500_000),
+    (_MB_AT_END, "4", _MULTI_BIN_END),
+    (_MB_BEFORE, "4", _MULTI_BIN_START - 1),
+    (_MB_AFTER, "4", _MULTI_BIN_END + 1),
 ]
 
 # (part, seq_id, task_id, locus_id)
@@ -74,14 +91,23 @@ _SNV_OCCURRENCES = [
     (_PART, _SEQ_ID, _TASK_ID, _FAILS_QUALITY),
     (_PART, _OTHER_SEQ_ID, _TASK_ID, _OTHER_SAMPLE),
     (_OTHER_PART, _SEQ_ID, _TASK_ID, _WRONG_PART),
+    (_PART, _SEQ_ID, _TASK_ID, _MB_AT_START),
+    (_PART, _SEQ_ID, _TASK_ID, _MB_BIN_BOUNDARY),
+    (_PART, _SEQ_ID, _TASK_ID, _MB_MIDDLE),
+    (_PART, _SEQ_ID, _TASK_ID, _MB_AT_END),
+    (_PART, _SEQ_ID, _TASK_ID, _MB_BEFORE),
+    (_PART, _SEQ_ID, _TASK_ID, _MB_AFTER),
 ]
 
 # What survives every predicate, for the chromosome-1 segment of `_SEQ_ID`.
 _EXPECTED_NB_SNV = 4
+# Start, bin boundary, middle and end: one per bin at least, none outside, none twice.
+_EXPECTED_MULTI_BIN_NB_SNV = 4
 
 _SEGMENT = "cnv-chr1"
 _SEGMENT_OTHER_SAMPLE = "cnv-chr1-other-sample"
 _SEGMENT_NO_SNV = "cnv-chr3-no-snv"
+_SEGMENT_MULTI_BIN = "cnv-chr4-multi-bin"
 
 
 def _cnv_row(*, name, seq_id, chromosome, start=_CNV_START, end=_CNV_END):
@@ -112,6 +138,7 @@ _CNV_ROWS = [
     _cnv_row(name=_SEGMENT_OTHER_SAMPLE, seq_id=_OTHER_SEQ_ID, chromosome="1"),
     # Nothing overlaps it. `snv` is LEFT JOINed, so the segment still loads with a NULL count.
     _cnv_row(name=_SEGMENT_NO_SNV, seq_id=_SEQ_ID, chromosome="3"),
+    _cnv_row(name=_SEGMENT_MULTI_BIN, seq_id=_SEQ_ID, chromosome="4", start=_MULTI_BIN_START, end=_MULTI_BIN_END),
 ]
 
 
@@ -248,7 +275,7 @@ def test_nb_snv_counts_the_overlapping_snvs_of_the_same_sample(seeded_cnv, starr
     _run_cnv_insert(starrocks_session, radiant_mapping, flavour)
 
     nb_snv = _nb_snv_by_segment(starrocks_session, radiant_mapping, flavour)
-    assert set(nb_snv) == {_SEGMENT, _SEGMENT_OTHER_SAMPLE, _SEGMENT_NO_SNV}
+    assert set(nb_snv) == {_SEGMENT, _SEGMENT_OTHER_SAMPLE, _SEGMENT_NO_SNV, _SEGMENT_MULTI_BIN}
 
     # The whole point: exact and non-NULL. NULL means the occurrence -> staging-variant join matched
     # nothing, the silent failure `EXPLAIN` cannot catch.
@@ -276,3 +303,16 @@ def test_nb_snv_counts_a_locus_once_across_tasks(seeded_cnv, starrocks_session, 
         f"expected {_EXPECTED_NB_SNV} distinct loci; {_EXPECTED_NB_SNV + 1} means the duplicate "
         f"`task_id` row for locus {_TWO_TASKS} was counted twice"
     )
+
+
+def test_nb_snv_counts_a_segment_spanning_several_bins(seeded_cnv, starrocks_session, radiant_mapping):
+    """RAD-61: the CNV side is expanded to one row per 1 Mb bin it covers and joined on the SNV's bin.
+
+    Fewer means a bin of the segment was dropped (an off-by-one in the bin range); more means an SNV met
+    several rows of the same segment, or one outside it slipped through.
+    """
+    flavour = seeded_cnv
+    _run_cnv_insert(starrocks_session, radiant_mapping, flavour)
+
+    nb_snv = _nb_snv_by_segment(starrocks_session, radiant_mapping, flavour)
+    assert nb_snv[_SEGMENT_MULTI_BIN] == _EXPECTED_MULTI_BIN_NB_SNV
