@@ -14,22 +14,28 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
      -- Somatic segments are counted against somatic SNVs: germline SNVs inside a tumour segment would be a
      -- meaningless number. COUNT(DISTINCT locus_id) because a tumour sample analysed both tumour-only and
      -- tumour-normal holds each locus under two task_ids. See SJRA-1811 Decision 3 for the join.
-     -- Position first, then overlap on (seq_id, chromosome). Occurrence and variant are colocated on locus_id,
-     -- so `snv_pos` is a local join. Joining the CNVs on the sample alone paired every CNV with every SNV of the
-     -- sample, on every chromosome, before the interval filter: a BE ran out of memory on a WGS part (RAD-61).
-     snv_pos AS (SELECT s.tumor_seq_id AS seq_id, s.locus_id, v.chromosome, v.start
+     -- Position first, then overlap on (seq_id, chromosome, bin). Occurrence and variant are colocated on locus_id,
+     -- so `snv_pos` is a local join. RAD-61: keyed on (seq_id, chromosome) alone, every CNV still met every SNV of its
+     -- chromosome before the interval filter, and the planner, with no stats on the CNV side, could pick `snv_pos` as
+     -- the hash table: a 166-sample WGS part filled the BE spill disk. Each CNV now has one row per 1 Mb bin it covers,
+     -- so an SNV meets only the CNVs of its own bin, and exactly one row of each CNV covering it (nb_snv unchanged).
+     -- The CNV bins are the small side: broadcast them as the hash table, never `snv_pos`.
+     snv_pos AS (SELECT s.tumor_seq_id AS seq_id, s.locus_id, v.chromosome, v.start, v.start DIV 1000000 AS bin
                  FROM {{ mapping.starrocks_somatic_snv_occurrence }} s
                  JOIN {{ mapping.starrocks_snv_variant }} v ON v.locus_id = s.locus_id
                  WHERE s.part = {{ partition }} AND s.tumor_seq_id IN %(seq_ids)s
                    -- RAD-57: same quality gate as the frequencies, so nb_snv counts quality-passing SNVs only.
                    AND s.filter = 'PASS' AND s.tumor_ad_alt >= 2),
-     snv AS (SELECT o.name, o.seq_id, COUNT(DISTINCT p.locus_id) AS nb_snv
-             FROM {{ mapping.iceberg_somatic_cnv_occurrence }} o
-             JOIN snv_pos p ON p.seq_id = o.seq_id AND p.chromosome = o.chromosome
-                    AND p.start <= o.end AND p.start >= o.start
-             WHERE o.seq_id IN %(seq_ids)s
-               AND o.tenant_code = %(tenant_code)s
-             GROUP BY o.name, o.seq_id),
+     cnv_bin AS (SELECT o.name, o.seq_id, o.chromosome, o.start, o.end, b.bin
+                 FROM {{ mapping.iceberg_somatic_cnv_occurrence }} o,
+                      unnest(array_generate(o.start DIV 1000000, o.end DIV 1000000)) AS b(bin)
+                 WHERE o.seq_id IN %(seq_ids)s
+                   AND o.tenant_code = %(tenant_code)s),
+     snv AS (SELECT c.name, c.seq_id, COUNT(DISTINCT p.locus_id) AS nb_snv
+             FROM snv_pos p
+             JOIN [BROADCAST] cnv_bin c ON c.seq_id = p.seq_id AND c.chromosome = p.chromosome AND c.bin = p.bin
+                    AND p.start >= c.start AND p.start <= c.end
+             GROUP BY c.name, c.seq_id),
     gnomad_overlaps AS (
         SELECT
             cnv.seq_id,
