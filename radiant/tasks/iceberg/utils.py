@@ -1,3 +1,4 @@
+import functools
 import itertools
 import logging
 import random
@@ -9,7 +10,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from pyiceberg.catalog import Table, load_catalog
 from pyiceberg.exceptions import CommitFailedException
-from pyiceberg.expressions import And, EqualTo
+from pyiceberg.expressions import And, BooleanExpression, EqualTo, In, Or
 from pyiceberg.io import FileIO
 from pyiceberg.io.pyarrow import (
     _determine_partitions,
@@ -58,9 +59,46 @@ def _partition_filter_expr(partition: PartitionCommit):
     return filter_expr
 
 
+def _delete_filter_expr(partitions: list[PartitionCommit]) -> BooleanExpression:
+    """Build one predicate selecting every partition, so a part costs a single delete.
+
+    Partitions sharing the same leading keys are folded into an `In` on the last key (e.g.
+    `part = 3 AND task_id IN (...)`), which keeps the expression flat: an `Or` per partition
+    nests one level per case, and the expression visitors recurse through every level.
+
+    Raises:
+        ValueError: If a partition filter is empty or the partitions do not share the same keys.
+    """
+    for partition in partitions:
+        _partition_filter_expr(partition)  # rejects empty filters
+    keys = list(partitions[0].partition_filter)
+    if any(list(p.partition_filter) != keys for p in partitions):
+        raise ValueError(f"All partition filters must share the same keys {keys}.")
+
+    *prefix_keys, last_key = keys
+    groups: dict[tuple, list] = {}
+    for partition in partitions:
+        prefix = tuple(partition.partition_filter[k] for k in prefix_keys)
+        groups.setdefault(prefix, []).append(partition.partition_filter[last_key])
+
+    exprs = []
+    for prefix, values in groups.items():
+        # `In` with a single value is rewritten to `EqualTo` by pyiceberg.
+        expr = In(last_key, sorted(set(values)))
+        for key, value in reversed(list(zip(prefix_keys, prefix, strict=True))):
+            expr = And(EqualTo(key, value), expr)
+        exprs.append(expr)
+    return functools.reduce(Or, exprs)
+
+
 def commit_files(table: Table, partition_to_commit: list[PartitionCommit], max_retries: int = 20):
     """
     Commit all written Parquet files to the Iceberg table using overwrite mode.
+
+    All partitions go through one delete and one `add_files`, i.e. two snapshots per table
+    whatever the number of cases. A delete and an `add_files` per partition made each case scan
+    the table's manifests again (and `add_files`' duplicate check reads every manifest of the
+    table), so the commit grew with cases x manifests.
 
     Raises:
         ValueError: If the partition filter is empty.
@@ -70,6 +108,8 @@ def commit_files(table: Table, partition_to_commit: list[PartitionCommit], max_r
         logger.info(f"No partitions to commit for table {table.name()} partition filter")
         return
 
+    delete_filter = _delete_filter_expr(partition_to_commit)
+    parquet_files = [f for partition in partition_to_commit for f in partition.parquet_files]
     for attempt in range(max_retries):
         # The transaction has to be rebuilt on every attempt. Staging the updates captures an
         # `AssertRefSnapshotId` requirement against the snapshot current at that moment, so
@@ -77,13 +117,15 @@ def commit_files(table: Table, partition_to_commit: list[PartitionCommit], max_r
         # every time -- a conflict can only be absorbed by re-staging against a fresh snapshot.
         table.refresh()
         tx = table.transaction()
-        for partition in partition_to_commit:
-            tx.delete(_partition_filter_expr(partition))
-            if partition.parquet_files:
-                tx.add_files(partition.parquet_files)
+        tx.delete(delete_filter)
+        if parquet_files:
+            # No duplicate check: it reads every manifest of the table, and the files are freshly
+            # written under unique names. A copy left by an earlier commit of the same part is in a
+            # deleted partition, so the delete above already drops it.
+            tx.add_files(parquet_files, check_duplicate_files=False)
         try:
             tx.commit_transaction()
-            logger.info("Successfully overwrite partitions")
+            logger.info(f"Successfully overwrite {len(partition_to_commit)} partitions")
             return
         except CommitFailedException as e:
             # Retrying is safe because the commit is idempotent: the filters align with the

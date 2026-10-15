@@ -1,11 +1,16 @@
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 from pyiceberg.exceptions import CommitFailedException
-from pyiceberg.expressions import And, EqualTo
+from pyiceberg.expressions import And, EqualTo, In, Or
 
 from radiant.tasks.iceberg.partition_commit import PartitionCommit, merge_partition_commits
-from radiant.tasks.iceberg.utils import _partition_filter_expr, commit_files, commit_partitions_from_s3
+from radiant.tasks.iceberg.utils import (
+    _delete_filter_expr,
+    _partition_filter_expr,
+    commit_files,
+    commit_partitions_from_s3,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -55,7 +60,7 @@ def test_conflicting_commit_is_retried_against_a_fresh_snapshot():
     # The retry re-stages the same idempotent delete + add_files.
     for tx in transactions:
         tx.delete.assert_called_once_with(EqualTo("task_id", 7))
-        tx.add_files.assert_called_once_with(["s3://bucket/a.parquet"])
+        tx.add_files.assert_called_once_with(["s3://bucket/a.parquet"], check_duplicate_files=False)
         tx.commit_transaction.assert_called_once()
 
 
@@ -107,21 +112,51 @@ def test_empty_partition_filter_is_rejected():
         _partition_filter_expr(PartitionCommit(parquet_files=["s3://bucket/a.parquet"], partition_filter={}))
 
 
-def test_all_partitions_of_a_table_share_one_transaction():
-    """Every task's partition lands in the same commit, so a part is one snapshot per table."""
-    table, transactions = make_table([None, None])
+def test_all_partitions_of_a_table_share_one_delete_and_one_add_files():
+    """Every task's partition lands in the same commit, with one delete and one add_files.
+
+    A delete and an add_files per partition made the commit scan the table's manifests once per case.
+    """
+    table, transactions = make_table([None])
 
     commit_files(
         table,
         [
             PartitionCommit(parquet_files=["s3://bucket/a.parquet"], partition_filter={"task_id": 7}),
+            PartitionCommit(parquet_files=[], partition_filter={"task_id": 9}),
             PartitionCommit(parquet_files=["s3://bucket/b.parquet"], partition_filter={"task_id": 8}),
         ],
     )
 
-    # Both partitions of the same table share one transaction.
     assert len(transactions) == 1
-    assert transactions[0].delete.call_args_list == [call(EqualTo("task_id", 7)), call(EqualTo("task_id", 8))]
+    transactions[0].delete.assert_called_once_with(In("task_id", [7, 8, 9]))
+    transactions[0].add_files.assert_called_once_with(
+        ["s3://bucket/a.parquet", "s3://bucket/b.parquet"], check_duplicate_files=False
+    )
+
+
+def test_delete_filter_folds_the_last_key_into_an_in_per_prefix():
+    expr = _delete_filter_expr(
+        [
+            PartitionCommit(parquet_files=[], partition_filter={"part": 3, "task_id": 7}),
+            PartitionCommit(parquet_files=[], partition_filter={"part": 3, "task_id": 8}),
+            PartitionCommit(parquet_files=[], partition_filter={"part": 4, "task_id": 9}),
+        ]
+    )
+    assert expr == Or(
+        And(EqualTo("part", 3), In("task_id", [7, 8])),
+        EqualTo("part", 4) & EqualTo("task_id", 9),
+    )
+
+
+def test_delete_filter_rejects_mixed_keys():
+    with pytest.raises(ValueError, match="share the same keys"):
+        _delete_filter_expr(
+            [
+                PartitionCommit(parquet_files=[], partition_filter={"task_id": 7}),
+                PartitionCommit(parquet_files=[], partition_filter={"part": 3, "task_id": 8}),
+            ]
+        )
 
 
 def test_merge_partition_commits_concatenates_and_skips_empties():
