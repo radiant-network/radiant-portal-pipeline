@@ -97,14 +97,12 @@ def process_task(
     consequence_table = catalog.load_table(consequences_table_name)
     consequence_buffer = TableAccumulator(consequence_table, partition_filter=variant_csq_partition_filter)
     source_counts = Counter()
+    skipped_no_alt = 0
 
     for record in vcf:
         if len(record.ALT) <= 1:
             if record.CHROM in SUPPORTED_CHROMOSOMES:
                 common = process_common(record, task_id=task.task_id, part=task.part)
-                picked_consequence, consequences = process_consequence(record, csq_header, common)
-                source_counts.update(c["source"] for c in consequences)
-                consequence_buffer.extend(consequences)
                 occurrences = process_occurrence(
                     record,
                     experiments=filtered_experiments.experiments,
@@ -112,6 +110,14 @@ def process_task(
                     tumor_index=filtered_experiments.tumor_index,
                     normal_index=filtered_experiments.normal_index,
                 )
+                # RAD-75: a record the tumor does not carry is dropped from all three tables together, even
+                # when the normal carries the alt. The StarRocks load keeps `tumor_has_alt` occurrences only.
+                if not any(o["tumor_has_alt"] for o in occurrences.values()):
+                    skipped_no_alt += 1
+                    continue
+                picked_consequence, consequences = process_consequence(record, csq_header, common)
+                source_counts.update(c["source"] for c in consequences)
+                consequence_buffer.extend(consequences)
                 occurrence_buffer.extend(list(occurrences.values()))
                 variant = process_variant(record, picked_consequence, common)
                 variant_buffer.append(variant)
@@ -129,6 +135,7 @@ def process_task(
 
     #### End of VCF file processing, flush buffers ####
     log_source_counts(source_counts, task.task_id, task.vcf_filepath)
+    logger.info(f"Task {task.task_id}: skipped {skipped_no_alt} records with no alt call in the tumor")
 
     occurrence_buffer.write_files()
     occurrences_partition_commit.append(

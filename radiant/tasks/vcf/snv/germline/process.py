@@ -73,14 +73,22 @@ def process_task(
             consequence_table = catalog.load_table(consequences_table_name)
             consequence_buffer = TableAccumulator(consequence_table, partition_filter=variant_csq_partition_filter)
             source_counts = Counter()
+            skipped_no_alt = 0
             for record in vcf:
                 if len(record.ALT) <= 1:
                     if record.CHROM in SUPPORTED_CHROMOSOMES:
                         common = process_common(record, task_id=task.task_id, part=task.part)
+                        occurrences = process_occurrence(record, pedigree, common=common)
+                        # RAD-75: a record no sample carries is dropped from all three tables together. The
+                        # StarRocks load keeps `has_alt` occurrences only and inner-joins them to the variants,
+                        # so the tables must hold the same loci; the consequences of such a locus were loaded
+                        # into `snv__consequence` without any case ever showing them.
+                        if not any(o["has_alt"] for o in occurrences.values()):
+                            skipped_no_alt += 1
+                            continue
                         picked_consequence, consequences = process_consequence(record, csq_header, common)
                         source_counts.update(c["source"] for c in consequences)
                         consequence_buffer.extend(consequences)
-                        occurrences = process_occurrence(record, pedigree, common=common)
                         occurrence_buffer.extend(list(occurrences.values()))
                         variant = process_variant(record, picked_consequence, common)
                         variant_buffer.append(variant)
@@ -98,6 +106,7 @@ def process_task(
 
             #### End of VCF file processing, flush buffers ####
             log_source_counts(source_counts, task.task_id, task.vcf_filepath)
+            logger.info(f"Task {task.task_id}: skipped {skipped_no_alt} records with no alt call in any sample")
 
             occurrence_buffer.write_files()
             occurrences_partition_commit.append(
