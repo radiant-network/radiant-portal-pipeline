@@ -18,8 +18,9 @@ def test_every_mapping_key_used_exists():
     assert "{{" not in _render()
 
 
-def test_only_the_statuses_the_pipeline_moves_from_are_read():
-    assert "WHERE c.status_code IN ('submitted', 'processing')" in _render()
+def test_every_status_the_pipeline_does_not_ignore_is_read():
+    """`submitted` and `processing` to move them, the later ones to email the cases the run processed."""
+    assert "WHERE c.status_code NOT IN ('draft', 'revoked')" in _render()
 
 
 def test_variants_are_imported_snv_or_cnv_vcfs_that_are_not_deleted():
