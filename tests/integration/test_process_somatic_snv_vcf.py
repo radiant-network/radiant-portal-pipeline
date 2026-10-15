@@ -55,17 +55,20 @@ def test_import_somatic_snv_vcf(
     )
     commit_partitions(merge_partition_commits([partitions]), iceberg_catalog_properties=iceberg_catalog_properties)
 
-    # Check that the expected tables were created and contain data
-    occ = iceberg_client.load_table(f"{setup_iceberg_namespace}.somatic_snv_occurrence").scan().to_arrow().to_pandas()
-    variants = iceberg_client.load_table(f"{setup_iceberg_namespace}.snv_variant").scan().to_arrow().to_pandas()
-    consequences = (
-        iceberg_client.load_table(f"{setup_iceberg_namespace}.snv_consequence").scan().to_arrow().to_pandas()
-    )
+    # Check that the expected tables were created and contain data. The tables are shared by the session, so
+    # each read keeps this task's rows only.
+    def load(table):
+        df = iceberg_client.load_table(f"{setup_iceberg_namespace}.{table}").scan().to_arrow().to_pandas()
+        return df[df.task_id == task.task_id].reset_index(drop=True)
 
-    assert len(occ) == 21, "Unexpected number of rows in occurrences table"
+    occ = load("somatic_snv_occurrence")
+    variants = load("snv_variant")
+    consequences = load("snv_consequence")
+
+    assert len(occ) == 18, "Unexpected number of rows in occurrences table"
     assert occ.chromosome.unique().tolist() == ["1", "4", "12"], "Unexpected chromosome values in occurrences table"
 
-    assert len(variants) == 21, "Unexpected number of rows in variants table"
+    assert len(variants) == 18, "Unexpected number of rows in variants table"
     assert variants.chromosome.unique().tolist() == ["1", "4", "12"], "Unexpected chromosome values in variants table"
 
     # SJRA-1833: the picked consequence's catalogue reaches the variant row. This fixture is not a
@@ -75,10 +78,16 @@ def test_import_somatic_snv_vcf(
     assert picked.pick_source.unique().tolist() == ["Ensembl"], "Unexpected pick_source values in variants table"
     assert picked.transcript_id.str.startswith("ENST").all(), "pick_source disagrees with the picked transcript"
 
-    assert len(consequences) == 236, "Unexpected number of rows in consequences table"
+    assert len(consequences) == 232, "Unexpected number of rows in consequences table"
     assert variants.chromosome.unique().tolist() == ["1", "4", "12"], (
         "Unexpected chromosome values in consequences table"
     )
+
+    # RAD-75: the 3 records whose tumor has a single alt read (no tumor alt call) are absent from all three tables
+    assert occ.tumor_has_alt.all(), "Expected only occurrences carrying the alternate allele in the tumor"
+    assert not set(occ.start) & {74106, 74117, 97987}, "Records with no tumor alt call were written"
+    assert set(variants.locus_hash) == set(occ.locus_hash), "Variants and occurrences hold different loci"
+    assert set(consequences.locus_hash) == set(occ.locus_hash), "Consequences and occurrences hold different loci"
 
     # FORMAT/SQ is carried per sample — the fixture seeds it on 3 records (normal is VCF column 0)
     assert occ.tumor_sq.dropna().tolist() == pytest.approx([14.7, 9.3, 31.2]), "Unexpected tumor_sq values"
@@ -144,10 +153,10 @@ def test_import_somatic_snv_tumor_only_vcf(
     consequences = load("snv_consequence")
 
     # Same counts as the tumor-normal run — the shared catalog path is untouched by tumor-only
-    assert len(occ) == 21, "Unexpected number of rows in occurrences table"
+    assert len(occ) == 18, "Unexpected number of rows in occurrences table"
     assert occ.chromosome.unique().tolist() == ["1", "4", "12"], "Unexpected chromosome values in occurrences table"
-    assert len(variants) == 21, "Unexpected number of rows in variants table"
-    assert len(consequences) == 236, "Unexpected number of rows in consequences table"
+    assert len(variants) == 18, "Unexpected number of rows in variants table"
+    assert len(consequences) == 232, "Unexpected number of rows in consequences table"
 
     # Every normal_* column is NULL: that NULL is what downstream derives tumor-only from
     normal_columns = [column for column in occ.columns if column.startswith("normal_")]
