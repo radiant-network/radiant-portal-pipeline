@@ -1,12 +1,12 @@
 """Build the public IGV reference tracks the portal shows in its IGV Tracks menu.
 
-A port of Qlin's ``etl_import_igv`` (clin-pipelines-dags): the same 11 upstream files, written under the same
-file names, so the portal can map its fixed track ids to them. Each track is downloaded, converted to GFF3 when
-the upstream format is a TSV or a UCSC table dump, sorted, bgzipped and tabix-indexed, then written with its
-``.tbi`` under one S3 prefix. The portal API presigns those objects; nothing here is a table.
+The 11 upstream files are written under fixed file names, so the portal can map its fixed track ids to them.
+Each track is downloaded, converted to GFF3 when the upstream format is a TSV or a UCSC table dump, sorted,
+bgzipped and tabix-indexed, then written with its ``.tbi`` under one S3 prefix. The portal API presigns those
+objects; nothing here is a table.
 
-The differences with the Qlin port (all on the output's validity, not its content) are listed in
-radiant/dags/docs/import_igv_tracks.md, "Differences with the Qlin DAG".
+The rules that make the output valid for tabix and GFF3 (they never change its content) are listed in
+radiant/dags/docs/import_igv_tracks.md, "Validity for tabix and IGV".
 
 Runs inside the radiant-operator image (which carries ``bgzip``, ``tabix`` and GNU ``sort``), on Kubernetes or
 ECS; one call builds one track, so a failed download retries alone.
@@ -53,6 +53,23 @@ class IgvTrackError(Exception):
     """Raised when a track cannot be built (unknown id, upstream failure, or a tool that failed)."""
 
 
+Converter = Callable[[Iterable[str]], Iterator[str]]
+
+
+@dataclass(frozen=True)
+class IgvTrackSource:
+    track_id: str  # the key the portal API returns the file under (public_tracks)
+    url: str
+    file_name: str  # written under the tracks prefix; the portal backend lists the same names
+    convert: Converter | None = None  # None: a VCF, kept as is (recompressed if not BGZF)
+    comments: tuple[str, ...] = ()  # GFF3 comment lines written after ``##gff-version 3``, before the features
+
+    @property
+    def preset(self) -> Literal["vcf", "gff"]:
+        """The tabix preset: a converted track is GFF3, the others are VCFs."""
+        return "vcf" if self.convert is None else "gff"
+
+
 def check_igv_tracks_prefix(prefix: str | None) -> str:
     """Returns ``prefix`` when it is an s3:// URI safe to pass through a shell command; raises ValueError otherwise."""
     if not _IGV_TRACKS_PREFIX_RE.match(prefix or ""):
@@ -96,7 +113,7 @@ def _parse_location(location: str) -> tuple[str, int, int] | None:
 
 
 def _cell(row: list[str], column: int) -> str:
-    """1-based column, like the awk scripts this ports; a short row reads as empty."""
+    """1-based column, as the upstream column docs number them; a short row reads as empty."""
     return row[column - 1] if len(row) >= column else ""
 
 
@@ -124,7 +141,7 @@ def clingen_gene_to_gff3(lines: Iterable[str]) -> Iterator[str]:
 
     Columns: 1 symbol, 2 gene id, 3 cytoband, 4 location, 5/6 haploinsufficiency score/description,
     13/14 triplosensitivity score/description, 21 last evaluated, 22/23 HI/TS disease ids. Locations are
-    already 1-based inclusive. Descriptions have spaces replaced by underscores, as in Qlin, since the portal
+    already 1-based inclusive. Descriptions have spaces replaced by underscores, since the portal
     colors the track on them.
     """
     for row in _data_rows(lines):
@@ -144,7 +161,7 @@ def clingen_region_to_gff3(lines: Iterable[str]) -> Iterator[str]:
     """ClinGen region dosage curation list (GRCh38 TSV) -> one ``region`` feature per curated region.
 
     Same columns as the gene list, with the ISCA id and region name in 1 and 2. Regions still to be mapped
-    have the location ``tbd`` and are skipped. Empty values give no attribute, as in Qlin.
+    have the location ``tbd`` and are skipped. Empty values give no attribute.
     """
     for row in _data_rows(lines):
         location = _parse_location(_cell(row, 4))
@@ -283,23 +300,6 @@ def ucsc_chain_self_to_gff3(lines: Iterable[str]) -> Iterator[str]:
         )
 
     return _convert_ucsc_rows(lines, "chainSelf", convert_row)
-
-
-Converter = Callable[[Iterable[str]], Iterator[str]]
-
-
-@dataclass(frozen=True)
-class IgvTrackSource:
-    track_id: str  # the key the portal API returns the file under (public_tracks)
-    url: str
-    file_name: str  # written under the tracks prefix; the portal backend lists the same names
-    convert: Converter | None = None  # None: a VCF, copied as is (recompressed if not BGZF)
-    comments: tuple[str, ...] = ()  # GFF3 comment lines written after ``##gff-version 3``, before the features
-
-    @property
-    def preset(self) -> Literal["vcf", "gff"]:
-        """The tabix preset: a converted track is GFF3, the others are VCFs."""
-        return "vcf" if self.convert is None else "gff"
 
 
 _UCSC = "https://hgdownload.soe.ucsc.edu/goldenPath/hg38/database"
@@ -441,8 +441,8 @@ def write_bgzipped(source: IgvTrackSource, raw_path: str, out_path: str, work_di
                             env={**os.environ, "LC_ALL": "C"},
                         )
                         try:
-                            # surrogateescape on both sides: a non-UTF-8 byte passes through unchanged, as in
-                            # Qlin's awk, instead of failing the whole track.
+                            # surrogateescape on both sides: a non-UTF-8 byte passes through unchanged,
+                            # instead of failing the whole track.
                             with io.TextIOWrapper(
                                 sort.stdin, encoding="utf-8", errors="surrogateescape", newline="\n"
                             ) as sort_in:

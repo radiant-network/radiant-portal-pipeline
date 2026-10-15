@@ -1,8 +1,8 @@
 """Build the public IGV reference tracks (ClinVar, DGV, gnomAD SV/CNV, ClinGen dosage, UCSC repeats, ...).
 
-A port of Qlin's ``etl_import_igv``. One mapped task per track (radiant-operator image, Kubernetes or ECS)
-downloads the upstream file, converts it to GFF3 when needed, sorts, bgzips and tabix-indexes it, and writes
-the file and its ``.tbi`` under ``igv_tracks_prefix``. The portal API presigns them for the IGV Tracks menu.
+One mapped task per track (radiant-operator image, Kubernetes or ECS) downloads the upstream file, converts it to
+GFF3 when needed, sorts, bgzips and tabix-indexes it, and writes the file and its ``.tbi`` under
+``igv_tracks_prefix``. The portal API presigns them for the IGV Tracks menu.
 Files only: no StarRocks or Iceberg table. See `radiant/tasks/open_data/igv_tracks.py` and
 docs/import_igv_tracks.md.
 """
@@ -56,8 +56,8 @@ with DAG(
     tracks = list_igv_tracks()
 
     if IS_AWS:
-        # Fargate scratch disk of one ECS track task, on Fargate's own scale (21-200 GiB, platform >= 1.4.0): chainSelf peaks
-        # at ~6.6 GB of download, sort spill and output (measured 2026-10-09).
+        # Fargate scratch disk of one ECS track task, on Fargate's own scale (21-200 GiB, platform >= 1.4.0):
+        # chainSelf peaks at ~6.6 GB of download, sort spill and output (measured 2026-10-09).
         ECS_EPHEMERAL_STORAGE_GIB = 30
 
         operators.IgvTracks.get_build_track(ecs_env=ECSEnv(), ephemeral_storage_gib=ECS_EPHEMERAL_STORAGE_GIB).expand(

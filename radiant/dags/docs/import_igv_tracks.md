@@ -4,8 +4,8 @@ Builds the public reference tracks of the portal's IGV **Tracks** menu (RAD-30) 
 its tabix index, under one S3 prefix. The portal API presigns them in the **public_tracks** field of its IGV
 endpoint. Files only: no StarRocks or Iceberg table is read or written.
 
-A port of Qlin's **etl_import_igv** DAG: same 11 upstream files, same output file names. The files are the
-same for every case, so the DAG runs once per environment, by hand. Rerun it to take a new upstream release.
+The 11 files are the same for every case, so the DAG runs once per environment, by hand. Rerun it to take a
+new upstream release.
 
 ---
 
@@ -55,24 +55,23 @@ file stays in place.
 The track ids are the keys of **public_tracks** in the portal API; the portal backend lists the same file
 names. Change both sides together.
 
-## Differences with the Qlin DAG
+## Validity for tabix and IGV
 
-The content is the same. These changes make the files valid for tabix and GFF3 (the docstring of
+The content is the upstream content. These rules make the files valid for tabix and GFF3 (the docstring of
 radiant/tasks/open_data/igv_tracks.py points here):
 
 - Every GFF3 file is sorted on chromosome and start. The UCSC tables are ordered by bin, not by start.
-- The VCFs are indexed as VCF. Qlin indexes them with the GFF preset.
-- The VCFs are already BGZF upstream (all four), so they are copied as is instead of recompressed.
+- The VCFs are indexed with the VCF preset.
+- The VCFs are already BGZF upstream (all four), so they are kept as is instead of recompressed.
 - GFF3 attribute values encode the reserved characters (semicolon, equals, ampersand, comma, percent, tab).
   igv.js decodes exactly these, so the values the portal colors on read as published.
-- The segmental duplications and simple repeats features get the type segmental\_duplication and
-  tandem\_repeat. Qlin writes an empty type column.
+- Every feature has a type: the segmental duplications and simple repeats features get segmental\_duplication
+  and tandem\_repeat, as the UCSC tables give none.
 - A UCSC strand other than + or - is written as a dot (GFF3 allows + - . ? only). The hg38 rmsk and
   genomicSuperDups tables hold only + and -, so no row changes today.
-- DGV gets the gff-version header line, which upstream lacks. The ClinGen files keep one comment line naming
-  their source; Qlin's longer comment block is not carried.
-- ClinGen is read over HTTPS. ftp.clinicalgenome.org serves both; Qlin's curl falls back to FTP.
-- Like Qlin, at most 4 tracks run at a time. Each track also retries twice here.
+- Every GFF3 file starts with the gff-version header line, DGV included (upstream lacks it). The ClinGen files
+  add one comment line naming their source.
+- ClinGen is read over HTTPS (ftp.clinicalgenome.org serves both HTTPS and FTP).
 
 ## Resources
 
