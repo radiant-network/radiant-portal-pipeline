@@ -31,7 +31,7 @@ The data file and its .tbi are two uploads, data first. If the index upload fail
 next to the previous index until the retry rebuilds the track, and IGV reads wrong offsets for that track in
 the meantime. A rerun of the failed track fixes it.
 
-The four VCFs are already BGZF upstream, so they are copied as is and only indexed. A row of a UCSC table that
+The four VCFs are already BGZF upstream, so they are kept as is and only indexed. A row of a UCSC table that
 cannot be read fails its track with the row number; a byte that is not UTF-8 passes through unchanged. A GFF3
 track with no feature at all (e.g. after an upstream format change) fails before its upload, so the previous
 file stays in place.
@@ -88,7 +88,8 @@ device"), not with a broken pipe.
 ## Triggered from radiant-import-open-data
 
 **radiant-import-open-data** accepts **import_igv_tracks** (boolean, default false). When true, the import
-triggers this DAG after its other sources and waits for it; the prefix comes from this DAG's default. It is
+triggers this DAG once its variant and gene groups are loaded (in parallel with its COSMIC, cytoband and
+ClinVar RCV branches) and waits for it; the prefix comes from this DAG's default. It is
 off by default because **radiant-reannotate-open-data** triggers the import and must not rebuild the files
 each time.
 

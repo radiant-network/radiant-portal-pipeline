@@ -288,16 +288,6 @@ def test_is_bgzf(tmp_path):
     assert igv_tracks.is_bgzf(str(short)) is False
 
 
-def test_a_bgzf_vcf_is_copied_without_bgzip(tmp_path, failing_bgzip):
-    """No recompression: the failing bgzip on PATH would fail the copy if it were called."""
-    raw = tmp_path / "raw"
-    content = bytes.fromhex("1f8b08040000000000ff06004243") + b"payload"
-    raw.write_bytes(content)
-    out = tmp_path / "out.vcf.gz"
-    assert write_bgzipped(IGV_TRACK_SOURCES["clinvar"], str(raw), str(out), str(tmp_path)) == 0
-    assert out.read_bytes() == content
-
-
 @pytest.fixture
 def cat_as_bgzip(tmp_path, monkeypatch):
     """A bgzip that writes its input unchanged, to read the pipeline's output without htslib."""

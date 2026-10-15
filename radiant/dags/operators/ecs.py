@@ -302,17 +302,17 @@ class CosmicMutationSet(RadiantTaskECSOperator):
 
 class IgvTracks(RadiantTaskECSOperator):
     @staticmethod
-    def get_build_track(ecs_env: ECSEnv, ephemeral_storage_gib: int):
+    def get_build_track(ecs_env: ECSEnv, ephemeral_storage_gib: int, max_active_tracks: int):
         return ecs.EcsRunTaskOperator.partial(
             **dict(
                 task_id="build_igv_track_ecs",
                 task_display_name="[ECS] Build IGV Track",
                 # Rendered after the task unmaps, so the expanded params are in the context.
                 map_index_template="{{ params.track_id }}",
-                # Upstream servers are the flaky part: a failed download retries alone, a few at a time.
+                # Upstream servers are the flaky part: a failed download retries alone.
                 retries=2,
                 retry_delay=timedelta(minutes=5),
-                max_active_tis_per_dagrun=4,
+                max_active_tis_per_dagrun=max_active_tracks,
                 overrides={
                     "containerOverrides": [
                         {

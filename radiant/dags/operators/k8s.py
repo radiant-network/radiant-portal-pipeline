@@ -88,7 +88,7 @@ def _igv_tracks_container_resources() -> k8s.V1ResourceRequirements:
     """One IGV track per pod, streamed end to end (download to disk, convert line by line into GNU sort,
     sort into bgzip), so memory is the sort buffer plus Python. Disk is the constraint: the largest track,
     UCSC chainSelf, is a 0.8 GB download that becomes ~5 GB of GFF3 for sort to spill (33M rows, measured
-    2026-10-09), and gnomAD SV is a 1.7 GB download recompressed next to itself.
+    2026-10-09). The VCFs (gnomAD SV is the largest, 1.7 GB) are moved as is, so they need one copy of disk only.
     """
     return _container_resources("IGV_TRACKS", cpu="1", memory="1Gi", memory_limit="2Gi", ephemeral_storage="16Gi")
 
@@ -107,7 +107,9 @@ def _nextflow_container_resources() -> k8s.V1ResourceRequirements:
 
 class RadiantTaskK8SOperator:
     @staticmethod
-    def _get_k8s_context(radiant_namespace: str, container_resources: k8s.V1ResourceRequirements | None = None):
+    def _get_k8s_context(
+        radiant_namespace: str | None = None, container_resources: k8s.V1ResourceRequirements | None = None
+    ):
         iceberg_env_vars = {
             key: value for key, value in os.environ.items() if key.startswith("PYICEBERG_CATALOG__DEFAULT__")
         }
@@ -425,20 +427,20 @@ class CosmicMutationSet(RadiantTaskK8SOperator):
 
 class IgvTracks(RadiantTaskK8SOperator):
     @staticmethod
-    def get_build_track(radiant_namespace: str):
+    def get_build_track(max_active_tracks: int):
         @task.kubernetes(
             **dict(
                 task_id="build_igv_track_k8s",
                 task_display_name="[K8s] Build IGV Track",
-                # Upstream servers are the flaky part: a failed download retries alone, a few at a time.
+                # Upstream servers are the flaky part: a failed download retries alone.
                 retries=2,
                 retry_delay=timedelta(minutes=5),
-                max_active_tis_per_dagrun=4,
+                max_active_tis_per_dagrun=max_active_tracks,
                 map_index_template="{{ task.op_kwargs['track_id'] }}",
                 name="build-igv-track",
                 do_xcom_push=True,
             )
-            | IgvTracks._get_k8s_context(radiant_namespace, container_resources=_igv_tracks_container_resources()),
+            | IgvTracks._get_k8s_context(container_resources=_igv_tracks_container_resources()),
         )
         def k8s_build_igv_track(track_id: str, igv_tracks_prefix: str) -> dict:
             from radiant.tasks.open_data.igv_tracks import build_igv_track

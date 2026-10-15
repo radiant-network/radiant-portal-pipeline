@@ -15,7 +15,7 @@ def test_get_build_track():
     }
     ecs_env = SimpleNamespace(ECS_CLUSTER="my-cluster", ECS_SUBNETS=["subnet-1"], ECS_SECURITY_GROUPS=["sg-1"])
     with patch.dict(os.environ, fake_env, clear=True):
-        partial = IgvTracks.get_build_track(ecs_env=ecs_env, ephemeral_storage_gib=42)
+        partial = IgvTracks.get_build_track(ecs_env=ecs_env, ephemeral_storage_gib=42, max_active_tracks=3)
 
     kwargs = partial.kwargs
     assert kwargs["task_id"] == "build_igv_track_ecs"
@@ -24,7 +24,7 @@ def test_get_build_track():
     # Same task definition (and image) as the VCF extraction: bgzip and tabix ship in the radiant-operator image.
     assert kwargs["task_definition"] == "radiant-operator"
     assert kwargs["retries"] == 2
-    assert kwargs["max_active_tis_per_dagrun"] == 4
+    assert kwargs["max_active_tis_per_dagrun"] == 3
     assert kwargs["map_index_template"] == "{{ params.track_id }}"
 
     (container,) = kwargs["overrides"]["containerOverrides"]

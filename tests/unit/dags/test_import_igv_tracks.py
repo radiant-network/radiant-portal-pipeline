@@ -63,6 +63,7 @@ def test_on_aws_the_dag_maps_the_ecs_task_over_the_listed_tracks(monkeypatch):
     assert build.partial_kwargs["cluster"] == "cluster"
     # Hardcoded in the DAG, not an env var: chainSelf peaks at ~6.6 GB of disk.
     assert build.partial_kwargs["overrides"]["ephemeralStorage"] == {"sizeInGiB": 30}
+    assert build.partial_kwargs["max_active_tis_per_dagrun"] == 4
     assert build.expand_input.value["params"].operator.task_id == "list_igv_tracks"
 
 

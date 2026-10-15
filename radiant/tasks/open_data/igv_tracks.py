@@ -44,7 +44,6 @@ _GFF3_RESERVED_RE = re.compile("|".join(re.escape(c) for c in _GFF3_RESERVED))
 _STRAY_PERCENT_RE = re.compile(r"%(?![0-9a-fA-F]{2})")
 _LOCATION_RE = re.compile(r"^([^:]+):(\d+)-(\d+)$")
 
-IGV_TRACKS_PREFIX_ENV = "RADIANT_IGV_TRACKS_S3_PREFIX"
 # Bucket + key characters only: on ECS the prefix is spliced into a single-quoted shell command.
 _IGV_TRACKS_PREFIX_RE = re.compile(r"^s3://[A-Za-z0-9.\-]+(/[A-Za-z0-9._\-/]*)?$")
 
@@ -73,10 +72,7 @@ class IgvTrackSource:
 def check_igv_tracks_prefix(prefix: str | None) -> str:
     """Returns ``prefix`` when it is an s3:// URI safe to pass through a shell command; raises ValueError otherwise."""
     if not _IGV_TRACKS_PREFIX_RE.match(prefix or ""):
-        raise ValueError(
-            f"igv_tracks_prefix must be an s3:// URI of letters, digits and . _ - / only, got {prefix!r}: "
-            f"set the param or {IGV_TRACKS_PREFIX_ENV}"
-        )
+        raise ValueError(f"igv_tracks_prefix must be an s3:// URI of letters, digits and . _ - / only, got {prefix!r}")
     return prefix
 
 

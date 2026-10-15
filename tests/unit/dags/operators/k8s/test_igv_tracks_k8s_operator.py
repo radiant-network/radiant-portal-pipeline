@@ -22,7 +22,7 @@ def test_get_build_track():
         "RADIANT_TASK_OPERATOR_IMAGE": "my-registry/radiant-task-operator:test",
     }
     with patch.dict(os.environ, fake_env, clear=True):
-        op = IgvTracks.get_build_track("my-iceberg-namespace")(
+        op = IgvTracks.get_build_track(max_active_tracks=3)(
             track_id="clinvar", igv_tracks_prefix="s3://tracks/igv/"
         ).operator
 
@@ -30,6 +30,8 @@ def test_get_build_track():
     assert op.image == "my-registry/radiant-task-operator:test"
     assert op.do_xcom_push is True
     assert op.retries == 2
-    assert op.max_active_tis_per_dagrun == 4
+    assert op.max_active_tis_per_dagrun == 3
     assert op.container_resources.requests["ephemeral-storage"] == "16Gi"
     assert op.op_kwargs == {"track_id": "clinvar", "igv_tracks_prefix": "s3://tracks/igv/"}
+    # No Iceberg namespace: the task never touches Iceberg.
+    assert {e.name: e.value for e in op.env_vars}.get("RADIANT_ICEBERG_NAMESPACE") is None
