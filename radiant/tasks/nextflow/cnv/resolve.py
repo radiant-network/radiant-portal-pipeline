@@ -37,9 +37,9 @@ REASON_TEXT = {
         "the case has no project_code -- `cases.project_id` did not resolve to a row in "
         "`project`, and the batch PATCH requires it to look the case up"
     ),
-    "tenant_not_granted": (
-        "its tenant is not in the configured allow-list, so the batch PATCH would return 403 "
-        "after the pipeline had already run"
+    "tenant_excluded": (
+        "its tenant is in `excluded_tenants` (`$RADIANT_ETL_EXCLUDED_TENANTS`), which the ETL "
+        "leaves out of case processing"
     ),
     "unsupported_caller": (
         "its alignment was not produced by DRAGEN, and the pipeline's normalization step only "

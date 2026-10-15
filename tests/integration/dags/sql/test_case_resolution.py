@@ -42,7 +42,7 @@ def _render(sql_file, radiant_mapping, params=None):
     with open(sql_file) as f:
         return jinja2.Template(f.read()).render(
             mapping=radiant_mapping,
-            params=params if params is not None else {"task_ids": [], "tenants": []},
+            params=params if params is not None else {"task_ids": [], "excluded_tenants": []},
         )
 
 
@@ -263,7 +263,7 @@ def test_a_targeted_run_on_a_shared_task_still_returns_both_cases(
         radiant_mapping,
         DISCOVERY,
         parameters={"task_ids": [9201]},
-        params={"task_ids": [9201], "tenants": []},
+        params={"task_ids": [9201], "excluded_tenants": []},
     )
     assert {r["case_id"] for r in rows} == {SHARED_CASE_A, SHARED_CASE_B}
 
@@ -294,7 +294,7 @@ def test_the_superseded_experiment_cannot_make_the_case_eligible(
         radiant_mapping,
         DISCOVERY,
         parameters={"task_ids": [9203]},
-        params={"task_ids": [9203], "tenants": []},
+        params={"task_ids": [9203], "excluded_tenants": []},
     )
     assert rows == []
 
@@ -368,17 +368,17 @@ def test_a_member_never_sequenced_comes_back_with_a_reason(
     assert by_role["father"]["seq_id"] is None
 
 
-def test_an_ungranted_tenant_is_reported_not_hidden(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+def test_an_excluded_tenant_is_reported_not_hidden(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     """Excluding it silently would leave someone wondering why the annotation never happened."""
     rows = _discover(
         starrocks_session,
         radiant_mapping,
         TRIO_CASE_ID,
-        params={"task_ids": [], "tenants": ["not-radiant"]},
-        parameters={"tenants": ["not-radiant"]},
+        params={"task_ids": [], "excluded_tenants": ["radiant"]},
+        parameters={"excluded_tenants": ["radiant"]},
     )
     assert rows
-    assert all(r["exclusion_reason"] == "tenant_not_granted" for r in rows)
+    assert all(r["exclusion_reason"] == "tenant_excluded" for r in rows)
 
 
 # --- phenotypes --------------------------------------------------------------------------------
