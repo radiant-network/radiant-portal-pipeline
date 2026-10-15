@@ -156,9 +156,9 @@ def import_part():
 
     @task(task_id="cleanup_tasks_files", task_display_name="[PyOp] Cleanup tasks files")
     def cleanup_tasks_files(s3_path: str) -> None:
-        from radiant.tasks.utils import delete_s3_object
+        from radiant.dags.operators.utils import s3_delete_content
 
-        delete_s3_object(s3_path, LOGGER)
+        s3_delete_content(s3_path)
 
     tasks = check_tasks(fetch_sequencing_experiment_delta.output)
     stored_tasks = store_tasks(tasks)
