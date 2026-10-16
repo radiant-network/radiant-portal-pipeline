@@ -17,7 +17,7 @@
 -- exactly the order declared by init/germline_snv_occurrence_create_table.sql.
 --
 -- New deployments get the columns from init/germline_snv_occurrence_create_table.sql and must NOT run this
--- script. StarRocks has no `ADD COLUMN IF NOT EXISTS` (3.4.2), so re-running it fails on the ALTER.
+-- script. StarRocks has no `ADD COLUMN IF NOT EXISTS` (checked on 4.0.16), so re-running it fails on the ALTER.
 --
 -- HARD PREREQUISITE for the deployment: run this BEFORE the new DAGs are deployed. Against an unmigrated
 -- table the positional insert fails and every import_part breaks.
