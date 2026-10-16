@@ -93,16 +93,29 @@ grant `can_ingest_data` at `'*'`, or add the tenant to `excluded_tenants`.
 
 ## Notification
 
-The laboratories are emailed when their cases reach `in_progress`, not when the pipelines
-register their outputs: the manifest then holds every pipeline's results. The "from Cases" DAGs
-no longer email. `evaluate_cases` is a mapped task group, one chain per tenant, so a tenant
-skipped or failed never holds back another tenant's email:
+The laboratories are emailed at the end of the run, not when the pipelines register their
+outputs: the manifest then holds every pipeline's results. Every case the run is done with is
+emailed, whether its status changed or not:
 
-- **set_in_progress** sends the status change;
-- **create_case_group** POSTs `/{tenant}/case_groups` with the cases now in `in_progress` under
-  the name `results-<run tag>` (the labs see it in the manifest's file name). It counts the cases
-  an earlier attempt of the same task moved too, and is skipped when no case moved. The name is
-  the key and the call overwrites, so a retry lands on the same group;
+- the cases moved to `in_progress`;
+- the cases already past `processing` (`in_progress`, `in_review`, `completed`...) that the first
+  discovery found work for and the second does not: new files for a case already open for
+  analysis. Their status is left alone.
+
+A `submitted` or `processing` case is not emailed until it reaches `in_progress`, and a case a
+pipeline failed on is emailed by the later run that finishes it. `discover_cases` hands its cases
+to `select_ready_cases` as the `cases_with_work` XCom, pulled rather than passed: if discovery
+failed, the cases are still moved to `in_progress` and emailed, only the others are not.
+
+The "from Cases" DAGs no longer email. `evaluate_cases` is a mapped task group, one chain per
+tenant, so a tenant skipped or failed never holds back another tenant's email:
+
+- **set_in_progress** sends the status change; no call for a tenant with nothing to move;
+- **create_case_group** POSTs `/{tenant}/case_groups` with the cases now in `in_progress` and the
+  ones to notify unchanged, under the name `results-<run tag>` (the labs see it in the manifest's
+  file name). It counts the cases an earlier attempt of the same task moved too, is skipped when
+  there is no case to notify, and on a 403 like the status change. The name is the key and the
+  call overwrites, so a retry lands on the same group;
 - **notify_labs** POSTs `/{tenant}/case_groups/{name}/notify`. The portal emails each diagnosis
   laboratory the TSV manifest of its cases' documents, read at sending time. Skipped when
   `notify` is false.
@@ -122,15 +135,15 @@ The log holds one line per laboratory:
 A **500** means nothing was sent: the tenant has no notification template mounted, or the SMTP
 settings are invalid. The manual **notify_cases** DAG re-sends an existing group.
 
-A case already `in_progress` (or later) that gets new data is processed and imported, but keeps
-its status, so it is **not** emailed again.
+A case already `in_progress` (or later) that gets new data is processed and imported, keeps its
+status, and is emailed again with its whole manifest.
 
 ## Parameters
 
 | Param              | Default                         | Meaning                                                                                                                             |
 | ------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | `excluded_tenants` | `$RADIANT_ETL_EXCLUDED_TENANTS` | Tenants left out of case processing, see Tenants. Empty excludes none.                                                              |
-| `notify`           | **true**                        | Email the laboratories of the cases moved to `in_progress`. False still creates the case group, so **notify_cases** can send later. |
+| `notify`           | **true**                        | Email the laboratories of the cases moved to `in_progress` and of those past it the run processed. False still creates the case group, so **notify_cases** can send later. |
 
 ## Child runs
 

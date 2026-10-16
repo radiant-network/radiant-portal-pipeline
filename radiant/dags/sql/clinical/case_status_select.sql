@@ -1,10 +1,11 @@
--- One row per case the pipeline may move: every `submitted` or `processing` case, its tenant,
--- and whether it has variant data.
+-- One row per case the pipeline may move or notify: every case it does not ignore (`draft`,
+-- `revoked`), its status, its tenant, and whether it has variant data.
 --
 -- Consumed by `radiant-case-scheduler` twice: at the start (`fetch_case_statuses`, for
 -- `submitted` -> `processing`) and after the pipelines (`refresh_case_statuses`, for
--- `processing` -> `in_progress`). Unscoped on purpose: a case whose pipeline failed on an
--- earlier run must still be found once its variants are in.
+-- `processing` -> `in_progress`, and to email the labs of the cases past `processing` the run
+-- processed). Unscoped on purpose: a case whose pipeline failed on an earlier run must still be
+-- found once its variants are in.
 --
 -- `has_variants`: at least one experiment of the case has been imported (`ingested_at`, set by
 -- `import_part`) from an SNV or CNV VCF, and is not deleted. An Exomiser-only row does not count.
@@ -23,5 +24,5 @@ SELECT c.id                  AS case_id,
        i.case_id IS NOT NULL AS has_variants
 FROM {{ mapping.clinical_case }} c
 LEFT JOIN imported i ON i.case_id = c.id
-WHERE c.status_code IN ('submitted', 'processing')
+WHERE c.status_code NOT IN ({{ mapping.pipeline_ignored_case_statuses }})
 ORDER BY c.id
