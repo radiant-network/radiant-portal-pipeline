@@ -20,12 +20,17 @@ sources:
                 - task_id
                 - locus_id
                 - phased
+                # RAD-39: a tenant with no family or affected proband has no compound het
+                - has_comphet
+                - comphet_genes
           # --- Should Not Contain Same Value ---------------------------------
           - should_not_contain_same_value:
               name: germline_snv_occurrence__should_not_contain_same_value
               except:
                 # Constant by construction
                 - part
+                # count(distinct) is not supported on STRUCT columns
+                - comphet_genes
 
           # --- Should Be Within Range ----------------------------------------
           # allele-depth ratios must be in [0,1] (defaults: like 'ad_ratio', 0..1)
