@@ -28,6 +28,7 @@ def test_get_run_dbt():
     assert op.image == "my-registry/radiant-dbt:test"
     assert op.deferrable is False
     assert op.get_logs is True
+    assert op.startup_timeout_seconds == 1800
 
     # StarRocks connection injected from the existing K8s secret.
     (secret,) = op.secrets
