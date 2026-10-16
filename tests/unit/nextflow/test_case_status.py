@@ -21,9 +21,9 @@ def keep_all(cases):
 
 def test_work_waiting_is_the_union_of_every_pipeline_and_the_import_delta():
     waiting = case_status.cases_with_work(
-        snv_rows=[snv_member_row(case_id=1)],
-        cnv_rows=[cnv_member_row(case_id=2)],
-        somatic_rows=calling_task_rows(case_id=5),
+        germline_snv_rows=[snv_member_row(case_id=1)],
+        germline_cnv_rows=[cnv_member_row(case_id=2)],
+        somatic_snv_rows=calling_task_rows(case_id=5),
         qc_rows=qc_document_rows(case_id=3),
         import_rows=[{"case_id": 4}, {"case_id": 4}],
         locate_qc=keep_all,
@@ -35,9 +35,9 @@ def test_work_waiting_is_the_union_of_every_pipeline_and_the_import_delta():
 def test_a_case_the_pipeline_would_exclude_is_not_work_waiting(reason):
     """Moved to `processing`, it would wait there with nothing running for it."""
     waiting = case_status.cases_with_work(
-        snv_rows=[snv_member_row(case_id=1, exclusion_reason=reason)],
-        cnv_rows=[cnv_member_row(case_id=2, exclusion_reason=reason)],
-        somatic_rows=calling_task_rows(case_id=5, exclusion_reason=reason),
+        germline_snv_rows=[snv_member_row(case_id=1, exclusion_reason=reason)],
+        germline_cnv_rows=[cnv_member_row(case_id=2, exclusion_reason=reason)],
+        somatic_snv_rows=calling_task_rows(case_id=5, exclusion_reason=reason),
         qc_rows=qc_document_rows(case_id=3, exclusion_reason=reason),
         import_rows=[],
         locate_qc=keep_all,

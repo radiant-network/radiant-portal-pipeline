@@ -5,15 +5,15 @@ from airflow.utils.trigger_rule import TriggerRule
 DAG_ID = "radiant-case-scheduler"
 
 CASES_DAG_IDS = {
-    "trigger_snv_postprocessing": "radiant-nextflow-snv-postprocessing-cases",
-    "trigger_cnv_postprocessing": "radiant-nextflow-cnv-postprocessing-cases",
-    "trigger_somatic_annotation": "radiant-nextflow-somatic-snv-annotation-cases",
+    "trigger_germline_snv_postprocessing": "radiant-nextflow-snv-postprocessing-cases",
+    "trigger_germline_cnv_postprocessing": "radiant-nextflow-cnv-postprocessing-cases",
+    "trigger_somatic_snv_annotation": "radiant-nextflow-somatic-snv-annotation-cases",
     "trigger_quality_control": "radiant-nextflow-quality-control-cases",
 }
 DISCOVERY = {
-    "discover_snv_cases": "radiant-nextflow-snv-postprocessing-cases",
-    "discover_cnv_cases": "radiant-nextflow-cnv-postprocessing-cases",
-    "discover_somatic_cases": "radiant-nextflow-somatic-snv-annotation-cases",
+    "discover_germline_snv_cases": "radiant-nextflow-snv-postprocessing-cases",
+    "discover_germline_cnv_cases": "radiant-nextflow-cnv-postprocessing-cases",
+    "discover_somatic_snv_cases": "radiant-nextflow-somatic-snv-annotation-cases",
     "discover_qc_cases": "radiant-nextflow-quality-control-cases",
 }
 
@@ -30,22 +30,22 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
-        "discover_snv_cases",
-        "discover_cnv_cases",
-        "discover_somatic_cases",
+        "discover_germline_snv_cases",
+        "discover_germline_cnv_cases",
+        "discover_somatic_snv_cases",
         "discover_qc_cases",
         "discover_import_cases",
         "fetch_case_statuses",
         "discover_cases",
         "set_processing",
-        "trigger_snv_postprocessing",
-        "trigger_cnv_postprocessing",
-        "trigger_somatic_annotation",
+        "trigger_germline_snv_postprocessing",
+        "trigger_germline_cnv_postprocessing",
+        "trigger_somatic_snv_annotation",
         "trigger_quality_control",
         "trigger_import",
-        "rediscover_snv_cases",
-        "rediscover_cnv_cases",
-        "rediscover_somatic_cases",
+        "rediscover_germline_snv_cases",
+        "rediscover_germline_cnv_cases",
+        "rediscover_somatic_snv_cases",
         "rediscover_qc_cases",
         "rediscover_import_cases",
         "refresh_case_statuses",
@@ -155,7 +155,10 @@ def test_the_import_follows_post_processing_whatever_its_outcome(dag_bag):
     trigger = dag.get_task("trigger_import")
     assert trigger.trigger_dag_id == "radiant-import"
     assert trigger.trigger_rule == TriggerRule.ALL_DONE
-    assert _upstream(dag, "trigger_import") == {"trigger_snv_postprocessing", "trigger_somatic_annotation"}
+    assert _upstream(dag, "trigger_import") == {
+        "trigger_germline_snv_postprocessing",
+        "trigger_somatic_snv_annotation",
+    }
 
 
 def test_evaluation_waits_for_every_pipeline_and_runs_whatever_their_outcome(dag_bag):
@@ -163,7 +166,11 @@ def test_evaluation_waits_for_every_pipeline_and_runs_whatever_their_outcome(dag
     second_pass = ["refresh_case_statuses", *(f"re{task_id}" for task_id in DISCOVERY), "rediscover_import_cases"]
     for task_id in second_pass:
         assert dag.get_task(task_id).trigger_rule == TriggerRule.ALL_DONE
-        assert _upstream(dag, task_id) == {"trigger_import", "trigger_cnv_postprocessing", "trigger_quality_control"}
+        assert _upstream(dag, task_id) == {
+            "trigger_import",
+            "trigger_germline_cnv_postprocessing",
+            "trigger_quality_control",
+        }
     # The statuses are read again: the pipelines and the import have run since the first read.
     assert dag.get_task("refresh_case_statuses").sql == dag.get_task("fetch_case_statuses").sql
     assert _upstream(dag, "select_ready_cases") == set(second_pass)
@@ -173,7 +180,7 @@ def test_evaluation_asks_the_same_work_waiting_question_as_discovery(dag_bag):
     """A case still pending anywhere after the pipelines stays processing; the two passes must
     not drift, or a case would be moved on with a pipeline left to run, or never at all."""
     dag = dag_bag.get_dag(DAG_ID)
-    for name in ("snv", "cnv", "somatic", "qc", "import"):
+    for name in ("germline_snv", "germline_cnv", "somatic_snv", "qc", "import"):
         first, second = dag.get_task(f"discover_{name}_cases"), dag.get_task(f"rediscover_{name}_cases")
         assert second.sql == first.sql
         assert second.params == first.params

@@ -5,14 +5,18 @@ the cases with work waiting to `processing`, runs the pipelines, then moves to `
 cases that every pipeline is done with and that have variant data.
 
 ```
-discover_{snv,cnv,somatic,qc,import}_cases, fetch_case_statuses
+discover_{germline_snv,germline_cnv,somatic_snv,qc,import}_cases, fetch_case_statuses
     -> discover_cases -> set_processing (one per tenant)
-    -> trigger_snv_postprocessing ---+-> trigger_import --+
-    -> trigger_somatic_annotation ---+                    |
-    -> trigger_cnv_postprocessing ------------------------+-> rediscover_{snv,cnv,somatic,qc,import}_cases,
-    -> trigger_quality_control ---------------------------+   refresh_case_statuses
+    -> trigger_germline_snv_postprocessing ---+-> trigger_import --+
+    -> trigger_somatic_snv_annotation --------+                    |
+    -> trigger_germline_cnv_postprocessing ------------------------+-> rediscover_{germline_snv,germline_cnv,
+    -> trigger_quality_control ------------------------------------+   somatic_snv,qc,import}_cases,
+                                                                       refresh_case_statuses
     -> select_ready_cases -> evaluate_cases (one per tenant)
 ```
+
+Each key names the case type and the variant type: **germline_snv**, **germline_cnv** and
+**somatic_snv**. Quality control (**qc**) is germline only.
 
 The import waits for SNV post-processing and somatic annotation, success or not: it loads the
 annotation tasks they register. Without that order the import could run first, and the case's

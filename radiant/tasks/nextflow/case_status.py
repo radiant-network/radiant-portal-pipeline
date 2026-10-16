@@ -53,9 +53,9 @@ def s3_qc_locator(inputs_root: str) -> QcLocator:
 
 
 def cases_with_work(
-    snv_rows: list[dict],
-    cnv_rows: list[dict],
-    somatic_rows: list[dict],
+    germline_snv_rows: list[dict],
+    germline_cnv_rows: list[dict],
+    somatic_snv_rows: list[dict],
     qc_rows: list[dict],
     import_rows: list[dict],
     locate_qc: QcLocator,
@@ -71,9 +71,9 @@ def cases_with_work(
     qc = select_qc_cases(qc_rows, strict=False)
     qc_cases = locate_qc(resolve_qc_cases([m.model_dump() for m in qc.members])) if qc.case_ids else []
     selected = {
-        "snv post-processing": select_snv_cases(snv_rows, strict=False).case_ids,
-        "cnv post-processing": select_cnv_cases(cnv_rows, strict=False).case_ids,
-        "somatic snv annotation": select_somatic_tasks(somatic_rows, strict=False).case_ids,
+        "germline snv post-processing": select_snv_cases(germline_snv_rows, strict=False).case_ids,
+        "germline cnv post-processing": select_cnv_cases(germline_cnv_rows, strict=False).case_ids,
+        "somatic snv annotation": select_somatic_tasks(somatic_snv_rows, strict=False).case_ids,
         "quality control": sorted(c.case_id for c in qc_cases),
         "import": sorted({row["case_id"] for row in import_rows}),
     }
