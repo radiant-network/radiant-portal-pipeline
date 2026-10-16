@@ -244,7 +244,14 @@ def _run_select_ready_cases(dag, monkeypatch, cases_with_work):
         {"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True},
         {"case_id": 2, "tenant_code": "radiant", "status_code": "in_progress", "has_variants": True},
     ]
-    batches = dag.get_task("select_ready_cases").python_callable([], [], [], [], status_rows)
+    batches = dag.get_task("select_ready_cases").python_callable(
+        germline_snv_rows=[],
+        germline_cnv_rows=[],
+        somatic_snv_rows=[],
+        qc_rows=[],
+        import_rows=[],
+        status_rows=status_rows,
+    )
     assert pulls == [("discover_cases", case_scheduler.CASES_WITH_WORK_KEY)]
     return batches
 
@@ -259,3 +266,36 @@ def test_a_failed_discovery_still_moves_the_cases_to_in_progress(dag_bag, monkey
     """Pulled, not passed: discovery failing costs the extra emails only, not the status changes."""
     batches = _run_select_ready_cases(dag_bag.get_dag(DAG_ID), monkeypatch, cases_with_work=None)
     assert batches == [{"tenant": "radiant", "case_ids": [1], "processed_case_ids": []}]
+
+
+def test_somatic_candidates_count_as_work_in_both_passes(dag_bag, monkeypatch):
+    """Each discovery input reaches `_cases_with_work` in its own place: a somatic SNV candidate
+    makes its case work waiting before the pipelines, and keeps it in processing after them."""
+    from tests.unit.nextflow.somatic.conftest import calling_task_rows
+
+    pushed = {}
+
+    class TaskInstance:
+        def xcom_push(self, key, value):
+            pushed[key] = value
+
+        def xcom_pull(self, task_ids, key):
+            return pushed.get(key)
+
+    context = {"ti": TaskInstance(), "params": {"excluded_tenants": []}}
+    monkeypatch.setattr("airflow.operators.python.get_current_context", lambda: context)
+    dag = dag_bag.get_dag(DAG_ID)
+    inputs = {
+        "germline_snv_rows": [],
+        "germline_cnv_rows": [],
+        "somatic_snv_rows": calling_task_rows(case_id=23),
+        "qc_rows": [],
+        "import_rows": [],
+    }
+
+    submitted = [{"case_id": 23, "tenant_code": "radiant", "status_code": "submitted", "has_variants": False}]
+    batches = dag.get_task("discover_cases").python_callable(**inputs, status_rows=submitted)
+    assert batches == [{"tenant": "radiant", "case_ids": [23]}]
+
+    processing = [{"case_id": 23, "tenant_code": "radiant", "status_code": "processing", "has_variants": True}]
+    assert dag.get_task("select_ready_cases").python_callable(**inputs, status_rows=processing) == []

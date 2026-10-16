@@ -31,26 +31,41 @@ def test_every_mapping_key_used_exists():
     assert "{{" not in _render()
 
 
+def test_the_ctes_answer_one_question_each_in_order():
+    """Five CTEs, each named for the question it answers, built in dependency order."""
+    sql = _without_comments(_render())
+    names = [
+        "calling_task_experiment",
+        "case_calling_task",
+        "raw_somatic_vcf",
+        "already_annotated",
+        "pending_case_task",
+    ]
+    positions = [sql.index(f"{name} AS (") for name in names]
+    assert positions == sorted(positions)
+    assert re.findall(r"^(?:WITH )?(\w+) AS \($", sql, flags=re.MULTILINE) == names
+
+
 def test_discovery_is_unscoped_by_default_and_needs_an_ssnv_vcf():
     sql = _without_comments(_render())
     assert "%(task_ids)s" not in sql
     assert "%(excluded_tenants)s" not in sql
-    assert "AND s.task_id IS NOT NULL" in _cte(sql, "candidate")
+    assert "AND v.task_id IS NOT NULL" in _cte(sql, "pending_case_task")
 
 
 def test_named_tasks_narrow_candidacy_and_report_a_task_without_ssnv():
     sql = _without_comments(_render({"task_ids": [70], "excluded_tenants": []}))
-    candidate = _cte(sql, "candidate")
+    pending = _cte(sql, "pending_case_task")
     assert sql.count("%(task_ids)s") == 1
-    assert "ct.task_id IN %(task_ids)s" in candidate
-    assert "s.task_id IS NOT NULL" not in candidate
+    assert "ct.task_id IN %(task_ids)s" in pending
+    assert "v.task_id IS NOT NULL" not in pending
     assert "'no_ssnv'" in sql
 
 
 def test_the_tenant_block_list_is_a_reason_not_a_filter():
     sql = _without_comments(_render({"task_ids": [], "excluded_tenants": ["radiant"]}))
-    assert "'tenant_excluded'" in sql
-    assert "WHERE sc.tenant_code" not in sql
+    assert "WHEN pt.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'" in sql
+    assert "WHERE pt.tenant_code" not in sql
 
 
 def test_no_stray_percent_survives_parameter_binding():
@@ -58,20 +73,30 @@ def test_no_stray_percent_survives_parameter_binding():
     assert "%" not in re.sub(r"%\(\w+\)s", "", sql).replace("%%", "")
 
 
-def test_only_somatic_cases_and_calling_tasks_are_looked_at():
-    sql = _without_comments(_render())
-    assert "c.case_type_code = 'somatic'" in _cte(sql, "somatic_case")
-    calling = _cte(sql, "task_experiment")
+def test_only_somatic_calling_tasks_are_looked_at():
+    calling = _cte(_without_comments(_render()), "calling_task_experiment")
     for task_type in ("somatic_variant_calling", "tumor_only_variant_calling", "alignment_somatic_variant_calling"):
         assert f"'{task_type}'" in calling
+    assert "radiant_somatic_annotation" not in calling
+    assert "COUNT(*) OVER (PARTITION BY task_id) AS task_experiments" in calling
+    assert "SELECT DISTINCT" in calling
+
+
+def test_the_case_is_somatic_active_and_holds_every_experiment_of_the_task():
+    """The portal refuses an input document produced by an experiment the case does not hold."""
+    case_task = _cte(_without_comments(_render()), "case_calling_task")
+    assert "c.case_type_code = 'somatic'" in case_task
+    assert "c.status_code NOT IN (" in case_task
+    assert "HAVING COUNT(DISTINCT te.seq_id) = te.task_experiments" in case_task
+    assert "case_id IS NOT NULL" not in case_task
 
 
 def test_the_trigger_is_the_ssnv_vcf_selected_on_type_fields():
     sql = _without_comments(_render())
-    ssnv = _cte(sql, "ssnv")
-    assert "data_type_code = 'ssnv'" in ssnv
-    assert "format_code    = 'vcf'" in ssnv
-    assert "thd.type = 'output'" in ssnv
+    vcf = _cte(sql, "raw_somatic_vcf")
+    assert "data_type_code = 'ssnv'" in vcf
+    assert "format_code    = 'vcf'" in vcf
+    assert "thd.type = 'output'" in vcf
     assert "'scnv'" not in sql
     assert "LIKE" not in sql
 
@@ -79,24 +104,16 @@ def test_the_trigger_is_the_ssnv_vcf_selected_on_type_fields():
 def test_a_vcf_already_input_of_an_annotation_on_the_same_case_is_done():
     """Per case, not global: a registration that succeeded in one tenant must not hide another."""
     sql = _without_comments(_render())
-    context = _cte(sql, "annotation_context")
-    assert "t.task_type_code = 'radiant_somatic_annotation'" in context
-    assert "tc.case_id IS NOT NULL" in context
-    assert "thd.type = 'input'" in _cte(sql, "annotation_input")
-    annotated = _cte(sql, "annotated")
-    assert "ac.case_id AS case_id" in annotated
-    assert "data_type_code = 'ssnv'" in annotated
-    candidate = _cte(sql, "candidate")
-    assert "a.case_id = ct.case_id" in candidate
-    assert "WHERE a.task_id IS NULL" in candidate
+    annotated = _cte(sql, "already_annotated")
+    assert "t.task_type_code = 'radiant_somatic_annotation'" in annotated
+    assert "tc.case_id IS NOT NULL" in annotated
+    assert "ann_in.type = 'input'" in annotated
+    assert "call_out.document_id = ann_in.document_id" in annotated
+    assert "call_out.type = 'output'" in annotated
+    pending = _cte(sql, "pending_case_task")
+    assert "a.case_id = ct.case_id" in pending
+    assert "WHERE a.task_id IS NULL" in pending
 
 
 def test_only_completed_experiments_run():
     assert "WHEN se.status_code <> 'completed' THEN 'pending_sequencing'" in _render()
-
-
-def test_the_case_must_hold_every_experiment_of_the_task():
-    """The portal refuses an input document produced by an experiment the case does not hold."""
-    case_task = _cte(_without_comments(_render()), "case_task")
-    assert "HAVING COUNT(DISTINCT te.seq_id) = ts.experiments" in case_task
-    assert "case_id IS NOT NULL" not in case_task

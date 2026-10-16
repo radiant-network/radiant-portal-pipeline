@@ -211,7 +211,7 @@ def case_scheduler():
         from radiant.tasks.nextflow.case_status import plan_processing
 
         context = get_current_context()
-        waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, qc_rows, import_rows)
+        waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
         context["ti"].xcom_push(key=CASES_WITH_WORK_KEY, value=sorted(waiting))
         return plan_processing(status_rows, waiting, context["params"]["excluded_tenants"])
 
@@ -255,7 +255,7 @@ def case_scheduler():
         processed = context["ti"].xcom_pull(task_ids="discover_cases", key=CASES_WITH_WORK_KEY)
         if processed is None:
             LOGGER.warning("discover_cases did not run: only the cases moved to in_progress are notified")
-        still_waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, qc_rows, import_rows)
+        still_waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
         return plan_in_progress(
             status_rows, set(processed or []), still_waiting, context["params"]["excluded_tenants"]
         )
