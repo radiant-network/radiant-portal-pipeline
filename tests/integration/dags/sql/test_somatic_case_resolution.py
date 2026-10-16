@@ -9,8 +9,6 @@ The shapes the seeds do not have are built on ids far above the seeded range, an
 each test, so no other integration test can see them:
 
 - `no_ssnv_task`: a calling task with no `ssnv` VCF;
-- `legacy_fixtures`: QLIN annotations with no input document, one over exactly a tumor-only call's
-  experiment, one tumor-normal over a tumor sample that also has a tumor-only call;
 - `shared_task_fixtures`: one calling task framed by two somatic cases, annotated on one only.
 """
 
@@ -111,32 +109,6 @@ def no_ssnv_task(postgres_clinical_seeds, postgres_instance):
 
 
 @pytest.fixture
-def legacy_fixtures(postgres_clinical_seeds, postgres_instance):
-    """9511 is a tumor-only call on experiment 64 (case 23), covered by the legacy annotation 9512
-    over exactly that experiment. 9514 is a tumor-only call on experiment 62 (case 22): the legacy
-    tumor-normal annotation 9513 over 62 + 63 must not hide it. The legacy annotations publish no
-    document, so the staging view never sees them."""
-    _execute(
-        postgres_instance,
-        f"""
-        {_TASK_COLUMNS}
-        VALUES (9511, 'tumor_only_variant_calling', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
-               (9512, 'radiant_somatic_annotation', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
-               (9513, 'radiant_somatic_annotation', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
-               (9514, 'tumor_only_variant_calling', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant');
-        INSERT INTO task_context (task_id, case_id, sequencing_experiment_id)
-        VALUES (9511, 23, 64), (9512, 23, 64), (9513, 22, 62), (9513, 22, 63), (9514, 22, 62);
-        {_DOCUMENT_COLUMNS}
-        VALUES {_ssnv_document(9511)}, {_ssnv_document(9514)};
-        INSERT INTO task_has_document (task_id, document_id, type)
-        VALUES (9511, 9511, 'output'), (9514, 9514, 'output');
-        """,
-    )
-    yield
-    _cleanup(postgres_instance, [9511, 9512, 9513, 9514], [9511, 9514])
-
-
-@pytest.fixture
 def shared_task_fixtures(postgres_clinical_seeds, postgres_instance):
     """Calling task 9521 on experiment 64, which case 23 and the extra somatic case 9520 both hold.
     Its VCF is the input of annotation 9522, registered on case 23 only."""
@@ -222,23 +194,6 @@ def test_an_excluded_tenant_is_reported_not_filtered(postgres_clinical_seeds, st
     rows = _discover(starrocks_session, radiant_mapping, excluded_tenants=["radiant"])
     assert rows and {r["exclusion_reason"] for r in rows} == {"tenant_excluded"}
     assert select_tasks(rows).tasks == []
-
-
-def test_a_legacy_annotation_over_exactly_the_task_s_experiments_stops_it(
-    legacy_fixtures, starrocks_session, radiant_mapping
-):
-    """An old-contract calling task whose raw VCF is typed `ssnv` is not annotated again: the import
-    would load both annotations."""
-    rows = _discover(starrocks_session, radiant_mapping)
-    assert 9511 not in {r["calling_task_id"] for r in rows}
-    assert _discover(starrocks_session, radiant_mapping, task_ids=[9511]) == []
-
-
-def test_a_legacy_tumor_normal_annotation_does_not_hide_a_tumor_only_call(
-    legacy_fixtures, starrocks_session, radiant_mapping
-):
-    rows = _discover(starrocks_session, radiant_mapping, task_ids=[9514])
-    assert [(r["case_id"], r["seq_id"], r["exclusion_reason"]) for r in rows] == [(22, 62, None)]
 
 
 def test_an_annotation_on_one_case_does_not_hide_another_case_of_the_task(

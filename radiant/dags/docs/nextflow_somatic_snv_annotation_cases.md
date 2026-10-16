@@ -52,11 +52,6 @@ A calling task (**somatic_variant_calling**, **tumor_only_variant_calling** or
 - no **radiant_somatic_annotation** registered on that case has that document as input. Per
   case: a task held by two cases, registered on one only (say the other tenant's PATCH failed),
   is still pending on the other;
-- no legacy annotation either: a **radiant_somatic_annotation** sent by QLIN, with no input
-  document, registered on that case over exactly the task's experiments. Without this, a calling
-  task sent the old way with its raw VCF typed **ssnv** would be annotated again, and the import
-  would load both annotations. Exactly, so a tumor-normal annotation never hides a tumor-only call
-  on the same tumor sample;
 - a somatic case, not draft or revoked, holds **every** sequencing experiment of the task. The
   portal refuses an input document from an experiment the case does not hold.
 

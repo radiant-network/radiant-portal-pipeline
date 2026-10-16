@@ -6,13 +6,9 @@
 --
 -- The unit of work is the calling task, not the case: a tumor-normal and a tumor-only call on the
 -- same tumor sample are two VCFs, and both are annotated. A calling task is pending on a case when
--- it published an `ssnv`/`vcf` document and that case has no annotation of it:
---
--- - no `radiant_somatic_annotation` registered on the case with that document as input. Per case,
---   not global: a registration that succeeded in one tenant must not hide a case of another;
--- - no legacy annotation either: one sent by QLIN, with no input document, registered on the case
---   over exactly the task's experiments. Without this, an old-contract calling task whose raw VCF
---   is typed `ssnv` would be annotated again, and the import would load both annotations.
+-- it published an `ssnv`/`vcf` document and no `radiant_somatic_annotation` registered on that
+-- case has that document as input. Per case, not global: a registration that succeeded in one
+-- tenant must not hide a case of another.
 --
 -- Only the `ssnv` VCF is selected: the `scnv` VCF of the same task is never a trigger.
 --
@@ -62,11 +58,10 @@ case_task AS (
     HAVING COUNT(DISTINCT te.seq_id) = ts.experiments
 ),
 annotation_context AS (
-    -- Every somatic annotation, with the case and the experiments it was registered on. The type
-    -- is case-related in the portal, so its context always carries the case.
-    SELECT DISTINCT t.id                        AS annotation_id,
-                    tc.case_id                  AS case_id,
-                    tc.sequencing_experiment_id AS seq_id
+    -- Every somatic annotation, with the case it was registered on. The type is case-related in
+    -- the portal, so its context always carries the case.
+    SELECT DISTINCT t.id       AS annotation_id,
+                    tc.case_id AS case_id
     FROM {{ mapping.clinical_task }} t
     JOIN {{ mapping.clinical_task_context }} tc ON tc.task_id = t.id
     WHERE t.task_type_code = 'radiant_somatic_annotation'
@@ -105,33 +100,6 @@ annotated AS (
                                                       AND d.data_type_code = 'ssnv'
                                                       AND d.format_code    = 'vcf'
 ),
-legacy_annotation AS (
-    -- Annotations with no input document: sent by QLIN before RAD-23, never by this pipeline.
-    SELECT ac.annotation_id               AS annotation_id,
-           ac.case_id                     AS case_id,
-           COUNT(DISTINCT ac.seq_id)      AS experiments
-    FROM annotation_context ac
-    LEFT JOIN annotation_input ai ON ai.annotation_id = ac.annotation_id
-    WHERE ai.annotation_id IS NULL
-    GROUP BY ac.annotation_id, ac.case_id
-),
-legacy_annotated AS (
-    -- The (case, calling task) pairs a legacy annotation covers: same case, exactly the same
-    -- experiments. Exactly, so that a tumor-normal annotation never hides a tumor-only call on
-    -- its tumor sample, nor the reverse.
-    SELECT ct.case_id AS case_id,
-           ct.task_id AS task_id
-    FROM case_task ct
-    JOIN task_size ts           ON ts.task_id = ct.task_id
-    JOIN task_experiment te     ON te.task_id = ct.task_id
-    JOIN annotation_context ac  ON ac.case_id = ct.case_id
-                               AND ac.seq_id  = te.seq_id
-    JOIN legacy_annotation la   ON la.annotation_id = ac.annotation_id
-                               AND la.case_id       = ct.case_id
-    GROUP BY ct.case_id, ct.task_id, la.annotation_id, ts.experiments, la.experiments
-    HAVING COUNT(DISTINCT te.seq_id) = ts.experiments
-       AND ts.experiments = la.experiments
-),
 candidate AS (
     SELECT ct.case_id AS case_id,
            ct.task_id AS task_id
@@ -139,10 +107,7 @@ candidate AS (
     LEFT JOIN ssnv s              ON s.task_id = ct.task_id
     LEFT JOIN annotated a         ON a.case_id = ct.case_id
                                  AND a.task_id = ct.task_id
-    LEFT JOIN legacy_annotated la ON la.case_id = ct.case_id
-                                 AND la.task_id = ct.task_id
     WHERE a.task_id IS NULL
-      AND la.task_id IS NULL
     {% if params.task_ids %}
       -- Targeted rerun: the named tasks only, including one with no `ssnv` VCF, so that the
       -- operator sees why it cannot run instead of silence.

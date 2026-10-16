@@ -91,17 +91,6 @@ def test_a_vcf_already_input_of_an_annotation_on_the_same_case_is_done():
     assert "WHERE a.task_id IS NULL" in candidate
 
 
-def test_a_legacy_annotation_over_exactly_the_task_s_experiments_is_done():
-    """A QLIN annotation has no input document; it must stop the same calling task being annotated again."""
-    sql = _without_comments(_render())
-    legacy = _cte(sql, "legacy_annotation")
-    assert "WHERE ai.annotation_id IS NULL" in legacy
-    covered = _cte(sql, "legacy_annotated")
-    assert "HAVING COUNT(DISTINCT te.seq_id) = ts.experiments" in covered
-    assert "AND ts.experiments = la.experiments" in covered
-    assert "AND la.task_id IS NULL" in _cte(sql, "candidate")
-
-
 def test_only_completed_experiments_run():
     assert "WHEN se.status_code <> 'completed' THEN 'pending_sequencing'" in _render()
 
