@@ -4,8 +4,9 @@ Finds the somatic calling tasks whose raw SNV VCF was never annotated, annotates
 VEP as germline, and registers the result on the case as a **radiant_somatic_annotation** task.
 The scheduled import already loads that task: nothing changes there.
 
-The launcher is **radiant-nextflow-somatic-snv-annotation**: the germline pipeline, image and
-**nextflow-snv-cfg**, with its own params ConfigMap. It enters the Ferlab
+The launcher is the germline one: **radiant-nextflow-snv-postprocessing**, run with its
+**somatic** params set. It runs two drivers at once, so this run never waits behind a germline
+one. It enters the Ferlab
 [snv-post-processing](https://github.com/Ferlab-Ste-Justine/snv-post-processing) at its
 **normalize** step, with **tools = vep**: split multi-allelic records, left-align indels on the
 reference, then VEP. No genotyping, slivar or Exomiser. The loader skips multi-allelic records, so
@@ -16,7 +17,7 @@ without the split those variants would be lost.
 | **discover_scope** | Runs the pending query |
 | **select_tasks** | Keeps what can run, reports what cannot, skips the run if nothing can |
 | **generate_inputs** | Checks the raw VCFs exist, writes the samplesheet |
-| **run_pipeline** | Triggers **radiant-nextflow-somatic-snv-annotation**, and waits |
+| **run_pipeline** | Triggers the launcher with **params_set = somatic**, and waits |
 | **collect_outputs** | Finds the VEP VCF and its index of every calling task |
 | **list_tenants**, **register_tasks** | One batch PATCH per tenant |
 
@@ -129,15 +130,15 @@ registers nothing. PATCH **appends**: a deliberate re-run adds a second annotati
 | NEXTFLOW\_OUTPUTS\_ROOT / somatic-snv / RUN\_TAG / ensemblvep / | the VEP VCFs and their indexes |
 
 RUN\_TAG is **somatic-** plus the run id. The prefix is load-bearing: the case scheduler gives
-every cases DAG the same run id, and the Nextflow launch and work directories are keyed by the run
-tag on a filesystem every launcher shares. Without it, this run and the germline SNV one would
-share both, and each one's cleanup would delete the other's scratch.
+every cases DAG the same run id, and the germline SNV cases DAG triggers the same launcher. Without
+it, both would trigger the launcher with one run id, and reset each other's run; they would also
+share one Nextflow launch directory, work directory and cleanup.
 
 The child run id is pinned to RUN\_TAG, so a retry of this DAG re-enters the same launcher run,
 and Nextflow's resume skips what already completed.
 
-The launcher reads the **nextflow-snv-somatic-params** ConfigMap (qlin-qa-infra), next to the
-germline **nextflow-snv-params**. Both share **nextflow-snv-cfg**. Without that ConfigMap the
+The somatic params set is the **nextflow-snv-somatic-params** ConfigMap (qlin-qa-infra), next to
+the germline **nextflow-snv-params**. Both share **nextflow-snv-cfg**. Without that ConfigMap the
 driver pod does not start.
 
 ---

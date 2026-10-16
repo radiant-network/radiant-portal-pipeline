@@ -24,11 +24,32 @@ def test_cleanup_only_runs_after_a_successful_pipeline(dag_bag):
     assert {t.task_id for t in cleanup.upstream_list} == {"run_postprocessing"}
 
 
-def test_dag_exposes_exactly_input_and_outdir(dag_bag):
-    """Guards against param creep: everything run-invariant belongs in the
-    nextflow-snv-params ConfigMap, not here."""
+def test_dag_exposes_exactly_input_outdir_and_the_params_set(dag_bag):
+    """Guards against param creep: everything run-invariant belongs in a params ConfigMap, not
+    here. `params_set` only picks which one."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert set(dag.params) == {"input", "outdir"}
+    assert set(dag.params) == {"input", "outdir", "params_set"}
+
+
+@pytest.mark.parametrize(
+    ("params_set", "configmap"),
+    [("germline", "nextflow-snv-params"), ("somatic", "nextflow-snv-somatic-params")],
+)
+def test_the_params_set_picks_the_configmap(dag_bag, params_set, configmap):
+    dag = dag_bag.get_dag(DAG_ID)
+    assert dag.params["params_set"] == "germline"
+    assert dag.params.get_param("params_set").schema["enum"] == ["germline", "somatic"]
+    run = dag.get_task("run_postprocessing")
+    template = {v.name: v for v in run.volumes}["nextflow-params"].config_map.name
+    assert run.render_template(template, {"params": {"params_set": params_set}}) == configmap
+
+
+def test_the_somatic_run_shares_the_germline_config_and_script(dag_bag):
+    """Same `nextflow-snv-cfg`, script and image: the same VEP image, cache and flags."""
+    run = dag_bag.get_dag(DAG_ID).get_task("run_postprocessing")
+    volumes = {v.name: v for v in run.volumes}
+    assert volumes["nextflow-cfg"].config_map.name == "nextflow-snv-cfg"
+    assert "snv-post-processing" in run.arguments[0]
 
 
 def test_input_is_required_and_outdir_is_not(dag_bag):
@@ -49,7 +70,8 @@ def test_retries_are_configured_so_resume_is_reachable(dag_bag):
     assert dag.default_args["retries"] >= 1
 
 
-def test_only_one_driver_runs_at_a_time(dag_bag):
-    """Concurrent runs would share the same FSx workspace."""
+def test_a_germline_and_a_somatic_driver_can_run_at_once(dag_bag):
+    """Everything a run writes is keyed by RUN_TAG, so two drivers cannot collide. Two, not more:
+    the germline cases DAG keeps germline runs one at a time, a somatic run is the other."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert dag.max_active_runs == 1
+    assert dag.max_active_runs == 2
