@@ -1,6 +1,6 @@
 """The single scheduled entry point for case processing, and the only place case statuses change.
 
-Moves the cases with work waiting from `submitted` to `processing`, runs the three "from Cases"
+Moves the cases with work waiting from `submitted` to `processing`, runs the four "from Cases"
 DAGs and the scheduled import, then moves to `in_progress` the `processing` cases that every
 pipeline is done with and that have variant data. Those are the only two changes it ever sends.
 
@@ -39,6 +39,7 @@ LOGGER = logging.getLogger(__name__)
 
 SNV_CASES_DAG_ID = f"{NAMESPACE}-nextflow-snv-postprocessing-cases"
 CNV_CASES_DAG_ID = f"{NAMESPACE}-nextflow-cnv-postprocessing-cases"
+SOMATIC_CASES_DAG_ID = f"{NAMESPACE}-nextflow-somatic-snv-annotation-cases"
 QC_CASES_DAG_ID = f"{NAMESPACE}-nextflow-quality-control-cases"
 IMPORT_DAG_ID = f"{NAMESPACE}-import"
 
@@ -49,7 +50,7 @@ CASE_GROUP_PREFIX = "results"
 # The QC DAG's workspace root: its DRAGEN metrics probe only accepts directories under it.
 INPUTS_ROOT_ENV = "NEXTFLOW_INPUTS_ROOT"
 
-# The run's block list, passed to the three "from Cases" DAGs so they leave out exactly the tenants
+# The run's block list, passed to the four "from Cases" DAGs so they leave out exactly the tenants
 # discovery left out. A tenant that is not excluded but not granted to the service account gets a
 # 403 from the portal instead, logged and skipped.
 EXCLUDED_TENANTS_CONF = {"excluded_tenants": "{{ params.excluded_tenants }}"}
@@ -67,7 +68,7 @@ dag_params = {
         items={"type": "string"},
         title="Excluded tenants",
         description=(
-            "Tenants left out of case processing: not discovered, not processed by the three "
+            "Tenants left out of case processing: not discovered, not processed by the four "
             '"from Cases" DAGs, and their case statuses are left alone. Defaults to '
             f"${EXCLUDED_TENANTS_ENV}; empty excludes none."
         ),
@@ -101,7 +102,7 @@ def _trigger(task_id: str, display_name: str, dag_id: str, conf: dict | None = N
 
 
 def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksOperator]:
-    """The four "work waiting" queries, `{prefix}_{snv,cnv,qc,import}_cases`.
+    """The five "work waiting" queries, `{prefix}_{snv,cnv,somatic,qc,import}_cases`.
 
     Built once before the pipelines (`discover`) and once after (`rediscover`), so the question
     asked both times cannot drift. Each "from Cases" DAG's own query, with the run's
@@ -124,6 +125,11 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
     return [
         query("snv", "Cases pending SNV post-processing", "./sql/clinical/pending_annotation_select.sql"),
         query("cnv", "Cases pending CNV post-processing", "./sql/clinical/pending_cnv_annotation_select.sql"),
+        query(
+            "somatic",
+            "Cases pending somatic SNV annotation",
+            "./sql/clinical/pending_somatic_annotation_select.sql",
+        ),
         query("qc", "Cases pending quality control", "./sql/clinical/pending_quality_control_select.sql"),
         query(
             "import",
@@ -133,7 +139,7 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
     ]
 
 
-def _cases_with_work(snv_rows: Any, cnv_rows: Any, qc_rows: Any, import_rows: Any) -> set[int]:
+def _cases_with_work(snv_rows: Any, cnv_rows: Any, somatic_rows: Any, qc_rows: Any, import_rows: Any) -> set[int]:
     from radiant.tasks.nextflow.case_status import cases_with_work, s3_qc_locator
 
     def locate_qc(cases):
@@ -144,7 +150,7 @@ def _cases_with_work(snv_rows: Any, cnv_rows: Any, qc_rows: Any, import_rows: An
             raise ValueError(f"{INPUTS_ROOT_ENV} must be set to an s3:// uri to locate the DRAGEN metrics")
         return s3_qc_locator(inputs_root)(cases)
 
-    return cases_with_work(snv_rows, cnv_rows, qc_rows, import_rows, locate_qc)
+    return cases_with_work(snv_rows, cnv_rows, somatic_rows, qc_rows, import_rows, locate_qc)
 
 
 @dag(
@@ -175,12 +181,14 @@ def case_scheduler():
     )
 
     @task(task_id="discover_cases", task_display_name="[PyOp] Select the submitted cases with work waiting")
-    def discover_cases(snv_rows: Any, cnv_rows: Any, qc_rows: Any, import_rows: Any, status_rows: Any) -> Any:
+    def discover_cases(
+        snv_rows: Any, cnv_rows: Any, somatic_rows: Any, qc_rows: Any, import_rows: Any, status_rows: Any
+    ) -> Any:
         from airflow.operators.python import get_current_context
 
         from radiant.tasks.nextflow.case_status import plan_processing
 
-        waiting = _cases_with_work(snv_rows, cnv_rows, qc_rows, import_rows)
+        waiting = _cases_with_work(snv_rows, cnv_rows, somatic_rows, qc_rows, import_rows)
         return plan_processing(status_rows, waiting, get_current_context()["params"]["excluded_tenants"])
 
     @task(
@@ -207,12 +215,14 @@ def case_scheduler():
         task_id="select_ready_cases",
         task_display_name="[PyOp] Select the processing cases that are done and have variants",
     )
-    def select_ready_cases(snv_rows: Any, cnv_rows: Any, qc_rows: Any, import_rows: Any, status_rows: Any) -> Any:
+    def select_ready_cases(
+        snv_rows: Any, cnv_rows: Any, somatic_rows: Any, qc_rows: Any, import_rows: Any, status_rows: Any
+    ) -> Any:
         from airflow.operators.python import get_current_context
 
         from radiant.tasks.nextflow.case_status import plan_in_progress
 
-        still_waiting = _cases_with_work(snv_rows, cnv_rows, qc_rows, import_rows)
+        still_waiting = _cases_with_work(snv_rows, cnv_rows, somatic_rows, qc_rows, import_rows)
         return plan_in_progress(status_rows, still_waiting, get_current_context()["params"]["excluded_tenants"])
 
     @task(
@@ -284,17 +294,25 @@ def case_scheduler():
         CNV_CASES_DAG_ID,
         EXCLUDED_TENANTS_CONF,
     )
+    trigger_somatic = _trigger(
+        "trigger_somatic_annotation",
+        "[DAG] Nextflow Somatic SNV Annotation (from Cases)",
+        SOMATIC_CASES_DAG_ID,
+        EXCLUDED_TENANTS_CONF,
+    )
     trigger_qc = _trigger(
         "trigger_quality_control",
         "[DAG] Nextflow Quality Control (from Cases)",
         QC_CASES_DAG_ID,
         EXCLUDED_TENANTS_CONF,
     )
-    # The import picks up what post-processing registered, so it waits for it, success or not.
+    # The import picks up the annotations SNV post-processing and somatic annotation registered, so
+    # it waits for both, success or not. CNV post-processing stays outside: the import does not
+    # read its outputs.
     trigger_import = _trigger("trigger_import", "[DAG] Scheduled Import", IMPORT_DAG_ID)
 
-    processing >> [trigger_snv, trigger_cnv, trigger_qc]
-    trigger_snv >> trigger_import
+    processing >> [trigger_snv, trigger_cnv, trigger_somatic, trigger_qc]
+    [trigger_snv, trigger_somatic] >> trigger_import
     # Asked again once every pipeline has finished, whatever its outcome: a case still pending
     # somewhere has a pipeline left to run, and stays `processing`.
     rediscovered = _discovery("rediscover", TriggerRule.ALL_DONE)
@@ -311,6 +329,7 @@ def case_scheduler():
         processing,
         trigger_snv,
         trigger_cnv,
+        trigger_somatic,
         trigger_qc,
         trigger_import,
         *rediscovered,

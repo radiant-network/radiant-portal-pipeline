@@ -30,7 +30,7 @@ def parse_list(env_val):
 
 
 # Tenants left out of case processing, comma separated: the default `excluded_tenants` of the case scheduler
-# and of the three "from Cases" DAGs. Empty excludes none.
+# and of the four "from Cases" DAGs. Empty excludes none.
 EXCLUDED_TENANTS_ENV = "RADIANT_ETL_EXCLUDED_TENANTS"
 
 

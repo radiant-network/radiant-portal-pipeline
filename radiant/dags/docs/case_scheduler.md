@@ -5,15 +5,21 @@ the cases with work waiting to `processing`, runs the pipelines, then moves to `
 cases that every pipeline is done with and that have variant data.
 
 ```
-discover_{snv,cnv,qc,import}_cases, fetch_case_statuses
+discover_{snv,cnv,somatic,qc,import}_cases, fetch_case_statuses
     -> discover_cases -> set_processing (one per tenant)
-    -> trigger_snv_postprocessing -> trigger_import --+
-    -> trigger_cnv_postprocessing --------------------+-> rediscover_{snv,cnv,qc,import}_cases,
-    -> trigger_quality_control -----------------------+   refresh_case_statuses
+    -> trigger_snv_postprocessing ---+-> trigger_import --+
+    -> trigger_somatic_annotation ---+                    |
+    -> trigger_cnv_postprocessing ------------------------+-> rediscover_{snv,cnv,somatic,qc,import}_cases,
+    -> trigger_quality_control ---------------------------+   refresh_case_statuses
     -> select_ready_cases -> evaluate_cases (one per tenant)
 ```
 
-The three "from Cases" DAGs have no schedule of their own: this DAG is their schedule. They can
+The import waits for SNV post-processing and somatic annotation, success or not: it loads the
+annotation tasks they register. Without that order the import could run first, and the case's
+variants would only arrive with the next day's run. CNV post-processing stays outside: the import
+does not read its outputs.
+
+The four "from Cases" DAGs have no schedule of their own: this DAG is their schedule. They can
 still be run by hand for a targeted rerun, which leaves the case statuses alone.
 
 ## The only status changes
@@ -33,7 +39,8 @@ The portal checks it under a row lock: a case a geneticist moved in the meantime
 The union of:
 
 - the cases each "from Cases" DAG would run: its own `pending_*_select.sql` query and its own
-  `select_cases`, with the run's `excluded_tenants` (the list that DAG is given), plus, for QC, its S3
+  `select_cases` (`select_tasks` for somatic annotation, whose unit is the calling task: its cases
+  count), with the run's `excluded_tenants` (the list that DAG is given), plus, for QC, its S3
   probe for the DRAGEN metrics (`locate_metrics`, under `$NEXTFLOW_INPUTS_ROOT`). A case that DAG would exclude
   (sequencing pending, no gVCF, tenant not granted, metrics not found...) is **not** counted: it
   would sit in `processing` with nothing running for it, and never reach `in_progress`;
@@ -81,7 +88,7 @@ failed. Look at the failed task and at the child runs.
 
 A block list, `excluded_tenants`: tenants left out of case processing. It defaults to `$RADIANT_ETL_EXCLUDED_TENANTS` (comma separated, empty excludes none) and can
 be overridden per run. Discovery reports an excluded tenant's cases as `tenant_excluded`, the
-scheduler passes the same list to the three "from Cases" DAGs so they leave out exactly the same
+scheduler passes the same list to the four "from Cases" DAGs so they leave out exactly the same
 tenants, and the status changes skip them. The import is not filtered: it takes every tenant's
 delta, but an excluded tenant's case statuses are still left alone.
 
@@ -134,7 +141,7 @@ its status, so it is **not** emailed again.
 
 ## Child runs
 
-The four child run ids are pinned to this run (`sanitize_run_tag(run_id)`), so a retry resets the
+The five child run ids are pinned to this run (`sanitize_run_tag(run_id)`), so a retry resets the
 same child run and Nextflow's `-resume` still finds its launch directory. The tag drops the `__`
 after the run type: Airflow 3.2 refuses a triggered run whose id starts with `scheduled__`.
 

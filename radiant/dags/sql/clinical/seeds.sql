@@ -839,9 +839,10 @@ INSERT INTO {{ params.clinical_sequencing_experiment }} (id, sample_id, status_c
     (59, 59, 'submitted', 'S14857', 'CQGC', 1675, 'A00516_0227', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
     (60, 60, 'submitted', 'S14858', 'CQGC', 1676, 'A00516_0228', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
     (61, 61, 'submitted', 'S14859', 'CQGC', 1677, 'A00516_0229', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
-    (62, 123, 'submitted', 'TCR002361_SRX1091647-T', 'CQGC', 1677, 'TCR002361_SRX1091647-Tumor', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
-    (63, 124, 'submitted', 'TCR002361_SRX1091646-N', 'CQGC', 1677, 'TCR002361_SRX1091646-Normal', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
-    (64, 125, 'submitted', 'TCRBOA6_SRX1166091-T', 'CQGC', 1677, 'TCRBOA6_SRX1166091-Tumor', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant');
+    -- The somatic experiments are `completed`: only those are candidates for somatic annotation (RAD-23).
+    (62, 123, 'completed', 'TCR002361_SRX1091647-T', 'CQGC', 1677, 'TCR002361_SRX1091647-Tumor', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
+    (63, 124, 'completed', 'TCR002361_SRX1091646-N', 'CQGC', 1677, 'TCR002361_SRX1091646-Normal', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant'),
+    (64, 125, 'completed', 'TCRBOA6_SRX1166091-T', 'CQGC', 1677, 'TCRBOA6_SRX1166091-Tumor', '2021-08-31', NULL, '2021-10-12 13:08:00', '2021-10-12 13:08:00', 'wgs', 'short_read', 'illumina', 'radiant');
 
 
 TRUNCATE {{ params.clinical_case_has_sequencing_experiment }} CASCADE;
@@ -979,13 +980,17 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (64, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (65, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (66, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
-    (67, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    -- The somatic annotation tasks follow the RAD-23 contract: QLIN sends calling tasks with a raw
+    -- `ssnv` VCF, and Radiant annotates it and registers the `radiant_somatic_annotation`, with that
+    -- raw VCF as input and the pipeline that annotated it. Tasks 67-69 are three such
+    -- registrations; their calling tasks are 73, 74 and 70.
+    (67, 'radiant_somatic_annotation', 'snv-post-processing', 'b535f27', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- Tumor-only analysis of the SAME tumor sample as task 67, which is tumor-normal. A task is
     -- tumor-only iff it has exactly one 'tumoral' aliquot and no 'normal' one, so the distinction
     -- is per-task, not per-case: case 22 carries both.
-    (68, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    (68, 'radiant_somatic_annotation', 'snv-post-processing', 'b535f27', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- Tumor-only analysis of case 23, whose tumor sample has no matched normal at all.
-    (69, 'radiant_somatic_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    (69, 'radiant_somatic_annotation', 'snv-post-processing', 'b535f27', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- The calling step behind task 69: this is where the somatic CNV VCF comes from. Somatic CNV is
     -- discovered by task type + document data type (`tumor_only_variant_calling` + `scnv`), never by
     -- filename, exactly as germline CNV is by `alignment_germline_variant_calling` + `gcnv`.
@@ -995,7 +1000,17 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (71, 'quality_control_metrics', 'quality-control-pipeline', '2.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- CNV post-processing of case 1, whose alignments (tasks 1-3) publish `gcnv` VCFs. Case 1 is
     -- therefore *not* pending CNV annotation, while case 16 (below) is the seeded pending trio.
-    (72, 'radiant_germline_cnv_annotation', 'cnv-post-processing', '6b9b2dd', 'GRch38', '2021-10-12 13:08:00', 'radiant');
+    (72, 'radiant_germline_cnv_annotation', 'cnv-post-processing', '6b9b2dd', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    -- The calling steps behind the annotation tasks 67 (tumor-normal) and 68 (tumor-only). Their raw
+    -- `ssnv` VCFs are the inputs of those annotations, so neither is pending somatic annotation.
+    (73, 'somatic_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    (74, 'tumor_only_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    -- Pending somatic annotation (RAD-23): a newer tumor-normal call on case 22, and a tumor-only
+    -- alignment-and-call on case 23. Task 76 also publishes an `scnv` VCF, which is never selected.
+    -- An `scnv` on `alignment_somatic_variant_calling` matches no branch of
+    -- staging_external_sequencing_experiment, so neither task reaches the import delta.
+    (75, 'somatic_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-11-12 13:08:00', 'radiant'),
+    (76, 'alignment_somatic_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-11-12 13:08:00', 'radiant');
 
 TRUNCATE {{ params.clinical_task_context }} CASCADE;
 INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_experiment_id) VALUES
@@ -1082,7 +1097,15 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     (71, 1, 3),
     (72, 1, 1),
     (72, 1, 2),
-    (72, 1, 3)
+    (72, 1, 3),
+    -- Calling tasks: only `tumor_only_variant_calling` is case-related in the portal, so the others
+    -- carry a null case_id, as alignment tasks do. Their case is found through the experiments.
+    (73, null, 62),
+    (73, null, 63),
+    (74, 22, 62),
+    (75, null, 62),
+    (75, null, 63),
+    (76, null, 64)
 ;
 
 
@@ -1362,7 +1385,16 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (265, 'TCRBOA6_SRX1166091-T.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 19874233, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.snv.vcf.gz', 'f27a5b910ce3d648b0a71f2c85d9e304', 'radiant'),
     -- Outputs of QC task 71. `aggqc` matches no branch of staging_external_sequencing_experiment.
     (266, 'CA1_multiqc_report.html', 'genomic', 'aggqc', 'html', 3772915, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/CA1_multiqc_report.html', '5d41402abc4b2a76b9719d911017c900', 'radiant'),
-    (267, 'CA1_multiqc_report_data.zip', 'genomic', 'aggqc', 'zip', 1616232, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/CA1_multiqc_report_data.zip', '5d41402abc4b2a76b9719d911017c901', 'radiant');
+    (267, 'CA1_multiqc_report_data.zip', 'genomic', 'aggqc', 'zip', 1616232, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/CA1_multiqc_report_data.zip', '5d41402abc4b2a76b9719d911017c901', 'radiant'),
+    -- Raw somatic SNV VCFs of the calling tasks 73-76 (RAD-23). 274 and 276 are already annotated
+    -- (inputs of tasks 67 and 68), 277 and 279 are pending. 280 is task 76's `scnv` VCF.
+    (274, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 31874233, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e60', 'radiant'),
+    (275, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.snv.vcf.gz.tbi', 'genomic', 'ssnv', 'tbi', 912443, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.snv.vcf.gz.tbi', 'a1c4e2f09b37d6851e0f2c9d4b7a3e61', 'radiant'),
+    (276, 'TCR002361_SRX1091647-T.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 20903112, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e62', 'radiant'),
+    (277, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 31975067, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e63', 'radiant'),
+    (278, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz.tbi', 'genomic', 'ssnv', 'tbi', 913443, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz.tbi', 'a1c4e2f09b37d6851e0f2c9d4b7a3e64', 'radiant'),
+    (279, 'TCRBOA6_SRX1166091-T.v2.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 19974233, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.v2.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e65', 'radiant'),
+    (280, 'TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1214512, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e66', 'radiant');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1626,10 +1658,13 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (65, 235, 'output'),
     (65, 236, 'output'),
     (66, 246, 'output'),
+    (67, 274, 'input'),
     (67, 257, 'output'),
     (67, 258, 'output'),
+    (68, 276, 'input'),
     (68, 259, 'output'),
     (68, 260, 'output'),
+    (69, 265, 'input'),
     (69, 261, 'output'),
     (69, 262, 'output'),
     (70, 263, 'output'),
@@ -1637,7 +1672,15 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (70, 265, 'output'),
     -- QC task 71 -> its MultiQC set.
     (71, 266, 'output'),
-    (71, 267, 'output');
+    (71, 267, 'output'),
+    -- Calling tasks 73-76 -> their raw VCFs.
+    (73, 274, 'output'),
+    (73, 275, 'output'),
+    (74, 276, 'output'),
+    (75, 277, 'output'),
+    (75, 278, 'output'),
+    (76, 279, 'output'),
+    (76, 280, 'output');
 
 -- Reset sequences
 ALTER TABLE {{ params.clinical_analysis_catalog }} ALTER COLUMN id RESTART WITH 1000;

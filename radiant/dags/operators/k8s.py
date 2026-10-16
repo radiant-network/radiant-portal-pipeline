@@ -790,6 +790,44 @@ class NextflowPostprocessing:
         )
 
 
+class NextflowSomaticAnnotation:
+    """Runs the Ferlab snv-post-processing over the raw VCFs of somatic calling tasks: entered at
+    `step = normalize` with `tools = vep`, so split multi-allelics, then VEP (RAD-23).
+
+    Same pipeline, launch script, image and `nextflow-snv-cfg` as `NextflowPostprocessing`, so the
+    same VEP image, cache and flags: a pipeline bump applies to both. Only the params ConfigMap
+    differs. A launcher of its own rather than a params switch on the germline one: that DAG runs
+    one driver at a time, and a somatic run would queue behind hours of germline WGS, and the
+    scheduled import behind both. Concurrent drivers are safe: the launch and work dirs are keyed by
+    RUN_TAG, which the somatic cases DAG prefixes with `somatic-`.
+    """
+
+    @staticmethod
+    def get_run_annotation(input_csv: str, outdir: str, run_tag: str) -> KubernetesPodOperator:
+        return _nextflow_driver_operator(
+            task_id="run_somatic_annotation",
+            task_display_name="[K8s] Run Nextflow Somatic SNV Annotation",
+            name="nextflow-somatic-snv-annotation-driver",
+            script=_NEXTFLOW_DRIVER_SCRIPT,
+            image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
+            env_vars={
+                "RUN_TAG": run_tag,
+                "NXF_INPUT": input_csv,
+                "NXF_OUTDIR": outdir,
+            },
+            config_configmap=os.getenv("NEXTFLOW_OPERATOR_CONFIG_CONFIGMAP", "nextflow-snv-cfg"),
+            params_configmap=os.getenv("NEXTFLOW_SOMATIC_OPERATOR_PARAMS_CONFIGMAP", "nextflow-snv-somatic-params"),
+        )
+
+    @staticmethod
+    def get_cleanup_work(run_tag: str) -> KubernetesPodOperator:
+        return _nextflow_cleanup_operator(
+            run_tag,
+            name="nextflow-somatic-snv-annotation-cleanup",
+            image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
+        )
+
+
 class NextflowQualityControl:
     """Runs the Ferlab quality-control-pipeline in its DRAGEN-metrics mode as a
     Nextflow driver pod, which spawns its own worker pods via Nextflow's k8s executor.

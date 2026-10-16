@@ -21,6 +21,7 @@ from radiant.tasks.nextflow.qc.model import QcCase
 from radiant.tasks.nextflow.qc.resolve import resolve_cases as resolve_qc_cases
 from radiant.tasks.nextflow.qc.resolve import select_cases as select_qc_cases
 from radiant.tasks.nextflow.resolve import select_cases as select_snv_cases
+from radiant.tasks.nextflow.somatic.resolve import select_tasks as select_somatic_tasks
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ def s3_qc_locator(inputs_root: str) -> QcLocator:
 def cases_with_work(
     snv_rows: list[dict],
     cnv_rows: list[dict],
+    somatic_rows: list[dict],
     qc_rows: list[dict],
     import_rows: list[dict],
     locate_qc: QcLocator,
@@ -71,6 +73,7 @@ def cases_with_work(
     selected = {
         "snv post-processing": select_snv_cases(snv_rows, strict=False).case_ids,
         "cnv post-processing": select_cnv_cases(cnv_rows, strict=False).case_ids,
+        "somatic snv annotation": select_somatic_tasks(somatic_rows, strict=False).case_ids,
         "quality control": sorted(c.case_id for c in qc_cases),
         "import": sorted({row["case_id"] for row in import_rows}),
     }
