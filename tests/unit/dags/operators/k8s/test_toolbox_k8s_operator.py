@@ -22,6 +22,7 @@ def test_get_run_command():
     assert op.arguments == []
     assert op.deferrable is False
     assert op.get_logs is True
+    assert op.startup_timeout_seconds == 1800
 
     # Whole secret exposed as env vars (no single key), unlike CheckDataIntegrity's
     # single-key StarRocks conn secret.

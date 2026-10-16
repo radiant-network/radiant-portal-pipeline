@@ -95,6 +95,16 @@ def _nextflow_container_resources() -> k8s.V1ResourceRequirements:
     return _container_resources("NEXTFLOW", cpu="1", memory="2Gi", memory_limit="4Gi")
 
 
+def _task_startup_timeout_seconds() -> int:
+    """How long a task pod may stay Pending before the operator gives up.
+
+    The provider default is 120s. A mapped import fans out more pods than its NodePool
+    can hold at once (the pool has a vCPU cap, and the account a vCPU quota), so pods
+    wait for a node to free up or launch. At 120s they failed instead of queuing.
+    """
+    return int(os.getenv("RADIANT_TASK_OPERATOR_STARTUP_TIMEOUT_SECONDS", "1800"))
+
+
 class RadiantTaskK8SOperator:
     @staticmethod
     def _get_k8s_context(radiant_namespace: str, container_resources: k8s.V1ResourceRequirements | None = None):
@@ -112,6 +122,7 @@ class RadiantTaskK8SOperator:
             image_pull_policy="IfNotPresent",
             get_logs=True,
             is_delete_operator_pod=True,
+            startup_timeout_seconds=_task_startup_timeout_seconds(),
             env_vars={
                 "AWS_REGION": os.getenv("AWS_REGION"),
                 "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID"),
@@ -450,6 +461,7 @@ class CheckDataIntegrity:
             # block other tasks.
             deferrable=False,
             is_delete_operator_pod=True,
+            startup_timeout_seconds=_task_startup_timeout_seconds(),
         )
 
 
@@ -472,6 +484,7 @@ class Toolbox:
             get_logs=True,
             deferrable=False,
             is_delete_operator_pod=True,
+            startup_timeout_seconds=_task_startup_timeout_seconds(),
         )
 
 
