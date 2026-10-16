@@ -117,3 +117,19 @@ def test_parquet_file_size_is_absent_when_not_overridden():
         context = RadiantTaskK8SOperator._get_k8s_context("my-iceberg-namespace")
 
     assert context["env_vars"]["RADIANT_PARQUET_FILE_SIZE_MB"] is None
+
+
+def test_task_pods_wait_for_a_node_instead_of_failing():
+    """A mapped import fans out more pods than the NodePool holds at once; at the
+    provider's 120s default they failed instead of queuing for a node."""
+    with patch.dict(os.environ, {}, clear=True):
+        context = RadiantTaskK8SOperator._get_k8s_context("my-iceberg-namespace")
+
+    assert context["startup_timeout_seconds"] == 1800
+
+
+def test_task_startup_timeout_is_env_overridable():
+    with patch.dict(os.environ, {"RADIANT_TASK_OPERATOR_STARTUP_TIMEOUT_SECONDS": "600"}, clear=True):
+        context = RadiantTaskK8SOperator._get_k8s_context("my-iceberg-namespace")
+
+    assert context["startup_timeout_seconds"] == 600
