@@ -2,8 +2,7 @@
 
 Runs the Ferlab
 [snv-post-processing](https://github.com/Ferlab-Ste-Justine/snv-post-processing)
-on qlin-eks: joint genotyping from per-sample gVCFs, then VEP, slivar and Exomiser. With the
-**somatic** params set, it annotates somatic calling VCFs instead: split multi-allelics, then VEP.
+on qlin-eks: joint genotyping from per-sample gVCFs, then VEP, slivar and Exomiser.
 
 > **One Airflow task is a fan-out of dozens of pods.** The task launches a Nextflow
 > **driver** pod in the **nextflow** namespace, and the driver then spawns one worker pod
@@ -20,11 +19,9 @@ Watch them with **kubectl -n nextflow get pods -w**.
 |:--|:--|:--|
 | **input** | Yes | Absolute path to the samplesheet CSV on the shared workspace |
 | **outdir** | No | Absolute path for published outputs. Empty means /workspace/outputs/qlin/ plus the run tag |
-| **params_set** | No | **germline** (default) or **somatic**: which params ConfigMap the run reads, see below |
 
-Samplesheet columns: familyId, sample, sequencingType, gvcf, familyPheno, familyPed (germline),
-or familyId, sequencingType, vcf (somatic). An example input path is
-/workspace/inputs/1000genomes-dragen-v4-4-7/samplesheet.csv.
+Samplesheet columns: familyId, sample, sequencingType, gvcf, familyPheno, familyPed. An
+example input path is /workspace/inputs/1000genomes-dragen-v4-4-7/samplesheet.csv.
 
 > Both are **pod paths**, not S3 URIs.
 
@@ -36,11 +33,10 @@ Everything else is run-invariant and lives in ConfigMaps rather than params:
 
 | ConfigMap | Holds |
 |:--|:--|
-| **nextflow-snv-params** | **germline** set: reference genome, VEP cache, Exomiser data, tools, step genotype |
-| **nextflow-snv-somatic-params** | **somatic** set: step normalize, tools vep, the germline reference and VEP values |
+| **nextflow-snv-params** | Reference genome, VEP cache, Exomiser data, tools, step |
 | **nextflow-snv-cfg** | The executor and per-process resources |
 
-All three are owned by the kustomization in qlin-qa-infra/kubernetes-manifests/apps/nextflow/.
+Both are owned by the kustomization in qlin-qa-infra/kubernetes-manifests/apps/nextflow/.
 
 ---
 
@@ -52,11 +48,7 @@ unique per DAG run, so:
 
 - **A retry resumes.** The -resume flag finds the previous session's .nextflow/cache and
   skips completed processes. On WGS that is the difference between minutes and hours.
-- **Concurrent runs cannot collide**: the launch directory, the work directory, the outputs and
-  the cleanup are all keyed by the run tag. **max_active_runs=2** lets one germline and one
-  somatic run go side by side, so the somatic run never waits behind hours of germline WGS. The
-  germline cases DAG still starts germline runs one at a time; two manual germline WGS runs at
-  once would need about twice the scratch space.
+- **Concurrent runs cannot collide**, and **max_active_runs=1** keeps them from trying.
 
 The task is **deferrable**: it releases its worker slot and the triggerer polls the pod, so
 a multi-hour run costs no Airflow capacity. Logs are flushed to the task log roughly every

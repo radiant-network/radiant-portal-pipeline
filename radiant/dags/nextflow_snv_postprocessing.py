@@ -4,23 +4,10 @@ A single task launches a Nextflow *driver* pod on qlin-eks; that driver then spa
 one worker pod per pipeline process through Nextflow's own k8s executor. Airflow
 sees one task, Kubernetes sees a fan-out.
 
-Run-invariant settings (reference paths, tools, VEP/Exomiser versions) live in a params
-ConfigMap, the executor and resource layout in `nextflow-snv-cfg` -- both owned by the
-kustomization in qlin-qa-infra. Only the two values that change every run are exposed here
-as DAG params, plus `params_set`, which picks the params ConfigMap:
-
-- `germline` (`nextflow-snv-params`): joint genotyping from gVCFs, then VEP, slivar, Exomiser;
-- `somatic` (`nextflow-snv-somatic-params`): `step = normalize`, `tools = vep`, over the raw
-  VCF of a somatic calling task (RAD-23). Same pipeline revision and config, so same VEP.
-
-Concurrency
------------
-Two drivers may run at once (`max_active_runs=2`), so the somatic run never waits behind
-hours of germline WGS, and the scheduled import behind both. They cannot collide: the launch
-dir, the work dir (`workDir = /workspace/work/${runTag}` in `nextflow-snv-cfg`), the outdir
-and the cleanup are all keyed by RUN_TAG, and the somatic cases DAG prefixes its tag with
-`somatic-`. Germline runs stay one at a time through the germline cases DAG's own
-`max_active_runs=1`; two manual germline WGS runs at once would need ~2x the scratch space.
+Run-invariant settings (reference paths, tools, VEP/Exomiser versions) live in the
+`nextflow-snv-params` ConfigMap, the executor and resource layout in `nextflow-snv-cfg` --
+both owned by the kustomization in qlin-qa-infra. Only the two values that change
+every run are exposed here as DAG params.
 
 Resume
 ------
@@ -58,29 +45,7 @@ dag_params = {
         title="Output directory",
         description=("Absolute path for published outputs. Leave empty to use /workspace/outputs/qlin/<run tag>."),
     ),
-    "params_set": Param(
-        default="germline",
-        type="string",
-        enum=sorted(operators.NextflowPostprocessing.params_configmaps()),
-        title="Params set",
-        description=(
-            "Which params ConfigMap the run reads. `germline`: joint genotyping from gVCFs, then VEP, "
-            "slivar and Exomiser. `somatic`: split multi-allelics then VEP over a calling task's raw VCF."
-        ),
-    ),
 }
-
-# Rendered by the operator (`V1ConfigMapVolumeSource.name` is a templated field), so the choice
-# is the run's. An if/else rather than a dict literal: the names come from env vars and are
-# never pasted into Jinja syntax.
-_PARAMS_CONFIGMAPS = operators.NextflowPostprocessing.params_configmaps()
-_PARAMS_CONFIGMAP = (
-    "{% if params.params_set == 'somatic' %}"
-    + _PARAMS_CONFIGMAPS["somatic"]
-    + "{% else %}"
-    + _PARAMS_CONFIGMAPS["germline"]
-    + "{% endif %}"
-)
 
 
 @dag(
@@ -92,9 +57,8 @@ _PARAMS_CONFIGMAP = (
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     schedule=None,
     catchup=False,
-    # Two drivers at once, one germline and one somatic: see "Concurrency" in the module
-    # docstring. Everything a run writes is keyed by RUN_TAG, so they cannot collide.
-    max_active_runs=2,
+    # One driver at a time: concurrent runs would share the same FSx workspace.
+    max_active_runs=1,
     tags=["radiant", "nextflow", "manual"],
     params=dag_params,
     doc_md=load_docs_md("nextflow_snv_postprocessing.md"),
@@ -108,7 +72,6 @@ def nextflow_snv_postprocessing():
         input_csv="{{ params.input }}",
         outdir="{{ params.outdir }}",
         run_tag=run_tag,
-        params_configmap=_PARAMS_CONFIGMAP,
     )
     cleanup = operators.NextflowPostprocessing.get_cleanup_work(run_tag=run_tag)
 

@@ -765,26 +765,7 @@ class NextflowPostprocessing:
     """
 
     @staticmethod
-    def params_configmaps() -> dict[str, str]:
-        """The params ConfigMap of each params set, keyed by the launcher's `params_set`.
-
-        One pipeline, two entry points: `germline` runs it from `step = genotype` with VEP, slivar
-        and Exomiser; `somatic` enters it at `step = normalize` with `tools = vep` over the raw VCF
-        of a somatic calling task (RAD-23). Both share `nextflow-snv-cfg` and the image, so the same
-        VEP image, cache and flags: a pipeline bump applies to both.
-        """
-        return {
-            "germline": os.getenv("NEXTFLOW_OPERATOR_PARAMS_CONFIGMAP", "nextflow-snv-params"),
-            "somatic": os.getenv("NEXTFLOW_OPERATOR_SOMATIC_PARAMS_CONFIGMAP", "nextflow-snv-somatic-params"),
-        }
-
-    @staticmethod
-    def get_run_postprocessing(
-        input_csv: str, outdir: str, run_tag: str, params_configmap: str | None = None
-    ) -> KubernetesPodOperator:
-        """`params_configmap` may be a Jinja template: the operator renders
-        `V1ConfigMapVolumeSource.name`, so the DAG picks the params set per run. Defaults to the
-        germline set."""
+    def get_run_postprocessing(input_csv: str, outdir: str, run_tag: str) -> KubernetesPodOperator:
         return _nextflow_driver_operator(
             task_id="run_postprocessing",
             task_display_name="[K8s] Run Nextflow SNV Post-processing",
@@ -797,7 +778,7 @@ class NextflowPostprocessing:
                 "NXF_OUTDIR": outdir,
             },
             config_configmap=os.getenv("NEXTFLOW_OPERATOR_CONFIG_CONFIGMAP", "nextflow-snv-cfg"),
-            params_configmap=params_configmap or NextflowPostprocessing.params_configmaps()["germline"],
+            params_configmap=os.getenv("NEXTFLOW_OPERATOR_PARAMS_CONFIGMAP", "nextflow-snv-params"),
         )
 
     @staticmethod
@@ -805,6 +786,44 @@ class NextflowPostprocessing:
         return _nextflow_cleanup_operator(
             run_tag,
             name="nextflow-snv-postprocessing-cleanup",
+            image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
+        )
+
+
+class NextflowSomaticAnnotation:
+    """Runs the Ferlab snv-post-processing over the raw VCFs of somatic calling tasks: entered at
+    `step = normalize` with `tools = vep`, so split multi-allelics, then VEP (RAD-23).
+
+    Same pipeline, launch script, image and `nextflow-snv-cfg` as `NextflowPostprocessing`, so the
+    same VEP image, cache and flags: a pipeline bump applies to both. Only the params ConfigMap
+    differs. A launcher of its own rather than a params switch on the germline one: that DAG runs
+    one driver at a time, and a somatic run would queue behind hours of germline WGS, and the
+    scheduled import behind both. Concurrent drivers are safe: the launch and work dirs are keyed by
+    RUN_TAG, which the somatic cases DAG prefixes with `somatic-`.
+    """
+
+    @staticmethod
+    def get_run_annotation(input_csv: str, outdir: str, run_tag: str) -> KubernetesPodOperator:
+        return _nextflow_driver_operator(
+            task_id="run_somatic_annotation",
+            task_display_name="[K8s] Run Nextflow Somatic SNV Annotation",
+            name="nextflow-somatic-snv-annotation-driver",
+            script=_NEXTFLOW_DRIVER_SCRIPT,
+            image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
+            env_vars={
+                "RUN_TAG": run_tag,
+                "NXF_INPUT": input_csv,
+                "NXF_OUTDIR": outdir,
+            },
+            config_configmap=os.getenv("NEXTFLOW_OPERATOR_CONFIG_CONFIGMAP", "nextflow-snv-cfg"),
+            params_configmap=os.getenv("NEXTFLOW_SOMATIC_OPERATOR_PARAMS_CONFIGMAP", "nextflow-snv-somatic-params"),
+        )
+
+    @staticmethod
+    def get_cleanup_work(run_tag: str) -> KubernetesPodOperator:
+        return _nextflow_cleanup_operator(
+            run_tag,
+            name="nextflow-somatic-snv-annotation-cleanup",
             image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
         )
 

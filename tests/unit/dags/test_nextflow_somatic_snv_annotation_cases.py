@@ -2,7 +2,7 @@ import pytest
 from airflow.models.mappedoperator import MappedOperator
 
 DAG_ID = "radiant-nextflow-somatic-snv-annotation-cases"
-PIPELINE_DAG_ID = "radiant-nextflow-snv-postprocessing"
+PIPELINE_DAG_ID = "radiant-nextflow-somatic-snv-annotation"
 
 
 def test_dag_is_importable(dag_bag):
@@ -43,14 +43,13 @@ def test_discovery_uses_the_somatic_query(dag_bag):
     assert "{{ mapping.clinical_case }}" in sql
 
 
-def test_the_germline_launcher_runs_with_the_somatic_params_set(dag_bag):
+def test_it_runs_its_own_launcher_not_the_germline_one(dag_bag):
+    """The germline launcher runs one driver at a time: a somatic run would queue behind it."""
     dag = dag_bag.get_dag(DAG_ID)
     run_pipeline = dag.get_task("run_pipeline")
     assert run_pipeline.trigger_dag_id == PIPELINE_DAG_ID
-    assert run_pipeline.conf["params_set"] == "somatic"
-    assert "somatic" in dag_bag.get_dag(PIPELINE_DAG_ID).params.get_param("params_set").schema["enum"]
-    # The launcher runs two drivers at once, so this run never queues behind a germline one.
-    assert dag_bag.get_dag(PIPELINE_DAG_ID).max_active_runs >= 2
+    assert dag_bag.get_dag(PIPELINE_DAG_ID) is not None
+    assert set(run_pipeline.conf) == {"input", "outdir"}
     assert "generate_inputs" in run_pipeline.trigger_run_id
     assert run_pipeline.wait_for_completion is True
     assert run_pipeline.reset_dag_run is True
@@ -59,8 +58,8 @@ def test_the_germline_launcher_runs_with_the_somatic_params_set(dag_bag):
 
 
 def test_its_paths_never_collide_with_the_germline_cases_dag():
-    """The case scheduler gives both cases DAGs one run id, and both trigger the same launcher,
-    whose launch dir, work dir and cleanup are keyed by the run tag."""
+    """The case scheduler gives both cases DAGs one run id, and the Nextflow launch and work dirs
+    are keyed by the run tag on a filesystem both launchers share."""
     from radiant.dags import nextflow_snv_postprocessing_cases as germline
     from radiant.dags import nextflow_somatic_snv_annotation_cases as somatic
 

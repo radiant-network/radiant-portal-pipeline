@@ -2,8 +2,8 @@
 
 QLIN sends the raw somatic SNV VCF of each calling task (`somatic_variant_calling`,
 `tumor_only_variant_calling`, `alignment_somatic_variant_calling`). This DAG annotates it with the
-same VEP as germline -- `radiant-nextflow-snv-postprocessing` with its `somatic` params set, the
-germline pipeline entered at its `normalize` step with `tools = vep` -- and registers the result on
+same VEP as germline -- `radiant-nextflow-somatic-snv-annotation`, the germline pipeline entered at
+its `normalize` step with `tools = vep` -- and registers the result on
 the case as a `radiant_somatic_annotation` task, which the scheduled import already loads.
 
     discover_scope -> select_tasks -> generate_inputs -> run_pipeline -> collect_outputs
@@ -42,10 +42,7 @@ DEFAULT_OUTPUTS_MOUNT = "/workspace/outputs"
 OUTPUT_POLL_ATTEMPTS = max(1, int(os.getenv("NEXTFLOW_OUTPUT_POLL_ATTEMPTS", "10")))
 OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "30"))
 
-# The germline launcher, with its somatic params set. It runs two drivers at once, so this run
-# never waits behind a germline one.
-PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-snv-postprocessing"
-PARAMS_SET = "somatic"
+PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-somatic-snv-annotation"
 
 # Under the shared roots, apart from germline post-processing (`snv-runs/`, `snv/`), CNV
 # (`cnv-runs/`, `cnv/`) and quality control (`qc-runs/`, `qc/`).
@@ -53,9 +50,9 @@ INPUTS_SUBDIR = "somatic-snv-runs"
 OUTPUTS_SUBDIR = "somatic-snv"
 
 # Load-bearing, not cosmetic. The case scheduler pins the same run id on every cases DAG it
-# triggers, and the germline cases DAG triggers the same launcher with its run tag. Without the
-# prefix both would trigger the launcher with one run id, and `reset_dag_run` would clear the other
-# DAG's run; they would also share one Nextflow launch dir, work dir and cleanup.
+# triggers, and the Nextflow launch dir and work dir are keyed by the run tag on a filesystem every
+# launcher shares. Without the prefix, this run and the germline SNV one would share both, and each
+# one's cleanup would delete the other's scratch.
 RUN_TAG_PREFIX = "somatic-"
 
 
@@ -307,7 +304,7 @@ def nextflow_somatic_snv_annotation_cases():
 
     run_pipeline = TriggerDagRunOperator(
         task_id="run_pipeline",
-        task_display_name="[DAG] Run Nextflow SNV Post-processing (somatic params)",
+        task_display_name="[DAG] Run Nextflow Somatic SNV Annotation",
         trigger_dag_id=PIPELINE_DAG_ID,
         # Pinned, not auto-generated: a retry of *this* DAG re-enters the same child run and
         # its Nextflow launch dir, so `-resume` finds what already completed.
@@ -315,7 +312,6 @@ def nextflow_somatic_snv_annotation_cases():
         conf={
             "input": "{{ ti.xcom_pull(task_ids='generate_inputs')['samplesheet_pod'] }}",
             "outdir": "{{ ti.xcom_pull(task_ids='generate_inputs')['outdir_pod'] }}",
-            "params_set": PARAMS_SET,
         },
         wait_for_completion=True,
         reset_dag_run=True,
