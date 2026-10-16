@@ -14,7 +14,7 @@
 --
 -- The tenant is returned, not filtered on: clinical is one shared schema and `cases.id` is unique
 -- across it. `params.excluded_tenants` is a block list, not a scope.
-WITH calling_task_experiment AS (
+WITH work_unit_experiment AS (
     -- Every somatic calling task, one row per sequencing experiment it called, with the number of
     -- experiments of the task. These three types are the ones QLIN sends with the raw VCF; listing
     -- them also keeps the DAG's own `radiant_somatic_annotation` (an `ssnv` VCF too) out.
@@ -39,7 +39,7 @@ WITH calling_task_experiment AS (
         )
     ) task_experiment
 ),
-case_calling_task AS (
+registration_case AS (
     -- The somatic cases, not draft or revoked, that hold *every* experiment of a calling task: one
     -- row per (case, calling task), with what the batch PATCH needs to find the case.
     --
@@ -51,7 +51,7 @@ case_calling_task AS (
            c.tenant_code       AS tenant_code,
            c.project_id        AS project_id,
            te.task_id          AS task_id
-    FROM calling_task_experiment te
+    FROM work_unit_experiment te
     JOIN {{ mapping.clinical_case_has_sequencing_experiment }} chse ON chse.sequencing_experiment_id = te.seq_id
     JOIN {{ mapping.clinical_case }} c                         ON c.id = chse.case_id
                                                               AND c.case_type_code = 'somatic'
@@ -59,7 +59,7 @@ case_calling_task AS (
     GROUP BY c.id, c.submitter_case_id, c.tenant_code, c.project_id, te.task_id, te.task_experiments
     HAVING COUNT(DISTINCT te.seq_id) = te.task_experiments
 ),
-raw_somatic_vcf AS (
+vcf_to_annotate AS (
     -- The raw somatic SNV VCF each calling task published: what the pipeline annotates, and the
     -- input the annotation is registered with. Selected on the document's type fields, never its
     -- filename, so the `scnv` VCF and the index are never picked. Counted over one task, so two
@@ -67,7 +67,7 @@ raw_somatic_vcf AS (
     SELECT thd.task_id           AS task_id,
            MAX(d.url)            AS url,
            COUNT(DISTINCT d.url) AS matches
-    FROM calling_task_experiment te
+    FROM work_unit_experiment te
     JOIN {{ mapping.clinical_task_has_document }} thd ON thd.task_id = te.task_id
                                                      AND thd.type = 'output'
     JOIN {{ mapping.clinical_document }} d            ON d.id = thd.document_id
@@ -75,7 +75,7 @@ raw_somatic_vcf AS (
                                                      AND d.format_code    = 'vcf'
     GROUP BY thd.task_id
 ),
-already_annotated AS (
+already_registered AS (
     -- The (case, calling task) pairs an earlier run already annotated: an output of the calling
     -- task is the input of a `radiant_somatic_annotation` registered on that case. The query keeps
     -- no other record of what it did. The annotation type is case-related in the portal, so its
@@ -91,17 +91,17 @@ already_annotated AS (
                                                          AND call_out.type = 'output'
     WHERE t.task_type_code = 'radiant_somatic_annotation'
 ),
-pending_case_task AS (
-    -- The (case, calling task) pairs left to run: `case_calling_task` minus `already_annotated`
+work_to_do AS (
+    -- The (case, calling task) pairs left to run: `registration_case` minus `already_registered`
     -- (the LEFT JOIN ... IS NULL anti-join).
     SELECT ct.case_id           AS case_id,
            ct.submitter_case_id AS submitter_case_id,
            ct.tenant_code       AS tenant_code,
            ct.project_id        AS project_id,
            ct.task_id           AS task_id
-    FROM case_calling_task ct
-    LEFT JOIN raw_somatic_vcf v   ON v.task_id = ct.task_id
-    LEFT JOIN already_annotated a ON a.case_id = ct.case_id
+    FROM registration_case ct
+    LEFT JOIN vcf_to_annotate v   ON v.task_id = ct.task_id
+    LEFT JOIN already_registered a ON a.case_id = ct.case_id
                                  AND a.task_id = ct.task_id
     WHERE a.task_id IS NULL
     {% if params.task_ids %}
@@ -138,11 +138,11 @@ SELECT pt.case_id                     AS case_id,
            {% endif %}
            ELSE NULL
        END                            AS exclusion_reason
-FROM pending_case_task pt
-JOIN calling_task_experiment te                       ON te.task_id = pt.task_id
+FROM work_to_do pt
+JOIN work_unit_experiment te                       ON te.task_id = pt.task_id
 JOIN {{ mapping.clinical_sequencing_experiment }} se  ON se.id = te.seq_id
 LEFT JOIN {{ mapping.clinical_sample }} sa            ON sa.id = se.sample_id
-LEFT JOIN raw_somatic_vcf v                           ON v.task_id = pt.task_id
+LEFT JOIN vcf_to_annotate v                           ON v.task_id = pt.task_id
 -- On the primary key alone, as in the germline queries: the batch PATCH looks a case up by
 -- (project_code, submitter_case_id).
 LEFT JOIN {{ mapping.clinical_project }} pr           ON pr.id = pt.project_id
