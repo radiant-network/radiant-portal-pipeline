@@ -224,3 +224,38 @@ def test_a_failed_step_fails_the_run(dag_bag):
 
 def test_params(dag_bag):
     assert set(dag_bag.get_dag(DAG_ID).params) == {"excluded_tenants", "notify"}
+
+
+def _run_select_ready_cases(dag, monkeypatch, cases_with_work):
+    """`select_ready_cases` with no work left anywhere, reading `cases_with_work` from discovery."""
+    from radiant.dags import case_scheduler
+
+    pulls = []
+
+    class TaskInstance:
+        def xcom_pull(self, task_ids, key):
+            pulls.append((task_ids, key))
+            return cases_with_work
+
+    context = {"ti": TaskInstance(), "params": {"excluded_tenants": []}}
+    monkeypatch.setattr("airflow.operators.python.get_current_context", lambda: context)
+    monkeypatch.setattr(case_scheduler, "_cases_with_work", lambda *_: set())
+    status_rows = [
+        {"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True},
+        {"case_id": 2, "tenant_code": "radiant", "status_code": "in_progress", "has_variants": True},
+    ]
+    batches = dag.get_task("select_ready_cases").python_callable([], [], [], [], status_rows)
+    assert pulls == [("discover_cases", case_scheduler.CASES_WITH_WORK_KEY)]
+    return batches
+
+
+def test_the_cases_this_run_processed_are_notified_whatever_their_status(dag_bag, monkeypatch):
+    """Not only the cases moved to in_progress: one already past it gets its new results too."""
+    batches = _run_select_ready_cases(dag_bag.get_dag(DAG_ID), monkeypatch, cases_with_work=[2])
+    assert batches == [{"tenant": "radiant", "case_ids": [1], "processed_case_ids": [2]}]
+
+
+def test_a_failed_discovery_still_moves_the_cases_to_in_progress(dag_bag, monkeypatch):
+    """Pulled, not passed: discovery failing costs the extra emails only, not the status changes."""
+    batches = _run_select_ready_cases(dag_bag.get_dag(DAG_ID), monkeypatch, cases_with_work=None)
+    assert batches == [{"tenant": "radiant", "case_ids": [1], "processed_case_ids": []}]

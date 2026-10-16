@@ -13,9 +13,10 @@ red when anything upstream failed, since the `all_done` chain would otherwise en
 discovery still finds after the pipelines. A case whose pipeline failed stays `processing`, even
 with some variants in, and is moved by the later run that finishes it.
 
-The laboratories are emailed when their cases reach `in_progress` (`evaluate_cases`, one chain per
-tenant: `set_in_progress` -> `create_case_group` -> `notify_labs`), so the manifest holds every
-pipeline's results. The "from Cases" DAGs no longer email.
+The laboratories are emailed at the end of the run (`evaluate_cases`, one chain per tenant:
+`set_in_progress` -> `create_case_group` -> `notify_labs`), so the manifest holds every pipeline's
+results: for the cases moved to `in_progress`, and for the cases already past it that the run
+processed and finished, whose status is left alone. The "from Cases" DAGs no longer email.
 """
 
 import datetime
@@ -46,6 +47,11 @@ IMPORT_DAG_ID = f"{NAMESPACE}-import"
 # Case group name prefix: `results-<run tag>`, one group per run and tenant. The labs see it,
 # in the manifest's file name.
 CASE_GROUP_PREFIX = "results"
+
+# `discover_cases` XCom: the cases this run had work for, read back by `select_ready_cases` to
+# email the ones past `processing` it finished. Pulled rather than passed, so a failed discovery
+# costs those emails only, not the status changes.
+CASES_WITH_WORK_KEY = "cases_with_work"
 
 # The QC DAG's workspace root: its DRAGEN metrics probe only accepts directories under it.
 INPUTS_ROOT_ENV = "NEXTFLOW_INPUTS_ROOT"
@@ -78,7 +84,8 @@ dag_params = {
         type="boolean",
         title="Notify the laboratories",
         description=(
-            "Email each diagnosis laboratory the manifest of its cases moved to `in_progress`. "
+            "Email each diagnosis laboratory the manifest of its cases moved to `in_progress`, "
+            "and of its cases past it that the run processed. "
             "Disable to move them silently; the case group is still created, so the `notify_cases` "
             "DAG can send later."
         ),
@@ -203,8 +210,10 @@ def case_scheduler():
 
         from radiant.tasks.nextflow.case_status import plan_processing
 
-        waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
-        return plan_processing(status_rows, waiting, get_current_context()["params"]["excluded_tenants"])
+        context = get_current_context()
+        waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, qc_rows, import_rows)
+        context["ti"].xcom_push(key=CASES_WITH_WORK_KEY, value=sorted(waiting))
+        return plan_processing(status_rows, waiting, context["params"]["excluded_tenants"])
 
     @task(
         task_id="set_processing",
@@ -228,7 +237,7 @@ def case_scheduler():
 
     @task(
         task_id="select_ready_cases",
-        task_display_name="[PyOp] Select the processing cases that are done and have variants",
+        task_display_name="[PyOp] Select the cases to move to in_progress and the cases to notify",
     )
     def select_ready_cases(
         germline_snv_rows: Any,
@@ -242,8 +251,14 @@ def case_scheduler():
 
         from radiant.tasks.nextflow.case_status import plan_in_progress
 
-        still_waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
-        return plan_in_progress(status_rows, still_waiting, get_current_context()["params"]["excluded_tenants"])
+        context = get_current_context()
+        processed = context["ti"].xcom_pull(task_ids="discover_cases", key=CASES_WITH_WORK_KEY)
+        if processed is None:
+            LOGGER.warning("discover_cases did not run: only the cases moved to in_progress are notified")
+        still_waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, qc_rows, import_rows)
+        return plan_in_progress(
+            status_rows, set(processed or []), still_waiting, context["params"]["excluded_tenants"]
+        )
 
     @task(
         task_id="set_in_progress",
@@ -256,20 +271,23 @@ def case_scheduler():
 
         return change_tenant_status(batch, IN_PROGRESS)
 
-    @task(task_id="create_case_group", task_display_name="[PyOp] Group the cases moved to in_progress")
+    @task(task_id="create_case_group", task_display_name="[PyOp] Group the cases to notify")
     def create_case_group(batch: dict, results: Any) -> str:
-        """One group per run and tenant, named after the run tag so a retry overwrites its own."""
+        """One group per run and tenant, named after the run tag so a retry overwrites its own.
+
+        The cases moved to `in_progress`, and the cases past it this run finished processing.
+        """
         from airflow.exceptions import AirflowSkipException
         from airflow.operators.python import get_current_context
 
-        from radiant.tasks.nextflow.case_status import cases_now_in
+        from radiant.tasks.nextflow.case_status import cases_now_in, skip_if_not_granted
         from radiant.tasks.nextflow.notify import group_name, post_group
 
-        case_ids = cases_now_in(results, IN_PROGRESS)
+        case_ids = sorted({*cases_now_in(results, IN_PROGRESS), *batch["processed_case_ids"]})
         if not case_ids:
-            raise AirflowSkipException(f"no case of tenant '{batch['tenant']}' reached {IN_PROGRESS}")
+            raise AirflowSkipException(f"no case of tenant '{batch['tenant']}' to notify")
         name = group_name(CASE_GROUP_PREFIX, get_current_context()["run_id"])
-        post_group(batch["tenant"], name, case_ids)
+        skip_if_not_granted(batch["tenant"], post_group, name, case_ids)
         return name
 
     @task(task_id="notify_labs", task_display_name="[PyOp] Email the laboratories their manifest")

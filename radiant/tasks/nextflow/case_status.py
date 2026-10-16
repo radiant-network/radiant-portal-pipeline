@@ -93,20 +93,35 @@ def plan_processing(status_rows: list[dict], waiting: set[int], excluded_tenants
     return _by_tenant(
         [c for c in cases if c.status_code == SUBMITTED and (c.case_id in waiting or c.has_variants)],
         excluded_tenants,
-        PROCESSING,
+        f"to move to {PROCESSING}",
     )
 
 
-def plan_in_progress(status_rows: list[dict], waiting: set[int], excluded_tenants: list[str]) -> list[dict]:
-    """Every `processing` case whose pipelines are all done and that has variant data.
+def plan_in_progress(
+    status_rows: list[dict], processed: set[int], waiting: set[int], excluded_tenants: list[str]
+) -> list[dict]:
+    """What `evaluate_cases` does per tenant: `{tenant, case_ids, processed_case_ids}`.
 
-    `waiting` is discovery run again after the pipelines: a case still in it has a pipeline
+    `case_ids` is every `processing` case whose pipelines are all done and that has variant
+    data. `waiting` is discovery run again after the pipelines: a case still in it has a pipeline
     left to run (one failed, or the import has not picked up its new files), so it stays
     `processing` even with variants in -- CNVs imported while its SNV annotation failed must not
     open it for analysis. Every `processing` case is looked at, not only this run's, so the
     later run that finishes it moves it on.
+
+    `processed_case_ids` is the cases past `processing` (`in_progress`, `in_review`...) that this
+    run had work for (`processed`, the first discovery) and finished: their status stays, but
+    their laboratories are emailed the new results all the same. A `submitted` or `processing`
+    case is emailed when it reaches `in_progress` instead.
     """
     cases = [CaseStatus(**row) for row in status_rows if row["status_code"] == PROCESSING]
+    finished = [
+        CaseStatus(**row)
+        for row in status_rows
+        if row["status_code"] not in (SUBMITTED, PROCESSING)
+        and row["case_id"] in processed
+        and row["case_id"] not in waiting
+    ]
     held = sorted(c.case_id for c in cases if c.case_id in waiting)
     if held:
         LOGGER.info(
@@ -117,10 +132,20 @@ def plan_in_progress(status_rows: list[dict], waiting: set[int], excluded_tenant
         LOGGER.warning(
             "%d processing case(s) with no pipeline left to run but no variant data: %s", len(no_variants), no_variants
         )
-    return _by_tenant([c for c in cases if c.case_id not in waiting and c.has_variants], excluded_tenants, IN_PROGRESS)
+    ready = _by_tenant(
+        [c for c in cases if c.case_id not in waiting and c.has_variants],
+        excluded_tenants,
+        f"to move to {IN_PROGRESS}",
+    )
+    notified = _by_tenant(finished, excluded_tenants, "to notify, status unchanged")
+    batches = {batch["tenant"]: {**batch, "processed_case_ids": []} for batch in ready}
+    for batch in notified:
+        batches.setdefault(batch["tenant"], {"tenant": batch["tenant"], "case_ids": []})
+        batches[batch["tenant"]]["processed_case_ids"] = batch["case_ids"]
+    return [batches[tenant] for tenant in sorted(batches)]
 
 
-def _by_tenant(cases: list[CaseStatus], excluded_tenants: list[str], target: str) -> list[dict]:
+def _by_tenant(cases: list[CaseStatus], excluded_tenants: list[str], action: str) -> list[dict]:
     """One `{tenant, case_ids}` per tenant, leaving out the excluded tenants. The import is not
     filtered by tenant, so an excluded tenant's case can still have variants: its status is left
     alone all the same. A tenant that is not excluded but not granted to the service account gets
@@ -134,10 +159,10 @@ def _by_tenant(cases: list[CaseStatus], excluded_tenants: list[str], target: str
         case_ids = sorted(set(by_tenant[tenant]))
         if tenant in excluded_tenants:
             LOGGER.info(
-                "tenant '%s' is excluded: %d case(s) not moved to %s: %s", tenant, len(case_ids), target, case_ids
+                "tenant '%s' is excluded: %d case(s) left out, not %s: %s", tenant, len(case_ids), action, case_ids
             )
             continue
-        LOGGER.info("tenant '%s': %d case(s) to move to %s: %s", tenant, len(case_ids), target, case_ids)
+        LOGGER.info("tenant '%s': %d case(s) %s: %s", tenant, len(case_ids), action, case_ids)
         batches.append({"tenant": tenant, "case_ids": case_ids})
     return batches
 
@@ -158,14 +183,23 @@ def change_tenant_status(batch: dict, status_code: str) -> list[dict]:
     the control DAG red every day for a grant nobody asked for; a skip with the reason in the
     log says the same thing without the noise. Any other error fails the task.
     """
+    from radiant.tasks.nextflow.register import update_case_system_status
+
+    if not batch["case_ids"]:
+        # A tenant with only cases to notify: nothing to move, no PATCH.
+        LOGGER.info("tenant '%s': no case to move to %s", batch["tenant"], status_code)
+        return []
+    return skip_if_not_granted(batch["tenant"], update_case_system_status, batch["case_ids"], status_code)
+
+
+def skip_if_not_granted(tenant: str, call: Callable, *args):
+    """`call(tenant, *args)`, a 403 from the portal turned into a skip of the task."""
     from airflow.exceptions import AirflowSkipException
 
     from radiant.tasks.nextflow.portal import PortalError
-    from radiant.tasks.nextflow.register import update_case_system_status
 
-    tenant = batch["tenant"]
     try:
-        return update_case_system_status(tenant, batch["case_ids"], status_code)
+        return call(tenant, *args)
     except PortalError as error:
         if error.status != 403:
             raise
