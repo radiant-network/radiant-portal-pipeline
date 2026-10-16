@@ -149,7 +149,7 @@ def test_a_tumor_normal_and_a_tumor_only_calling_task_are_pending(
 
     tn = by_task[PENDING_TN_TASK]
     assert [(r["case_id"], r["seq_id"], r["histology"]) for r in tn] == [(22, 62, "tumoral"), (22, 63, "normal")]
-    assert all(r["exclusion_reason"] is None and r["ssnv_matches"] == 1 for r in tn)
+    assert all(r["exclusion_reason"] is None for r in tn)
 
     [to] = by_task[PENDING_TO_TASK]
     assert (to["case_id"], to["seq_id"], to["calling_task_type"]) == (23, 64, "alignment_somatic_variant_calling")
@@ -160,7 +160,8 @@ def test_only_the_ssnv_vcf_is_selected(postgres_clinical_seeds, starrocks_sessio
     """AC3: task 76 publishes an `scnv` VCF too, which is never the trigger."""
     rows = _discover(starrocks_session, radiant_mapping, task_ids=[PENDING_TO_TASK])
     assert [r["ssnv_url"].rsplit("/", 1)[-1] for r in rows] == ["TCRBOA6_SRX1166091-T.v2.snv.vcf.gz"]
-    assert rows[0]["ssnv_matches"] == 1
+    # Counted, the `scnv` VCF would make the task `ambiguous_ssnv`.
+    assert rows[0]["exclusion_reason"] is None
 
 
 def test_the_rows_resolve_into_calling_tasks(postgres_clinical_seeds, starrocks_session, radiant_mapping):

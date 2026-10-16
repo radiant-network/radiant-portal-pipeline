@@ -125,7 +125,6 @@ SELECT pt.case_id                     AS case_id,
        se.experimental_strategy_code  AS strategy,
        sa.histology_code              AS histology,
        v.url                          AS ssnv_url,
-       COALESCE(v.matches, 0)         AS ssnv_matches,
        -- Task-level reasons first: they hold for every case of the task. `pending_sequencing` is
        -- transient, the task waits for its experiments rather than running on unfinished data.
        CASE

@@ -27,7 +27,6 @@ class CallingTaskRow(BaseModel):
     strategy: str | None = None
     histology: str | None = None
     ssnv_url: str | None = None
-    ssnv_matches: int = 0
     # Set by the query when this row is why the task, or this case of it, cannot run.
     exclusion_reason: str | None = None
 

@@ -32,7 +32,6 @@ def row(
         "strategy": "wgs",
         "histology": histology,
         "ssnv_url": vcf_url(task_id),
-        "ssnv_matches": 1,
         "exclusion_reason": None,
     }
     base.update(overrides)
