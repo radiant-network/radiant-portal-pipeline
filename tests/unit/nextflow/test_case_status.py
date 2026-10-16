@@ -102,8 +102,8 @@ def test_every_done_processing_case_with_variants_moves_to_in_progress_not_only_
         status_row(2, status_code="processing"),  # no variants imported yet: stays
         status_row(3, status_code="submitted", has_variants=True),  # its tenant refused processing
     ]
-    assert case_status.plan_in_progress(rows, waiting=set(), excluded_tenants=[]) == [
-        {"tenant": "radiant", "case_ids": [1]}
+    assert case_status.plan_in_progress(rows, processed=set(), waiting=set(), excluded_tenants=[]) == [
+        {"tenant": "radiant", "case_ids": [1], "processed_case_ids": []}
     ]
 
 
@@ -115,16 +115,34 @@ def test_a_case_with_a_pipeline_still_pending_stays_processing_even_with_variant
         status_row(2, status_code="processing", has_variants=True),
     ]
     with caplog.at_level(logging.INFO):
-        batches = case_status.plan_in_progress(rows, waiting={2}, excluded_tenants=[])
-    assert batches == [{"tenant": "radiant", "case_ids": [1]}]
+        batches = case_status.plan_in_progress(rows, processed=set(), waiting={2}, excluded_tenants=[])
+    assert batches == [{"tenant": "radiant", "case_ids": [1], "processed_case_ids": []}]
     assert "kept in processing, a pipeline still has work for them: [2]" in caplog.text
 
 
 def test_a_done_case_with_no_variants_stays_processing_and_is_reported(caplog):
     rows = [status_row(1, status_code="processing", has_variants=False)]
     with caplog.at_level(logging.WARNING):
-        assert case_status.plan_in_progress(rows, waiting=set(), excluded_tenants=[]) == []
+        assert case_status.plan_in_progress(rows, processed=set(), waiting=set(), excluded_tenants=[]) == []
     assert "no pipeline left to run but no variant data: [1]" in caplog.text
+
+
+def test_the_cases_past_processing_this_run_finished_are_notified_without_a_status_change():
+    """New results for a case already open for analysis are emailed too, not only the cases moved."""
+    rows = [
+        status_row(1, status_code="processing", has_variants=True),  # moved, and so notified
+        status_row(2, status_code="in_progress", has_variants=True),  # processed this run
+        status_row(3, status_code="in_review"),  # processed this run, QC only
+        status_row(4, status_code="completed", has_variants=True),  # nothing new this run
+        status_row(5, status_code="in_progress", has_variants=True),  # a pipeline failed: not done
+        status_row(6, status_code="submitted", has_variants=True),  # notified once in in_progress
+        status_row(7, status_code="in_progress", tenant_code="qlin"),  # a tenant with nothing to move
+    ]
+    batches = case_status.plan_in_progress(rows, processed={2, 3, 5, 6, 7}, waiting={5}, excluded_tenants=[])
+    assert batches == [
+        {"tenant": "qlin", "case_ids": [], "processed_case_ids": [7]},
+        {"tenant": "radiant", "case_ids": [1], "processed_case_ids": [2, 3]},
+    ]
 
 
 def test_has_variants_is_read_from_the_query_s_integer():
@@ -133,8 +151,8 @@ def test_has_variants_is_read_from_the_query_s_integer():
         status_row(1, status_code="processing", has_variants=1),
         status_row(2, status_code="processing", has_variants=0),
     ]
-    assert case_status.plan_in_progress(rows, waiting=set(), excluded_tenants=[]) == [
-        {"tenant": "radiant", "case_ids": [1]}
+    assert case_status.plan_in_progress(rows, processed=set(), waiting=set(), excluded_tenants=[]) == [
+        {"tenant": "radiant", "case_ids": [1], "processed_case_ids": []}
     ]
 
 
@@ -161,7 +179,9 @@ def test_an_excluded_tenant_s_cases_are_never_moved(caplog):
         assert case_status.plan_processing(rows, waiting={1, 2}, excluded_tenants=["radiant"]) == [
             {"tenant": "qlin", "case_ids": [2]}
         ]
-        assert case_status.plan_in_progress(rows, waiting=set(), excluded_tenants=["radiant"]) == []
+        assert case_status.plan_in_progress(rows, processed=set(), waiting=set(), excluded_tenants=["radiant"]) == []
+        finished = [status_row(4, status_code="in_progress", tenant_code="radiant")]
+        assert case_status.plan_in_progress(finished, processed={4}, waiting=set(), excluded_tenants=["radiant"]) == []
     assert "tenant 'radiant' is excluded" in caplog.text
 
 
@@ -176,6 +196,15 @@ def test_change_tenant_status_sends_the_batch(monkeypatch):
     result = case_status.change_tenant_status({"tenant": "radiant", "case_ids": [1]}, case_status.PROCESSING)
     assert calls == [("radiant", [1], "processing")]
     assert result == [{"case_id": 1, "updated": True, "current_status_code": "processing"}]
+
+
+def test_a_tenant_with_nothing_to_move_sends_no_patch(monkeypatch):
+    def update(*_):
+        raise AssertionError("PATCH sent with no case")
+
+    monkeypatch.setattr("radiant.tasks.nextflow.register.update_case_system_status", update)
+    batch = {"tenant": "radiant", "case_ids": [], "processed_case_ids": [1]}
+    assert case_status.change_tenant_status(batch, case_status.IN_PROGRESS) == []
 
 
 def test_a_tenant_the_service_account_is_not_granted_on_is_skipped(monkeypatch, caplog):
@@ -207,3 +236,14 @@ def test_the_cases_to_notify_include_those_an_earlier_attempt_moved():
         {"case_id": 3, "updated": False, "current_status_code": "revoked"},
     ]
     assert case_status.cases_now_in(results, case_status.IN_PROGRESS) == [1, 2]
+
+
+def test_a_case_group_refused_for_the_tenant_is_skipped(caplog):
+    """A tenant with only cases to notify sends no PATCH: its 403 comes from the group instead."""
+
+    def post_group(*_):
+        raise PortalError("POST .../case_groups returned 403", status=403)
+
+    with caplog.at_level(logging.WARNING), pytest.raises(AirflowSkipException, match="qlin"):
+        case_status.skip_if_not_granted("qlin", post_group, "results-x", [1])
+    assert "tenant 'qlin' skipped" in caplog.text
