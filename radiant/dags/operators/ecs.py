@@ -300,6 +300,46 @@ class CosmicMutationSet(RadiantTaskECSOperator):
         )
 
 
+class IgvTracks(RadiantTaskECSOperator):
+    @staticmethod
+    def get_build_track(ecs_env: ECSEnv, ephemeral_storage_gib: int, max_active_tracks: int):
+        return ecs.EcsRunTaskOperator.partial(
+            **dict(
+                task_id="build_igv_track_ecs",
+                task_display_name="[ECS] Build IGV Track",
+                # Rendered after the task unmaps, so the expanded params are in the context.
+                map_index_template="{{ params.track_id }}",
+                # Upstream servers are the flaky part: a failed download retries alone.
+                retries=2,
+                retry_delay=timedelta(minutes=5),
+                max_active_tis_per_dagrun=max_active_tracks,
+                overrides={
+                    "containerOverrides": [
+                        {
+                            "name": RadiantTaskECSOperator._container_name(),
+                            "command": [
+                                "python /opt/radiant/build_igv_track.py "
+                                "--track_id '{{ params.track_id }}' "
+                                "--prefix '{{ params.igv_tracks_prefix }}'"
+                            ],
+                            "environment": [
+                                {"name": "PYTHONPATH", "value": "/opt/radiant"},
+                                {"name": "LD_LIBRARY_PATH", "value": "/usr/local/lib:$LD_LIBRARY_PATH"},
+                            ],
+                        }
+                    ],
+                    # Fargate scratch disk (21-200 GiB, platform >= 1.4.0); the DAG sets the size.
+                    "ephemeralStorage": {"sizeInGiB": ephemeral_storage_gib},
+                },
+            )
+            | IgvTracks._get_ecs_context(
+                ecs_cluster=ecs_env.ECS_CLUSTER,
+                ecs_subnets=ecs_env.ECS_SUBNETS,
+                ecs_security_groups=ecs_env.ECS_SECURITY_GROUPS,
+            )
+        )
+
+
 class Toolbox:
     @staticmethod
     def get_run_command(
