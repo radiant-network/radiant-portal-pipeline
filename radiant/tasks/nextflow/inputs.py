@@ -31,6 +31,9 @@ SAMPLESHEET_COLUMNS = ["familyId", "sample", "sequencingType", "gvcf", "familyPh
 PED_DIR = "pedigrees"
 PHENO_DIR = "phenotypes"
 
+# The children of the case's father and mother. A fetus is the proband's child, not theirs (RAD-95).
+CHILD_ROLES = ("proband", "brother", "sister", "sibling")
+
 PED_SEX = {"male": "1", "female": "2", "unknown": "0"}
 PED_AFFECTED = {"affected": "2", "non_affected": "1", "unknown": "0"}
 PPKT_SEX = {"male": "MALE", "female": "FEMALE", "unknown": "UNKNOWN_SEX"}
@@ -95,14 +98,16 @@ def build_ped(family: Family) -> str:
     father, mother = family.father, family.mother
     lines = []
     for member in family.members:
-        is_proband = member.role == "proband"
+        # Every child is linked, not only the proband: slivar gives parental origin and trio tags to each child
+        # with a parent in the family (RAD-95).
+        is_child = member.role in CHILD_ROLES
         lines.append(
             "\t".join(
                 [
                     family.family_id,
                     member.aliquot,
-                    father.aliquot if (is_proband and father) else "0",
-                    mother.aliquot if (is_proband and mother) else "0",
+                    father.aliquot if (is_child and father) else "0",
+                    mother.aliquot if (is_child and mother) else "0",
                     PED_SEX[member.sex],
                     PED_AFFECTED[member.affected_status],
                 ]
