@@ -207,6 +207,7 @@ def test_dag_contains_all_tasks(dag_bag):
         "insert_variant_hashes",
         "overwrite_snv_tmp_variant",
         "insert_exomiser",
+        "insert_germline_snv_comphet",
         "checkpoint_after_exomiser",
         "germline_snv_occurrence.insert_germline_snv_occurrence",
         "germline_snv_occurrence.insert_stg_germline_snv_variant_freq",

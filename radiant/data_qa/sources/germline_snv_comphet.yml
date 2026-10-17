@@ -1,0 +1,50 @@
+version: 2
+
+sources:
+  - name: tenant_db
+    schema: "{{ env_var('SR_TENANT_SCHEMA', env_var('SR_SCHEMA', 'radiant')) }}"
+    tables:
+      - name: germline__snv__comphet
+        # No should_not_be_empty: a tenant without any family or affected proband has no pair.
+        tests:
+          # --- Should Be Unique ----------------------------------------------
+          - dbt_utils.unique_combination_of_columns:
+              name: germline_snv_comphet__should_be_unique__part_seq_id_task_id_locus_id_partner_locus_id_symbol
+              combination_of_columns:
+                - part
+                - seq_id
+                - task_id
+                - locus_id
+                - partner_locus_id
+                - symbol
+        columns:
+          - name: part
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_comphet__should_not_contain_null__part
+          - name: seq_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_comphet__should_not_contain_null__seq_id
+          - name: task_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_comphet__should_not_contain_null__task_id
+          - name: locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_comphet__should_not_contain_null__locus_id
+          - name: partner_locus_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_comphet__should_not_contain_null__partner_locus_id
+          - name: symbol
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_snv_comphet__should_not_contain_null__symbol

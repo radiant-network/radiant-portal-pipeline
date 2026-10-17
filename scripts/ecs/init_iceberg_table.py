@@ -13,6 +13,8 @@ def main(table_name: str):
         initialization.init_database()
     elif table_name == "germline_snv_occurrence":
         initialization.create_germline_snv_occurrence_table()
+    elif table_name == "germline_snv_comphet":
+        initialization.create_germline_snv_comphet_table()
     elif table_name == "snv_variant":
         initialization.create_variant_table()
     elif table_name == "snv_consequence":
@@ -26,7 +28,7 @@ def main(table_name: str):
     else:
         raise ValueError(
             f"Unknown initialization name: {table_name}, possible values are: "
-            "'database', 'germline_snv_occurrence', 'snv_variant', "
+            "'database', 'germline_snv_occurrence', 'germline_snv_comphet', 'snv_variant', "
             "'snv_consequence', 'germline_cnv_occurrence', 'somatic_snv_occurrence', "
             "'somatic_cnv_occurrence'"
         )
@@ -38,7 +40,7 @@ if __name__ == "__main__":
         "--table_name",
         required=True,
         help="Iceberg target to initialize, possible values are: "
-        "'database', 'germline_snv_occurrence', 'snv_variant', "
+        "'database', 'germline_snv_occurrence', 'germline_snv_comphet', 'snv_variant', "
         "'snv_consequence', 'germline_cnv_occurrence', 'somatic_snv_occurrence', "
         "'somatic_cnv_occurrence'",
     )
