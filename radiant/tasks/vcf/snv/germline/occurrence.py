@@ -6,6 +6,12 @@ from radiant.tasks.iceberg.utils import merge_schemas
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.snv.common import SCHEMA as COMMON_SCHEMA
 from radiant.tasks.vcf.snv.common import Common
+from radiant.tasks.vcf.snv.germline.inheritance import (
+    ETL_ONLY,
+    SlivarMethods,
+    slivar_parental_origin,
+    slivar_transmission_mode,
+)
 from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT
 
 SCHEMA = merge_schemas(
@@ -64,11 +70,15 @@ SCHEMA = merge_schemas(
         NestedField(156, "mother_calls", ListType(256, IntegerType()), required=False),
         NestedField(157, "mother_zygosity", StringType(), required=False),
         NestedField(158, "transmission_mode", StringType(), required=False),
+        NestedField(159, "other_transmission_modes", ListType(259, StringType()), required=False),
+        NestedField(160, "transmission_mode_candidate", BooleanType(), required=False),
+        NestedField(161, "parental_origin_source", StringType(), required=False),
+        NestedField(162, "transmission_mode_source", StringType(), required=False),
     ),
 )
 
 
-def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
+def process_occurrence(record: Variant, ped: Pedigree, common: Common, slivar: SlivarMethods = ETL_ONLY) -> dict:
     """
     Processes a genetic variant occurrence and extracts relevant information for each sample in the pedigree.
 
@@ -76,6 +86,8 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
         record (Variant): A `cyvcf2.Variant` object representing the genetic variant to process.
         ped (Pedigree): A `Pedigree` object containing information about the task and its associated samples.
         common (Common): A `Common` object containing shared attributes for the variant, such as locus and chromosome.
+        slivar (SlivarMethods): Which of the parental origin and the transmission mode come from the slivar tags of
+            the VCF (RAD-93); each of the two falls back to the ETL calculation on its own.
 
     Returns:
         dict: A dictionary where each key is a sample's `seq_id` and the value is a dictionary of extracted attributes
@@ -226,23 +238,34 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common) -> dict:
         for progeny in ped.progenies:
             progeny_occurrence = occurrences[progeny.seq_id]
             normalized_progeny_calls = normalize_calls(progeny_occurrence["calls"])
-            po = parental_origin(
-                common.chromosome,
-                normalized_progeny_calls,
-                normalized_father_calls,
-                normalized_mother_calls,
-            )
-            transmission_mode = compute_transmission_mode(
-                common.chromosome,
-                progeny.sex,
-                normalized_progeny_calls,
-                normalized_father_calls,
-                normalized_mother_calls,
-                ped.is_father_affected,
-                ped.is_mother_affected,
-            )
-            progeny_occurrence["parental_origin"] = po
-            progeny_occurrence["transmission_mode"] = transmission_mode
+            if slivar.parental_origin:
+                progeny_occurrence["parental_origin"] = slivar_parental_origin(record, progeny.aliquot)
+                progeny_occurrence["parental_origin_source"] = "slivar"
+            else:
+                progeny_occurrence["parental_origin"] = parental_origin(
+                    common.chromosome,
+                    normalized_progeny_calls,
+                    normalized_father_calls,
+                    normalized_mother_calls,
+                )
+                progeny_occurrence["parental_origin_source"] = "etl"
+            if slivar.transmission_mode:
+                mode, other_modes, candidate = slivar_transmission_mode(record, progeny.aliquot)
+                progeny_occurrence["transmission_mode"] = mode
+                progeny_occurrence["other_transmission_modes"] = other_modes
+                progeny_occurrence["transmission_mode_candidate"] = candidate
+                progeny_occurrence["transmission_mode_source"] = "slivar"
+            else:
+                progeny_occurrence["transmission_mode"] = compute_transmission_mode(
+                    common.chromosome,
+                    progeny.sex,
+                    normalized_progeny_calls,
+                    normalized_father_calls,
+                    normalized_mother_calls,
+                    ped.is_father_affected,
+                    ped.is_mother_affected,
+                )
+                progeny_occurrence["transmission_mode_source"] = "etl"
             progeny_occurrence["father_dp"] = father_occurrence.get("dp")
             progeny_occurrence["father_gq"] = father_occurrence.get("gq")
             progeny_occurrence["father_ad_ref"] = father_occurrence.get("ad_ref")

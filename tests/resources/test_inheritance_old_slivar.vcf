@@ -1,0 +1,7 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=248956422>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##INFO=<ID=po_denovo,Number=.,Type=String,Description="slivar po_denovo">
+##INFO=<ID=denovo,Number=.,Type=String,Description="slivar denovo">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SA0001	SA0002	SA0003
+chr1	1000	.	A	G	50	PASS	denovo=SA0001;po_denovo=SA0001	GT	0/1	0/0	0/0

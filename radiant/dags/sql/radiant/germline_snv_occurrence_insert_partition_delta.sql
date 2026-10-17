@@ -57,7 +57,11 @@ SELECT
     e.variant_score AS exomiser_variant_score,
     e.gene_combined_score AS exomiser_gene_combined_score,
     ch.comphet_genes IS NOT NULL AS has_comphet,
-    ch.comphet_genes
+    ch.comphet_genes,
+    other_transmission_modes,
+    transmission_mode_candidate,
+    parental_origin_source,
+    transmission_mode_source
 FROM {{ mapping.iceberg_germline_snv_occurrence }} o
 JOIN [BROADCAST] (
     SELECT locus_hash, locus_id
