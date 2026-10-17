@@ -16,6 +16,7 @@ from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import log_source_counts, parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.germline.comphet import process_comphet
+from radiant.tasks.vcf.snv.germline.inheritance import slivar_inheritance_methods
 from radiant.tasks.vcf.snv.germline.occurrence import process_occurrence
 from radiant.tasks.vcf.snv.variant import process_variant
 
@@ -62,6 +63,11 @@ def process_task(
 
         csq_header = parse_csq_header(vcf)
         pedigree = Pedigree(task, vcf.samples)
+        slivar = slivar_inheritance_methods(vcf)
+        logger.info(
+            f"Task {task.task_id}: parental origin from {'slivar' if slivar.parental_origin else 'etl'}, "
+            f"transmission mode from {'slivar' if slivar.transmission_mode else 'etl'}"
+        )
         with tracer.start_as_current_span(f"vcf_task_{task.task_id}"):
             logger.info(f"Starting processing vcf for task {task.task_id} with file {task.vcf_filepath}")
 
@@ -85,7 +91,7 @@ def process_task(
                 if len(record.ALT) <= 1:
                     if record.CHROM in SUPPORTED_CHROMOSOMES:
                         common = process_common(record, task_id=task.task_id, part=task.part)
-                        occurrences = process_occurrence(record, pedigree, common=common)
+                        occurrences = process_occurrence(record, pedigree, common=common, slivar=slivar)
                         # RAD-75: a record no sample carries is dropped from all the tables together. The
                         # StarRocks load keeps `has_alt` occurrences only and inner-joins them to the variants,
                         # so the tables must hold the same loci; the consequences of such a locus were loaded

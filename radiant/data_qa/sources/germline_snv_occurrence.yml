@@ -23,6 +23,11 @@ sources:
                 # RAD-39: a tenant with no family or affected proband has no compound het
                 - has_comphet
                 - comphet_genes
+                # RAD-94: only cases imported after RAD-94, from a family, fill them
+                - other_transmission_modes
+                - transmission_mode_candidate
+                - parental_origin_source
+                - transmission_mode_source
           # --- Should Not Contain Same Value ---------------------------------
           - should_not_contain_same_value:
               name: germline_snv_occurrence__should_not_contain_same_value
@@ -31,6 +36,10 @@ sources:
                 - part
                 # count(distinct) is not supported on STRUCT columns
                 - comphet_genes
+                # RAD-94: one method only until the pipeline revision writes the slivar tags
+                - transmission_mode_candidate
+                - parental_origin_source
+                - transmission_mode_source
 
           # --- Should Be Within Range ----------------------------------------
           # allele-depth ratios must be in [0,1] (defaults: like 'ad_ratio', 0..1)
@@ -119,6 +128,37 @@ sources:
                   values: "{{ dict_transmission_mode() }}"
                   config:
                     where: "transmission_mode is not null"
+          - name: other_transmission_modes
+            description: "ARRAY<VARCHAR(50)>. Slivar modes not kept in transmission_mode (RAD-94)."
+            tests:
+              # --- Accepted Values (array) -----------------------------------
+              # values: dict_transmission_mode() — see macros/dictionaries.sql
+              - accepted_values_in_array:
+                  name: germline_snv_occurrence__accepted_values_other_transmission_modes
+                  values: "{{ dict_transmission_mode() }}"
+          - name: transmission_mode_candidate
+            description: "BOOLEAN. Set whenever the transmission mode comes from slivar (RAD-94)."
+            tests:
+              - not_null:
+                  name: germline_snv_occurrence__should_not_contain_null__transmission_mode_candidate
+                  config:
+                    where: "transmission_mode_source = 'slivar'"
+          - name: parental_origin_source
+            description: "VARCHAR(10). Method that gave parental_origin (RAD-94)."
+            tests:
+              - accepted_values:
+                  name: germline_snv_occurrence__accepted_values_parental_origin_source
+                  values: ["slivar", "etl"]
+                  config:
+                    where: "parental_origin_source is not null"
+          - name: transmission_mode_source
+            description: "VARCHAR(10). Method that gave transmission_mode (RAD-94)."
+            tests:
+              - accepted_values:
+                  name: germline_snv_occurrence__accepted_values_transmission_mode_source
+                  values: ["slivar", "etl"]
+                  config:
+                    where: "transmission_mode_source is not null"
           - name: exomiser_acmg_classification
             description: "VARCHAR(300)."
             tests:

@@ -86,10 +86,12 @@
 {% macro dict_transmission_mode() %}
   {# Notion: https://app.notion.com/p/ferlab/2ef5a320b986493694e8a820d467d017?v=2808ef9b129c443e853d939a5524805d #}
   {# mirrors facets.go + transmission-mode-badge.tsx — keep in sync #}
+  {# RAD-93: uniparental_disomy comes from slivar; the portal side is RAD-98 #}
   {{ return(['autosomal_dominant_de_novo', 'autosomal_dominant', 'autosomal_recessive',
              'x_linked_dominant_de_novo', 'x_linked_recessive_de_novo', 'x_linked_dominant',
              'x_linked_recessive', 'non_carrier_proband', 'unknown_parents_genotype',
-             'unknown_father_genotype', 'unknown_mother_genotype', 'unknown_proband_genotype']) }}
+             'unknown_father_genotype', 'unknown_mother_genotype', 'unknown_proband_genotype',
+             'uniparental_disomy']) }}
 {% endmacro %}
 
 {% macro dict_exomiser_acmg_classification() %}
