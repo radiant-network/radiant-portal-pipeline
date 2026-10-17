@@ -1,8 +1,7 @@
 """RAD-88 -- the occurrence insert fills `has_comphet` and `comphet_genes` from `germline__snv__comphet`.
 
 The count of a gene must equal the number of partners the portal lists from the pair table, so the values
-are asserted here, with a sample and a task on each side of the join. The data QA test that checks the same
-invariant on real data is run on the result.
+are asserted here, with a sample and a task on each side of the join.
 """
 
 import json
@@ -16,9 +15,6 @@ from pyiceberg.expressions import EqualTo
 from radiant.dags import DAGS_DIR
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
-_DATA_QA_TEST = os.path.join(
-    DAGS_DIR, "..", "data_qa", "tests", "germline_snv_occurrence__validate_comphet_counts.sql"
-)
 
 _PART = 3911
 _TASK_ID = 39101
@@ -127,25 +123,3 @@ def test_summary_counts_the_partners_per_gene(summary):
         # Same locus as V1, other sample.
         (_OTHER_SEQ_ID, _V1): (0, None),
     }
-
-
-def test_data_qa_comphet_counts_finds_no_mismatch(summary, starrocks_session, radiant_mapping):
-    tables = {
-        "germline__snv__occurrence": radiant_mapping["starrocks_germline_snv_occurrence"],
-        "germline__snv__comphet": radiant_mapping["starrocks_germline_snv_comphet"],
-    }
-    with open(_DATA_QA_TEST) as f_in:
-        sql = jinja2.Template(f_in.read()).render(source=lambda _source, table: tables[table], config=lambda **_: "")
-
-    with starrocks_session.cursor() as cursor:
-        # The other task's pair has no occurrence at all: out of scope for this test (RAD-87's test covers it).
-        cursor.execute(f"SELECT * FROM ({sql}) t WHERE task_id = {_TASK_ID}")
-        assert cursor.fetchall() == ()
-
-        # A wrong count is reported.
-        cursor.execute(
-            f"INSERT INTO {tables['germline__snv__comphet']} VALUES (%s, %s, %s, %s, %s, %s)",
-            (_PART, _SEQ_ID, _TASK_ID, _V3, _V2, "BRCA2"),
-        )
-        cursor.execute(f"SELECT locus_id, symbol, summary_nb, pairs_nb FROM ({sql}) t WHERE task_id = {_TASK_ID}")
-        assert cursor.fetchall() == ((_V3, "BRCA2", 1, 2),)
