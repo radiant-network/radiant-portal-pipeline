@@ -100,7 +100,22 @@ Two optional keys in each `TENANTS` entry drive this:
 
 **If no entry declares `reference`, every tenant runs the full suite** — the
 behaviour from before tiering existed. Opting in is therefore explicit and
-cannot silently narrow an existing pipeline's coverage.
+cannot silently narrow an existing pipeline's coverage. Declaring means
+carrying the key, even as `false`: the scheduled import tests only the
+tenants of its batch, which may leave the reference tenant out, and those
+tenants must still get the health tier only.
+
+In Airflow, both keys come from `TENANT_QA_SHAPES` in
+`radiant/dags/data_integrity_starrocks.py`. A tenant missing from it is
+non-reference and expected to have every table. The list needs upkeep: when a
+tenant gets a table it was declared without (e.g. its first somatic analysis),
+`tenant_qa_shape__validate_absent_tables_are_empty` fails on that tenant until
+the entry is updated — `run_qa.py` hands it the list as the `absent_tables`
+dbt var.
+
+`TENANT_QA_EXCLUDED`, next to it, lists the tenants left out of the
+per-tenant passes altogether: tenants whose genomics rows are injected straight
+into StarRocks (e.g. `cbtn`), so no VCF goes through the ETL the suite tests.
 
 Preview what a non-reference tenant will run:
 
