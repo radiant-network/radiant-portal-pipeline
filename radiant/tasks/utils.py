@@ -97,6 +97,17 @@ def upload_s3_file(local_path: str, s3_uri: str) -> str:
     return s3_uri
 
 
+def upload_json_to_s3(content: dict | list, s3_uri: str) -> str:
+    """Write ``content`` as JSON to ``s3_uri`` and return the URI."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        local_path = os.path.join(tmp_dir, "content.json")
+        with open(local_path, "w") as f:
+            json.dump(content, f)
+        return upload_s3_file(local_path, s3_uri)
+
+
 def download_json_from_s3(s3_path: str, local_path: str, logger) -> list | dict:
     if not s3_path.startswith("s3://"):
         raise ValueError(f"Invalid S3 path: {s3_path}")

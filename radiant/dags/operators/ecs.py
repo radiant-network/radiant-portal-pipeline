@@ -4,6 +4,7 @@ from datetime import timedelta
 from airflow.providers.amazon.aws.operators import ecs
 
 from radiant.dags import ECSEnv
+from radiant.dags.operators.utils import writer_result_s3_uri
 
 # Propagated to the SNV extraction tasks so a memory-constrained environment can shrink the
 # TableAccumulator flush threshold, which is what sets an extraction task's memory floor. An
@@ -48,13 +49,23 @@ class RadiantTaskECSOperator:
         )
 
 
+# Rendered per mapped instance: each writer stores its result at its own deterministic S3 key,
+# which `merge_commits` recomputes. See `writer_result_s3_uri`.
+_WRITER_RESULT_URI_TEMPLATE = writer_result_s3_uri(
+    dag_id="{{ ti.dag_id }}", run_id="{{ ti.run_id }}", task_id="{{ ti.task_id }}", map_index="{{ ti.map_index }}"
+)
+
+
 class ImportSNVVCF(RadiantTaskECSOperator):
+    GERMLINE_TASK_ID = "create_germline_parquet_files_ecs"
+    SOMATIC_TASK_ID = "create_somatic_parquet_files_ecs"
+
     @staticmethod
     def get_create_germline_parquet_files(radiant_namespace: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator.partial(
             **dict(
                 pool="import_vcf",
-                task_id="create_germline_parquet_files_ecs",
+                task_id=ImportSNVVCF.GERMLINE_TASK_ID,
                 task_display_name="[ECS] Create Germline Parquet Files",
                 overrides={
                     "containerOverrides": [
@@ -62,7 +73,8 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                             "name": RadiantTaskECSOperator._container_name(),
                             "command": [
                                 "python /opt/radiant/import_germline_snv_vcf_for_task.py "
-                                "--task '{{ params.radiant_task | tojson }}'"
+                                "--task '{{ params.radiant_task | tojson }}' "
+                                f"--result_uri '{_WRITER_RESULT_URI_TEMPLATE}'"
                             ],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},
@@ -88,7 +100,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
         return ecs.EcsRunTaskOperator.partial(
             **dict(
                 pool="import_vcf",
-                task_id="create_somatic_parquet_files_ecs",
+                task_id=ImportSNVVCF.SOMATIC_TASK_ID,
                 task_display_name="[ECS] Create Somatic Parquet Files",
                 overrides={
                     "containerOverrides": [
@@ -96,7 +108,8 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                             "name": RadiantTaskECSOperator._container_name(),
                             "command": [
                                 "python /opt/radiant/import_somatic_snv_vcf_for_task.py "
-                                "--task '{{ params.radiant_task | tojson }}'"
+                                "--task '{{ params.radiant_task | tojson }}' "
+                                f"--result_uri '{_WRITER_RESULT_URI_TEMPLATE}'"
                             ],
                             "environment": [
                                 {"name": "PYTHONPATH", "value": "/opt/radiant"},

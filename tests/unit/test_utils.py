@@ -1,3 +1,4 @@
+import json
 import sys
 from io import StringIO
 from unittest.mock import MagicMock, patch
@@ -9,6 +10,7 @@ from radiant.tasks.utils import (
     S3UploadError,
     capture_libc_stderr_and_check_errors,
     download_s3_file,
+    upload_json_to_s3,
     upload_s3_file,
 )
 
@@ -124,3 +126,19 @@ def test_upload_s3_file_propagates_error_with_paths():
     assert "/tmp/src/file.tsv.gz" in str(exc_info.value)
     assert "AccessDenied" in str(exc_info.value)
     assert exc_info.value.__cause__ is original
+
+
+def test_upload_json_to_s3_uploads_the_content_as_json():
+    uploaded = {}
+
+    def fake_upload(local_path, bucket, key):
+        with open(local_path) as f:
+            uploaded.update(bucket=bucket, key=key, content=json.load(f))
+
+    mock_client = MagicMock()
+    mock_client.upload_file.side_effect = fake_upload
+    with patch("radiant.tasks.utils.boto3.client", return_value=mock_client):
+        result = upload_json_to_s3({"mock.snv_variant": []}, "s3://mock-bucket/tmp/result.json")
+
+    assert result == "s3://mock-bucket/tmp/result.json"
+    assert uploaded == {"bucket": "mock-bucket", "key": "tmp/result.json", "content": {"mock.snv_variant": []}}
