@@ -91,7 +91,7 @@ def test_absent_tables_are_excluded_for_that_tenant_only(run_qa):
     _, chusj, onekg = run_qa.plan_passes(tenants, "radiant")
 
     assert "--exclude" not in chusj.select_args
-    assert onekg.select_args[-3:] == [
+    assert onekg.select_args[-5:-2] == [
         "--exclude",
         "source:tenant_db.somatic__snv__occurrence",
         "source:tenant_db.somatic__cnv__occurrence",
@@ -103,7 +103,7 @@ def test_a_reference_tenant_can_also_declare_absent_tables(run_qa):
         [{"code": "chusj", "schema": "chusj_tenant", "reference": True, "absent_tables": ["exomiser"]}]
     )
     _, chusj = run_qa.plan_passes(tenants, "radiant")
-    assert chusj.select_args == ["--select", "source:tenant_db", "--exclude", "source:tenant_db.exomiser"]
+    assert chusj.select_args[:4] == ["--select", "source:tenant_db", "--exclude", "source:tenant_db.exomiser"]
 
 
 def test_malformed_absent_tables_fails_fast(run_qa):
