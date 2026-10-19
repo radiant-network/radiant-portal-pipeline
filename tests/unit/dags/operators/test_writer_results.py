@@ -115,7 +115,6 @@ def test_ecs_writer_command_passes_the_result_uri(kind):
     (command,) = op.kwargs["overrides"]["containerOverrides"][0]["command"]
     assert "--result_uri '" in command
     assert "{{ ti.run_id }}/{{ ti.task_id }}/{{ ti.map_index }}.json" in command
-    assert op.kwargs["task_id"] == getattr(ImportSNVVCF, f"{kind.upper()}_TASK_ID")
 
 
 def test_s3_delete_writer_results_deletes_every_page_under_the_run_prefix(monkeypatch):

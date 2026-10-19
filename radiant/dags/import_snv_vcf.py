@@ -107,15 +107,14 @@ with DAG(
         logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
         logger = logging.getLogger(__name__)
 
-        parsed = []
-        for task_id, writers in (
-            (operators.ImportSNVVCF.GERMLINE_TASK_ID, germline_writers),
-            (operators.ImportSNVVCF.SOMATIC_TASK_ID, somatic_writers),
-        ):
-            if IS_AWS:
-                parsed += s3_load_writer_results(ti.dag_id, ti.run_id, task_id, len(writers or []))
-            else:
-                parsed += parse_writer_results(writers, task_id)
+        if IS_AWS:
+            germline = "create_germline_parquet_files_ecs"
+            somatic = "create_somatic_parquet_files_ecs"
+            parsed = s3_load_writer_results(ti.dag_id, ti.run_id, germline, len(germline_writers or []))
+            parsed += s3_load_writer_results(ti.dag_id, ti.run_id, somatic, len(somatic_writers or []))
+        else:
+            parsed = parse_writer_results(germline_writers, "create_germline_parquet_files_k8s")
+            parsed += parse_writer_results(somatic_writers, "create_somatic_parquet_files_k8s")
         merged = merge_partition_commits(parsed)
         logger.info(f"Merged partitions from {len(parsed)} extraction task(s) across {len(merged)} table(s)")
 
