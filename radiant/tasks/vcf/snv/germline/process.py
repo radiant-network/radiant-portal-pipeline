@@ -15,6 +15,7 @@ from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import log_source_counts, parse_csq_header, process_consequence
+from radiant.tasks.vcf.snv.germline.comphet import process_comphet
 from radiant.tasks.vcf.snv.germline.occurrence import process_occurrence
 from radiant.tasks.vcf.snv.variant import process_variant
 
@@ -38,6 +39,7 @@ def process_task(
         occurrences_partition_commit = []
         variants_partition_commit = []
         consequences_partition_commit = []
+        comphets_partition_commit = []
         catalog = (
             load_catalog(catalog_name, **catalog_properties) if catalog_properties else load_catalog(catalog_name)
         )
@@ -54,6 +56,7 @@ def process_task(
         occurrences_table_name = f"{namespace}.germline_snv_occurrence"
         variants_table_name = f"{namespace}.snv_variant"
         consequences_table_name = f"{namespace}.snv_consequence"
+        comphets_table_name = f"{namespace}.germline_snv_comphet"
         if not vcf.samples:
             raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
 
@@ -72,6 +75,10 @@ def process_task(
 
             consequence_table = catalog.load_table(consequences_table_name)
             consequence_buffer = TableAccumulator(consequence_table, partition_filter=variant_csq_partition_filter)
+
+            # Same partition filter as the occurrences: a re-imported task replaces its pairs, even with none.
+            comphet_table = catalog.load_table(comphets_table_name)
+            comphet_buffer = TableAccumulator(comphet_table, partition_filter=occurrence_partition_filter)
             source_counts = Counter()
             skipped_no_alt = 0
             for record in vcf:
@@ -79,7 +86,7 @@ def process_task(
                     if record.CHROM in SUPPORTED_CHROMOSOMES:
                         common = process_common(record, task_id=task.task_id, part=task.part)
                         occurrences = process_occurrence(record, pedigree, common=common)
-                        # RAD-75: a record no sample carries is dropped from all three tables together. The
+                        # RAD-75: a record no sample carries is dropped from all the tables together. The
                         # StarRocks load keeps `has_alt` occurrences only and inner-joins them to the variants,
                         # so the tables must hold the same loci; the consequences of such a locus were loaded
                         # into `snv__consequence` without any case ever showing them.
@@ -92,6 +99,7 @@ def process_task(
                         occurrence_buffer.extend(list(occurrences.values()))
                         variant = process_variant(record, picked_consequence, common)
                         variant_buffer.append(variant)
+                        comphet_buffer.extend(process_comphet(record, pedigree, common))
                     else:
                         logger.debug(
                             f"Skipped record {record.CHROM} - {record.POS} - {record.ALT} in file {task.vcf_filepath}:"
@@ -131,6 +139,14 @@ def process_task(
                 )
             )
 
+            comphet_buffer.write_files()
+            comphets_partition_commit.append(
+                PartitionCommit(
+                    parquet_files=comphet_buffer.parquet_paths,
+                    partition_filter=comphet_buffer.partition_filter,
+                )
+            )
+
             logger.info(f"✅ Parquet files created: {task.task_id}, file {task.vcf_filepath}")
 
         vcf.close()
@@ -138,6 +154,7 @@ def process_task(
             occurrences_table_name: occurrences_partition_commit,
             variants_table_name: variants_partition_commit,
             consequences_table_name: consequences_partition_commit,
+            comphets_table_name: comphets_partition_commit,
         }
 
 

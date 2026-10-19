@@ -15,7 +15,7 @@ Radiant's tables live in **two** kinds of database, so this project declares
 | source | schema env var | holds |
 | ------ | -------------- | ----- |
 | `radiant` | `SR_SCHEMA` | open data, `snv__consequence*`, staging — one shared copy |
-| `tenant_db` | `SR_TENANT_SCHEMA` | `germline__snv__occurrence`, `somatic__snv__occurrence`, `germline__cnv__occurrence`, `somatic__cnv__occurrence`, `snv__variant`, `exomiser` — one copy per tenant, in `{tenant}_tenant` |
+| `tenant_db` | `SR_TENANT_SCHEMA` | `germline__snv__occurrence`, `somatic__snv__occurrence`, `germline__cnv__occurrence`, `somatic__cnv__occurrence`, `snv__variant`, `exomiser`, `germline__snv__comphet` — one copy per tenant, in `{tenant}_tenant` |
 
 dbt resolves `source.schema` at **parse time**, one value per invocation, so a
 single `dbt test` cannot fan a source across N tenant databases. The suite

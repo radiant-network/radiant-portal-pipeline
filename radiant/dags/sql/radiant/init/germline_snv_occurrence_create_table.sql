@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_snv_occurrence }} (
     exomiser_acmg_evidence        ARRAY<VARCHAR (10)>,
     exomiser_variant_score        FLOAT,
     exomiser_gene_combined_score  FLOAT,
+    has_comphet                   BOOLEAN,
+    comphet_genes                 ARRAY<STRUCT<symbol VARCHAR(200), nb INT>>,
   INDEX locus_id_index (`locus_id`) USING BITMAP COMMENT ''
 )
 ENGINE=OLAP
