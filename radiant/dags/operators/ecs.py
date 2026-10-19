@@ -57,15 +57,13 @@ _WRITER_RESULT_URI_TEMPLATE = writer_result_s3_uri(
 
 
 class ImportSNVVCF(RadiantTaskECSOperator):
-    GERMLINE_TASK_ID = "create_germline_parquet_files_ecs"
-    SOMATIC_TASK_ID = "create_somatic_parquet_files_ecs"
 
     @staticmethod
     def get_create_germline_parquet_files(radiant_namespace: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator.partial(
             **dict(
                 pool="import_vcf",
-                task_id=ImportSNVVCF.GERMLINE_TASK_ID,
+                task_id="create_germline_parquet_files_ecs",
                 task_display_name="[ECS] Create Germline Parquet Files",
                 overrides={
                     "containerOverrides": [
@@ -100,7 +98,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
         return ecs.EcsRunTaskOperator.partial(
             **dict(
                 pool="import_vcf",
-                task_id=ImportSNVVCF.SOMATIC_TASK_ID,
+                task_id="create_somatic_parquet_files_ecs",
                 task_display_name="[ECS] Create Somatic Parquet Files",
                 overrides={
                     "containerOverrides": [

@@ -140,15 +140,13 @@ class RadiantTaskK8SOperator:
 
 
 class ImportSNVVCF(RadiantTaskK8SOperator):
-    GERMLINE_TASK_ID = "create_germline_parquet_files_k8s"
-    SOMATIC_TASK_ID = "create_somatic_parquet_files_k8s"
 
     @staticmethod
     def get_create_germline_parquet_files(radiant_namespace: str):
         @task.kubernetes(
             **dict(
                 pool="import_vcf",
-                task_id=ImportSNVVCF.GERMLINE_TASK_ID,
+                task_id="create_germline_parquet_files_k8s",
                 task_display_name="[K8s] Create Germline Parquet Files",
                 map_index_template="Task: {{ task.op_kwargs['radiant_task']['task_id'] }}",
                 name="import-germline-vcf-for-task",
@@ -173,7 +171,7 @@ class ImportSNVVCF(RadiantTaskK8SOperator):
         @task.kubernetes(
             **dict(
                 pool="import_vcf",
-                task_id=ImportSNVVCF.SOMATIC_TASK_ID,
+                task_id="create_somatic_parquet_files_k8s",
                 task_display_name="[K8s] Create Somatic Parquet Files",
                 map_index_template="Task: {{ task.op_kwargs['radiant_task']['task_id'] }}",
                 name="import-somatic-vcf-for-task",

@@ -12,13 +12,6 @@ Radiant runs on two MWAA environments — Airflow 2 (Python 3.11) and Airflow 3 
 - [ ] Build and push the dbt data-quality image (step 4b).
 - [ ] Run terraform apply (step 5)
 
-> **Order when a release changes the contract between the three artifacts** (operator image, `plugins.zip`
-> wheel, DAG files — e.g. RAD-92, where the wheel passes a new `--result_uri` argument to the ECS SNV
-> writers and the `import_snv_vcf` DAG file imports new `radiant.dags.operators.utils` helpers): push the
-> operator image first (step 4), then make the new wheel live (steps 1, 2 and 5), and sync the DAGs (step 3)
-> last. The wheel is live only after step 5. An older image rejects the new argument, so every writer fails,
-> and a DAG file synced before its wheel fails to import.
-
 
 ## Prerequisites
 
