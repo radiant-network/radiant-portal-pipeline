@@ -7,31 +7,20 @@ from radiant.tasks.iceberg import initialization
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
 logger = logging.getLogger(__name__)
 
+INITIALIZERS = {
+    "database": initialization.init_database,
+    "germline_snv_occurrence": initialization.create_germline_snv_occurrence_table,
+    "germline_snv_comphet": initialization.create_germline_snv_comphet_table,
+    "snv_variant": initialization.create_variant_table,
+    "snv_consequence": initialization.create_consequences_table,
+    "germline_cnv_occurrence": initialization.create_germline_cnv_occurrence_table,
+    "somatic_snv_occurrence": initialization.create_somatic_snv_occurrence_table,
+    "somatic_cnv_occurrence": initialization.create_somatic_cnv_occurrence_table,
+}
+
 
 def main(table_name: str):
-    if table_name == "database":
-        initialization.init_database()
-    elif table_name == "germline_snv_occurrence":
-        initialization.create_germline_snv_occurrence_table()
-    elif table_name == "germline_snv_comphet":
-        initialization.create_germline_snv_comphet_table()
-    elif table_name == "snv_variant":
-        initialization.create_variant_table()
-    elif table_name == "snv_consequence":
-        initialization.create_consequences_table()
-    elif table_name == "germline_cnv_occurrence":
-        initialization.create_germline_cnv_occurrence_table()
-    elif table_name == "somatic_snv_occurrence":
-        initialization.create_somatic_snv_occurrence_table()
-    elif table_name == "somatic_cnv_occurrence":
-        initialization.create_somatic_cnv_occurrence_table()
-    else:
-        raise ValueError(
-            f"Unknown initialization name: {table_name}, possible values are: "
-            "'database', 'germline_snv_occurrence', 'germline_snv_comphet', 'snv_variant', "
-            "'snv_consequence', 'germline_cnv_occurrence', 'somatic_snv_occurrence', "
-            "'somatic_cnv_occurrence'"
-        )
+    INITIALIZERS[table_name]()
 
 
 if __name__ == "__main__":
@@ -39,10 +28,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--table_name",
         required=True,
-        help="Iceberg target to initialize, possible values are: "
-        "'database', 'germline_snv_occurrence', 'germline_snv_comphet', 'snv_variant', "
-        "'snv_consequence', 'germline_cnv_occurrence', 'somatic_snv_occurrence', "
-        "'somatic_cnv_occurrence'",
+        choices=INITIALIZERS,
+        help="Iceberg target to initialize",
     )
     args = parser.parse_args()
     logger.info(f"Command line arguments: {args}")
