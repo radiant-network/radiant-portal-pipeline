@@ -140,7 +140,6 @@ class RadiantTaskK8SOperator:
 
 
 class ImportSNVVCF(RadiantTaskK8SOperator):
-
     @staticmethod
     def get_create_germline_parquet_files(radiant_namespace: str):
         @task.kubernetes(
