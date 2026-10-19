@@ -57,7 +57,6 @@ _WRITER_RESULT_URI_TEMPLATE = writer_result_s3_uri(
 
 
 class ImportSNVVCF(RadiantTaskECSOperator):
-
     @staticmethod
     def get_create_germline_parquet_files(radiant_namespace: str, ecs_env: ECSEnv):
         return ecs.EcsRunTaskOperator.partial(
