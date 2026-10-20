@@ -39,11 +39,15 @@ Two optional keys shape a tenant's pass:
 ``absent_tables``
     Source tables this tenant legitimately does not have — a germline-only cohort has no
     ``somatic__*`` occurrences. Declaring the tenant's *shape* once beats maintaining a
-    per-tenant exclusion list inside every test's ``except:``.
+    per-tenant exclusion list inside every test's ``except:``. The list also reaches dbt as
+    the ``absent_tables`` var, so ``tenant_qa_shape__validate_absent_tables_are_empty``
+    can fail once a table declared absent gets rows.
 
 If **no** entry declares ``reference``, every tenant runs the full suite — the behaviour
 before tiering existed. Marking a reference tenant is therefore opt-in and cannot silently
-narrow an existing pipeline's coverage.
+narrow an existing pipeline's coverage. Declaring means carrying the key, even as
+``false``: the scheduled import tests only its batch, which may leave the reference
+tenant out, and those tenants must still get the health tier only.
 
 Exit codes match run_qa.sh's original contract:
     0  reports written (data-test failures are encoded in the XML, not treated as a
@@ -115,6 +119,7 @@ def tenant_select_args(is_reference: bool, absent_tables: list[str]) -> list[str
     args = ["--select", *selectors]
     if absent_tables:
         args += ["--exclude", *(f"{TENANT_SOURCE}.{table}" for table in absent_tables)]
+        args += ["--vars", json.dumps({"absent_tables": absent_tables})]
     return args
 
 
@@ -128,7 +133,7 @@ def plan_passes(tenants_json: str | None, base_schema: str) -> list[Pass]:
 
     # No declared reference means no tiering: every tenant keeps the full suite, so adding
     # this feature cannot narrow an existing pipeline's coverage behind the DAG's back.
-    tiered = any(isinstance(entry, dict) and entry.get("reference") for entry in tenants)
+    tiered = any(isinstance(entry, dict) and "reference" in entry for entry in tenants)
 
     for entry in tenants:
         try:
@@ -153,7 +158,7 @@ def _invocation_error(qa_pass: Pass, message: str) -> dict:
     """A synthetic result standing in for a pass that never produced an artifact.
 
     Without it a tenant whose dbt invocation died would silently vanish from the report and
-    the DAG would go green. The id carries no SJRA tag, so check_results counts it as an
+    the DAG would go green. The id carries no Jira tag, so check_results counts it as an
     unexpected failure.
     """
     return {

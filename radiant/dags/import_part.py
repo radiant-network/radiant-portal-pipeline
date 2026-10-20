@@ -411,6 +411,22 @@ def import_part():
         max_active_tis_per_dagrun=1,
     ).expand_kwargs(tenant_params)
 
+    # Loaded before the germline SNV occurrences, which will read the per-gene partner counts (RAD-39).
+    insert_germline_snv_comphet_per_tenant = RadiantStarRocksPartitionSwapOperator.partial(
+        task_id="insert_germline_snv_comphet",
+        table="{{ mapping.starrocks_germline_snv_comphet }}",
+        task_display_name="[StarRocks] Insert Germline SNV Compound Het Part",
+        map_index_template="{{ task.tenant_code }}",
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/germline_snv_comphet_copy_partition.sql",
+        ),
+        submit_task_options=std_submit_task_opts,
+        insert_partition_sql="./sql/radiant/germline_snv_comphet_insert_partition_delta.sql",
+        trigger_rule=TriggerRule.ALL_SUCCESS,
+        max_active_tis_per_dagrun=1,
+    ).expand_kwargs(tenant_params)
+
     with TaskGroup(group_id="germline_snv_occurrence") as tg_germline_snv_occurrence_per_tenant:
 
         @task.short_circuit(
@@ -681,7 +697,7 @@ def import_part():
     # Phase 2: VCF Imports
     checkpoint_setup >> vcf_imports >> checkpoint_imports
 
-    # Phase 3: Post-VCF Processing (hashes, exomiser)
+    # Phase 3: Post-VCF Processing (hashes, exomiser, compound hets)
     (
         checkpoint_imports
         >> load_exomiser
@@ -689,6 +705,7 @@ def import_part():
         >> insert_hashes
         >> overwrite_snv_tmp_variants
         >> insert_exomiser_per_tenant
+        >> insert_germline_snv_comphet_per_tenant
         >> checkpoint_after_exomiser
     )
 

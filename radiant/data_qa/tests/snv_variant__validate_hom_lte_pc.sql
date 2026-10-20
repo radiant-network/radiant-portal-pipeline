@@ -1,5 +1,5 @@
 {#
-  RAD-22: `hom` counts the carriers called HOM or HEM among the `pc` carriers,
+  `hom` counts the carriers called HOM or HEM among the `pc` carriers,
   with the same filters and cohorts, so it can never exceed `pc`. A row here
   means the hom and pc counts drifted apart (filter or cohort mismatch in the
   *_snv_staging_variant_freq_insert.sql queries) or a column swap in the

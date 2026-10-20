@@ -67,6 +67,7 @@ x-airflow-common:
     RADIANT_ICEBERG_NAMESPACE: radiant_iceberg_namespace
     RADIANT_LOCK_S3_BUCKET: warehouse
     RADIANT_S3_WORKSPACE: warehouse
+    RADIANT_IGV_TRACKS_S3_PREFIX: s3://warehouse/igv/
     AIRFLOW__CORE__EXECUTOR: CeleryExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://postgres:postgres@postgres/airflow
     AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://postgres:postgres@postgres/airflow

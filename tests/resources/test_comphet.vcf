@@ -1,0 +1,9 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=248956422>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##INFO=<ID=slivar_comphet,Number=.,Type=String,Description="compound hets called by slivar. format is sample/gene/id/chrom/pos/ref/alt where id is a unique integer indicating the compound-het pair.">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SA0001	SA0002	SA0003
+chr1	1000	.	A	G	50	PASS	slivar_comphet=SA0001/GENE1/1/chr1/2000/C/T	GT	0/1	0/1	0/1
+chr1	2000	.	C	T	50	PASS	slivar_comphet=SA0001/GENE1/1/chr1/1000/A/G,SA0001/GENE2/2/chr1/3000/G/A,SA0001/GENE1/5/chr1/1000/A/G,SA0002/GENE1/3/chr1/1000/A/G,SA0009/GENE1/4/chr1/1000/A/G,SA0001/GENE1/broken	GT	0/1	0/1	0/1
+chr1	3000	.	G	A	50	PASS	slivar_comphet=SA0001/GENE2/2/chr1/2000/C/T	GT	0/1	0/1	0/1
+chr1	4000	.	T	C	50	PASS	.	GT	0/1	0/1	0/1

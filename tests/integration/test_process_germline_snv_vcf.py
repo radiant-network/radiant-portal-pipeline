@@ -206,3 +206,92 @@ def test_process_task_skips_records_no_sample_carries(
     proband_1000 = occ[(occ.start == 1000) & (occ.seq_id == 751)].iloc[0]
     assert proband_1000.mother_zygosity == "WT" and proband_1000.father_zygosity == "HET", "Parental fields changed"
     assert not set(consequences.locus_hash) - set(occ.locus_hash), "Consequences written for a skipped record"
+
+
+def test_process_task_writes_comphet_pairs(
+    setup_iceberg_namespace,
+    iceberg_catalog_properties,
+    iceberg_client,
+    rest_iceberg_catalog_instance,
+    tmp_path,
+):
+    """RAD-39: the slivar_comphet pairs of the progenies land in germline_snv_comphet; a re-import replaces them."""
+    with open(RESOURCES_DIR / "test.vcf") as f:
+        header = [line for line in f if line.startswith("##")]
+    header.append(
+        '##INFO=<ID=slivar_comphet,Number=.,Type=String,Description="compound hets called by slivar. '
+        'format is sample/gene/id/chrom/pos/ref/alt where id is a unique integer indicating the compound-het pair.">\n'
+    )
+    columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSA0001\tSA0002\tSA0003\n"
+    tagged = [
+        # proband pairs 1000 with 2000 in GENE1; the mother's entry is ignored
+        "chr1\t1000\t.\tA\tG\t44.64\tPASS\tslivar_comphet=SA0001/GENE1/1/chr1/2000/C/T,SA0002/GENE1/9/chr1/2000/C/T"
+        "\tGT:AD\t0/1:4,7\t0/1:10,6\t0/0:5,0",
+        "chr1\t2000\t.\tC\tT\t44.64\tPASS\tslivar_comphet=SA0001/GENE1/1/chr1/1000/A/G\tGT:AD\t0/1:4,7\t0/0:10,0\t0/1:5,6",
+        "chr1\t3000\t.\tG\tT\t44.64\tPASS\t.\tGT:AD\t0/1:4,7\t0/0:10,0\t0/0:9,0",
+    ]
+
+    def experiment(seq_id, aliquot, family_role, sex):
+        return Experiment(
+            seq_id=seq_id,
+            patient_id=seq_id,
+            aliquot=aliquot,
+            tenant_code="tenant1",
+            family_role=family_role,
+            affected_status="affected",
+            sex=sex,
+            experimental_strategy="wgs",
+            request_priority="routine",
+        )
+
+    def run(records):
+        vcf_path = tmp_path / "trio_comphet.vcf"
+        vcf_path.write_text("".join(header) + columns + "\n".join(records) + "\n")
+        task = RadiantGermlineAnnotationTask(
+            task_id=39,
+            part=2,
+            analysis_type="germline",
+            deleted=False,
+            experiments=[
+                experiment(391, "SA0001", "proband", "F"),
+                experiment(392, "SA0002", "mother", "F"),
+                experiment(393, "SA0003", "father", "M"),
+            ],
+            vcf_filepath=str(vcf_path),
+        )
+        partitions_to_commit = process_task(
+            task,
+            catalog_name=rest_iceberg_catalog_instance.catalog_name,
+            namespace=setup_iceberg_namespace,
+            catalog_properties=iceberg_catalog_properties,
+        )
+        for table_name, partitions in partitions_to_commit.items():
+            commit_files(iceberg_client.load_table(table_name), partitions)
+
+        df = iceberg_client.load_table(f"{setup_iceberg_namespace}.germline_snv_comphet").scan().to_arrow().to_pandas()
+        return df[df.task_id == task.task_id]
+
+    def load_occurrences():
+        df = (
+            iceberg_client.load_table(f"{setup_iceberg_namespace}.germline_snv_occurrence")
+            .scan()
+            .to_arrow()
+            .to_pandas()
+        )
+        return df[df.task_id == 39]
+
+    comphets = run(tagged)
+    hashes = load_occurrences().drop_duplicates("start").set_index("start").locus_hash
+    pairs = sorted(
+        zip(comphets.seq_id, comphets.locus_hash, comphets.partner_locus_hash, comphets.symbol, strict=True)
+    )
+    assert pairs == sorted(
+        [
+            (391, hashes[1000], hashes[2000], "GENE1"),
+            (391, hashes[2000], hashes[1000], "GENE1"),
+        ]
+    ), "Expected the proband's pair once per direction, with the occurrence locus hashes"
+    assert set(comphets.part) == {2} and set(comphets.tenant_code) == {"tenant1"}
+
+    untagged = [r.replace(r.split("\t")[7], ".") for r in tagged]
+    assert run(untagged).empty, "A re-import without pairs must clear the task's previous pairs"
