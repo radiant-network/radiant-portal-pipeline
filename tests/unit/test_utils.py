@@ -1,14 +1,17 @@
+import json
 import sys
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import pytest
+from botocore.exceptions import ClientError
 
 from radiant.tasks.utils import (
     S3DownloadError,
     S3UploadError,
     capture_libc_stderr_and_check_errors,
     download_s3_file,
+    upload_json_to_s3,
     upload_s3_file,
 )
 
@@ -124,3 +127,24 @@ def test_upload_s3_file_propagates_error_with_paths():
     assert "/tmp/src/file.tsv.gz" in str(exc_info.value)
     assert "AccessDenied" in str(exc_info.value)
     assert exc_info.value.__cause__ is original
+
+
+def test_upload_json_to_s3_uploads_the_content_as_json():
+    mock_client = MagicMock()
+    with patch("radiant.tasks.utils.boto3.client", return_value=mock_client):
+        result = upload_json_to_s3({"mock.snv_variant": []}, "s3://mock-bucket/tmp/result.json")
+
+    assert result == "s3://mock-bucket/tmp/result.json"
+    kwargs = mock_client.put_object.call_args.kwargs
+    assert (kwargs["Bucket"], kwargs["Key"]) == ("mock-bucket", "tmp/result.json")
+    assert json.loads(kwargs["Body"]) == {"mock.snv_variant": []}
+
+
+def test_upload_json_to_s3_wraps_the_error_with_the_uri():
+    mock_client = MagicMock()
+    mock_client.put_object.side_effect = ClientError({"Error": {"Code": "AccessDenied"}}, "PutObject")
+    with (
+        patch("radiant.tasks.utils.boto3.client", return_value=mock_client),
+        pytest.raises(S3UploadError, match=r"s3://mock-bucket/tmp/result.json.*AccessDenied"),
+    ):
+        upload_json_to_s3({}, "s3://mock-bucket/tmp/result.json")

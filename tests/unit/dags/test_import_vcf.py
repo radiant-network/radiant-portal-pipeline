@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+
+import pytest
 from airflow.utils.trigger_rule import TriggerRule
 
 from radiant.dags import NAMESPACE
@@ -67,3 +70,57 @@ def test_extraction_tasks_share_the_import_vcf_pool(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     for task_id in ("create_germline_parquet_files_k8s", "create_somatic_parquet_files_k8s"):
         assert dag.get_task(task_id).pool == "import_vcf"
+
+
+def _merge_commits_callable(dag_bag, monkeypatch, is_aws: bool, **patched):
+    fn = dag_bag.get_dag(DAG_ID).get_task("merge_commits").python_callable
+    monkeypatch.setitem(fn.__globals__, "IS_AWS", is_aws)
+    monkeypatch.setitem(fn.__globals__, "s3_store_content", lambda content, prefix: "s3://mock/commit.json")
+    for name, value in patched.items():
+        monkeypatch.setitem(fn.__globals__, name, value)
+    return fn
+
+
+def test_merge_commits_on_ecs_reads_one_s3_result_per_writer(dag_bag, monkeypatch):
+    """ECS: the arguments only count the writers, the results come from S3, germline first."""
+    calls = []
+
+    def fake_load(dag_id, run_id, task_id, count):
+        calls.append((dag_id, run_id, task_id, count))
+        return [{f"mock.{task_id}": [i]} for i in range(count)]
+
+    fn = _merge_commits_callable(
+        dag_bag,
+        monkeypatch,
+        is_aws=True,
+        s3_load_writer_results=fake_load,
+    )
+    ti = SimpleNamespace(dag_id="mock-dag", run_id="mock-run")
+
+    result = fn(germline_writers=[{"radiant_task": {}}] * 2, somatic_writers=[{"radiant_task": {}}], ti=ti)
+
+    assert calls == [
+        ("mock-dag", "mock-run", "create_germline_parquet_files_ecs", 2),
+        ("mock-dag", "mock-run", "create_somatic_parquet_files_ecs", 1),
+    ]
+    assert result == [{"table_partitions": "s3://mock/commit.json"}]
+
+
+def test_merge_commits_on_ecs_with_no_writers_commits_nothing(dag_bag, monkeypatch):
+    fn = _merge_commits_callable(
+        dag_bag,
+        monkeypatch,
+        is_aws=True,
+        s3_load_writer_results=lambda dag_id, run_id, task_id, count: [{}] * count,
+    )
+
+    assert fn(germline_writers=[], somatic_writers=None, ti=SimpleNamespace(dag_id="d", run_id="r")) == []
+
+
+def test_merge_commits_on_k8s_names_the_writer_of_a_bad_result(dag_bag, monkeypatch):
+    from radiant.dags.operators.utils import WriterResultError
+
+    fn = _merge_commits_callable(dag_bag, monkeypatch, is_aws=False)
+
+    with pytest.raises(WriterResultError, match=r"create_somatic_parquet_files_k8s\[map_index=0\]"):
+        fn(germline_writers=[{"mock.t": []}], somatic_writers=["not json"])

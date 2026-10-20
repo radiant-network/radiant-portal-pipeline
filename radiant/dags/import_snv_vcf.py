@@ -8,7 +8,12 @@ from airflow.models import Param
 from airflow.utils.trigger_rule import TriggerRule
 
 from radiant.dags import IS_AWS, NAMESPACE, ECSEnv, get_namespace
-from radiant.dags.operators.utils import s3_store_content
+from radiant.dags.operators.utils import (
+    parse_writer_results,
+    s3_delete_writer_results,
+    s3_load_writer_results,
+    s3_store_content,
+)
 
 if IS_AWS:
     from radiant.dags.operators import ecs as operators
@@ -81,10 +86,18 @@ with DAG(
     # either. A genuine extraction failure still blocks the commit, as upstream_failed.
     @task(task_display_name="[PyOp] Merge Commits", trigger_rule=TriggerRule.NONE_FAILED)
     def merge_commits(
-        germline_partitions: list[dict[str, list[dict]]] | list[str],
-        somatic_partitions: list[dict[str, list[dict]]] | list[str],
+        germline_writers: list,
+        somatic_writers: list,
+        ti=None,
     ):
-        import json
+        """Merge the partitions of all the writers of the part.
+
+        Each argument has one entry per mapped writer: its result on K8s (the return-file XCom),
+        its params on ECS. On ECS the entries only count the writers: the XCom is the last
+        CloudWatch log event of the container, read once right after the task stops, so it can be
+        an earlier log line when the last ones are not ingested yet. Each ECS writer stores its
+        result in S3 at a deterministic key instead (`writer_result_s3_uri`), read here.
+        """
         import sys
 
         # `partition_commit`, not `utils`: this PyOp runs in the Airflow interpreter, which has
@@ -94,19 +107,14 @@ with DAG(
         logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
         logger = logging.getLogger(__name__)
 
-        def _parse(partition_lists):
-            # The ECS operator hands back the container's stdout, so each mapped result arrives
-            # as a JSON string rather than a dict.
-            parsed = []
-            for part in partition_lists or []:
-                if isinstance(part, str):
-                    logger.info(part)
-                    parsed.append(json.loads(part))
-                else:
-                    parsed.append(part)
-            return parsed
-
-        parsed = _parse(germline_partitions) + _parse(somatic_partitions)
+        if IS_AWS:
+            germline = "create_germline_parquet_files_ecs"
+            somatic = "create_somatic_parquet_files_ecs"
+            parsed = s3_load_writer_results(ti.dag_id, ti.run_id, germline, len(germline_writers or []))
+            parsed += s3_load_writer_results(ti.dag_id, ti.run_id, somatic, len(somatic_writers or []))
+        else:
+            parsed = parse_writer_results(germline_writers, "create_germline_parquet_files_k8s")
+            parsed += parse_writer_results(somatic_writers, "create_somatic_parquet_files_k8s")
         merged = merge_partition_commits(parsed)
         logger.info(f"Merged partitions from {len(parsed)} extraction task(s) across {len(merged)} table(s)")
 
@@ -122,6 +130,12 @@ with DAG(
         if IS_AWS:
             return [{"table_partitions": s3_path}]
         return s3_path
+
+    # NONE_FAILED: also runs when the commit is skipped (nothing to commit). Not after a failed
+    # commit: clearing `merge_commits` to retry it reads the results again.
+    @task(task_display_name="[PyOp] Cleanup Writer Results", trigger_rule=TriggerRule.NONE_FAILED)
+    def cleanup_writer_results(ti=None):
+        s3_delete_writer_results(ti.dag_id, ti.run_id)
 
     if IS_AWS:
         ecs_env = ECSEnv()
@@ -155,8 +169,11 @@ with DAG(
         germline_commits = create_germline_parquet_files.expand(params=germline_tasks)
         somatic_commits = create_somatic_parquet_files.expand(params=somatic_tasks)
 
-        merged_commits = merge_commits(germline_commits.output, somatic_commits.output)
-        commit_partitions.expand(params=merged_commits)
+        # The writers' params, not their XComs: see `merge_commits`.
+        merged_commits = merge_commits(germline_tasks, somatic_tasks)
+        [germline_commits, somatic_commits] >> merged_commits
+        committed = commit_partitions.expand(params=merged_commits)
+        committed >> cleanup_writer_results()
     else:
         germline_commits = create_germline_parquet_files.expand(radiant_task=germline_tasks)
         somatic_commits = create_somatic_parquet_files.expand(radiant_task=somatic_tasks)
