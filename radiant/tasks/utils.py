@@ -99,13 +99,12 @@ def upload_s3_file(local_path: str, s3_uri: str) -> str:
 
 def upload_json_to_s3(content: dict | list, s3_uri: str) -> str:
     """Write ``content`` as JSON to ``s3_uri`` and return the URI."""
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        local_path = os.path.join(tmp_dir, "content.json")
-        with open(local_path, "w") as f:
-            json.dump(content, f)
-        return upload_s3_file(local_path, s3_uri)
+    bucket_name, object_key = _split_s3_uri(s3_uri)
+    try:
+        boto3.client("s3").put_object(Bucket=bucket_name, Key=object_key, Body=json.dumps(content).encode())
+    except (BotoCoreError, ClientError, Boto3Error) as e:
+        raise S3UploadError(f"Failed to upload JSON to {s3_uri}: {e}") from e
+    return s3_uri
 
 
 def download_json_from_s3(s3_path: str, local_path: str, logger) -> list | dict:

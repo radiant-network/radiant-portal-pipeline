@@ -83,11 +83,11 @@ def test_s3_load_writer_results_names_the_map_index_of_a_missing_result():
     missing = ClientError({"Error": {"Code": "NoSuchKey", "Message": "missing"}}, "GetObject")
     with patch("radiant.dags.operators.utils.boto3.client") as client:
         client.return_value.get_object.side_effect = [{"Body": io.BytesIO(json.dumps(RESULT).encode())}, missing]
-        with pytest.raises(WriterResultError, match=rf"No result for {TASK_ID}\[map_index=1\]"):
+        with pytest.raises(WriterResultError, match=rf"{TASK_ID}\[map_index=1\].*NoSuchKey"):
             s3_load_writer_results("mock-dag", "mock-run", TASK_ID, 2)
 
 
-def test_s3_load_writer_results_reports_a_read_failure_apart_from_a_missing_result():
+def test_s3_load_writer_results_names_the_error_code_of_a_read_failure():
     denied = ClientError({"Error": {"Code": "AccessDenied", "Message": "denied"}}, "GetObject")
     with patch("radiant.dags.operators.utils.boto3.client") as client:
         client.return_value.get_object.side_effect = denied

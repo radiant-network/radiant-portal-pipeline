@@ -48,21 +48,16 @@ class WriterResultError(Exception):
 
 def parse_writer_result(result: dict | str | bytes | None, task_id: str, map_index: int) -> dict:
     """Return the result of the writer ``task_id[map_index]`` as a dict, or fail with an error naming it."""
-    if isinstance(result, dict):
-        return result
+    name = f"{task_id}[map_index={map_index}]"
     if isinstance(result, str | bytes):
         try:
-            parsed = json.loads(result)
+            result = json.loads(result)
         # `ValueError`, not only `JSONDecodeError`: bytes that are not UTF-8 raise `UnicodeDecodeError`.
         except ValueError as e:
-            raise WriterResultError(
-                f"Result of {task_id}[map_index={map_index}] is not JSON ({e}), starts with: {result[:200]!r}"
-            ) from e
-        if isinstance(parsed, dict):
-            return parsed
-    raise WriterResultError(
-        f"Result of {task_id}[map_index={map_index}] is not a partition-commit object: {str(result)[:200]!r}"
-    )
+            raise WriterResultError(f"Result of {name} is not JSON ({e}), starts with: {result[:200]!r}") from e
+    if not isinstance(result, dict):
+        raise WriterResultError(f"Result of {name} is not a partition-commit object: {str(result)[:200]!r}")
+    return result
 
 
 def parse_writer_results(results: list | None, task_id: str) -> list[dict]:
@@ -81,9 +76,8 @@ def s3_load_writer_results(dag_id: str, run_id: str, task_id: str, count: int) -
         bucket_name, key = s3_path[len("s3://") :].split("/", 1)
         try:
             body = s3_client.get_object(Bucket=bucket_name, Key=key)["Body"].read()
+        # The error code (`NoSuchKey` for a writer that stored nothing, `AccessDenied`, ...) is in `str(e)`.
         except ClientError as e:
-            if e.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
-                raise WriterResultError(f"No result for {task_id}[map_index={map_index}] at {s3_path}") from e
             raise WriterResultError(
                 f"Failed to read the result of {task_id}[map_index={map_index}] at {s3_path}: {e}"
             ) from e
