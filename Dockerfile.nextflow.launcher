@@ -27,7 +27,7 @@ ARG PIPELINE_REPO=Ferlab-Ste-Justine/snv-post-processing
 # casts numeric IDs to integers, so every Radiant samplesheet fails validation
 # (fixed upstream in BIOINFO-221). `radiant/tasks/nextflow/batch.py::ANNOTATION_PIPELINE`
 # records the same revision on every task it registers -- bump both together.
-ARG PIPELINE_REV=b535f2743d73a303a32579a40ecd833185f9db0b
+ARG PIPELINE_REV=8ad7c953a4b1439073e6693b1000b7f83866a10b
 
 # `-r` is load-bearing on this one: its manifest declares
 # `defaultBranch = 'master'` while the repo's actual default branch is `main`,

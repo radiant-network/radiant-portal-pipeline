@@ -2,9 +2,10 @@ FROM --platform=linux/amd64 python:3.12
 
 USER root
 
-# bcftools left-aligns the COSMIC Mutation Census variants (radiant/tasks/open_data/cosmic_mutation_set.py)
+# bcftools left-aligns the COSMIC Mutation Census variants (radiant/tasks/open_data/cosmic_mutation_set.py);
+# tabix brings bgzip and tabix, which compress and index the public IGV tracks (radiant/tasks/open_data/igv_tracks.py)
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bcftools \
+    && apt-get install -y --no-install-recommends bcftools tabix \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt /opt/radiant/requirements.txt

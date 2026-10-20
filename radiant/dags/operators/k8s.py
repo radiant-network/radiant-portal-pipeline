@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 from airflow.decorators import task
 from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperator
@@ -83,6 +84,15 @@ def _cosmic_container_resources() -> k8s.V1ResourceRequirements:
     return _container_resources("COSMIC", cpu="1", memory="2Gi", memory_limit="4Gi", ephemeral_storage="8Gi")
 
 
+def _igv_tracks_container_resources() -> k8s.V1ResourceRequirements:
+    """One IGV track per pod, streamed end to end (download to disk, convert line by line into GNU sort,
+    sort into bgzip), so memory is the sort buffer plus Python. Disk is the constraint: the largest track,
+    UCSC chainSelf, is a 0.8 GB download that becomes ~5 GB of GFF3 for sort to spill (33M rows, measured
+    2026-10-09). The VCFs (gnomAD SV is the largest, 1.7 GB) are moved as is, so they need one copy of disk only.
+    """
+    return _container_resources("IGV_TRACKS", cpu="1", memory="1Gi", memory_limit="2Gi", ephemeral_storage="16Gi")
+
+
 def _nextflow_container_resources() -> k8s.V1ResourceRequirements:
     """The Nextflow driver orchestrates; it does not process data. Every VCF actually
     gets read in a worker pod that Nextflow's k8s executor spawns itself, sized by
@@ -107,7 +117,9 @@ def _task_startup_timeout_seconds() -> int:
 
 class RadiantTaskK8SOperator:
     @staticmethod
-    def _get_k8s_context(radiant_namespace: str, container_resources: k8s.V1ResourceRequirements | None = None):
+    def _get_k8s_context(
+        radiant_namespace: str | None = None, container_resources: k8s.V1ResourceRequirements | None = None
+    ):
         iceberg_env_vars = {
             key: value for key, value in os.environ.items() if key.startswith("PYICEBERG_CATALOG__DEFAULT__")
         }
@@ -312,6 +324,24 @@ class InitIcebergTables(RadiantTaskK8SOperator):
         return create_germline_snv_occurrence_table
 
     @staticmethod
+    def get_create_germline_snv_comphet_table(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                task_id="create_germline_snv_comphet_table_k8s",
+                task_display_name="[K8s] Create Germline SNV Compound Het Table",
+                name="create-germline-snv-comphet-table",
+                do_xcom_push=True,
+            )
+            | InitIcebergTables._get_k8s_context(radiant_namespace)
+        )
+        def create_germline_snv_comphet_table():
+            from radiant.tasks.iceberg import initialization
+
+            initialization.create_germline_snv_comphet_table()
+
+        return create_germline_snv_comphet_table
+
+    @staticmethod
     def get_create_variant_table(radiant_namespace: str):
         @task.kubernetes(
             **dict(
@@ -422,6 +452,31 @@ class CosmicMutationSet(RadiantTaskK8SOperator):
             return normalize_cosmic_mutation_set(input_filepath, reference_fasta_filepath, output_filepath)
 
         return k8s_normalize_cosmic_mutation_set
+
+
+class IgvTracks(RadiantTaskK8SOperator):
+    @staticmethod
+    def get_build_track(max_active_tracks: int):
+        @task.kubernetes(
+            **dict(
+                task_id="build_igv_track_k8s",
+                task_display_name="[K8s] Build IGV Track",
+                # Upstream servers are the flaky part: a failed download retries alone.
+                retries=2,
+                retry_delay=timedelta(minutes=5),
+                max_active_tis_per_dagrun=max_active_tracks,
+                map_index_template="{{ task.op_kwargs['track_id'] }}",
+                name="build-igv-track",
+                do_xcom_push=True,
+            )
+            | IgvTracks._get_k8s_context(container_resources=_igv_tracks_container_resources()),
+        )
+        def k8s_build_igv_track(track_id: str, igv_tracks_prefix: str) -> dict:
+            from radiant.tasks.open_data.igv_tracks import build_igv_track
+
+            return build_igv_track(track_id, igv_tracks_prefix)
+
+        return k8s_build_igv_track
 
 
 class CheckDataIntegrity:
@@ -799,6 +854,44 @@ class NextflowPostprocessing:
         return _nextflow_cleanup_operator(
             run_tag,
             name="nextflow-snv-postprocessing-cleanup",
+            image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
+        )
+
+
+class NextflowSomaticAnnotation:
+    """Runs the Ferlab snv-post-processing over the raw VCFs of somatic calling tasks: entered at
+    `step = normalize` with `tools = vep`, so split multi-allelics, then VEP (RAD-23).
+
+    Same pipeline, launch script, image and `nextflow-snv-cfg` as `NextflowPostprocessing`, so the
+    same VEP image, cache and flags: a pipeline bump applies to both. Only the params ConfigMap
+    differs. A launcher of its own rather than a params switch on the germline one: that DAG runs
+    one driver at a time, and a somatic run would queue behind hours of germline WGS, and the
+    scheduled import behind both. Concurrent drivers are safe: the launch and work dirs are keyed by
+    RUN_TAG, which the somatic cases DAG prefixes with `somatic-`.
+    """
+
+    @staticmethod
+    def get_run_annotation(input_csv: str, outdir: str, run_tag: str) -> KubernetesPodOperator:
+        return _nextflow_driver_operator(
+            task_id="run_somatic_annotation",
+            task_display_name="[K8s] Run Nextflow Somatic SNV Annotation",
+            name="nextflow-somatic-snv-annotation-driver",
+            script=_NEXTFLOW_DRIVER_SCRIPT,
+            image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
+            env_vars={
+                "RUN_TAG": run_tag,
+                "NXF_INPUT": input_csv,
+                "NXF_OUTDIR": outdir,
+            },
+            config_configmap=os.getenv("NEXTFLOW_OPERATOR_CONFIG_CONFIGMAP", "nextflow-snv-cfg"),
+            params_configmap=os.getenv("NEXTFLOW_SOMATIC_OPERATOR_PARAMS_CONFIGMAP", "nextflow-snv-somatic-params"),
+        )
+
+    @staticmethod
+    def get_cleanup_work(run_tag: str) -> KubernetesPodOperator:
+        return _nextflow_cleanup_operator(
+            run_tag,
+            name="nextflow-somatic-snv-annotation-cleanup",
             image=_nextflow_image("NEXTFLOW_OPERATOR_IMAGE"),
         )
 

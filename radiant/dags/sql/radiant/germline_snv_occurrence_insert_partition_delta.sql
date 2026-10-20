@@ -55,7 +55,9 @@ SELECT
     e.acmg_classification AS exomiser_acmg_classification,
     e.acmg_evidence AS exomiser_acmg_evidence,
     e.variant_score AS exomiser_variant_score,
-    e.gene_combined_score AS exomiser_gene_combined_score
+    e.gene_combined_score AS exomiser_gene_combined_score,
+    ch.comphet_genes IS NOT NULL AS has_comphet,
+    ch.comphet_genes
 FROM {{ mapping.iceberg_germline_snv_occurrence }} o
 JOIN [BROADCAST] (
     SELECT locus_hash, locus_id
@@ -68,6 +70,21 @@ LEFT JOIN (
 ) e
     ON o.seq_id = e.seq_id
    AND v.locus_id = e.locus_id
+LEFT JOIN (
+     -- One entry per gene with its number of partners, counted on the rows the portal lists (RAD-39).
+     SELECT g.seq_id, g.task_id, g.locus_id,
+            array_agg(named_struct('symbol', g.symbol, 'nb', g.nb) ORDER BY g.symbol) AS comphet_genes
+     FROM (
+          SELECT c.seq_id, c.task_id, c.locus_id, c.symbol, CAST(COUNT(1) AS INT) AS nb
+          FROM {{ mapping.starrocks_germline_snv_comphet }} c
+          WHERE c.part = {{ partition }} AND c.task_id IN %(task_ids)s
+          GROUP BY c.seq_id, c.task_id, c.locus_id, c.symbol
+     ) g
+     GROUP BY g.seq_id, g.task_id, g.locus_id
+) ch
+    ON o.seq_id = ch.seq_id
+   AND o.task_id = ch.task_id
+   AND v.locus_id = ch.locus_id
 WHERE o.part = {{ partition }} and o.task_id in %(task_ids)s
 AND o.tenant_code = %(tenant_code)s
 AND has_alt;

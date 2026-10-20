@@ -8,6 +8,7 @@ from radiant.tasks.nextflow.portal import PortalError
 from tests.unit.nextflow.cnv.conftest import member_row as cnv_member_row
 from tests.unit.nextflow.conftest import member_row as snv_member_row
 from tests.unit.nextflow.qc.conftest import document_rows as qc_document_rows
+from tests.unit.nextflow.somatic.conftest import calling_task_rows
 
 
 def status_row(case_id, status_code="submitted", has_variants=False, tenant_code="radiant"):
@@ -20,21 +21,23 @@ def keep_all(cases):
 
 def test_work_waiting_is_the_union_of_every_pipeline_and_the_import_delta():
     waiting = case_status.cases_with_work(
-        snv_rows=[snv_member_row(case_id=1)],
-        cnv_rows=[cnv_member_row(case_id=2)],
+        germline_snv_rows=[snv_member_row(case_id=1)],
+        germline_cnv_rows=[cnv_member_row(case_id=2)],
+        somatic_snv_rows=calling_task_rows(case_id=5),
         qc_rows=qc_document_rows(case_id=3),
         import_rows=[{"case_id": 4}, {"case_id": 4}],
         locate_qc=keep_all,
     )
-    assert waiting == {1, 2, 3, 4}
+    assert waiting == {1, 2, 3, 4, 5}
 
 
 @pytest.mark.parametrize("reason", ["pending_sequencing", "no_gvcf", "tenant_excluded"])
 def test_a_case_the_pipeline_would_exclude_is_not_work_waiting(reason):
     """Moved to `processing`, it would wait there with nothing running for it."""
     waiting = case_status.cases_with_work(
-        snv_rows=[snv_member_row(case_id=1, exclusion_reason=reason)],
-        cnv_rows=[cnv_member_row(case_id=2, exclusion_reason=reason)],
+        germline_snv_rows=[snv_member_row(case_id=1, exclusion_reason=reason)],
+        germline_cnv_rows=[cnv_member_row(case_id=2, exclusion_reason=reason)],
+        somatic_snv_rows=calling_task_rows(case_id=5, exclusion_reason=reason),
         qc_rows=qc_document_rows(case_id=3, exclusion_reason=reason),
         import_rows=[],
         locate_qc=keep_all,
@@ -50,7 +53,7 @@ def test_a_qc_case_whose_dragen_metrics_cannot_be_found_is_not_work_waiting():
         probed.extend(c.case_id for c in cases)
         return []
 
-    waiting = case_status.cases_with_work([], [], qc_document_rows(case_id=3), [], locate_qc=locate_none)
+    waiting = case_status.cases_with_work([], [], [], qc_document_rows(case_id=3), [], locate_qc=locate_none)
     assert probed == [3]
     assert waiting == set()
 
@@ -61,7 +64,7 @@ def test_the_qc_probe_is_skipped_when_there_is_no_qc_candidate():
     def fail(_):
         raise AssertionError("probed with no candidate")
 
-    assert case_status.cases_with_work([snv_member_row(case_id=1)], [], [], [], locate_qc=fail) == {1}
+    assert case_status.cases_with_work([snv_member_row(case_id=1)], [], [], [], [], locate_qc=fail) == {1}
 
 
 def test_the_s3_locator_runs_the_qc_dag_s_probe(monkeypatch):
@@ -80,7 +83,7 @@ def test_the_s3_locator_runs_the_qc_dag_s_probe(monkeypatch):
 
 
 def test_nothing_discovered_is_no_work():
-    assert case_status.cases_with_work([], [], [], [], locate_qc=keep_all) == set()
+    assert case_status.cases_with_work([], [], [], [], [], locate_qc=keep_all) == set()
 
 
 def test_only_submitted_cases_with_work_or_variants_move_to_processing():
