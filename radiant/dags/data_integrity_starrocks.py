@@ -49,9 +49,25 @@ LOGGER = logging.getLogger(__name__)
 TESTQUALITY_DEFAULT_API_URL = "https://api.testquality.com"
 
 # Jira project ids whose tagged failing tests are treated as known errors
-KNOWN_ERROR_JIRA_PROJECTS = ("SJRA",)
-# Matches a known error tag in a test name, e.g. SJRA-1234 (case-insensitive)
+KNOWN_ERROR_JIRA_PROJECTS = ("SJRA", "RAD")
+# Matches a known error tag in a test name, e.g. SJRA-1234 or RAD-56 (case-insensitive)
 KNOWN_ERROR_TAG = re.compile(rf"(?:{'|'.join(KNOWN_ERROR_JIRA_PROJECTS)})-\d+", re.IGNORECASE)
+
+# Shape of the known tenants for the data_qa tiers (radiant/data_qa/README.md): the `reference`
+# tenant runs the whole per-tenant suite, the others the tenant-health tier only, and their
+# `absent_tables` are skipped. A tenant missing here is expected to have every table.
+# tenant_qa_shape__validate_absent_tables_are_empty fails once an absent table gets rows.
+_NO_SOMATIC = ["somatic__cnv__occurrence", "somatic__snv__occurrence"]
+TENANT_QA_SHAPES = {
+    "radiant": {"reference": True},
+    "onekg_dragen_4_4_7": {"absent_tables": _NO_SOMATIC},
+    "pragmatiq": {"absent_tables": _NO_SOMATIC},
+    "qlin": {"absent_tables": _NO_SOMATIC},
+}
+
+# Tenants left out of the per-tenant passes: their genomics rows are injected straight into
+# StarRocks, no VCF goes through the ETL, so the suite would only test the fixtures.
+TENANT_QA_EXCLUDED = {"cbtn"}
 
 
 # we store dbt result files in a folder specific to the dag run
@@ -72,6 +88,20 @@ def _resolve_tenant_schemas(conf: dict | None, tenant_codes: list[str]) -> list[
     return [
         {"code": code, "schema": _resolve_radiant_databases(conf, tenant_code=code)[1]}
         for code in sorted(tenant_codes)
+    ]
+
+
+def _with_qa_shape(tenants: list[dict]) -> list[dict]:
+    """Drop the TENANT_QA_EXCLUDED tenants and add each other tenant's TENANT_QA_SHAPES entry.
+
+    `reference` is set on every entry, false by default: the scheduled import tests only its
+    batch, which may leave the reference tenant out, and run_qa.py tiers as soon as one entry
+    carries the key.
+    """
+    return [
+        {**tenant, "reference": False, **TENANT_QA_SHAPES.get(tenant["code"], {})}
+        for tenant in tenants
+        if tenant["code"] not in TENANT_QA_EXCLUDED
     ]
 
 
@@ -185,7 +215,9 @@ def data_integrity_starrocks():
         context = get_current_context()
         dag_conf = context["dag_run"].conf or {}
 
-        resolved = _resolve_tenant_schemas(dag_conf, context["params"]["tenants"] or list_all_tenants(dag_conf))
+        resolved = _with_qa_shape(
+            _resolve_tenant_schemas(dag_conf, context["params"]["tenants"] or list_all_tenants(dag_conf))
+        )
 
         LOGGER.info("Testing %d tenant(s): %s", len(resolved), ", ".join(t["code"] for t in resolved) or "none")
         return json.dumps(resolved)
@@ -197,7 +229,7 @@ def data_integrity_starrocks():
     def check_results(run_results_s3_uri: str) -> None:
         """Fail the run if unexpected data tests failed.
 
-        Failing tests tagged with a Jira ticket (SJRA-XXXX) are known errors: they are reported
+        Failing tests tagged with a Jira ticket (SJRA-XXXX, RAD-XXXX) are known errors: they are reported
         but do not fail the run.
         """
         import json

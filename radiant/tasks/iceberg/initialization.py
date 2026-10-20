@@ -135,6 +135,44 @@ def create_germline_snv_occurrence_table():
     catalog.create_table_if_not_exists(table_name, schema=OCCURRENCE_SCHEMA, partition_spec=partition_spec)
 
 
+def create_germline_snv_comphet_table():
+    import os
+
+    from pyiceberg.catalog import load_catalog
+    from pyiceberg.partitioning import PartitionField, PartitionSpec
+    from pyiceberg.transforms import IdentityTransform
+
+    from radiant.tasks.vcf.snv.germline.comphet import SCHEMA as COMPHET_SCHEMA
+
+    namespace = os.environ["RADIANT_ICEBERG_NAMESPACE"]
+    catalog = load_catalog("default")
+    table_name = f"{namespace}.germline_snv_comphet"
+    if catalog.table_exists(table_name):
+        catalog.drop_table(table_name)
+
+    # Same partitions as germline_snv_occurrence, so a re-imported task overwrites its pairs in the same commit.
+    part_field = COMPHET_SCHEMA.find_field("part")
+    task_id_field = COMPHET_SCHEMA.find_field("task_id")
+
+    partition_spec = PartitionSpec(
+        fields=[
+            PartitionField(
+                field_id=1001,
+                source_id=part_field.field_id,
+                name=part_field.name,
+                transform=IdentityTransform(),
+            ),
+            PartitionField(
+                field_id=1002,
+                source_id=task_id_field.field_id,
+                name=task_id_field.name,
+                transform=IdentityTransform(),
+            ),
+        ]
+    )
+    catalog.create_table_if_not_exists(table_name, schema=COMPHET_SCHEMA, partition_spec=partition_spec)
+
+
 def create_somatic_cnv_occurrence_table():
     import os
 

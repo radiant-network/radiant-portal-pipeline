@@ -324,6 +324,24 @@ class InitIcebergTables(RadiantTaskK8SOperator):
         return create_germline_snv_occurrence_table
 
     @staticmethod
+    def get_create_germline_snv_comphet_table(radiant_namespace: str):
+        @task.kubernetes(
+            **dict(
+                task_id="create_germline_snv_comphet_table_k8s",
+                task_display_name="[K8s] Create Germline SNV Compound Het Table",
+                name="create-germline-snv-comphet-table",
+                do_xcom_push=True,
+            )
+            | InitIcebergTables._get_k8s_context(radiant_namespace)
+        )
+        def create_germline_snv_comphet_table():
+            from radiant.tasks.iceberg import initialization
+
+            initialization.create_germline_snv_comphet_table()
+
+        return create_germline_snv_comphet_table
+
+    @staticmethod
     def get_create_variant_table(radiant_namespace: str):
         @task.kubernetes(
             **dict(

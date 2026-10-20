@@ -62,6 +62,7 @@ PIPELINE_IGNORED_CASE_STATUSES_KEY = "pipeline_ignored_case_statuses"
 ICEBERG_RADIANT_MAPPING = {
     "iceberg_germline_cnv_occurrence": "germline_cnv_occurrence",
     "iceberg_germline_snv_occurrence": "germline_snv_occurrence",
+    "iceberg_germline_snv_comphet": "germline_snv_comphet",
     "iceberg_snv_variant": "snv_variant",
     "iceberg_snv_consequence": "snv_consequence",
     "iceberg_somatic_cnv_occurrence": "somatic_cnv_occurrence",
@@ -142,6 +143,7 @@ STARROCKS_RADIANT_BASE_MAPPING = {
 STARROCKS_RADIANT_PER_TENANT_MAPPING = {
     "starrocks_exomiser": "exomiser",
     "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
+    "starrocks_germline_snv_comphet": "germline__snv__comphet",
     "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
     "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
     "starrocks_snv_variant": "snv__variant",
