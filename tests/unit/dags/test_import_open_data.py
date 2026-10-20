@@ -28,8 +28,8 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
     ]
     # start + the metadata-refresh pair + the snapshot gate + the ledger write's 3 + the RCV
     # group's 4 + cytoband's load + the COSMIC gene-set group's 2 + the COSMIC mutation-set
-    # group's 3 + cytoband's own short-circuit gate
-    assert len(dag.tasks) == 18 + len(gene_group_ids) + len(variant_group_ids) * 2
+    # group's 3 + cytoband's own short-circuit gate + the IGV tracks group's 2
+    assert len(dag.tasks) == 20 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_metadata_cache_is_refreshed_before_any_source_is_read(dag_bag):
@@ -61,6 +61,7 @@ def test_file_driven_loads_are_gated_on_their_params(dag_bag):
         "has_cytoband_filepath",
         "cosmic_gene_set.has_cosmic_gene_set_filepath",
         "cosmic_mutation_set.has_cosmic_mutation_set_filepath",
+        "igv_tracks.should_import_igv_tracks",
     ):
         assert head in last_source.downstream_task_ids
 
@@ -133,6 +134,33 @@ def test_cosmic_mutation_set_is_handed_off_to_its_own_dag(dag_bag):
         "cosmic_mutation_set_filepath": "s3://b/cmc.tsv.gz",
         "reference_fasta_filepath": "s3://r/f.fa",
     }
+
+
+def test_igv_tracks_are_handed_off_to_their_own_dag_only_when_asked(dag_bag):
+    """Off by default: reannotate_open_data triggers this DAG and must not rebuild the files each time."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
+    assert {t.task_id for t in dag.task_group.get_child_by_label("igv_tracks")} == {
+        "igv_tracks.should_import_igv_tracks",
+        "igv_tracks.trigger_import_igv_tracks",
+    }
+    assert dag.get_task("igv_tracks.should_import_igv_tracks").downstream_task_ids == {
+        "igv_tracks.trigger_import_igv_tracks"
+    }
+    trigger = dag.get_task("igv_tracks.trigger_import_igv_tracks")
+    assert trigger.trigger_dag_id == f"{NAMESPACE}-import-igv-tracks"
+    # No conf: the triggered DAG's own prefix default applies.
+    assert trigger.conf is None
+    assert trigger.wait_for_completion is True
+    assert dag.params["import_igv_tracks"] is False
+
+    gate = dag.get_task("igv_tracks.should_import_igv_tracks")
+
+    def decide(params):
+        return gate.python_callable(**gate.determine_kwargs({"params": params}))
+
+    assert decide({"import_igv_tracks": True}) is True
+    assert decide({"import_igv_tracks": False}) is False
+    assert decide({}) is False
 
 
 def test_dag_has_all_group_tasks(dag_bag):
