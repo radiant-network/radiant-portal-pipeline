@@ -19,6 +19,7 @@ from radiant.tasks.data.radiant_tables import (
 from radiant.tasks.vcf.cnv.germline.occurrence import SCHEMA as CNV_OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.cnv.somatic.occurrence import SCHEMA as SOMATIC_CNV_OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.consequence import SCHEMA as CONSEQUENCE_SCHEMA
+from radiant.tasks.vcf.snv.germline.comphet import SCHEMA as GERMLINE_SNV_COMPHET_SCHEMA
 from radiant.tasks.vcf.snv.germline.occurrence import SCHEMA as GERMLINE_SNV_OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.somatic.occurrence import SCHEMA as SOMATIC_SNV_OCCURRENCE_SCHEMA
 from radiant.tasks.vcf.snv.variant import SCHEMA as VARIANT_SCHEMA
@@ -277,6 +278,9 @@ def iceberg_namespace(random_test_id, iceberg_client):
 def setup_iceberg_namespace(s3_fs, iceberg_client, iceberg_namespace, random_test_id):
     iceberg_client.create_table_if_not_exists(
         f"{iceberg_namespace}.germline_snv_occurrence", schema=GERMLINE_SNV_OCCURRENCE_SCHEMA
+    )
+    iceberg_client.create_table_if_not_exists(
+        f"{iceberg_namespace}.germline_snv_comphet", schema=GERMLINE_SNV_COMPHET_SCHEMA
     )
     iceberg_client.create_table_if_not_exists(f"{iceberg_namespace}.snv_variant", schema=VARIANT_SCHEMA)
     iceberg_client.create_table_if_not_exists(
