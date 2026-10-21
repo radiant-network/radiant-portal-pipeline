@@ -2,7 +2,8 @@
 
 Since snv-post-processing BIOINFO-239/240, slivar writes them as INFO tags, each listing the samples (VCF aliquots)
 the rule holds for: the ``po_*`` tags carry the parental origin, and the mode tags are named after the
-``transmission_mode`` values. A ``--family-expr`` tag lists the affected family members, or the family id when none is
+``transmission_mode`` values, except the de novo ones, spelled ``denovo`` since BIOINFO-242 (Radiant keeps
+``de_novo``). A ``--family-expr`` tag lists the affected family members, or the family id when none is
 affected: a value that is not an aliquot of the task is simply never matched.
 """
 
@@ -22,17 +23,22 @@ PO_TAGS = {
     "po_unknown": "UNKNOWN",
 }
 
-# When several modes list a sample, the first one is kept and the others go to other_transmission_modes.
-MODE_ORDER = (
-    "autosomal_dominant_de_novo",
-    "x_linked_dominant_de_novo",
-    "x_linked_recessive_de_novo",
-    "autosomal_recessive",
-    "x_linked_recessive",
-    "autosomal_dominant",
-    "x_linked_dominant",
-    "uniparental_disomy",
-)
+# Mode tag -> transmission_mode. When several modes list a sample, the first one in this order is kept and the
+# others go to other_transmission_modes.
+MODE_TAGS = {
+    "autosomal_dominant_denovo": "autosomal_dominant_de_novo",
+    "x_linked_dominant_denovo": "x_linked_dominant_de_novo",
+    "x_linked_recessive_denovo": "x_linked_recessive_de_novo",
+    "autosomal_recessive": "autosomal_recessive",
+    "x_linked_recessive": "x_linked_recessive",
+    "autosomal_dominant": "autosomal_dominant",
+    "x_linked_dominant": "x_linked_dominant",
+    "uniparental_disomy": "uniparental_disomy",
+}
+
+# Declared by every revision that writes the mode tags above (slivar declares each expression, even with no hit).
+# The other mode names already existed before BIOINFO-242, with de novo tags this module does not read.
+MODE_TAGS_MARKER = "autosomal_dominant_denovo"
 
 # Why no mode can be given; the pipeline makes them exclusive, and any mode wins over them.
 GENOTYPE_TAGS = (
@@ -58,12 +64,13 @@ ETL_ONLY = SlivarMethods()
 
 def slivar_inheritance_methods(vcf: VCF) -> SlivarMethods:
     """Slivar for the parental origin when the header declares a ``po_*`` tag, and for the transmission mode when it
-    declares a mode tag with the Radiant names. A VCF from a revision before BIOINFO-239 declares ``po_*`` but the old
-    mode names (``denovo``, ``recessive``…): its parental origin comes from slivar, its mode from the ETL."""
+    declares the BIOINFO-242 mode tags. A VCF from an older revision declares ``po_*`` but other mode names
+    (``denovo``, ``recessive``… before BIOINFO-239, ``autosomal_dominant_de_novo``… before BIOINFO-242): its parental
+    origin comes from slivar, its mode from the ETL."""
     info_ids = {h.info()["ID"] for h in vcf.header_iter() if h.type == "INFO"}
     return SlivarMethods(
         parental_origin=any(tag in info_ids for tag in PO_TAGS),
-        transmission_mode=any(tag in info_ids for tag in MODE_ORDER),
+        transmission_mode=MODE_TAGS_MARKER in info_ids,
     )
 
 
@@ -80,7 +87,7 @@ def slivar_parental_origin(record: Variant, aliquot: str) -> str | None:
 
 def slivar_transmission_mode(record: Variant, aliquot: str) -> tuple[str | None, list[str], bool]:
     """``(transmission_mode, other_transmission_modes, candidate)`` of one sample."""
-    modes = [mode for mode in MODE_ORDER if _listed(record, mode, aliquot)]
+    modes = [mode for tag, mode in MODE_TAGS.items() if _listed(record, tag, aliquot)]
     candidate = _listed(record, CANDIDATE_TAG, aliquot)
     if modes:
         return modes[0], modes[1:], candidate

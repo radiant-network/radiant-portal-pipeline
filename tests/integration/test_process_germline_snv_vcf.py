@@ -308,7 +308,14 @@ def test_process_task_reads_slivar_inheritance(
     """RAD-94: a VCF whose header declares the slivar tags takes both fields from them, with their sources."""
     with open(RESOURCES_DIR / "test.vcf") as f:
         header = [line for line in f if line.startswith("##")]
-    for tag in ("po_mother", "po_denovo", "autosomal_recessive", "autosomal_dominant", "candidate"):
+    for tag in (
+        "po_mother",
+        "po_denovo",
+        "autosomal_dominant_denovo",
+        "autosomal_recessive",
+        "autosomal_dominant",
+        "candidate",
+    ):
         header.append(f'##INFO=<ID={tag},Number=.,Type=String,Description="slivar {tag}">\n')
     columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSA0001\tSA0002\tSA0003\n"
     records = [

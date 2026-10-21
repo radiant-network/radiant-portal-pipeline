@@ -12,6 +12,7 @@ from tests.unit.vcf.vcf_test_utils import variant, vcf
 
 SLIVAR_VCF = "test_inheritance_slivar.vcf"
 OLD_SLIVAR_VCF = "test_inheritance_old_slivar.vcf"
+DE_NOVO_SLIVAR_VCF = "test_inheritance_de_novo_slivar.vcf"
 NO_TAG_VCF = "test_comphet.vcf"
 SAMPLES = ["SA0001", "SA0002", "SA0003"]
 BOTH = SlivarMethods(parental_origin=True, transmission_mode=True)
@@ -77,6 +78,10 @@ def test_methods_old_tag_names_keep_the_etl_mode():
     assert _methods(OLD_SLIVAR_VCF) == SlivarMethods(parental_origin=True, transmission_mode=False)
 
 
+def test_methods_de_novo_tag_names_keep_the_etl_mode():
+    assert _methods(DE_NOVO_SLIVAR_VCF) == SlivarMethods(parental_origin=True, transmission_mode=False)
+
+
 def test_methods_vcf_without_inheritance_tags():
     assert _methods(NO_TAG_VCF) == SlivarMethods(parental_origin=False, transmission_mode=False)
 
@@ -84,6 +89,10 @@ def test_methods_vcf_without_inheritance_tags():
 def test_de_novo():
     assert _mode(1) == ("autosomal_dominant_de_novo", [], False)
     assert _origin(1) == "DENOVO"
+
+
+def test_x_linked_de_novo_tags_map_to_radiant_values():
+    assert _mode(10) == ("x_linked_dominant_de_novo", ["x_linked_recessive_de_novo"], False)
 
 
 def test_recessive_wins_over_dominant():
@@ -156,6 +165,13 @@ def test_process_occurrence_each_field_falls_back_on_its_own():
     assert proband["transmission_mode_source"] == "etl"
     assert proband.get("other_transmission_modes") is None
     assert proband.get("transmission_mode_candidate") is None
+
+
+def test_process_occurrence_de_novo_tag_names_keep_the_etl_mode():
+    proband = _occurrences(DE_NOVO_SLIVAR_VCF, 1, slivar=_methods(DE_NOVO_SLIVAR_VCF))[1]
+    assert proband["parental_origin_source"] == "slivar"
+    assert proband["transmission_mode"] == "autosomal_dominant_de_novo"
+    assert proband["transmission_mode_source"] == "etl"
 
 
 def test_process_occurrence_etl_method():
