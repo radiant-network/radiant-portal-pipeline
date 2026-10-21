@@ -108,6 +108,11 @@ def test_duo_with_a_sibling_progeny():
     assert [c["seq_id"] for c in _comphets(1, duo)] == [1]
 
 
+def test_duo_with_a_sibling_role_progeny():
+    duo = _pedigree(_experiment(1, "SA0001", "sibling", "affected"), _experiment(2, "SA0002", "mother"))
+    assert [c["seq_id"] for c in _comphets(1, duo)] == [1]
+
+
 def test_entries_of_a_sample_outside_the_task_are_ignored():
     other_proband = _pedigree(_experiment(2, "SA0002", "proband", "affected"))
     assert [(c["seq_id"], c["symbol"]) for c in _comphets(2, other_proband)] == [(2, "GENE1")]

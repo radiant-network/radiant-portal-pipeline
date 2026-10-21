@@ -187,3 +187,16 @@ def test_process_occurrence_solo_keeps_empty_values():
     proband = _occurrences(SLIVAR_VCF, 1, ped=SOLO)[1]
     for field in ("parental_origin", "transmission_mode", "parental_origin_source", "transmission_mode_source"):
         assert proband.get(field) is None
+
+
+def test_process_occurrence_sibling_is_a_progeny():
+    trio_with_sibling = _pedigree(
+        _experiment(1, "SA0001", "sibling", "affected"),
+        _experiment(2, "SA0002", "mother"),
+        _experiment(3, "SA0003", "father"),
+    )
+    sibling = _occurrences(SLIVAR_VCF, 2, ped=trio_with_sibling)[1]
+    assert sibling["parental_origin"] == "BOTH"
+    assert sibling["transmission_mode"] == "autosomal_recessive"
+    assert sibling["transmission_mode_source"] == "slivar"
+    assert sibling["mother_zygosity"] == "HET"

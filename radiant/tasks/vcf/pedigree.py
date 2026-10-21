@@ -1,5 +1,9 @@
 from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
 
+# The children of the case's father and mother, the same roles as `CHILD_ROLES` in the PED
+# (`radiant/tasks/nextflow/inputs.py`). A fetus is the proband's child, not a progeny.
+PROGENY_ROLES = ("proband", "brother", "sister", "sibling")
+
 
 class Pedigree:
     """
@@ -15,7 +19,7 @@ class Pedigree:
         is_mother_affected (bool): Indicates if the mother is affected by the condition.
         father_seq_id (str or None): The sequence ID of the father, if available.
         mother_seq_id (str or None): The sequence ID of the mother, if available.
-        progenies (list[Task.Experiment]): A list of experiments for progenies (e.g., proband, brother, sister).
+        progenies (list[Task.Experiment]): A list of experiments for progenies (proband, brother, sister, sibling).
         is_family (bool): Indicates if the pedigree represents a family (requires at least one parent and one progeny).
 
     Methods:
@@ -44,6 +48,6 @@ class Pedigree:
         self.father_seq_id = self.father_experiment.seq_id if self.father_experiment else None
         self.mother_seq_id = self.mother_experiment.seq_id if self.mother_experiment else None
 
-        self.progenies = [exp for exp in self.experiments if exp.family_role in ["proband", "brother", "sister"]]
+        self.progenies = [exp for exp in self.experiments if exp.family_role in PROGENY_ROLES]
 
         self.is_family = (self.mother_seq_id or self.father_seq_id) and len(self.progenies) > 0
