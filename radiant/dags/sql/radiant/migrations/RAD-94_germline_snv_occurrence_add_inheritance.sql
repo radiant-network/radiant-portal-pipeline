@@ -5,8 +5,8 @@
 --   parental_origin_source        VARCHAR(10)          'slivar' or 'etl': which method gave parental_origin
 --   transmission_mode_source      VARCHAR(10)          'slivar' or 'etl': which method gave transmission_mode
 --
--- The VCF header decides each field on its own: a `po_*` tag → parental origin from slivar, a mode tag with the Radiant
--- names (BIOINFO-239) → transmission mode from slivar; otherwise the ETL calculation, unchanged. The four columns are
+-- The VCF header decides each field on its own: a `po_*` tag → parental origin from slivar, the BIOINFO-242 mode tags
+-- (`autosomal_dominant_denovo`) → transmission mode from slivar; otherwise the ETL calculation, unchanged. The four columns are
 -- set for the progenies of a family only, like parental_origin and transmission_mode.
 --
 -- Run manually, ONCE in every {tenant}_tenant database (germline__snv__occurrence is per tenant,
