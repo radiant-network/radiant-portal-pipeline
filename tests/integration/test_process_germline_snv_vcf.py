@@ -2,6 +2,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 
 from radiant.tasks.iceberg.utils import commit_files
@@ -295,3 +296,82 @@ def test_process_task_writes_comphet_pairs(
 
     untagged = [r.replace(r.split("\t")[7], ".") for r in tagged]
     assert run(untagged).empty, "A re-import without pairs must clear the task's previous pairs"
+
+
+def test_process_task_reads_slivar_inheritance(
+    setup_iceberg_namespace,
+    iceberg_catalog_properties,
+    iceberg_client,
+    rest_iceberg_catalog_instance,
+    tmp_path,
+):
+    """RAD-94: a VCF whose header declares the slivar tags takes both fields from them, with their sources."""
+    with open(RESOURCES_DIR / "test.vcf") as f:
+        header = [line for line in f if line.startswith("##")]
+    for tag in (
+        "po_mother",
+        "po_denovo",
+        "autosomal_dominant_denovo",
+        "autosomal_recessive",
+        "autosomal_dominant",
+        "candidate",
+    ):
+        header.append(f'##INFO=<ID={tag},Number=.,Type=String,Description="slivar {tag}">\n')
+    columns = "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSA0001\tSA0002\tSA0003\n"
+    records = [
+        "chr1\t1000\t.\tA\tG\t44.64\tPASS\tautosomal_recessive=SA0001;autosomal_dominant=SA0001;candidate=SA0001;"
+        "po_mother=SA0001\tGT:AD\t1/1:0,9\t0/1:10,6\t1/1:0,5",
+        "chr1\t2000\t.\tC\tT\t44.64\tPASS\t.\tGT:AD\t0/1:4,7\t0/0:10,0\t0/0:9,0",
+    ]
+    vcf_path = tmp_path / "trio_inheritance.vcf"
+    vcf_path.write_text("".join(header) + columns + "\n".join(records) + "\n")
+
+    def experiment(seq_id, aliquot, family_role, sex):
+        return Experiment(
+            seq_id=seq_id,
+            patient_id=seq_id,
+            aliquot=aliquot,
+            tenant_code="tenant1",
+            family_role=family_role,
+            affected_status="affected" if family_role == "proband" else "not_affected",
+            sex=sex,
+            experimental_strategy="wgs",
+            request_priority="routine",
+        )
+
+    task = RadiantGermlineAnnotationTask(
+        task_id=94,
+        part=2,
+        analysis_type="germline",
+        deleted=False,
+        experiments=[
+            experiment(941, "SA0001", "proband", "F"),
+            experiment(942, "SA0002", "mother", "F"),
+            experiment(943, "SA0003", "father", "M"),
+        ],
+        vcf_filepath=str(vcf_path),
+    )
+    partitions_to_commit = process_task(
+        task,
+        catalog_name=rest_iceberg_catalog_instance.catalog_name,
+        namespace=setup_iceberg_namespace,
+        catalog_properties=iceberg_catalog_properties,
+    )
+    for table_name, partitions in partitions_to_commit.items():
+        commit_files(iceberg_client.load_table(table_name), partitions)
+
+    occ = iceberg_client.load_table(f"{setup_iceberg_namespace}.germline_snv_occurrence").scan().to_arrow().to_pandas()
+    occ = occ[occ.task_id == 94].set_index(["seq_id", "start"])
+
+    tagged = occ.loc[(941, 1000)]
+    assert tagged.parental_origin == "MOTHER" and tagged.parental_origin_source == "slivar"
+    assert tagged.transmission_mode == "autosomal_recessive" and tagged.transmission_mode_source == "slivar"
+    assert list(tagged.other_transmission_modes) == ["autosomal_dominant"]
+    assert bool(tagged.transmission_mode_candidate) is True
+
+    untagged = occ.loc[(941, 2000)]
+    assert pd.isna(untagged.parental_origin) and pd.isna(untagged.transmission_mode), "No tag means no value"
+    assert untagged.parental_origin_source == "slivar" and untagged.transmission_mode_source == "slivar"
+
+    mother = occ.loc[(942, 1000)]
+    assert pd.isna(mother.parental_origin_source) and pd.isna(mother.transmission_mode_source)

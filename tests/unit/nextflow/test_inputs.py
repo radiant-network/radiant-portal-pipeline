@@ -3,6 +3,7 @@ import yaml
 
 from radiant.tasks.nextflow.inputs import build_inputs, build_ped, build_phenopacket, build_samplesheet
 from radiant.tasks.nextflow.resolve import resolve_families
+from tests.unit.nextflow.conftest import GVCF_BUCKET, member_row
 
 INPUTS_ROOT = "s3://qlin-nextflow-inputs"
 INPUTS_MOUNT = "/workspace/inputs"
@@ -51,12 +52,49 @@ def test_a_gvcf_outside_the_workspace_bucket_is_rejected(trio):
         build_samplesheet([trio], PREFIX_POD, INPUTS_ROOT, INPUTS_MOUNT)
 
 
-def test_ped_names_the_parents_on_the_proband_row_only(trio):
+def test_ped_names_the_parents_on_every_child_row(trio):
     assert build_ped(trio).splitlines() == [
         "CA1072\tNA12878\tNA12891\tNA12892\t2\t2",
         "CA1072\tNA12891\t0\t0\t1\t2",
         "CA1072\tNA12892\t0\t0\t2\t1",
     ]
+
+
+def _member(role, aliquot, seq_id, sex="male", affected_status="non_affected"):
+    return member_row(
+        role=role,
+        aliquot=aliquot,
+        sample_id=f"S-{aliquot}",
+        patient_id=seq_id,
+        seq_id=seq_id,
+        sex=sex,
+        affected_status=affected_status,
+        gvcf_url=f"{GVCF_BUCKET}/individuals/{aliquot}/{aliquot}.hard-filtered.gvcf.gz",
+    )
+
+
+def test_ped_links_the_siblings_to_both_parents(trio_rows):
+    rows = [*trio_rows, _member("brother", "NA00001", 510), _member("sister", "NA00002", 511, sex="female")]
+    assert build_ped(resolve_families(rows, [])[0]).splitlines()[3:] == [
+        "CA1072\tNA00001\tNA12891\tNA12892\t1\t1",
+        "CA1072\tNA00002\tNA12891\tNA12892\t2\t1",
+    ]
+
+
+def test_ped_links_a_sibling_to_the_only_sequenced_parent(trio_rows):
+    duo = [row for row in trio_rows if row["role"] != "father"]
+    rows = [*duo, _member("sibling", "NA00003", 512)]
+    assert build_ped(resolve_families(rows, [])[0]).splitlines() == [
+        "CA1072\tNA12878\t0\tNA12892\t2\t2",
+        "CA1072\tNA12892\t0\t0\t2\t1",
+        "CA1072\tNA00003\t0\tNA12892\t1\t1",
+    ]
+
+
+def test_ped_leaves_a_fetus_unlinked_to_the_case_parents(trio_rows):
+    """A fetus is the proband's child, not the child of the case's father and mother."""
+    rows = [*trio_rows, _member("fetus", "NA00004", 513, sex="unknown")]
+    assert build_ped(resolve_families(rows, [])[0]).splitlines()[-1] == "CA1072\tNA00004\t0\t0\t0\t1"
 
 
 def test_ped_for_a_singleton_has_no_parents(singleton):

@@ -1,0 +1,37 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=248956422>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##INFO=<ID=po_denovo,Number=.,Type=String,Description="slivar po_denovo">
+##INFO=<ID=po_mother,Number=.,Type=String,Description="slivar po_mother">
+##INFO=<ID=po_father,Number=.,Type=String,Description="slivar po_father">
+##INFO=<ID=po_both,Number=.,Type=String,Description="slivar po_both">
+##INFO=<ID=po_ambiguous,Number=.,Type=String,Description="slivar po_ambiguous">
+##INFO=<ID=po_possible_denovo,Number=.,Type=String,Description="slivar po_possible_denovo">
+##INFO=<ID=po_possible_mother,Number=.,Type=String,Description="slivar po_possible_mother">
+##INFO=<ID=po_possible_father,Number=.,Type=String,Description="slivar po_possible_father">
+##INFO=<ID=po_unknown,Number=.,Type=String,Description="slivar po_unknown">
+##INFO=<ID=autosomal_dominant_denovo,Number=.,Type=String,Description="slivar autosomal_dominant_denovo">
+##INFO=<ID=autosomal_recessive,Number=.,Type=String,Description="slivar autosomal_recessive">
+##INFO=<ID=autosomal_dominant,Number=.,Type=String,Description="slivar autosomal_dominant">
+##INFO=<ID=uniparental_disomy,Number=.,Type=String,Description="slivar uniparental_disomy">
+##INFO=<ID=x_linked_dominant_denovo,Number=.,Type=String,Description="slivar x_linked_dominant_denovo">
+##INFO=<ID=x_linked_recessive_denovo,Number=.,Type=String,Description="slivar x_linked_recessive_denovo">
+##INFO=<ID=x_linked_recessive,Number=.,Type=String,Description="slivar x_linked_recessive">
+##INFO=<ID=x_linked_dominant,Number=.,Type=String,Description="slivar x_linked_dominant">
+##INFO=<ID=unknown_parents_genotype,Number=.,Type=String,Description="slivar unknown_parents_genotype">
+##INFO=<ID=unknown_father_genotype,Number=.,Type=String,Description="slivar unknown_father_genotype">
+##INFO=<ID=unknown_mother_genotype,Number=.,Type=String,Description="slivar unknown_mother_genotype">
+##INFO=<ID=non_carrier_proband,Number=.,Type=String,Description="slivar non_carrier_proband">
+##INFO=<ID=unknown_proband_genotype,Number=.,Type=String,Description="slivar unknown_proband_genotype">
+##INFO=<ID=candidate,Number=.,Type=String,Description="slivar candidate">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SA0001	SA0002	SA0003
+chr1	1000	.	A	G	50	PASS	autosomal_dominant_denovo=SA0001;po_denovo=SA0001	GT	0/1	0/0	0/0
+chr1	2000	.	A	G	50	PASS	autosomal_recessive=SA0001;autosomal_dominant=SA0001,SA0003;po_both=SA0001	GT	1/1	0/1	1/1
+chr1	3000	.	A	G	50	PASS	uniparental_disomy=SA0001;po_mother=SA0001	GT	1/1	1/1	0/0
+chr1	4000	.	A	G	50	PASS	autosomal_dominant=SA0001,SA0002;uniparental_disomy=SA0001;po_mother=SA0001	GT	1/1	0/1	0/0
+chr1	5000	.	A	G	50	PASS	autosomal_recessive=SA0001;candidate=SA0001;unknown_father_genotype=SA0001;po_possible_mother=SA0001	GT	1/1	0/1	./.
+chr1	6000	.	A	G	50	PASS	unknown_proband_genotype=SA0001	GT	./.	0/1	0/0
+chr1	7000	.	A	G	50	PASS	.	GT	0/1	0/1	0/0
+chr1	8000	.	A	G	50	PASS	autosomal_dominant=FAM1;po_father=SA0001	GT	0/1	0/0	0/1
+chr1	9000	.	A	G	50	PASS	po_possible_denovo=SA0002	GT	0/1	0/1	0/0
+chr1	10000	.	A	G	50	PASS	x_linked_recessive_denovo=SA0001;x_linked_dominant_denovo=SA0001	GT	0/1	0/0	0/0
