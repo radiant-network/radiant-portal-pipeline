@@ -13,6 +13,10 @@
 
   Intergenic rows carry no transcript and no source, and are excluded rather than counted as
   either case. That matches resolve_source() rule 4: we record "unknown" rather than guessing.
+
+  The RefSeq side only applies to accessions (`_REFSEQ_FEATURE_RE`). Mitochondrial genes have no
+  RefSeq transcript accession, so VEP emits the gene symbol (`ATP6`, `TRNL1`) as `Feature`, with
+  no version to keep.
 #}
 
 select
@@ -22,5 +26,5 @@ select
     source,
     transcript_version
 from {{ source('radiant', 'snv__consequence') }}
-where (source = 'RefSeq' and transcript_version is null)
+where (source = 'RefSeq' and transcript_id regexp '^[NX][MRP]_' and transcript_version is null)
    or (source = 'Ensembl' and transcript_version is not null)
