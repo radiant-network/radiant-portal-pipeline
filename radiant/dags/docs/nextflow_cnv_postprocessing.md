@@ -60,7 +60,7 @@ Per family, under `outdir`:
 
 | Path | What |
 |---|---|
-| `slivar/<familyId>.cnv.slivar.vcf.gz` | The final VCF: VEP `CSQ` plus one INFO tag per mode of inheritance (`de_novo_candidate`, `dominant_inherited`, `recessive_candidate`, `candidate`, `ambiguous`, `unknown_cn`). |
+| `slivar/<familyId>.cnv.slivar.vcf.gz{,.tbi}` | The final VCF: VEP `CSQ` plus slivar INFO tags, one per mode of inheritance (`denovo`, `inherited_maternal`, `recessive`, `x_linked_denovo`, ...) and one per parent of origin (`po_mother`, `po_father`, `po_denovo`, ...), named as in the SNV pipeline. The full list is in the pipeline's `docs/output.md`. |
 | `ensemblvep/variants.<familyId>.cnv.vep.vcf.gz{,.tbi}` | The VEP-annotated family VCF. |
 | `exomiser/<familyId>.exomiser.{variants.tsv,genes.tsv,html,json,vcf.gz,vcf.gz.tbi}` | Exomiser (family mode). |
 | `merged/`, `truvari/`, `depth_refined/`, `joint/` | Intermediates. |

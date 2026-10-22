@@ -1000,7 +1000,7 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (71, 'quality_control_metrics', 'quality-control-pipeline', '2.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- CNV post-processing of case 1, whose alignments (tasks 1-3) publish `gcnv` VCFs. Case 1 is
     -- therefore *not* pending CNV annotation, while case 16 (below) is the seeded pending trio.
-    (72, 'radiant_germline_cnv_annotation', 'cnv-post-processing', '6b9b2dd', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    (72, 'radiant_germline_cnv_annotation', 'cnv-post-processing', 'cad99b4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- The calling steps behind the annotation tasks 67 (tumor-normal) and 68 (tumor-only). Their raw
     -- `ssnv` VCFs are the inputs of those annotations, so neither is pending somatic annotation.
     (73, 'somatic_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
