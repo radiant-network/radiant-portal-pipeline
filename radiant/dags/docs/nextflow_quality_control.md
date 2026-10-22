@@ -2,10 +2,10 @@
 
 Runs the Ferlab
 [quality-control-pipeline](https://github.com/Ferlab-Ste-Justine/quality-control-pipeline)
-on qlin-eks in its **DRAGEN-metrics mode**: the samples have already been through DRAGEN, so
-the MultiQC report is built from DRAGEN's per-sample metric CSVs instead of being recomputed.
-Somalier still runs, against whatever BAM or CRAM the samplesheet lists, for pedigree
-validation.
+on qlin-eks. The samples have already been through DRAGEN, so the MultiQC report is built from
+DRAGEN's per-sample metric CSVs instead of being recomputed: each samplesheet row points at
+its sample's metrics in the **dragenMetrics** column. Somalier still runs, against whatever
+BAM or CRAM the samplesheet lists, for pedigree validation.
 
 > **One Airflow task is a fan-out of pods.** The task launches a Nextflow **driver** pod in
 > the **nextflow** namespace, and the driver spawns one worker pod per pipeline process
@@ -20,10 +20,9 @@ Watch them with **kubectl -n nextflow get pods -w**.
 | Param | Required | Meaning |
 |:--|:--|:--|
 | **input** | Yes | Absolute path to the samplesheet CSV on the shared workspace. Columns below |
-| **dragen_metrics_dir** | Yes | Absolute path to the directory of DRAGEN per-sample metric CSVs |
 | **outdir** | No | Absolute path for published outputs. Empty means /workspace/outputs/qlin/ plus the run tag |
 
-> All three are **pod paths**, not S3 URIs.
+> Both are **pod paths**, not S3 URIs.
 
 /workspace is the FSx-Lustre filesystem. Its /inputs and /reference prefixes are
 auto-imported from S3, and /outputs is auto-exported back, so anything published under
@@ -60,18 +59,24 @@ from the -params-file kills the run at config parse.
 | **status** | No | 0 normal (default), 1 tumor |
 | **relationship_to_proband** | No | Proband (default), Mother, Father and so on. Used to derive a pedigree |
 | **affected_status** | No | Affected, Unaffected, Unknown (default) |
+| **dragenMetrics** | No | The sample's directory or tarball (.tar, .tar.gz, .tgz, .tar.bz2, .tbz2) of DRAGEN metric CSVs. Set it on every row of a sample |
 | **lane**, **runId** | No | Rows sharing participant, sample and strategy are merged before QC |
 
-The schema marks **file1** and **file2** as exists: true, so **every path is stat'd in the
-driver pod at launch**. A wrong path fails the run in seconds rather than hours in — but it
-also means the paths must be visible on the FSx mount, not S3 URIs.
+The schema marks **file1** and **file2** as exists: true, and **dragenMetrics** is checked
+the same way, so **every path is stat'd in the driver pod at launch**. A wrong path fails the
+run in seconds rather than hours in — but it also means the paths must be visible on the FSx
+mount, not S3 URIs.
+
+> **An empty dragenMetrics means a full recompute.** A row without it runs BAM_QC and VCF_QC
+> for its sample, hours of worker pods. The cases DAG always fills it; fill it in a
+> hand-written samplesheet too.
 
 ---
 
-## dragen_metrics_dir fails open
+## dragenMetrics fails open
 
-The directory is globbed at any depth. Both SAMPLE.TYPE.csv and SAMPLE.final.TYPE.csv are
-recognised, for:
+A tarball is extracted first, by the pipeline's **UNTAR** step. The directory is then globbed
+at any depth. Both SAMPLE.TYPE.csv and SAMPLE.final.TYPE.csv are recognised, for:
 
 - mapping_metrics
 - wgs_coverage_metrics
@@ -80,9 +85,10 @@ recognised, for:
 
 plus the paired \*_cov_report.bed and \*_read_cov_report.bed for per-gene coverage.
 
-> **Files are matched to samplesheet rows by sample prefix, and a file matching no row is
-> silently ignored.** So a mistyped sample name, or a metrics directory from the wrong
-> batch, produces a run that **succeeds** with a half-empty report rather than an error.
+> **Only the files whose sample prefix is the row's sample are kept; the others are dropped
+> with a warning in the driver log.** So a mistyped sample name, or a metrics directory from
+> the wrong batch, produces a run that **succeeds** with a half-empty report rather than an
+> error.
 
 Check the report rather than the task status: every sample in the samplesheet should have
 populated alignment and coverage sections. The driver log also lists what the DRAGEN

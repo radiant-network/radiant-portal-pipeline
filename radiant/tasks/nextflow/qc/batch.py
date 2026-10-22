@@ -1,9 +1,9 @@
 """Build the `PATCH /{tenant}/cases/batch` body registering a QC run's outputs.
 
 One `quality_control_metrics` task per case, bound to every member's aliquot, with the
-alignment's CRAM and index as inputs (documents that already exist in the tenant, so
-TASK-005 holds) and the per-family MultiQC set as outputs. PATCH appends: a re-run adds a
-second task alongside the first.
+alignment's CRAM, index and DRAGEN metrics tarball as inputs (documents that already exist in
+the tenant, so TASK-005 holds) and the per-family MultiQC set as outputs. PATCH appends: a
+re-run adds a second task alongside the first.
 """
 
 from radiant.tasks.nextflow.batch import GENOME_BUILD
@@ -21,7 +21,7 @@ def build_patch_body(cases: list[QcCase], collected: dict[str, dict]) -> dict:
     body = []
     for case in cases:
         documents = collected[case.family_id]
-        inputs = [{"url": url} for m in case.members for url in (m.cram_url, m.crai_url) if url]
+        inputs = [{"url": url} for m in case.members for url in (m.cram_url, m.crai_url, m.dragen_metrics_url) if url]
         body.append(
             {
                 "project_code": case.project_code,

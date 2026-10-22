@@ -9,7 +9,6 @@ def _build(env: dict):
         return NextflowQualityControl.get_run_quality_control(
             input_csv="/workspace/inputs/qc/samplesheet.csv",
             outdir="/workspace/outputs/qlin/qc-run1",
-            dragen_metrics_dir="/workspace/inputs/qc/metrics",
             run_tag="qc-manual__2026-08-20T14-30-00-00-00",
         )
 
@@ -56,7 +55,8 @@ def test_get_run_quality_control_with_env():
     env = {e.name: e.value for e in op.env_vars}
     assert env["NXF_INPUT"] == "/workspace/inputs/qc/samplesheet.csv"
     assert env["NXF_OUTDIR"] == "/workspace/outputs/qlin/qc-run1"
-    assert env["NXF_DRAGEN_METRICS_DIR"] == "/workspace/inputs/qc/metrics"
+    # The DRAGEN metrics are per sample, in the samplesheet's `dragenMetrics` column.
+    assert "NXF_DRAGEN_METRICS_DIR" not in env
     assert env["RUN_TAG"] == "qc-manual__2026-08-20T14-30-00-00-00"
     assert env["NXF_WORKSPACE"] == "/ws"
     assert env["NXF_ANSI_LOG"] == "false"
@@ -126,8 +126,8 @@ def test_driver_script_is_jinja_safe_and_runs_the_qc_pipeline():
     # The QC pipeline asset, not the post-processing one.
     assert "assets/Ferlab-Ste-Justine/quality-control-pipeline" in script
     assert "snv-post-processing" not in script
-    # Passing this flag is the whole point: it is what skips BAM_QC and VCF_QC.
-    assert '--dragen_metrics_dir "$NXF_DRAGEN_METRICS_DIR"' in script
+    # The pipeline dropped this flag for the samplesheet's `dragenMetrics` column (BIOINFO-235).
+    assert "--dragen_metrics_dir" not in script
 
 
 def _cleanup(env: dict):
