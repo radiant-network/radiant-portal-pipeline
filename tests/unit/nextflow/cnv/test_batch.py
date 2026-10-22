@@ -68,7 +68,7 @@ def test_output_documents_are_split_between_the_two_tasks(tasks):
         (d["data_type_code"], d["format_code"]) for d in tasks["radiant_germline_cnv_annotation"]["output_documents"]
     }
     exomiser = {(d["data_type_code"], d["format_code"]) for d in tasks["exomiser_cnv"]["output_documents"]}
-    assert annotation == {("gcnv", "vcf")}
+    assert annotation == {("gcnv", "vcf"), ("gcnv", "tbi")}
     assert exomiser == {("exomiser", "tsv"), ("exomiser", "html"), ("exomiser", "json")}
 
 

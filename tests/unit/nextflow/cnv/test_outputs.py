@@ -21,6 +21,7 @@ def test_outputs_are_keyed_on_the_family_id_alone(trio):
     familyId -- never `<familyId>.<sample>` as its solo route does."""
     keys = expected_keys(trio.family_id)
     assert keys["slivar_vcf"] == "slivar/CA1072.cnv.slivar.vcf.gz"
+    assert keys["slivar_tbi"] == "slivar/CA1072.cnv.slivar.vcf.gz.tbi"
     assert keys["exomiser_tsv"] == "exomiser/CA1072.exomiser.variants.tsv"
     assert keys["exomiser_html"] == "exomiser/CA1072.exomiser.html"
     assert keys["exomiser_json"] == "exomiser/CA1072.exomiser.json"
@@ -34,11 +35,10 @@ def test_the_annotated_vcf_is_a_germline_cnv_vcf(trio, listing):
     assert documents["slivar_vcf"]["format_code"] == "vcf"
 
 
-def test_no_index_is_expected_for_the_slivar_vcf(trio):
-    """At the pinned revision `SLIVAR_EXPR` publishes `*.vcf.gz` only. Expecting a `.tbi`
-    would fail every run in `collect_outputs` after the pipeline had finished, register
-    nothing, and leave the cases eligible for the next night."""
-    assert not [k for k in expected_keys(trio.family_id).values() if k.endswith(".tbi")]
+def test_the_slivar_index_is_a_germline_cnv_tbi(trio, listing):
+    documents = collect([trio], listing, OUTDIR)["CA1072"]
+    assert documents["slivar_tbi"]["data_type_code"] == "gcnv"
+    assert documents["slivar_tbi"]["format_code"] == "tbi"
 
 
 def test_exomiser_documents_carry_the_exomiser_data_type(trio, listing):

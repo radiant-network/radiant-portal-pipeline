@@ -27,19 +27,17 @@ EXOMISER_DIR = "exomiser"
 # `germline_cnv_occurrence`. Making it visible is one WHERE line there plus a task model,
 # and is a separate design.
 #
-# No index: at the revision the launcher pins (`CNV_PIPELINE_REV`), `SLIVAR_EXPR` publishes
-# `*.vcf.gz` only and nothing runs after it. Expecting a `.tbi` here would make every run
-# fail in `collect_outputs` after the pipeline had finished. Add a `slivar_tbi` entry (and
-# put it in `ANNOTATION_OUTPUTS`) in the same change that bumps the pin to a revision that
-# indexes the slivar VCF.
+# The index rides along, as for the SNV slivar VCF: the revision the launcher pins
+# (`CNV_PIPELINE_REV`) indexes the slivar VCF and publishes the `.tbi` next to it.
 OUTPUT_SPEC = {
     "slivar_vcf": (f"{SLIVAR_DIR}/{{family_id}}.cnv.slivar.vcf.gz", "gcnv", "vcf"),
+    "slivar_tbi": (f"{SLIVAR_DIR}/{{family_id}}.cnv.slivar.vcf.gz.tbi", "gcnv", "tbi"),
     "exomiser_tsv": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.variants.tsv", "exomiser", "tsv"),
     "exomiser_html": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.html", "exomiser", "html"),
     "exomiser_json": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.json", "exomiser", "json"),
 }
 
-ANNOTATION_OUTPUTS = ("slivar_vcf",)
+ANNOTATION_OUTPUTS = ("slivar_vcf", "slivar_tbi")
 EXOMISER_OUTPUTS = ("exomiser_tsv", "exomiser_html", "exomiser_json")
 
 
