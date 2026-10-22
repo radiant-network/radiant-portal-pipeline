@@ -6,6 +6,7 @@ from typing import Any
 from airflow.decorators import dag, task
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
+from airflow.utils.state import DagRunState
 from airflow.utils.task_group import TaskGroup
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE
@@ -196,6 +197,10 @@ def import_radiant():
         trigger_dag_id=f"{NAMESPACE}-data-integrity-starrocks",
         reset_dag_run=True,
         wait_for_completion=True,
+        # The data is already loaded when the checks run: a failing check fails the integrity DAG
+        # run (alerts, TestQuality), not the import.
+        allowed_states=[DagRunState.SUCCESS, DagRunState.FAILED],
+        failed_states=[],
         # Only test the tenants this run actually touched. Renders to a real list because the
         # DAG sets render_template_as_native_obj. prepare_tenants_tables is a short_circuit, so
         # a run with no tenants never reaches this task.
