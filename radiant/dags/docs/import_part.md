@@ -96,3 +96,23 @@ Concurrent partitions are not merely wasteful:
 - Two partitions importing at once puts two committers on those Iceberg tables.
 
 See design/SJRA-1751-snv-vcf-ingestion-fan-out.md.
+
+---
+
+## CNV frequencies
+
+**aggregate_germline_cnv_variant_freq** and **aggregate_somatic_cnv_variant_freq** run after
+the CNV occurrence insert of their group, once per tenant of the part, and are skipped with it
+when the part has no CNV task (deleted tasks included, so a deletion also recomputes).
+
+Each one rebuilds the whole **germline\_\_cnv\_\_variant\_frequency** or
+**somatic\_\_cnv\_\_variant\_frequency** table of the tenant, over every part, with one
+**INSERT OVERWRITE**:
+
+- Two CNVs match when they are on the same chromosome, in the same class (**GAIN** and
+  **GAINLOH** pooled) and their overlap covers at least 80% of each one's length.
+- There is no per-part staging table, unlike the SNV frequencies: a patient of one part can
+  match an interval of another, so a part cannot be counted alone.
+- Runs are serial (see above), so two recomputes never write the same table at once.
+
+See design/RAD-120-cnv-cohort-frequency.md.
