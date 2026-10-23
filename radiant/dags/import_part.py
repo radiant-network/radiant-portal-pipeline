@@ -287,7 +287,18 @@ def import_part():
             max_active_tis_per_dagrun=1,
         ).expand_kwargs(tenant_params)
 
-        sanity_check_cnvs(tasks) >> insert_germline_cnv_occurrences
+        # RAD-120: full recompute over every part, a patient of one part can match an interval of another.
+        aggregate_germline_cnv_variants_frequencies = RadiantStarRocksOperator.partial(
+            task_id="aggregate_germline_cnv_variant_freq",
+            task_display_name="[StarRocks] Aggregate all Germline CNV variants frequencies",
+            sql="./sql/radiant/germline_cnv_variant_frequency_insert.sql",
+            map_index_template="{{ task.tenant_code }}",
+            submit_task_options=std_submit_task_opts,
+            parameters={"tenant_code": "{{ tenant_code }}"},
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
+
+        (sanity_check_cnvs(tasks) >> insert_germline_cnv_occurrences >> aggregate_germline_cnv_variants_frequencies)
 
     with TaskGroup(group_id="somatic_cnv_occurrence") as tg_somatic_cnv_occurrence_per_tenant:
 
@@ -318,7 +329,22 @@ def import_part():
             max_active_tis_per_dagrun=1,
         ).expand_kwargs(tenant_params)
 
-        sanity_check_somatic_cnvs(tasks) >> insert_somatic_cnv_occurrences
+        # RAD-120: full recompute over every part, a patient of one part can match an interval of another.
+        aggregate_somatic_cnv_variants_frequencies = RadiantStarRocksOperator.partial(
+            task_id="aggregate_somatic_cnv_variant_freq",
+            task_display_name="[StarRocks] Aggregate all Somatic CNV variants frequencies",
+            sql="./sql/radiant/somatic_cnv_variant_frequency_insert.sql",
+            map_index_template="{{ task.tenant_code }}",
+            submit_task_options=std_submit_task_opts,
+            parameters={"tenant_code": "{{ tenant_code }}"},
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
+
+        (
+            sanity_check_somatic_cnvs(tasks)
+            >> insert_somatic_cnv_occurrences
+            >> aggregate_somatic_cnv_variants_frequencies
+        )
 
     # Single, shared load: all tenants' exomiser files land in one staging table, each row tagged with
     # tenant_code (set during the broker load) so the per-tenant insert_exomiser can route them later.

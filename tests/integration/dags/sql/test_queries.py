@@ -249,6 +249,8 @@ def test_queries_are_valid(
             "somatic_snv_staging_variant_frequency",
             "germline_cnv_occurrence",
             "somatic_cnv_occurrence",
+            "germline_cnv_variant_frequency",
+            "somatic_cnv_variant_frequency",
             "open_data_release",
         ],
         views=["staging_external_sequencing_experiment", "staging_sequencing_experiment_delta"],
