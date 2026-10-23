@@ -57,7 +57,7 @@ KNOWN_ERROR_TAG = re.compile(rf"(?:{'|'.join(KNOWN_ERROR_JIRA_PROJECTS)})-\d+", 
 # tenant runs the whole per-tenant suite, the others the tenant-health tier only, and their
 # `absent_tables` are skipped. A tenant missing here is expected to have every table.
 # tenant_qa_shape__validate_absent_tables_are_empty fails once an absent table gets rows.
-_NO_SOMATIC = ["somatic__cnv__occurrence", "somatic__snv__occurrence"]
+_NO_SOMATIC = ["somatic__cnv__occurrence", "somatic__cnv__variant_frequency", "somatic__snv__occurrence"]
 TENANT_QA_SHAPES = {
     "radiant": {"reference": True},
     "onekg_dragen_4_4_7": {"absent_tables": _NO_SOMATIC},
