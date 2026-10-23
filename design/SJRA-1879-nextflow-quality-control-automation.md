@@ -13,6 +13,13 @@ the samplesheet and the "`dragen_metrics_dir` fails open" section).
 
 **Related ticket:** SJRA-1879.
 
+> **Superseded in part by RAD-110** (radiant-hub `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md`).
+> quality-control-pipeline BIOINFO-235 replaced `--dragen_metrics_dir` with a per-sample
+> `dragenMetrics` samplesheet column. The S3 probe, the grouping by metrics directory and the one
+> launcher run per group (§4.1, §5, §9) are gone: the query picks each member's `ssup`/`tgz`
+> tarball from the clinical model (else its CRAM's directory), and every case of a run goes into
+> one launcher run. The rest of this analysis still holds.
+
 ---
 
 ## 1. Why
@@ -109,7 +116,7 @@ of the *content*.
 ## 4. Decisions taken
 
 1. **DRAGEN metrics location: found next to the alignment's documents, one directory per
-   launcher run.** The metrics are not documents in the clinical model. In the layouts seen so
+   launcher run.** *Superseded by RAD-110: see the note at the top.* The metrics are not documents in the clinical model. In the layouts seen so
    far they sit in the same directory as *some* output of the alignment task — the gVCF in one
    setup, the CRAM in another — so the directory is derived from **all** output documents of the
    member's current alignment task (`cram`, `crai`, `gvcf`, `tbi`, `gcnv` VCF, …), not from the

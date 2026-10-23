@@ -3,7 +3,7 @@ import pytest
 from radiant.tasks.nextflow.qc.outputs import MissingOutputsError, collect, expected_keys
 from radiant.tasks.nextflow.qc.resolve import resolve_cases, select_cases
 
-OUTDIR = "s3://qlin-nextflow-outputs/scheduled__2026-09-02-g0"
+OUTDIR = "s3://qlin-nextflow-outputs/scheduled-2026-09-02"
 
 
 @pytest.fixture

@@ -7,7 +7,7 @@ from radiant.tasks.nextflow import case_status
 from radiant.tasks.nextflow.portal import PortalError
 from tests.unit.nextflow.cnv.conftest import member_row as cnv_member_row
 from tests.unit.nextflow.conftest import member_row as snv_member_row
-from tests.unit.nextflow.qc.conftest import document_rows as qc_document_rows
+from tests.unit.nextflow.qc.conftest import member_row as qc_member_row
 from tests.unit.nextflow.somatic.conftest import calling_task_rows
 
 
@@ -15,18 +15,13 @@ def status_row(case_id, status_code="submitted", has_variants=False, tenant_code
     return {"case_id": case_id, "tenant_code": tenant_code, "status_code": status_code, "has_variants": has_variants}
 
 
-def keep_all(cases):
-    return cases
-
-
 def test_work_waiting_is_the_union_of_every_pipeline_and_the_import_delta():
     waiting = case_status.cases_with_work(
         germline_snv_rows=[snv_member_row(case_id=1)],
         germline_cnv_rows=[cnv_member_row(case_id=2)],
         somatic_snv_rows=calling_task_rows(case_id=5),
-        qc_rows=qc_document_rows(case_id=3),
+        qc_rows=[qc_member_row(case_id=3)],
         import_rows=[{"case_id": 4}, {"case_id": 4}],
-        locate_qc=keep_all,
     )
     assert waiting == {1, 2, 3, 4, 5}
 
@@ -38,52 +33,25 @@ def test_a_case_the_pipeline_would_exclude_is_not_work_waiting(reason):
         germline_snv_rows=[snv_member_row(case_id=1, exclusion_reason=reason)],
         germline_cnv_rows=[cnv_member_row(case_id=2, exclusion_reason=reason)],
         somatic_snv_rows=calling_task_rows(case_id=5, exclusion_reason=reason),
-        qc_rows=qc_document_rows(case_id=3, exclusion_reason=reason),
+        qc_rows=[qc_member_row(case_id=3, exclusion_reason=reason)],
         import_rows=[],
-        locate_qc=keep_all,
     )
     assert waiting == set()
 
 
-def test_a_qc_case_whose_dragen_metrics_cannot_be_found_is_not_work_waiting():
-    """The QC DAG excludes it at `locate_metrics`, so it would hold the case in processing for ever."""
-    probed = []
-
-    def locate_none(cases):
-        probed.extend(c.case_id for c in cases)
-        return []
-
-    waiting = case_status.cases_with_work([], [], [], qc_document_rows(case_id=3), [], locate_qc=locate_none)
-    assert probed == [3]
-    assert waiting == set()
+def test_a_qc_case_with_two_metrics_tarballs_is_not_work_waiting():
+    """The QC DAG excludes it at `select_cases`, so it would hold the case in processing for ever."""
+    row = qc_member_row(case_id=3, dragen_metrics_matches=2, exclusion_reason="ambiguous_dragen_metrics")
+    assert case_status.cases_with_work([], [], [], [row], []) == set()
 
 
-def test_the_qc_probe_is_skipped_when_there_is_no_qc_candidate():
-    """It needs S3 and the workspace root; a run with no QC work must not depend on either."""
-
-    def fail(_):
-        raise AssertionError("probed with no candidate")
-
-    assert case_status.cases_with_work([snv_member_row(case_id=1)], [], [], [], [], locate_qc=fail) == {1}
-
-
-def test_the_s3_locator_runs_the_qc_dag_s_probe(monkeypatch):
-    from radiant.tasks.nextflow.qc import metrics
-
-    calls = []
-
-    def locate_metrics(cases, list_dir, list_tree, inputs_root):
-        calls.append(inputs_root)
-        return cases[:1], []
-
-    monkeypatch.setattr(metrics, "locate_metrics", locate_metrics)
-    monkeypatch.setattr(metrics, "S3Lister", lambda: type("L", (), {"list_dir": None, "list_tree": None})())
-    assert case_status.s3_qc_locator("s3://inputs")(["a", "b"]) == ["a"]
-    assert calls == ["s3://inputs"]
+def test_a_qc_case_without_a_metrics_tarball_is_work_waiting():
+    """The QC DAG runs it on its CRAM's directory: there is no S3 search to fail."""
+    assert case_status.cases_with_work([], [], [], [qc_member_row(case_id=3, tarball=False)], []) == {3}
 
 
 def test_nothing_discovered_is_no_work():
-    assert case_status.cases_with_work([], [], [], [], [], locate_qc=keep_all) == set()
+    assert case_status.cases_with_work([], [], [], [], []) == set()
 
 
 def test_only_submitted_cases_with_work_or_variants_move_to_processing():

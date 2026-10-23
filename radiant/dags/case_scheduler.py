@@ -21,7 +21,6 @@ processed and finished, whose status is left alone. The "from Cases" DAGs no lon
 
 import datetime
 import logging
-import os
 from typing import Any
 
 import pendulum
@@ -52,9 +51,6 @@ CASE_GROUP_PREFIX = "results"
 # email the ones past `processing` it finished. Pulled rather than passed, so a failed discovery
 # costs those emails only, not the status changes.
 CASES_WITH_WORK_KEY = "cases_with_work"
-
-# The QC DAG's workspace root: its DRAGEN metrics probe only accepts directories under it.
-INPUTS_ROOT_ENV = "NEXTFLOW_INPUTS_ROOT"
 
 # The run's block list, passed to the four "from Cases" DAGs so they leave out exactly the tenants
 # discovery left out. A tenant that is not excluded but not granted to the service account gets a
@@ -157,17 +153,9 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
 def _cases_with_work(
     germline_snv_rows: Any, germline_cnv_rows: Any, somatic_snv_rows: Any, qc_rows: Any, import_rows: Any
 ) -> set[int]:
-    from radiant.tasks.nextflow.case_status import cases_with_work, s3_qc_locator
+    from radiant.tasks.nextflow.case_status import cases_with_work
 
-    def locate_qc(cases):
-        # Same probe and same root as the QC DAG's `locate_metrics`, read only when there is a
-        # QC candidate: the QC DAG fails the same way when it is unset.
-        inputs_root = os.getenv(INPUTS_ROOT_ENV)
-        if not inputs_root:
-            raise ValueError(f"{INPUTS_ROOT_ENV} must be set to an s3:// uri to locate the DRAGEN metrics")
-        return s3_qc_locator(inputs_root)(cases)
-
-    return cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows, locate_qc)
+    return cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
 
 
 @dag(

@@ -17,8 +17,6 @@ from collections.abc import Callable
 from pydantic import BaseModel
 
 from radiant.tasks.nextflow.cnv.resolve import select_cases as select_cnv_cases
-from radiant.tasks.nextflow.qc.model import QcCase
-from radiant.tasks.nextflow.qc.resolve import resolve_cases as resolve_qc_cases
 from radiant.tasks.nextflow.qc.resolve import select_cases as select_qc_cases
 from radiant.tasks.nextflow.resolve import select_cases as select_snv_cases
 from radiant.tasks.nextflow.somatic.resolve import select_tasks as select_somatic_tasks
@@ -37,44 +35,25 @@ class CaseStatus(BaseModel):
     has_variants: bool
 
 
-QcLocator = Callable[[list[QcCase]], list[QcCase]]
-
-
-def s3_qc_locator(inputs_root: str) -> QcLocator:
-    """The QC DAG's `locate_metrics` probe over S3, keeping the cases whose metrics it finds."""
-    from radiant.tasks.nextflow.qc.metrics import S3Lister, locate_metrics
-
-    def locate(cases: list[QcCase]) -> list[QcCase]:
-        lister = S3Lister()
-        kept, _ = locate_metrics(cases, lister.list_dir, lister.list_tree, inputs_root)
-        return kept
-
-    return locate
-
-
 def cases_with_work(
     germline_snv_rows: list[dict],
     germline_cnv_rows: list[dict],
     somatic_snv_rows: list[dict],
     qc_rows: list[dict],
     import_rows: list[dict],
-    locate_qc: QcLocator,
 ) -> set[int]:
     """The cases at least one pipeline will run on: the union of what each "from Cases" DAG
     would select, and of the cases in the import delta.
 
     The Nextflow candidates go through the DAGs' own `select_cases`, lenient as on a scheduled
-    run, and the QC ones through its DRAGEN metrics probe too (`locate_qc`). A case they exclude
-    (sequencing pending, no gVCF, tenant excluded, metrics not found...) is not counted:
+    run. A case they exclude (sequencing pending, no gVCF, tenant excluded...) is not counted:
     it would sit in `processing` with nothing running for it, and never reach `in_progress`.
     """
-    qc = select_qc_cases(qc_rows, strict=False)
-    qc_cases = locate_qc(resolve_qc_cases([m.model_dump() for m in qc.members])) if qc.case_ids else []
     selected = {
         "germline snv post-processing": select_snv_cases(germline_snv_rows, strict=False).case_ids,
         "germline cnv post-processing": select_cnv_cases(germline_cnv_rows, strict=False).case_ids,
         "somatic snv annotation": select_somatic_tasks(somatic_snv_rows, strict=False).case_ids,
-        "quality control": sorted(c.case_id for c in qc_cases),
+        "quality control": select_qc_cases(qc_rows, strict=False).case_ids,
         "import": sorted({row["case_id"] for row in import_rows}),
     }
     for pipeline, case_ids in selected.items():
