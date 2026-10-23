@@ -12,8 +12,8 @@ from radiant.tasks.nextflow.qc.model import QcCase
 QC_TASK_TYPE = "quality_control_metrics"
 
 # The revision the launcher image pins (`QC_PIPELINE_REV` in Dockerfile.nextflow.launcher).
-# Bump both together.
-QC_PIPELINE = ("quality-control-pipeline", "2.0.0")
+# Bump both together. The tag, not the manifest: v2.1.0-beta.1 still declares `version = '2.0.0'`.
+QC_PIPELINE = ("quality-control-pipeline", "2.1.0-beta.1")
 
 
 def build_patch_body(cases: list[QcCase], collected: dict[str, dict]) -> dict:
