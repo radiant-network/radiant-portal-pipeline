@@ -57,6 +57,15 @@ def test_data_integrity_checks_scoped_to_this_batch_tenants(dag_bag):
     assert dag.render_template_as_native_obj is True
 
 
+def test_data_integrity_failure_does_not_fail_the_import(dag_bag):
+    """The checks run after the data is loaded: a failed integrity run is accepted, not raised."""
+    dag = dag_bag.get_dag("radiant-import")
+    qa = dag.get_task("data_integrity_checks")
+    assert qa.wait_for_completion is True
+    assert set(qa.allowed_states) == {"success", "failed"}
+    assert qa.failed_states == []
+
+
 def test_partition_triggers_are_serialised_and_bounded(dag_bag):
     """The partition fan-out waits rather than races, and no wait is unbounded.
 

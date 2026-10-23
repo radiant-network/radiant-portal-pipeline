@@ -99,12 +99,8 @@ Two tasks per case, through `PATCH /{tenant}/cases/batch`:
 
 | Task | Aliquots | Inputs | Outputs |
 |---|---|---|---|
-| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz` (`gcnv`/`vcf`) |
+| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`) |
 | `exomiser_cnv` | the proband | the slivar VCF above, resolved in-batch | `exomiser/CA<id>.exomiser.{variants.tsv,html,json}` (`exomiser`/`tsv`,`html`,`json`) |
-
-No index on the slivar VCF: the pinned pipeline revision publishes `*.vcf.gz` only. Expecting a
-`.tbi` would make every run fail in `collect_outputs`. It is added together with the pin bump to
-a revision that indexes it.
 
 `exomiser_cnv` rather than `exomiser`: the variant ETL ingests every `variants.tsv`
 published by an `exomiser` task into the SNV Exomiser table, and a CNV report there would
@@ -133,7 +129,7 @@ alongside the first.
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/samplesheet.csv
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/pedigrees/CA<id>.ped
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/phenotypes/CA<id>.yml
-{NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/slivar/CA<id>.cnv.slivar.vcf.gz
+{NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}
 {NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/exomiser/CA<id>.exomiser.*
 ```
 
