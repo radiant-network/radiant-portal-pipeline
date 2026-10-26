@@ -24,18 +24,22 @@ PUT (If-None-Match), so two concurrent runs cannot both get it — the loser's P
 It is also the only one of the three that excludes the *re-annotation* DAG, which holds the
 same lock for the length of its run.
 
-**This DAG releases on ALL_DONE, so a failed partition still gives the lock back.** One bad
-partition would otherwise leave the mutex held and take every partition behind it down too —
-a poor trade for a DAG that runs once per partition and fails routinely.
+**The release is an Airflow teardown of the acquire, so a failed partition still gives the
+lock back.** One bad partition would otherwise leave the mutex held and take every partition
+behind it down too — a poor trade for a DAG that runs once per partition and fails routinely.
 
 > The re-annotation DAG does the opposite and holds its lock on failure. It is one long run
 > whose half-finished state an operator needs to look at before anything else writes.
 
-ALL_DONE fires even when nothing upstream succeeded, so the release task also runs when
-**acquire_import_lock** *failed* — including when it failed because the re-annotation DAG
-holds the lock. The release therefore passes its own holder string and deletes nothing
-unless this run is the current holder. Without that, the run that lost the race would free
-the winner's mutex on its way out.
+Being a teardown, and not a plain ALL_DONE task, matters for the run state: Airflow leaves
+teardowns out of it, so a failed task still fails the run, and **radiant-import** stops
+instead of moving on to the next partition. As a plain ALL_DONE leaf, the release succeeded
+after any failure and the run ended in success (RAD-133).
+
+The teardown runs only if **acquire_import_lock** succeeded, so a run that lost the race does
+not touch the winner's mutex. The release also passes its own holder string and deletes
+nothing unless this run is the current holder. Clearing a failed task clears the acquire and
+the release with it, so the retry takes the lock again before it writes.
 
 Clearing a lock nobody will release is still an operator action: the toolbox DAG's
 **check-lock** command, re-run with **-delete-if-expired** once past the 6h TTL.

@@ -117,7 +117,6 @@ def import_part():
     @task(
         task_id="release_import_lock",
         task_display_name="[PyOp] Release Import Lock",
-        trigger_rule=TriggerRule.ALL_DONE,
     )
     def release_import_lock():
         from airflow.operators.python import get_current_context
@@ -722,9 +721,10 @@ def import_part():
     # Final Phase: Update Sequencing Experiments (deletions and updates)
     checkpoint_cnv >> [delete_sequencing_experiments, update_sequencing_experiments]
 
-    # Release only if every task above succeeded (default trigger_rule=ALL_SUCCESS): a failed or
-    # skipped run must leave the lock held.
+    # The release is a teardown: it runs after a failure too, so a failed partition gives the lock back,
+    # but Airflow leaves teardowns out of the run state, so that failure still fails the run (RAD-133).
     [delete_sequencing_experiments, update_sequencing_experiments] >> _release_import_lock
+    _release_import_lock.as_teardown(setups=_acquire_import_lock)
 
 
 import_part()
