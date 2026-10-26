@@ -28,7 +28,7 @@ def test_a_case_is_addressed_by_project_and_submitter_id(body):
 
 
 def test_one_annotation_task_per_case_and_no_legacy_exomiser_task(body, tasks):
-    """RAD-116: the Exomiser reports are outputs of the annotation task, so each run of a
+    """The Exomiser reports are outputs of the annotation task, so each run of a
     sequencing keeps its own Exomiser results. The `exomiser` task type is gone."""
     assert len(body["cases"][0]["tasks"]) == 1
     assert set(tasks) == {"radiant_germline_annotation"}

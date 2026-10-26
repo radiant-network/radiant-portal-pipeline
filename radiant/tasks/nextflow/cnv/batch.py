@@ -1,6 +1,6 @@
 """Build the `PATCH /{tenant}/cases/batch` body registering a CNV post-processing run.
 
-One task per case, mirroring the annotation DAG (RAD-116): `radiant_germline_cnv_annotation`,
+One task per case, mirroring the annotation DAG: `radiant_germline_cnv_annotation`,
 bound to every member's aliquot, with the per-member germline CNV VCFs (and the CRAM/index
 pairs, when the run used them) as inputs, and the slivar VCF set and the Exomiser reports as
 outputs.

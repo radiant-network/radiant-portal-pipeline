@@ -202,7 +202,7 @@ Per case, one task:
 | **output_documents** | slivar vcf and tbi (data type snv), Exomiser tsv, html and json (data type exomiser) |
 | **pipeline** | snv-post-processing 0df1ac0 |
 
-> **The Exomiser reports are outputs of the annotation task (RAD-116).** The import reads the
+> **The Exomiser reports are outputs of the annotation task.** The import reads the
 > Exomiser tsv from the proband's row of the annotation task, and keys the Exomiser rows by that
 > task id: each run of a sequencing keeps its own Exomiser results, as its occurrences do.
 

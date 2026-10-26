@@ -26,7 +26,7 @@ def test_a_case_is_addressed_by_project_and_submitter_id(trio_rows, phenotype_ro
 
 
 def test_one_annotation_task_per_case_and_no_legacy_exomiser_cnv_task(trio_rows, phenotype_rows, tasks):
-    """RAD-116: the Exomiser reports are outputs of the annotation task. The `exomiser_cnv`
+    """The Exomiser reports are outputs of the annotation task. The `exomiser_cnv`
     task type is gone."""
     assert len(_body(trio_rows, phenotype_rows)["cases"][0]["tasks"]) == 1
     assert set(tasks) == {"radiant_germline_cnv_annotation"}

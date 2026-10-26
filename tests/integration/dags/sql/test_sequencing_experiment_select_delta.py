@@ -95,8 +95,8 @@ def test_sequencing_experiment_empty(
     # Whole-seed baseline: every (case, seq, task) the view emits. It moves whenever seeds.sql gains a
     # document the view's WHERE clause accepts -- an SNV/CNV VCF on an annotation or calling task, or an
     # exomiser tsv on a germline annotation task. SJRA-1928 took it 15 -> 18 by giving the case-16 trio
-    # (alignment tasks 44/45/46) their gcnv VCFs; RAD-116 took it 18 -> 16 by moving the exomiser tsvs of
-    # the legacy `exomiser` tasks 64 and 66 onto their annotation tasks 63 and 65.
+    # (alignment tasks 44/45/46) their gcnv VCFs. Moving the exomiser tsvs of the legacy `exomiser` tasks 64
+    # and 66 onto their annotation tasks 63 and 65 took it 18 -> 16.
     assert len(result_df) == 16
 
 
@@ -196,7 +196,7 @@ def _delta(starrocks_session, sequencing_delta_columns):
 def test_sequencing_experiment_delta_sets_exomiser_file_on_the_proband_row_only(
     postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
 ):
-    """RAD-116: the Exomiser tsv is an output of the germline annotation task, which holds the aliquots of
+    """The Exomiser tsv is an output of the germline annotation task, which holds the aliquots of
     every family member. Only the proband's row carries it: the load tags the Exomiser rows with that seq_id.
 
     Task 63 annotates the case-1 trio (experiments 1, 2 and 3); task 65 the solo case 8 (experiment 22).

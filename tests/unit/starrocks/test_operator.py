@@ -235,7 +235,7 @@ def _run_exomiser_load(tasks):
 
 
 def test_exomiser_load_reads_the_file_of_the_annotation_task_and_tags_the_proband():
-    """RAD-116: the annotation task holds every family member; the Exomiser rows get the proband's
+    """The annotation task holds every family member; the Exomiser rows get the proband's
     seq_id and the annotation task id."""
     loads = _run_exomiser_load(
         [

@@ -101,7 +101,7 @@ One task per case, through `PATCH /{tenant}/cases/batch`:
 |---|---|---|---|
 | `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`), `exomiser/CA<id>.exomiser.{variants.tsv,html,json}` (`exomiser_cnv`/`tsv`,`html`,`json`) |
 
-The Exomiser reports are typed `exomiser_cnv`, not `exomiser` (RAD-116): the SNV and CNV
+The Exomiser reports are typed `exomiser_cnv`, not `exomiser`: the SNV and CNV
 reports have the same file names, and the data type tells them apart in the portal. The
 variant ETL reads only the `exomiser` data type, on a `radiant_germline_annotation` task, so
 the CNV report stays out of the SNV Exomiser table.

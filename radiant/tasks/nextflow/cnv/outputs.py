@@ -30,7 +30,7 @@ EXOMISER_DIR = "exomiser"
 # The index rides along, as for the SNV slivar VCF: the revision the launcher pins
 # (`CNV_PIPELINE_REV`) indexes the slivar VCF and publishes the `.tbi` next to it.
 #
-# The Exomiser reports are `exomiser_cnv`, not `exomiser` (RAD-116): the portal tells them from
+# The Exomiser reports are `exomiser_cnv`, not `exomiser`: the portal tells them from
 # the SNV report, which has the same file names, and the staging view reads only `exomiser`.
 OUTPUT_SPEC = {
     "slivar_vcf": (f"{SLIVAR_DIR}/{{family_id}}.cnv.slivar.vcf.gz", "gcnv", "vcf"),

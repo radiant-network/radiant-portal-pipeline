@@ -7,7 +7,7 @@ second annotation task alongside the first rather than replacing it. That is the
 platform's own model: `staging_sequencing_experiment` keys on `(case_id, seq_id, task_id)`
 and the portal serves `tasks_with_occurrences` (plural), so a user can pick between them.
 
-One task per case (RAD-116): the Exomiser reports are outputs of the annotation task, so
+One task per case: the Exomiser reports are outputs of the annotation task, so
 each run of a sequencing keeps its own Exomiser results, keyed by the annotation task id.
 
 Three backend rules, any of which fails the whole batch:

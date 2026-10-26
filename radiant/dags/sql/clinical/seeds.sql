@@ -976,7 +976,7 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (60, 'alignment_germline_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (61, 'alignment_germline_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (62, 'family_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
-    -- The Exomiser reports are outputs of the germline annotation tasks 63 and 65 (RAD-116): there is no
+    -- The Exomiser reports are outputs of the germline annotation tasks 63 and 65: there is no
     -- `exomiser` task type any more, so ids 64 and 66 are left unused.
     (63, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (65, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),

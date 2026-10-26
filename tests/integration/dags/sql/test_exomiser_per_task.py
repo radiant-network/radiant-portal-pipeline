@@ -1,4 +1,4 @@
-"""RAD-116 -- the Exomiser tables are keyed per task.
+"""The Exomiser tables are keyed per task.
 
 A sequencing analysed twice (a duo, then a trio) has two annotation tasks, each with its own Exomiser file. Each task
 keeps its own Exomiser rows, and each task's occurrences get their own task's Exomiser values, whether the two tasks

@@ -16,7 +16,7 @@ EXOMISER_DIR = "exomiser"
 
 # logical name -> (relative key template, data_type_code, format_code)
 #
-# All of them are outputs of the `radiant_germline_annotation` task (RAD-116).
+# All of them are outputs of the `radiant_germline_annotation` task.
 #
 # The VCF must be declared `vcf`, not `gvcf`: `staging_external_sequencing_experiment`
 # derives `vcf_filepath` from `format_code='vcf'` on an output doc of a

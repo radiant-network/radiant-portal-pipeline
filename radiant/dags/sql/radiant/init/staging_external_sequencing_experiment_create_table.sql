@@ -64,7 +64,7 @@ sequencing_experiments AS (
 	LEFT JOIN {{ mapping.clinical_document }} d ON d.id = thd.document_id
 	-- The data-type gate on the two *calling* steps is what keeps a raw, un-annotated VCF out of
 	-- `vcf_filepath`, which must only ever hold the annotated file from a `radiant_*_annotation` task.
-	-- The Exomiser report is an output of the germline SNV annotation task (RAD-116). The `exomiser` data-type
+	-- The Exomiser report is an output of the germline SNV annotation task. The `exomiser` data-type
 	-- gate, and no branch for `radiant_germline_cnv_annotation`, keep the CNV report (`exomiser_cnv`) out.
 	WHERE (
 		(d.format_code = 'vcf' AND t.task_type_code IN ('radiant_germline_annotation', 'radiant_somatic_annotation'))

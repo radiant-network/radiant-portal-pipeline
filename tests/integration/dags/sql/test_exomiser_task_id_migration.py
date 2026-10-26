@@ -1,8 +1,8 @@
-"""RAD-116 -- the manual StarRocks migration, `migrations/RAD-116_exomiser_task_id.sql`, run on fixture rows.
+"""The manual StarRocks migration that keys the Exomiser tables per task, run on fixture rows.
 
 Each numbered section of the file runs in the database it names, with the placeholders substituted, in two fresh
 databases: the base one (`staging_sequencing_experiment`, `raw_exomiser`) and one tenant database (`exomiser`), both
-in their pre-RAD-116 shape.
+in their legacy shape (Exomiser task rows in staging, no `task_id` on the Exomiser tables).
 """
 
 import os
@@ -145,7 +145,10 @@ class _Migration:
 
 @pytest.fixture
 def migration(starrocks_database, radiant_mapping):
-    names = {"shared": f"{starrocks_database.database}_rad116", "tenant": f"{starrocks_database.database}_rad116_t"}
+    names = {
+        "shared": f"{starrocks_database.database}_exomiser_mig",
+        "tenant": f"{starrocks_database.database}_exomiser_mig_t",
+    }
     connections = {}
     with pymysql.connect(
         host=starrocks_database.host,

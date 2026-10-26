@@ -1,4 +1,4 @@
--- RAD-116 — the Exomiser files become outputs of the annotation tasks, and the Exomiser tables are keyed per task.
+-- The Exomiser files become outputs of the annotation tasks, and the Exomiser tables are keyed per task.
 --
 --   staging_sequencing_experiment   the `exomiser_filepath` of each legacy `exomiser` row moves to the proband's
 --                                   `radiant_germline_annotation` row of the same case and sequencing; the legacy rows

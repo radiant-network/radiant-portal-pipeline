@@ -12,7 +12,7 @@ _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 def test_raw_exomiser_load(starrocks_session, radiant_mapping, minio_instance, sample_exomiser_tsv):
     """
     Test the loading of raw Exomiser data into StarRocks. The rows are tagged with the proband's seq_id and the
-    annotation task id (RAD-116), as `RadiantLoadExomiserOperator` passes them.
+    annotation task id, as `RadiantLoadExomiserOperator` passes them.
     """
 
     _database_name = radiant_mapping["starrocks_staging_exomiser"].split(".")[0]

@@ -67,7 +67,7 @@ def test_radiant_germline_annotation_task_build_from_rows_proband_present():
 
 
 def test_radiant_germline_annotation_task_reads_the_exomiser_file_from_the_proband_row():
-    """RAD-116: the staging view sets the Exomiser file on the proband's row only."""
+    """The staging view sets the Exomiser file on the proband's row only."""
     proband = _base_row("radiant_germline_annotation")
     proband["vcf_filepath"] = "/path/to/family.vcf"
     proband["exomiser_filepath"] = "/path/to/family.exomiser.variants.tsv"
@@ -127,7 +127,7 @@ def test_alignment_germline_variant_calling_task_multiple_rows_raises():
 
 
 def test_legacy_exomiser_task_type_is_unknown():
-    """RAD-116: the `exomiser` task type is gone; its file is an output of the annotation task."""
+    """The `exomiser` task type is gone; its file is an output of the annotation task."""
     row = _base_row("exomiser")
     row["exomiser_filepath"] = "/path/to/exomiser.variants.tsv"
 
