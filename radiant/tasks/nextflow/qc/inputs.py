@@ -65,9 +65,7 @@ def participant_id(member: QcMember) -> str:
 
 def dragen_metrics_url(member: QcMember) -> str:
     """The S3 url the `dragenMetrics` column points at: the tarball, else the CRAM's directory."""
-    if member.dragen_metrics_url:
-        return member.dragen_metrics_url
-    return member.cram_url.rsplit("/", 1)[0]
+    return member.dragen_metrics_url or member.cram_url.rsplit("/", 1)[0]
 
 
 def build_inputs(cases: list[QcCase], inputs_root: str, inputs_mount: str) -> dict[str, str]:
