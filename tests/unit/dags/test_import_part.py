@@ -290,16 +290,38 @@ def test_dag_task_dependencies_are_valid(dag_bag):
     assert not any(task_id.startswith("snv_variant.") for task_id in all_tenants_downstream)
 
     # S3 mutex lock (design/SJRA-1811-opendatalake-integration.md)
-    assert dag.get_task("acquire_import_lock").downstream_task_ids == {"start"}
+    assert dag.get_task("acquire_import_lock").downstream_task_ids == {"start", "release_import_lock"}
     release_lock_task = dag.get_task("release_import_lock")
-    assert release_lock_task.upstream_task_ids == {"delete_sequencing_experiments", "update_sequencing_experiment"}
-    # ALL_DONE, not ALL_SUCCESS: this DAG runs once per partition and fails routinely, and holding the
-    # mutex through a failure took every partition behind it down too. The re-annotation DAG is the
-    # opposite case and still holds on failure. Safe only because `release_lock` is holder-checked --
-    # ALL_DONE also fires when `acquire_import_lock` failed, and an unconditional delete there would
-    # free the lock whichever run actually holds it. See `test_locking.py`.
-    assert release_lock_task.trigger_rule == TriggerRule.ALL_DONE
+    assert release_lock_task.upstream_task_ids == {
+        "acquire_import_lock",
+        "delete_sequencing_experiments",
+        "update_sequencing_experiment",
+    }
+    # A teardown of the acquire, not a plain ALL_DONE task: it still releases after a failure (this DAG
+    # runs once per partition and fails routinely, and holding the mutex through a failure took every
+    # partition behind it down too), but Airflow leaves teardowns out of the run state. As a plain
+    # ALL_DONE leaf it succeeded after any failure and the run ended in success (RAD-133). The
+    # re-annotation DAG is the opposite case and still holds on failure.
+    assert release_lock_task.is_teardown
+    assert release_lock_task.trigger_rule == TriggerRule.ALL_DONE_SETUP_SUCCESS
+    assert dag.get_task("acquire_import_lock").is_setup
+    assert "acquire_import_lock" in release_lock_task.upstream_task_ids
     assert release_lock_task.downstream_task_ids == set()
+
+
+def test_failed_task_fails_the_run(dag_bag):
+    """The run state comes from the leaves. The lock release must not be the one deciding it (RAD-133)."""
+    from collections import namedtuple
+
+    from airflow.models.dagrun import DagRun
+
+    _TI = namedtuple("_TI", ["task_id", "state"])
+
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-part")
+    tis = [_TI(t.task_id, None) for t in dag.tasks]
+    leaves = {ti.task_id for ti in DagRun._tis_for_dagrun_state(None, dag=dag, tis=tis)}
+    assert "release_import_lock" not in leaves
+    assert {"delete_sequencing_experiments", "update_sequencing_experiment"} <= leaves
 
 
 def test_only_one_partition_imports_at_a_time(dag_bag):
