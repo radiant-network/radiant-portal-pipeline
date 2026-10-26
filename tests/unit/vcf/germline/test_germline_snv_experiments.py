@@ -2,7 +2,6 @@ import pytest
 
 from radiant.tasks.vcf.experiment import (
     AlignmentGermlineVariantCallingTask,
-    ExomiserTask,
     Experiment,
     RadiantGermlineAnnotationTask,
     build_task_from_dict,
@@ -67,6 +66,30 @@ def test_radiant_germline_annotation_task_build_from_rows_proband_present():
     assert task.index_vcf_filepath == "/path/to/proband.vcf.idx"
 
 
+def test_radiant_germline_annotation_task_reads_the_exomiser_file_from_the_proband_row():
+    """RAD-116: the staging view sets the Exomiser file on the proband's row only."""
+    proband = _base_row("radiant_germline_annotation")
+    proband["vcf_filepath"] = "/path/to/family.vcf"
+    proband["exomiser_filepath"] = "/path/to/family.exomiser.variants.tsv"
+    mother = _base_row("radiant_germline_annotation")
+    mother.update(seq_id=124, family_role="mother", vcf_filepath="/path/to/family.vcf", exomiser_filepath=None)
+
+    task = build_task_from_rows([mother, proband])
+
+    assert isinstance(task, RadiantGermlineAnnotationTask)
+    assert task.exomiser_filepath == "/path/to/family.exomiser.variants.tsv"
+    assert len(task.experiments) == 2
+
+
+def test_radiant_germline_annotation_task_without_exomiser_file():
+    row = _base_row("radiant_germline_annotation")
+    row["vcf_filepath"] = "/path/to/proband.vcf"
+
+    task = build_task_from_rows([row])
+
+    assert task.exomiser_filepath is None
+
+
 def test_radiant_germline_annotation_task_build_from_rows_no_proband_raises():
     row = _base_row("radiant_germline_annotation")
     row["family_role"] = "mother"
@@ -103,29 +126,15 @@ def test_alignment_germline_variant_calling_task_multiple_rows_raises():
     assert "alignment_germline_variant_calling" in str(excinfo.value)
 
 
-def test_exomiser_task_single_row_ok():
+def test_legacy_exomiser_task_type_is_unknown():
+    """RAD-116: the `exomiser` task type is gone; its file is an output of the annotation task."""
     row = _base_row("exomiser")
-    row["exomiser_filepath"] = "/path/to/exomiser.json"
-
-    task = build_task_from_rows([row])
-
-    assert isinstance(task, ExomiserTask)
-    assert task.exomiser_filepath == "/path/to/exomiser.json"
-    assert len(task.experiments) == 1
-
-
-def test_exomiser_task_multiple_rows_raises():
-    row1 = _base_row("exomiser")
-    row1["exomiser_filepath"] = "/path/to/ex1.json"
-
-    row2 = _base_row("exomiser")
-    row2["exomiser_filepath"] = "/path/to/ex2.json"
-    row2["seq_id"] = 789
+    row["exomiser_filepath"] = "/path/to/exomiser.variants.tsv"
 
     with pytest.raises(ValueError) as excinfo:
-        build_task_from_rows([row1, row2])
+        build_task_from_rows([row])
 
-    assert "exomiser" in str(excinfo.value)
+    assert "Unknown task type" in str(excinfo.value)
 
 
 def test_build_task_from_rows_empty_raises():
@@ -139,14 +148,14 @@ def test_build_task_from_rows_inconsistent_task_types_raises():
     row1 = _base_row("radiant_germline_annotation")
     row1["vcf_filepath"] = "/path/to/proband.vcf"
 
-    row2 = _base_row("exomiser")
-    row2["exomiser_filepath"] = "/path/to/ex.json"
+    row2 = _base_row("alignment_germline_variant_calling")
+    row2["cnv_vcf_filepath"] = "/path/to/cnv.vcf"
 
     with pytest.raises(ValueError) as excinfo:
         build_task_from_rows([row1, row2])
 
     assert "Inconsistent task types in rows, found:" in str(excinfo.value)
-    assert "exomiser" in str(excinfo.value)
+    assert "alignment_germline_variant_calling" in str(excinfo.value)
     assert "radiant_germline_annotation" in str(excinfo.value)
 
 

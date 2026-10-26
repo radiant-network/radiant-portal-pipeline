@@ -425,6 +425,7 @@ VALUES ('alignment', 'Aligned Reads'),
        ('covgene', 'Coverage by Gene Report'),
        ('qcrun', 'Sequencing Run QC Report'),
        ('exomiser', 'Exomiser Report'),
+       ('exomiser_cnv', 'Exomiser CNV Report'),
        ('aggqc', 'Aggregate Quality Control Report')
 ON CONFLICT (code) DO NOTHING;
 
@@ -547,11 +548,9 @@ VALUES ('alignment', 'Genome Alignment'),
        ('tumor_only_variant_calling', 'Somatic Variant Calling by Tumor-Only Sample'),
        ('radiant_germline_annotation', 'RADIANT Germline Annotation'),
        ('radiant_somatic_annotation', 'RADIANT Somatic Annotation'),
-       ('exomiser', 'Exomiser'),
        ('rnaseq_analysis', 'RNAseq Analysis of Transcriptome Profiling and Gene Fusion Calling'),
        ('quality_control_metrics', 'Quality Control Metrics'),
-       ('radiant_germline_cnv_annotation', 'RADIANT Germline CNV Annotation'),
-       ('exomiser_cnv', 'Exomiser (CNV)')
+       ('radiant_germline_cnv_annotation', 'RADIANT Germline CNV Annotation')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO "panel_type" ("code", "name_en")

@@ -35,7 +35,7 @@ CI (`.github/workflows/test.yml`) runs on every PR with `USE_DOCKER_FIXTURES=tru
 
 **Two Airflow versions.** The venv and the tests pin `apache-airflow==2.10.5` (`requirements-dev.txt`, `requirements-airflow.txt`); the deployed Airflow is **3.2.1** (`mwaa/` keeps separate `airflow2/` and `airflow3/` builds). Check scheduler behaviour (pools, deferred tasks, run-id rules, task-id changes in active runs) against the 3.2.1 source, not against the venv.
 
-**Integration test data.** `radiant/dags/sql/clinical/seeds.sql` feeds every clinical integration test, including the whole-delta row count in `tests/integration/dags/sql/test_sequencing_experiment_select_delta.py` (18 rows): a seeded document that the staging view admits moves that count. Shapes the seeds do not have are inserted by test-local fixtures on ids far above the seeded range — 90xx–93xx are taken by `test_case_resolution.py`, 95xx by `test_somatic_case_resolution.py` — and a fixture that inserts rows must delete them afterwards, or it changes the results of other tests in the same session.
+**Integration test data.** `radiant/dags/sql/clinical/seeds.sql` feeds every clinical integration test, including the whole-delta row count in `tests/integration/dags/sql/test_sequencing_experiment_select_delta.py` (16 rows): a seeded document that the staging view admits moves that count. Shapes the seeds do not have are inserted by test-local fixtures on ids far above the seeded range — 90xx–93xx are taken by `test_case_resolution.py`, 95xx by `test_somatic_case_resolution.py`, 96xx by `test_sequencing_experiment_select_delta.py` — and a fixture that inserts rows must delete them afterwards, or it changes the results of other tests in the same session.
 
 ### Local Airflow stack
 

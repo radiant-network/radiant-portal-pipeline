@@ -976,10 +976,10 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (60, 'alignment_germline_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (61, 'alignment_germline_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (62, 'family_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    -- The Exomiser reports are outputs of the germline annotation tasks 63 and 65 (RAD-116): there is no
+    -- `exomiser` task type any more, so ids 64 and 66 are left unused.
     (63, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
-    (64, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (65, 'radiant_germline_annotation', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
-    (66, 'exomiser', NULL, '14.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- The somatic annotation tasks follow the RAD-23 contract: QLIN sends calling tasks with a raw
     -- `ssnv` VCF, and Radiant annotates it and registers the `radiant_somatic_annotation`, with that
     -- raw VCF as input and the pipeline that annotated it. Tasks 67-69 are three such
@@ -1081,9 +1081,7 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     (63, 1, 1),
     (63, 1, 2),
     (63, 1, 3),
-    (64, 1, 1),
     (65, 8, 22),
-    (66, 8, 22),
     (67, 22, 62),
     (67, 22, 63),
     -- Task 68 spans only the tumoral experiment 62 -> tumor-only.
@@ -1652,12 +1650,10 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (62, 256, 'output'),
     (63, 135, 'output'),
     (63, 136, 'output'),
-    (64, 255, 'input'),
-    (64, 256, 'input'),
-    (64, 245, 'output'),
+    (63, 245, 'output'),
     (65, 235, 'output'),
     (65, 236, 'output'),
-    (66, 246, 'output'),
+    (65, 246, 'output'),
     (67, 274, 'input'),
     (67, 257, 'output'),
     (67, 258, 'output'),

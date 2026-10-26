@@ -1,3 +1,5 @@
+import psycopg2
+
 # Constants
 MINIO_ACCESS_KEY = "admin"
 MINIO_SECRET_KEY = "password"
@@ -109,3 +111,21 @@ class StarRocksIcebergCatalog:
     def __init__(self, catalog, database):
         self.catalog = catalog
         self.database = database
+
+
+# Clinical PostgreSQL helpers, for test-local fixtures that insert the shapes the seeds do not have.
+def connect_clinical(postgres_instance):
+    return psycopg2.connect(
+        host="localhost",
+        port=postgres_instance.port,
+        user=postgres_instance.user,
+        password=postgres_instance.password,
+        database=postgres_instance.radiant_db,
+    )
+
+
+def execute_clinical(postgres_instance, sql):
+    with connect_clinical(postgres_instance) as conn, conn.cursor() as cur:
+        cur.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
+        cur.execute(sql)
+        conn.commit()

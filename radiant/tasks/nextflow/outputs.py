@@ -16,11 +16,13 @@ EXOMISER_DIR = "exomiser"
 
 # logical name -> (relative key template, data_type_code, format_code)
 #
+# All of them are outputs of the `radiant_germline_annotation` task (RAD-116).
+#
 # The VCF must be declared `vcf`, not `gvcf`: `staging_external_sequencing_experiment`
 # derives `vcf_filepath` from `format_code='vcf'` on an output doc of a
-# `radiant_*_annotation` task, and `exomiser_filepath` from `url LIKE '%variants.tsv'`.
-# The html and json match neither predicate -- they are invisible to the ETL and ride
-# along purely so the portal can list and serve them.
+# `radiant_*_annotation` task, and `exomiser_filepath` from `url LIKE '%variants.tsv'` with
+# the `exomiser` data type. The html and json match neither predicate -- they are invisible
+# to the ETL and ride along purely so the portal can list and serve them.
 OUTPUT_SPEC = {
     "slivar_vcf": (f"{SLIVAR_DIR}/variants.{{family_id}}.snv.vep.slivar.vcf.gz", "snv", "vcf"),
     "slivar_tbi": (f"{SLIVAR_DIR}/variants.{{family_id}}.snv.vep.slivar.vcf.gz.tbi", "snv", "tbi"),

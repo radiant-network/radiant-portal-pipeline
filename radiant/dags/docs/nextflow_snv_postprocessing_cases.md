@@ -193,21 +193,18 @@ alignment_germline_variant_calling tasks survive.
 > legitimate re-run. Mapping gives per-tenant retry. **Clear one mapped instance, not the
 > whole task.**
 
-Per case, two tasks:
+Per case, one task:
 
-| | radiant_germline_annotation | exomiser |
-|:--|:--|:--|
-| **aliquots** | Every family member | Proband only |
-| **input_documents** | Each member's gVCF | The slivar VCF |
-| **output_documents** | slivar vcf and tbi | tsv, html and json |
-| **pipeline** | snv-post-processing 0df1ac0 | Exomiser 14.0.0 |
+| | radiant_germline_annotation |
+|:--|:--|
+| **aliquots** | Every family member |
+| **input_documents** | Each member's gVCF |
+| **output_documents** | slivar vcf and tbi (data type snv), Exomiser tsv, html and json (data type exomiser) |
+| **pipeline** | snv-post-processing 0df1ac0 |
 
-> **Known compromise: Exomiser's input lineage.** The pipeline actually feeds Exomiser the
-> VEP-annotated VCF (exomiser_start_from_vep is true), one step before slivar. That file is
-> published as no document, so naming it as an input fails TASK-005. We record the slivar VCF
-> instead, which puts the recorded lineage one step downstream of the truth. This was chosen
-> deliberately over registering the ensemblvep outputs as documents too. If the lineage ever
-> matters, that is the fix.
+> **The Exomiser reports are outputs of the annotation task (RAD-116).** The import reads the
+> Exomiser tsv from the proband's row of the annotation task, and keys the Exomiser rows by that
+> task id: each run of a sequencing keeps its own Exomiser results, as its occurrences do.
 
 For a first manual run, set **dry_run** to true. The batch report names every failure with
 its code and path, which is far better triage than an HTTP status.
@@ -246,8 +243,8 @@ the **notify_cases** DAG to email an ad-hoc list of cases.
 ## Re-runs sit alongside
 
 Running the same cases again does not supersede the earlier analysis. PATCH appends, so the
-case gains a *second* radiant_germline_annotation and exomiser task pointing at the new run's
-outputs, and both stay queryable.
+case gains a *second* radiant_germline_annotation task pointing at the new run's outputs, and
+both stay queryable, each with its own Exomiser results.
 
 That is the platform's own model, not a compromise: **staging_sequencing_experiment** keys on
 (case_id, seq_id, task_id), so each task is its own row with its own vcf_filepath, and the

@@ -3,7 +3,8 @@
 `radiant-nextflow-snv-postprocessing` runs the Ferlab post-processing pipeline. This DAG closes
 the two manual ends around it: it discovers what needs running, builds the samplesheet, PED
 files and phenopackets from the clinical model, triggers that DAG, then registers what the
-run published back onto the cases as `radiant_germline_annotation` and `exomiser` tasks.
+run published back onto the cases as a `radiant_germline_annotation` task, with the Exomiser
+reports among its outputs.
 
     discover_scope -> select_cases -> fetch_phenotypes -> resolve_cases -> generate_inputs
                                                                                   |
