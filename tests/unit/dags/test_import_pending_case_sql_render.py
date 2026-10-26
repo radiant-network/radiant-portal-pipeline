@@ -31,3 +31,12 @@ def test_the_staging_predicate_is_the_import_s_own():
     import_select = (DAGS_DIR / "sql" / "radiant" / "sequencing_experiment_select.sql").read_text()
     predicate = import_select.split("WHERE", 1)[1].strip().rstrip(";")
     assert predicate.lower() in _render().lower()
+
+
+def test_ingested_at_is_set_in_utc_like_updated_at():
+    """`updated_at` is the portal's `updated_on`, in UTC. NOW() is in the StarRocks session time zone
+    (America/Montreal in QA): `ingested_at` would look hours older and the case would stay pending."""
+    update = (DAGS_DIR / "sql" / "radiant" / "sequencing_experiment_update.sql").read_text()
+    sql = "\n".join(line for line in update.splitlines() if not line.lstrip().startswith("--"))
+    assert "SET ingested_at = UTC_TIMESTAMP()" in sql
+    assert "NOW()" not in sql.upper()
