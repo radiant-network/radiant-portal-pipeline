@@ -1,34 +1,33 @@
 import pytest
 
-from radiant.tasks.nextflow.qc.resolve import CaseResolutionError, fold_rows, resolve_cases, select_cases, tenants_of
+from radiant.tasks.nextflow.qc.resolve import CaseResolutionError, resolve_cases, select_cases, tenants_of
 
-from .conftest import document_rows
+from .conftest import member_row
 
 
-def test_document_rows_fold_into_one_member_each(trio_rows):
-    members = fold_rows(trio_rows)
-    assert len(members) == 3
-    proband = next(m for m in members if m.role == "proband")
-    assert len(proband.document_urls) == 4
+def test_each_row_is_one_member(trio_rows):
+    proband = select_cases(trio_rows).members[0]
     assert proband.cram_url.endswith("NA12878.cram")
     assert proband.crai_url.endswith("NA12878.cram.crai")
+    assert proband.dragen_metrics_url.endswith("NA12878.extra.tgz")
 
 
-def test_a_member_without_documents_still_folds(trio_rows):
-    rows = trio_rows + document_rows(
-        role="brother",
-        patient_id=103,
-        sex="male",
-        aliquot=None,
-        seq_id=None,
-        alignment_task_id=None,
-        exclusion_reason="pending_sequencing",
-        documents=False,
-    )
-    members = fold_rows(rows)
-    brother = next(m for m in members if m.role == "brother")
-    assert brother.document_urls == []
-    assert brother.exclusion_reason == "pending_sequencing"
+def test_a_member_without_documents_still_comes_back(trio_rows):
+    rows = trio_rows + [
+        member_row(
+            role="brother",
+            patient_id=103,
+            sex="male",
+            aliquot=None,
+            seq_id=None,
+            alignment_task_id=None,
+            exclusion_reason="pending_sequencing",
+            documents=False,
+        )
+    ]
+    selection = select_cases(rows)
+    assert selection.case_ids == []
+    assert [e.reason for e in selection.excluded] == ["pending_sequencing"]
 
 
 def test_members_come_out_proband_first(trio_rows):
@@ -37,32 +36,52 @@ def test_members_come_out_proband_first(trio_rows):
     assert selection.case_ids == [1072]
 
 
+def test_a_member_without_a_tarball_still_runs(singleton_rows):
+    """The samplesheet falls back to the CRAM's directory: nothing to exclude."""
+    selection = select_cases(singleton_rows)
+    assert selection.case_ids == [8]
+    assert selection.members[0].dragen_metrics_url is None
+
+
+def test_two_tarballs_exclude_the_case(trio_rows, singleton_rows):
+    ambiguous = {"dragen_metrics_matches": 2, "exclusion_reason": "ambiguous_dragen_metrics"}
+    rows = [r | ambiguous if r["role"] == "father" else r for r in trio_rows]
+    selection = select_cases(rows + singleton_rows)
+    assert selection.case_ids == [8]
+    assert [e.reason for e in selection.excluded] == ["ambiguous_dragen_metrics"]
+    assert "more than one DRAGEN metrics tarball" in selection.excluded[0].detail
+
+
 def test_a_case_with_an_excluded_member_is_dropped_whole_in_lenient_mode(trio_rows, singleton_rows):
     rows = trio_rows + singleton_rows
-    rows += document_rows(
-        role="sister",
-        patient_id=104,
-        aliquot=None,
-        seq_id=None,
-        alignment_task_id=None,
-        exclusion_reason="pending_alignment",
-        documents=False,
-    )
+    rows += [
+        member_row(
+            role="sister",
+            patient_id=104,
+            aliquot=None,
+            seq_id=None,
+            alignment_task_id=None,
+            exclusion_reason="pending_alignment",
+            documents=False,
+        )
+    ]
     selection = select_cases(rows)
     assert selection.case_ids == [8]
     assert [e.reason for e in selection.excluded] == ["pending_alignment"]
 
 
 def test_strict_mode_raises_instead(trio_rows):
-    rows = trio_rows + document_rows(
-        role="sister",
-        patient_id=104,
-        aliquot=None,
-        seq_id=None,
-        alignment_task_id=None,
-        exclusion_reason="no_cram",
-        documents=False,
-    )
+    rows = trio_rows + [
+        member_row(
+            role="sister",
+            patient_id=104,
+            aliquot=None,
+            seq_id=None,
+            alignment_task_id=None,
+            exclusion_reason="no_cram",
+            documents=False,
+        )
+    ]
     with pytest.raises(CaseResolutionError, match="published no CRAM"):
         select_cases(rows, [900], strict=True)
 

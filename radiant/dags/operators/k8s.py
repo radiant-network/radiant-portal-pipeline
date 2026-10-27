@@ -635,15 +635,10 @@ def _shared_project_driver_script(asset: str, *, extra_echo: str = "", extra_arg
     )
 
 
-# `--dragen_metrics_dir` is what selects the pipeline's DRAGEN-metrics mode: with it
-# set, BAM_QC and VCF_QC are skipped and the report is built from DRAGEN's per-sample
-# CSVs. It is unconditional here because that is the only mode this DAG runs -- the
-# param is required, so the variable is never empty.
-_NEXTFLOW_QC_DRIVER_SCRIPT = _shared_project_driver_script(
-    "quality-control-pipeline",
-    extra_echo=" dragen=$NXF_DRAGEN_METRICS_DIR",
-    extra_args=' \\\n    --dragen_metrics_dir "$NXF_DRAGEN_METRICS_DIR"',
-)
+# Nothing beyond the samplesheet and outdir on the command line: the DRAGEN-metrics mode is
+# selected per sample by the samplesheet's `dragenMetrics` column (BIOINFO-235), and the
+# run-invariant settings live in the params ConfigMap.
+_NEXTFLOW_QC_DRIVER_SCRIPT = _shared_project_driver_script("quality-control-pipeline")
 
 # The CNV post-processing pipeline takes nothing beyond the samplesheet and outdir on
 # the command line; reference data, VEP and Exomiser settings live in its params
@@ -897,8 +892,8 @@ class NextflowSomaticAnnotation:
 
 
 class NextflowQualityControl:
-    """Runs the Ferlab quality-control-pipeline in its DRAGEN-metrics mode as a
-    Nextflow driver pod, which spawns its own worker pods via Nextflow's k8s executor.
+    """Runs the Ferlab quality-control-pipeline as a Nextflow driver pod, which spawns
+    its own worker pods via Nextflow's k8s executor.
 
     It shares the driver image, the FSx workspace and the node pool with
     `NextflowPostprocessing`, but not its configuration: the post-processing
@@ -908,9 +903,7 @@ class NextflowQualityControl:
     """
 
     @staticmethod
-    def get_run_quality_control(
-        input_csv: str, outdir: str, dragen_metrics_dir: str, run_tag: str
-    ) -> KubernetesPodOperator:
+    def get_run_quality_control(input_csv: str, outdir: str, run_tag: str) -> KubernetesPodOperator:
         return _nextflow_driver_operator(
             task_id="run_quality_control",
             task_display_name="[K8s] Run Nextflow Quality Control",
@@ -924,7 +917,6 @@ class NextflowQualityControl:
                 "RUN_TAG": run_tag,
                 "NXF_INPUT": input_csv,
                 "NXF_OUTDIR": outdir,
-                "NXF_DRAGEN_METRICS_DIR": dragen_metrics_dir,
             },
             config_configmap=os.getenv("NEXTFLOW_QC_OPERATOR_CONFIG_CONFIGMAP", "nextflow-qc-cfg"),
             params_configmap=os.getenv("NEXTFLOW_QC_OPERATOR_PARAMS_CONFIGMAP", "nextflow-qc-params"),

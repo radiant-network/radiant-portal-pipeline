@@ -11,7 +11,7 @@ import logging
 
 from pydantic import BaseModel
 
-from radiant.tasks.nextflow.qc.model import DocumentRow, QcCase, QcMember, family_id
+from radiant.tasks.nextflow.qc.model import QcCase, QcMember, family_id
 from radiant.tasks.nextflow.resolve import REL_ORDER, CaseResolutionError, ExcludedCase
 
 LOGGER = logging.getLogger(__name__)
@@ -37,21 +37,9 @@ REASON_TEXT = {
         "its tenant is in `excluded_tenants` (`$RADIANT_ETL_EXCLUDED_TENANTS`), which the ETL "
         "leaves out of case processing"
     ),
-    "no_dragen_metrics": (
-        "no `<aliquot>.mapping_metrics.csv` was found in any directory holding one of its alignment's output documents"
-    ),
     "ambiguous_dragen_metrics": (
-        "`<aliquot>.mapping_metrics.csv` was found in more than one of the directories holding "
-        "its alignment's output documents, and the pipeline would attach both"
-    ),
-    "metrics_not_on_workspace": (
-        "its DRAGEN metrics are not in the workspace bucket, so they are not on the shared "
-        "filesystem the pipeline reads"
-    ),
-    "metrics_dir_split": (
-        "its members' DRAGEN metrics sit in different directories, and their common ancestor "
-        "either leaves the workspace bucket or holds a duplicated sample -- one Nextflow run "
-        "takes exactly one `--dragen_metrics_dir`"
+        "its current alignment published more than one DRAGEN metrics tarball (`ssup`/`tgz`), "
+        "and the samplesheet takes exactly one per sample"
     ),
 }
 
@@ -70,24 +58,6 @@ class Selection(BaseModel):
         return sorted({m.tenant_code for m in self.members})
 
 
-def fold_rows(rows: list[dict]) -> list[QcMember]:
-    """One `QcMember` per (case, patient), its document rows folded into `document_urls`."""
-    members: dict[tuple[int, int], QcMember] = {}
-    urls: dict[tuple[int, int], set[str]] = {}
-    for raw in rows:
-        row = DocumentRow(**raw)
-        key = (row.case_id, row.patient_id)
-        if key not in members:
-            fields = row.model_dump(exclude={"document_url", "document_data_type", "document_format"})
-            members[key] = QcMember(**fields)
-            urls[key] = set()
-        if row.document_url:
-            urls[key].add(row.document_url)
-    for key, member in members.items():
-        member.document_urls = sorted(urls[key])
-    return list(members.values())
-
-
 def select_cases(
     rows: list[dict],
     requested_task_ids: list[int] | None = None,
@@ -99,7 +69,7 @@ def select_cases(
     if strict is None:
         strict = bool(requested)
 
-    members = fold_rows(rows)
+    members = [QcMember(**row) for row in rows]
     by_case = _group_by_case(members)
     problems: list[str] = []
 

@@ -4,16 +4,25 @@ No PED and no phenopacket: the pipeline derives its pedigree from the `relations
 `sex` and `affected_status` columns, and QC has no use for HPO terms.
 
 File paths are **pod paths**, not S3 URIs, and the pipeline stats every one of them at launch
-(`exists: true` in its schema), so a CRAM registered outside the workspace bucket fails here,
-in `to_mount`, rather than in the driver pod.
+(`exists: true` in its schema, `checkIfExists` for `dragenMetrics`), so a CRAM or a tarball
+registered outside the workspace bucket fails here, in `to_mount`, rather than in the driver pod.
+
+`dragenMetrics` is never empty: an empty value makes the pipeline recompute BAM_QC / VCF_QC for
+that sample, hours of worker pods nobody asked for. It is the alignment's DRAGEN metrics tarball
+or, when the alignment published none, the CRAM's directory. That fallback is not checked: the
+pipeline keeps only the files named after the sample, so a directory without them gives a green
+run with empty alignment sections. Each fallback is logged so it can be traced back.
 """
 
 import csv
 import io
+import logging
 
 from radiant.tasks.nextflow.paths import to_mount
 from radiant.tasks.nextflow.qc.model import QcCase, QcMember
 from radiant.tasks.nextflow.qc.resolve import strategy_of
+
+LOGGER = logging.getLogger(__name__)
 
 # Fixed by the pipeline's `assets/schema_input.json`. `lane` and `runId` are omitted: one
 # CRAM per sample, nothing to merge.
@@ -29,6 +38,7 @@ SAMPLESHEET_COLUMNS = [
     "status",
     "relationship_to_proband",
     "affected_status",
+    "dragenMetrics",
 ]
 
 SEX = {"male": "Male", "female": "Female", "unknown": "NA"}
@@ -53,6 +63,11 @@ def participant_id(member: QcMember) -> str:
     return f"P{member.patient_id}"
 
 
+def dragen_metrics_url(member: QcMember) -> str:
+    """The S3 url the `dragenMetrics` column points at: the tarball, else the CRAM's directory."""
+    return member.dragen_metrics_url or member.cram_url.rsplit("/", 1)[0]
+
+
 def build_inputs(cases: list[QcCase], inputs_root: str, inputs_mount: str) -> dict[str, str]:
     """`{relative key: content}` for one launcher run -- a single samplesheet."""
     return {"samplesheet.csv": build_samplesheet(cases, inputs_root, inputs_mount)}
@@ -64,6 +79,13 @@ def build_samplesheet(cases: list[QcCase], inputs_root: str, inputs_mount: str) 
     writer.writeheader()
     for case in cases:
         for member in case.members:
+            if not member.dragen_metrics_url:
+                LOGGER.warning(
+                    "case %d, aliquot %s: no DRAGEN metrics tarball, the pipeline reads %s",
+                    case.case_id,
+                    member.aliquot,
+                    dragen_metrics_url(member),
+                )
             writer.writerow(
                 {
                     "participant": participant_id(member),
@@ -79,6 +101,7 @@ def build_samplesheet(cases: list[QcCase], inputs_root: str, inputs_mount: str) 
                     "status": STATUS_NORMAL,
                     "relationship_to_proband": RELATIONSHIP.get(member.role, "Other"),
                     "affected_status": AFFECTED.get(member.affected_status, "Unknown"),
+                    "dragenMetrics": to_mount(dragen_metrics_url(member), inputs_root, inputs_mount),
                 }
             )
     return buffer.getvalue()
