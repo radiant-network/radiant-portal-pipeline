@@ -38,7 +38,9 @@ SELECT
         AS scores_from_mane_pair,
     c.vep_impact,
     c.aa_change,
-    c.dna_change
+    c.dna_change,
+    c.cds_start,
+    c.cds_end
 FROM (
     SELECT
         locus_hash,
@@ -60,6 +62,8 @@ FROM (
         vep_impact,
         aa_change,
         dna_change,
+        cds_start,
+        cds_end,
         -- A RefSeq row reads its scores under the Ensembl twin its MANE pair names.
         CASE
             WHEN source = 'RefSeq' THEN NULLIF(mane_pair_transcript_id, '')

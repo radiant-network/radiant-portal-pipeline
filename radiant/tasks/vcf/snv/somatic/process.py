@@ -12,7 +12,7 @@ from radiant.tasks.iceberg.table_accumulator import TableAccumulator
 from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s3_file
 from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.common import process_common
-from radiant.tasks.vcf.snv.consequence import log_source_counts, parse_csq_header, process_consequence
+from radiant.tasks.vcf.snv.consequence import log_invalid_cds, log_source_counts, parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence
 from radiant.tasks.vcf.snv.variant import process_variant
 
@@ -97,6 +97,7 @@ def process_task(
     consequence_table = catalog.load_table(consequences_table_name)
     consequence_buffer = TableAccumulator(consequence_table, partition_filter=variant_csq_partition_filter)
     source_counts = Counter()
+    invalid_cds = Counter()
     skipped_no_alt = 0
 
     for record in vcf:
@@ -115,7 +116,7 @@ def process_task(
                 if not any(o["tumor_has_alt"] for o in occurrences.values()):
                     skipped_no_alt += 1
                     continue
-                picked_consequence, consequences = process_consequence(record, csq_header, common)
+                picked_consequence, consequences = process_consequence(record, csq_header, common, invalid_cds)
                 source_counts.update(c["source"] for c in consequences)
                 consequence_buffer.extend(consequences)
                 occurrence_buffer.extend(list(occurrences.values()))
@@ -135,6 +136,7 @@ def process_task(
 
     #### End of VCF file processing, flush buffers ####
     log_source_counts(source_counts, task.task_id, task.vcf_filepath)
+    log_invalid_cds(invalid_cds, task.task_id, task.vcf_filepath)
     logger.info(f"Task {task.task_id}: skipped {skipped_no_alt} records with no alt call in the tumor")
 
     occurrence_buffer.write_files()

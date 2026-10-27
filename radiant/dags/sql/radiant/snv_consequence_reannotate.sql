@@ -53,7 +53,9 @@ SELECT
         AS scores_from_mane_pair,
     c.vep_impact,
     c.aa_change,
-    c.dna_change
+    c.dna_change,
+    c.cds_start,
+    c.cds_end
 FROM (
     SELECT
         con.*,
