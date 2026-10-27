@@ -71,21 +71,30 @@ once `import_part` has loaded it.
 
 ## Failures do not block the data
 
-Every step after `set_processing` runs with `trigger_rule=all_done`:
+The pipelines and the import run with `trigger_rule=all_done`:
 
 - on a day with no `submitted` case `set_processing` is skipped, and the cases already in
   `processing` or later with new files must still be processed;
 - a portal outage fails `set_processing`, and the pipelines still run;
-- a failed pipeline still lets the import and `evaluate_cases` run.
+- a failed SNV post-processing or somatic annotation still lets the import run.
 
-`evaluate_cases` takes **every** `processing` case, not only this run's, and holds back any case
-the second discovery still finds. A case whose pipeline failed stays `processing`, even with some
-variants in (say its SNV post-processing failed but the alignment's CNV VCF was imported), and is
-moved by the later run that finishes it. A case with nothing pending but no variant data stays
-`processing` too, and is logged as a warning by `select_ready_cases`.
+## A failed import, CNV post-processing or quality control stops the run
 
-Since the `all_done` chain would otherwise end green, `watcher` fails the run as soon as any step
-failed. Look at the failed task and at the child runs.
+The second discovery (`rediscover_*`, `refresh_case_statuses`) runs with
+`trigger_rule=none_failed`: if **trigger_import**, **trigger_germline_cnv_postprocessing** or
+**trigger_quality_control** failed, it is `upstream_failed`, and so are `select_ready_cases` and
+`evaluate_cases`. No case is moved to `in_progress` and no laboratory is emailed; the cases stay
+`processing` and the next run that gets through evaluates them.
+
+A failed SNV post-processing or somatic annotation does not stop it, as long as the import
+succeeds: `evaluate_cases` takes **every** `processing` case, not only this run's, and holds back
+any case the second discovery still finds. A case whose pipeline failed stays `processing`, even
+with some variants in (say its SNV post-processing failed but the alignment's CNV VCF was
+imported), and is moved by the later run that finishes it. A case with nothing pending but no
+variant data stays `processing` too, and is logged as a warning by `select_ready_cases`.
+
+Since the `all_done` steps would otherwise let the run end green, `watcher` fails the run as soon
+as any step failed. Look at the failed task and at the child runs.
 
 ## Tenants
 

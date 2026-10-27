@@ -4,10 +4,12 @@ Moves the cases with work waiting from `submitted` to `processing`, runs the fou
 DAGs and the scheduled import, then moves to `in_progress` the `processing` cases that every
 pipeline is done with and that have variant data. Those are the only two changes it ever sends.
 
-Everything after `set_processing` runs `all_done`. On a day with no `submitted` case,
-`set_processing` is skipped, and the cases already in `processing` or later with new files must
-still be processed; a portal outage must not hold the data back either. `watcher` turns the run
-red when anything upstream failed, since the `all_done` chain would otherwise end green.
+The pipelines run `all_done`. On a day with no `submitted` case, `set_processing` is skipped, and
+the cases already in `processing` or later with new files must still be processed; a portal outage
+must not hold the data back either. The evaluation after them runs `none_failed`: a failed import,
+CNV post-processing or quality control stops the run there, and no status changes nor email go out.
+`watcher` turns the run red when anything upstream failed, since the `all_done` steps would
+otherwise let it end green.
 
 `evaluate_cases` takes every `processing` case, not only this run's, and holds back any case
 discovery still finds after the pipelines. A case whose pipeline failed stays `processing`, even
@@ -220,7 +222,7 @@ def case_scheduler():
         sql="./sql/clinical/case_status_select.sql",
         output_processor=rows_output_processor,
         do_xcom_push=True,
-        trigger_rule=TriggerRule.ALL_DONE,
+        trigger_rule=TriggerRule.NONE_FAILED,
     )
 
     @task(
@@ -339,9 +341,10 @@ def case_scheduler():
 
     processing >> [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv, trigger_qc]
     [trigger_germline_snv, trigger_somatic_snv] >> trigger_import
-    # Asked again once every pipeline has finished, whatever its outcome: a case still pending
-    # somewhere has a pipeline left to run, and stays `processing`.
-    rediscovered = _discovery("rediscover", TriggerRule.ALL_DONE)
+    # Asked again once the import, CNV post-processing and quality control have succeeded: a case
+    # still pending somewhere has a pipeline left to run, and stays `processing`. If any of the
+    # three failed, nothing is evaluated nor emailed; the next run picks the cases up.
+    rediscovered = _discovery("rediscover", TriggerRule.NONE_FAILED)
     pipelines = [trigger_import, trigger_germline_cnv, trigger_qc]
     for query in [*rediscovered, refresh_case_statuses]:
         pipelines >> query
