@@ -83,19 +83,35 @@ def test_the_anti_join_is_on_the_qc_task_type_and_scoped_to_the_case():
     assert "radiant_germline_annotation" not in sql
 
 
-def test_every_alignment_output_document_comes_back():
-    """The metrics probe needs the directory of each output, whatever its type, so the
-    final select joins all of them rather than picking one."""
+def test_the_dragen_metrics_tarball_is_selected_on_type_fields_and_counted():
     sql = _without_comments(_render(_TEMPLATE))
-    assert "LEFT JOIN alignment_document ad" in sql
-    assert "ad.url                          AS document_url" in sql
+    tarball = _cte(sql, "dragen_metrics")
+    assert "data_type_code = 'ssup'" in tarball
+    assert "format_code    = 'tgz'" in tarball
+    assert "COUNT(DISTINCT url) AS matches" in tarball
+    assert "dm.url                          AS dragen_metrics_url" in sql
+    assert "WHEN dm.matches > 1     THEN 'ambiguous_dragen_metrics'" in sql
+
+
+def test_one_row_per_member_not_per_document():
+    """Each joined CTE has at most one row per experiment; joining the raw documents would
+    multiply the members."""
+    sql = _without_comments(_render(_TEMPLATE))
+    assert "LEFT JOIN alignment_document" not in sql
     assert "cr.url                          AS cram_url" in sql
     assert "ci.url                          AS crai_url" in sql
 
 
 def test_members_without_sequencing_come_back_carrying_a_reason():
     sql = _without_comments(_render(_TEMPLATE))
-    for reason in ("pending_sequencing", "pending_alignment", "no_cram", "ambiguous_cram", "no_project_code"):
+    for reason in (
+        "pending_sequencing",
+        "pending_alignment",
+        "no_cram",
+        "ambiguous_cram",
+        "ambiguous_dragen_metrics",
+        "no_project_code",
+    ):
         assert f"'{reason}'" in sql
     assert "LEFT JOIN current_experiment ce" in sql
 

@@ -1,23 +1,16 @@
--- One row per (candidate germline case, family member, alignment output document): the
--- member's *current* sequencing experiment, the CRAM of that experiment's *current*
--- alignment, every output document of that alignment, and why the case cannot run if it
--- cannot.
+-- One row per (candidate germline case, family member): the member's *current* sequencing
+-- experiment, the CRAM and the DRAGEN metrics tarball of that experiment's *current*
+-- alignment, and why the case cannot run if it cannot.
 --
 -- Consumed by `radiant-nextflow-quality-control-cases` (discover_scope). Full analysis:
--- `design/SJRA-1879-nextflow-quality-control-automation.md`.
+-- `design/SJRA-1879-nextflow-quality-control-automation.md`, and radiant-hub
+-- `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the tarball.
 --
 -- Sibling of `pending_annotation_select.sql`, deliberately *not* a shared template: the
 -- current-experiment and current-alignment CTEs are the same supersession policy
 -- (SJRA-1698 5), but the trigger document (CRAM here, gVCF there) and the anti-join (a
 -- `quality_control_metrics` task here, an annotation there) differ, and the unit tests render
 -- each file standalone. Keep the two `current_*` CTEs identical when touching either.
---
--- One row per document rather than one per member: the DRAGEN metrics are not documents,
--- and are found by probing S3 next to *whichever* alignment output they were written
--- beside (the gVCF in one layout, the CRAM in another). So every output url of the current
--- alignment comes back, and Python folds the rows into members. StarRocks' GROUP_CONCAT
--- would do it here, but its ORDER BY / DISTINCT form is version-dependent over the JDBC
--- catalog, and a plain join is not.
 --
 -- The tenant is returned, not filtered on: clinical is one shared schema and `cases.id` is
 -- unique across it. `params.excluded_tenants` is a block list, not a scope.
@@ -74,8 +67,7 @@ current_alignment AS (
     WHERE rn = 1
 ),
 alignment_document AS (
-    -- Every output of the current alignment. Selected on the task, never on filename: the
-    -- metrics probe needs the directory of each of them, whatever they are.
+    -- Every output of the current alignment. Selected on the task, never on filename.
     SELECT ca.seq_id        AS seq_id,
            ca.task_id       AS task_id,
            d.url            AS url,
@@ -103,6 +95,18 @@ crai AS (
     FROM alignment_document
     WHERE data_type_code = 'alignment'
       AND format_code    = 'crai'
+    GROUP BY seq_id
+),
+dragen_metrics AS (
+    -- The DRAGEN metrics tarball the pipeline reads instead of recomputing BAM_QC / VCF_QC.
+    -- Optional: a member without one gets its CRAM's directory. Counted like the CRAM, so two
+    -- means a mistyped document rather than a choice to make.
+    SELECT seq_id,
+           MAX(url)            AS url,
+           COUNT(DISTINCT url) AS matches
+    FROM alignment_document
+    WHERE data_type_code = 'ssup'
+      AND format_code    = 'tgz'
     GROUP BY seq_id
 ),
 quality_controlled AS (
@@ -146,15 +150,15 @@ SELECT gc.case_id                      AS case_id,
        cr.url                          AS cram_url,
        COALESCE(cr.matches, 0)         AS cram_matches,
        ci.url                          AS crai_url,
-       ad.url                          AS document_url,
-       ad.data_type_code               AS document_data_type,
-       ad.format_code                  AS document_format,
+       dm.url                          AS dragen_metrics_url,
+       COALESCE(dm.matches, 0)         AS dragen_metrics_matches,
        -- Most specific first. The two `pending_*` reasons are transient, not errors.
        CASE
            WHEN ce.seq_id  IS NULL THEN 'pending_sequencing'
            WHEN ca.task_id IS NULL THEN 'pending_alignment'
            WHEN cr.matches IS NULL THEN 'no_cram'
            WHEN cr.matches > 1     THEN 'ambiguous_cram'
+           WHEN dm.matches > 1     THEN 'ambiguous_dragen_metrics'
            WHEN pr.code    IS NULL THEN 'no_project_code'
            {% if params.excluded_tenants %}
            WHEN gc.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'
@@ -166,13 +170,13 @@ JOIN candidate cd                             ON cd.case_id = gc.case_id
 JOIN {{ mapping.clinical_family }} f          ON f.case_id = gc.case_id
 JOIN {{ mapping.clinical_patient }} p         ON p.id = f.family_member_id
 -- LEFT, all of them: a member with no experiment, alignment or CRAM must come back carrying
--- its reason, and a member with documents comes back once per document.
+-- its reason. Each CTE has at most one row per experiment, so a member comes back once.
 LEFT JOIN current_experiment ce               ON ce.case_id = gc.case_id
                                              AND ce.patient_id = p.id
 LEFT JOIN current_alignment ca                ON ca.seq_id = ce.seq_id
 LEFT JOIN cram cr                             ON cr.seq_id = ce.seq_id
 LEFT JOIN crai ci                             ON ci.seq_id = ce.seq_id
-LEFT JOIN alignment_document ad               ON ad.seq_id = ce.seq_id
+LEFT JOIN dragen_metrics dm                   ON dm.seq_id = ce.seq_id
 -- On the primary key alone: `project.code` is globally unique and a project's tenant_code
 -- need not equal the case's.
 LEFT JOIN {{ mapping.clinical_project }} pr   ON pr.id = gc.project_id
@@ -183,5 +187,4 @@ ORDER BY gc.case_id,
               WHEN 'mother'  THEN 2
               ELSE 3
          END,
-         p.id,
-         ad.url
+         p.id

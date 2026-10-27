@@ -24,17 +24,14 @@ def test_cleanup_only_runs_after_a_successful_pipeline(dag_bag):
     assert {t.task_id for t in cleanup.upstream_list} == {"run_quality_control"}
 
 
-def test_dag_exposes_exactly_the_three_per_run_values(dag_bag):
+def test_dag_exposes_exactly_the_two_per_run_values(dag_bag):
     """Guards against param creep: everything run-invariant belongs in the
-    nextflow-qc-params ConfigMap, not here."""
+    nextflow-qc-params ConfigMap, and the DRAGEN metrics in the samplesheet."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert set(dag.params) == {"input", "dragen_metrics_dir", "outdir"}
+    assert set(dag.params) == {"input", "outdir"}
 
 
-def test_input_and_dragen_metrics_dir_are_required_and_outdir_is_not(dag_bag):
-    """dragen_metrics_dir is optional upstream but required here: it is what selects
-    DRAGEN-metrics mode, and omitting it would silently launch a full BAM_QC/VCF_QC
-    recompute instead of failing."""
+def test_input_is_required_and_outdir_is_not(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     # outdir defaults to empty, which the driver reads as "derive from the run tag".
     assert dag.params["outdir"] == ""
@@ -53,8 +50,7 @@ def test_retries_are_configured_so_resume_is_reachable(dag_bag):
 
 def test_up_to_five_drivers_run_side_by_side(dag_bag):
     """Runs share no state -- RUN_TAG keys the launch dir, work dir and outdir -- so the cap
-    is a budget on cluster load, not a lock. The cases DAG fires one run per metrics
-    directory and matches this number."""
+    is a budget on cluster load, not a lock."""
     dag = dag_bag.get_dag(DAG_ID)
     assert dag.max_active_runs == 5
 

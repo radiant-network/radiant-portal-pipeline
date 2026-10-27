@@ -33,7 +33,7 @@ ARG PIPELINE_REV=0df1ac09dd8c44364cc7fdd2c4ba072f9b7717d9
 # `defaultBranch = 'master'` while the repo's actual default branch is `main`,
 # so a bare `nextflow pull` resolves a revision that does not exist.
 ARG QC_PIPELINE_REPO=Ferlab-Ste-Justine/quality-control-pipeline
-ARG QC_PIPELINE_REV=v2.0.0
+ARG QC_PIPELINE_REV=v2.1.0-beta.1
 
 # Same `-r` story (manifest says `master`). Pinned to a commit of the
 # feat/BIOINFO-214-expand-CNV-post-processing branch until the expanded pipeline
@@ -45,7 +45,7 @@ ARG CNV_PIPELINE_REV=cad99b4e0b7e39f5d88dfbd028d426df693dee4e
 # Keep in sync with each pipeline's own `plugins` block: snv-post-processing
 # (v3.0.0 through the pinned commit) declares nf-schema@2.1.0 (v2.11.0 declared
 # nf-validation@1.1.3 - a different plugin, not a version bump),
-# quality-control-pipeline v2.0.0 and
+# quality-control-pipeline v2.1.0-beta.1 and
 # cnv-post-processing both declare nf-schema@2.3.0. Nextflow keeps versioned
 # plugin directories side by side, so
 # both resolve; a missing one fails at plugin resolution, offline, with no way to

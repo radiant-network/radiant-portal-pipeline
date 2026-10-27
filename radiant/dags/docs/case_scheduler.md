@@ -44,9 +44,8 @@ The union of:
 
 - the cases each "from Cases" DAG would run: its own `pending_*_select.sql` query and its own
   `select_cases` (`select_tasks` for somatic annotation, whose unit is the calling task: its cases
-  count), with the run's `excluded_tenants` (the list that DAG is given), plus, for QC, its S3
-  probe for the DRAGEN metrics (`locate_metrics`, under `$NEXTFLOW_INPUTS_ROOT`). A case that DAG would exclude
-  (sequencing pending, no gVCF, tenant not granted, metrics not found...) is **not** counted: it
+  count), with the run's `excluded_tenants` (the list that DAG is given). A case that DAG would exclude
+  (sequencing pending, no gVCF, tenant not granted, two DRAGEN metrics tarballs...) is **not** counted: it
   would sit in `processing` with nothing running for it, and never reach `in_progress`;
 - the cases the import still has work for (`sql/radiant/import_pending_case_select.sql`): those in
   the delta view, `staging_sequencing_experiment_delta`, and those already inserted into
