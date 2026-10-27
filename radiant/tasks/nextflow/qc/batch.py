@@ -1,9 +1,9 @@
 """Build the `PATCH /{tenant}/cases/batch` body registering a QC run's outputs.
 
 One `quality_control_metrics` task per case, bound to every member's aliquot, with the
-alignment's CRAM and index as inputs (documents that already exist in the tenant, so
-TASK-005 holds) and the per-family MultiQC set as outputs. PATCH appends: a re-run adds a
-second task alongside the first.
+alignment's CRAM, index and DRAGEN metrics tarball as inputs (documents that already exist in
+the tenant, so TASK-005 holds) and the per-family MultiQC set as outputs. PATCH appends: a
+re-run adds a second task alongside the first.
 """
 
 from radiant.tasks.nextflow.batch import GENOME_BUILD
@@ -12,8 +12,8 @@ from radiant.tasks.nextflow.qc.model import QcCase
 QC_TASK_TYPE = "quality_control_metrics"
 
 # The revision the launcher image pins (`QC_PIPELINE_REV` in Dockerfile.nextflow.launcher).
-# Bump both together.
-QC_PIPELINE = ("quality-control-pipeline", "2.0.0")
+# Bump both together. The tag, not the manifest: v2.1.0-beta.1 still declares `version = '2.0.0'`.
+QC_PIPELINE = ("quality-control-pipeline", "2.1.0-beta.1")
 
 
 def build_patch_body(cases: list[QcCase], collected: dict[str, dict]) -> dict:
@@ -21,7 +21,7 @@ def build_patch_body(cases: list[QcCase], collected: dict[str, dict]) -> dict:
     body = []
     for case in cases:
         documents = collected[case.family_id]
-        inputs = [{"url": url} for m in case.members for url in (m.cram_url, m.crai_url) if url]
+        inputs = [{"url": url} for m in case.members for url in (m.cram_url, m.crai_url, m.dragen_metrics_url) if url]
         body.append(
             {
                 "project_code": case.project_code,

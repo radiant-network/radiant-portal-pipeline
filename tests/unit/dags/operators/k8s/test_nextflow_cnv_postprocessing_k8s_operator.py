@@ -142,8 +142,6 @@ def test_cnv_image_falls_back_to_the_shared_var_and_can_be_pinned_alone():
             "shared:v1"
         )
         assert (
-            NextflowQualityControl.get_run_quality_control(
-                input_csv="/i.csv", outdir="", dragen_metrics_dir="/m", run_tag="t"
-            ).image
+            NextflowQualityControl.get_run_quality_control(input_csv="/i.csv", outdir="", run_tag="t").image
             == "shared:v1"
         )

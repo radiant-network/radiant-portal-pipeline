@@ -1,29 +1,21 @@
 """Find the germline cases waiting for a QC report, run the pipeline, register the result.
 
-`radiant-nextflow-quality-control` runs the Ferlab quality-control-pipeline in DRAGEN-metrics
-mode. This DAG closes the two manual ends around it, the way `nextflow_snv_postprocessing_cases`
-does for annotation: it discovers which cases have been aligned but never QC'd, builds the
-samplesheet, triggers that DAG, then registers what the run published back onto the cases as
-one `quality_control_metrics` task each, carrying the per-family MultiQC set as `aggqc`
-documents.
+`radiant-nextflow-quality-control` runs the Ferlab quality-control-pipeline. This DAG closes the
+two manual ends around it, the way `nextflow_snv_postprocessing_cases` does for annotation: it
+discovers which cases have been aligned but never QC'd, builds the samplesheet, triggers that
+DAG, then registers what the run published back onto the cases as one `quality_control_metrics`
+task each, carrying the per-family MultiQC set as `aggqc` documents.
 
-    discover_scope -> select_cases -> locate_metrics -> group_cases -> generate_inputs (one per dir)
-                                                                              |
-                                                                        run_pipeline (one per dir)
-                                                                              |
-              register_tasks (one per tenant) <- collect_outputs <------------+
+    discover_scope -> select_cases -> resolve_cases -> generate_inputs -> run_pipeline
+                                                                               |
+                      register_tasks (one per tenant) <- collect_outputs <-----+
 
-Two things make this more than a copy of the annotation DAG:
+The DRAGEN metrics come from the clinical model: each member's samplesheet row carries its
+alignment's `ssup`/`tgz` tarball in `dragenMetrics`, or its CRAM's directory when there is none.
+The pipeline handles each sample on its own, so every case of the run goes into one launcher run.
 
-- the DRAGEN metrics are not documents. `locate_metrics` probes S3 for
-  `<aliquot>.mapping_metrics.csv` next to each alignment's output documents, rather than
-  guessing a convention, because the pipeline matches metrics by exact sample name and *fails
-  open* -- a wrong directory is a green run with an empty report;
-- `--dragen_metrics_dir` is one directory per Nextflow run. Cases are grouped by the directory
-  the probe found, neighbouring directories are merged into a safe common parent, and one
-  launcher run is fired per group; the launcher runs up to five at a time.
-
-Full analysis: `design/SJRA-1879-nextflow-quality-control-automation.md`.
+Full analysis: `design/SJRA-1879-nextflow-quality-control-automation.md`, and radiant-hub
+`docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the `dragenMetrics` column.
 """
 
 import logging
@@ -55,9 +47,6 @@ PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-quality-control"
 # Under the shared roots, apart from post-processing (`snv-runs/`, `snv/`).
 INPUTS_SUBDIR = "qc-runs"
 OUTPUTS_SUBDIR = "qc"
-
-# The launcher accepts this many concurrent runs; each has its own launch dir and outdir.
-LAUNCHER_MAX_ACTIVE_RUNS = 5
 
 
 dag_params = {
@@ -108,20 +97,6 @@ def _workspace_env() -> dict[str, str]:
     }
 
 
-def _group_paths(env: dict[str, str], run_tag: str) -> dict:
-    from radiant.tasks.nextflow.paths import run_paths
-
-    return run_paths(
-        inputs_root=env["inputs_root"],
-        outputs_root=env["outputs_root"],
-        inputs_mount=env["inputs_mount"],
-        outputs_mount=env["outputs_mount"],
-        run_tag=run_tag,
-        inputs_subdir=INPUTS_SUBDIR,
-        outputs_subdir=OUTPUTS_SUBDIR,
-    )
-
-
 @dag(
     dag_id=f"{NAMESPACE}-nextflow-quality-control-cases",
     dag_display_name="Radiant - Nextflow Quality Control (from Cases)",
@@ -154,8 +129,8 @@ def nextflow_quality_control_cases():
     )
 
     @task(task_id="select_cases", task_display_name="[PyOp] Select the cases that can run")
-    def select_cases(document_rows: Any) -> Any:
-        """Fold the document rows into members, keep what can run, report what cannot."""
+    def select_cases(member_rows: Any) -> Any:
+        """Keep the cases that can run, report the ones that cannot."""
         from airflow.exceptions import AirflowSkipException
         from airflow.operators.python import get_current_context
 
@@ -163,7 +138,7 @@ def nextflow_quality_control_cases():
 
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
-        selection = select(document_rows, requested, strict=bool(requested))
+        selection = select(member_rows, requested, strict=bool(requested))
 
         if not selection.case_ids:
             raise AirflowSkipException(
@@ -182,67 +157,34 @@ def nextflow_quality_control_cases():
             "excluded": [e.model_dump() for e in selection.excluded],
         }
 
-    @task(task_id="locate_metrics", task_display_name="[PyOp] Locate each case's DRAGEN metrics on S3")
-    def locate_metrics(selected: Any) -> Any:
-        """Probe S3 for each member's metrics and drop the cases that have none."""
-        from airflow.exceptions import AirflowFailException, AirflowSkipException
+    @task(task_id="resolve_cases", task_display_name="[PyOp] Resolve cases to families")
+    def resolve_cases(selected: Any) -> Any:
+        from radiant.tasks.nextflow.qc.resolve import resolve_cases as resolve
+
+        return [c.model_dump() for c in resolve(selected["members"])]
+
+    @task(task_id="generate_inputs", task_display_name="[PyOp] Generate the samplesheet")
+    def generate_inputs(cases: Any) -> Any:
+        """Write the run's samplesheet to its own S3 prefix. FSx auto-imports it, so the
+        pipeline sees it on its mount without this task needing the PVC."""
+        import boto3
         from airflow.operators.python import get_current_context
 
-        from radiant.tasks.nextflow.qc.metrics import S3Lister
-        from radiant.tasks.nextflow.qc.metrics import locate_metrics as locate
-        from radiant.tasks.nextflow.qc.resolve import resolve_cases
-
-        context = get_current_context()
-        env = _workspace_env()
-        cases = resolve_cases(selected["members"])
-        lister = S3Lister()
-        kept, excluded = locate(cases, lister.list_dir, lister.list_tree, env["inputs_root"])
-
-        # Named tasks are an operator's request: a case whose metrics cannot be found is an
-        # error they must see. A discovered scope is the job's own doing: a line in a report.
-        if excluded and context["params"]["task_ids"]:
-            raise AirflowFailException("\n".join(f"{e.reason}: {e.detail}" for e in excluded))
-        if not kept:
-            raise AirflowSkipException(f"nothing to run: {len(excluded)} case(s) had no locatable DRAGEN metrics")
-        return [c.model_dump() for c in kept]
-
-    @task(task_id="group_cases", task_display_name="[PyOp] Group cases by metrics directory")
-    def group_cases(cases: Any) -> Any:
-        """One launcher run if every case's metrics share a safe common directory, otherwise one
-        per directory. A plain list, because Airflow can only map over a task's return value,
-        not a keyed XCom."""
-        from airflow.operators.python import get_current_context
-
-        from radiant.tasks.nextflow.paths import sanitize_run_tag
-        from radiant.tasks.nextflow.qc.metrics import S3Lister, group_by_dir
+        from radiant.tasks.nextflow.paths import run_paths, sanitize_run_tag, split_s3_uri
+        from radiant.tasks.nextflow.qc.inputs import build_inputs
         from radiant.tasks.nextflow.qc.model import QcCase
 
         env = _workspace_env()
-        groups = group_by_dir(
-            [QcCase(**c) for c in cases],
-            sanitize_run_tag(get_current_context()["run_id"]),
-            S3Lister().list_tree,
-            env["inputs_root"],
+        paths = run_paths(
+            inputs_root=env["inputs_root"],
+            outputs_root=env["outputs_root"],
+            inputs_mount=env["inputs_mount"],
+            outputs_mount=env["outputs_mount"],
+            run_tag=sanitize_run_tag(get_current_context()["run_id"]),
+            inputs_subdir=INPUTS_SUBDIR,
+            outputs_subdir=OUTPUTS_SUBDIR,
         )
-        for group in groups:
-            LOGGER.info("run %s: %s -> case(s) %s", group.run_tag, group.metrics_dir_s3, group.case_ids)
-        return [g.model_dump() for g in groups]
-
-    @task(task_id="generate_inputs", task_display_name="[PyOp] Generate one samplesheet per metrics directory")
-    def generate_inputs(group: Any, cases: Any) -> Any:
-        """Write one group's samplesheet to its own S3 prefix, and return the child run's
-        `trigger_run_id` and `conf` -- the shape `expand_kwargs` needs downstream."""
-        import boto3
-
-        from radiant.tasks.nextflow.paths import split_s3_uri, to_mount
-        from radiant.tasks.nextflow.qc.inputs import build_inputs
-        from radiant.tasks.nextflow.qc.model import MetricsGroup, QcCase
-
-        env = _workspace_env()
-        parsed_group = MetricsGroup(**group)
-        parsed_cases = [QcCase(**c) for c in cases if c["case_id"] in parsed_group.case_ids]
-        paths = _group_paths(env, parsed_group.run_tag)
-        files = build_inputs(parsed_cases, env["inputs_root"], env["inputs_mount"])
+        files = build_inputs([QcCase(**c) for c in cases], env["inputs_root"], env["inputs_mount"])
 
         bucket, prefix = split_s3_uri(paths["input_prefix_s3"])
         # Load-bearing: the next block deletes everything under `prefix` on a bucket shared
@@ -263,60 +205,42 @@ def nextflow_quality_control_cases():
         LOGGER.info("wrote %d file(s) to %s", len(files), paths["input_prefix_s3"])
         LOGGER.info("samplesheet:\n%s", files["samplesheet.csv"])
 
-        return {
-            # Pinned, not auto-generated: a retry re-enters the same child run and its
-            # Nextflow launch dir, so `-resume` finds what already completed.
-            "trigger_run_id": parsed_group.run_tag,
-            "conf": {
-                "input": paths["samplesheet_pod"],
-                "dragen_metrics_dir": to_mount(parsed_group.metrics_dir_s3, env["inputs_root"], env["inputs_mount"]),
-                "outdir": paths["outdir_pod"],
-            },
-        }
+        return paths
 
     @task(task_id="collect_outputs", task_display_name="[PyOp] Collect pipeline outputs")
-    def collect_outputs(cases: Any, groups: Any) -> Any:
+    def collect_outputs(cases: Any, paths: Any) -> Any:
         import time
 
         import boto3
 
         from radiant.tasks.nextflow.paths import split_s3_uri
-        from radiant.tasks.nextflow.qc.model import MetricsGroup, QcCase
+        from radiant.tasks.nextflow.qc.model import QcCase
         from radiant.tasks.nextflow.qc.outputs import MissingOutputsError, collect
 
-        env = _workspace_env()
-        parsed_cases = [QcCase(**c) for c in cases]
+        parsed = [QcCase(**c) for c in cases]
+        bucket, prefix = split_s3_uri(paths["outdir_s3"])
         s3 = boto3.client("s3")
-        collected: dict[str, dict] = {}
 
-        for raw in groups:
-            group = MetricsGroup(**raw)
-            group_cases = [c for c in parsed_cases if c.case_id in group.case_ids]
-            outdir_s3 = _group_paths(env, group.run_tag)["outdir_s3"]
-            bucket, prefix = split_s3_uri(outdir_s3)
-            last_error = None
-            # The FSx export is a best-effort drain, not a barrier, so the outputs can lag
-            # the driver pod's exit by a little.
-            for attempt in range(1, OUTPUT_POLL_ATTEMPTS + 1):
-                listing = {
-                    obj["Key"][len(prefix) + 1 :]: obj["Size"]
-                    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=f"{prefix}/")
-                    for obj in page.get("Contents", [])
-                }
-                try:
-                    collected.update(collect(group_cases, listing, outdir_s3))
-                    last_error = None
-                    break
-                except MissingOutputsError as error:
-                    last_error = error
-                    LOGGER.warning("%s attempt %d/%d: %s", group.run_tag, attempt, OUTPUT_POLL_ATTEMPTS, error)
-                    if attempt < OUTPUT_POLL_ATTEMPTS:
-                        time.sleep(OUTPUT_POLL_INTERVAL_SECONDS)
-            if last_error is not None:
-                raise last_error
-
-        LOGGER.info("collected outputs for %d case(s)", len(collected))
-        return collected
+        last_error = None
+        # The FSx export is a best-effort drain, not a barrier, so the outputs can lag the
+        # driver pod's exit by a little.
+        for attempt in range(1, OUTPUT_POLL_ATTEMPTS + 1):
+            listing = {
+                obj["Key"][len(prefix) + 1 :]: obj["Size"]
+                for page in s3.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=f"{prefix}/")
+                for obj in page.get("Contents", [])
+            }
+            try:
+                collected = collect(parsed, listing, paths["outdir_s3"])
+            except MissingOutputsError as error:
+                last_error = error
+                LOGGER.warning("attempt %d/%d: %s", attempt, OUTPUT_POLL_ATTEMPTS, error)
+                if attempt < OUTPUT_POLL_ATTEMPTS:
+                    time.sleep(OUTPUT_POLL_INTERVAL_SECONDS)
+                continue
+            LOGGER.info("collected outputs for %d case(s)", len(collected))
+            return collected
+        raise last_error
 
     @task(task_id="list_tenants", task_display_name="[PyOp] List the tenants to register into")
     def list_tenants(cases: Any) -> Any:
@@ -346,28 +270,30 @@ def nextflow_quality_control_cases():
         body = build_patch_body(parsed, collected)
         return register_case_batch(tenant, body, context["params"]["dry_run"])
 
-    selection = select_cases(discover_scope.output)
-    cases = locate_metrics(selection)
-    groups = group_cases(cases)
+    cases = resolve_cases(select_cases(discover_scope.output))
+    paths = generate_inputs(cases)
 
-    inputs = generate_inputs.partial(cases=cases).expand(group=groups)
-
-    run_pipeline = TriggerDagRunOperator.partial(
+    run_pipeline = TriggerDagRunOperator(
         task_id="run_pipeline",
         task_display_name="[DAG] Run Nextflow Quality Control",
         trigger_dag_id=PIPELINE_DAG_ID,
+        # Pinned, not auto-generated: a retry of *this* DAG re-enters the same child run and
+        # its Nextflow launch dir, so `-resume` finds what already completed.
+        trigger_run_id="{{ ti.xcom_pull(task_ids='generate_inputs')['run_tag'] }}",
+        conf={
+            "input": "{{ ti.xcom_pull(task_ids='generate_inputs')['samplesheet_pod'] }}",
+            "outdir": "{{ ti.xcom_pull(task_ids='generate_inputs')['outdir_pod'] }}",
+        },
         wait_for_completion=True,
         reset_dag_run=True,
         deferrable=True,
         poke_interval=60,
-        # Matches the launcher's own limit, so the children queue here rather than there.
-        max_active_tis_per_dagrun=LAUNCHER_MAX_ACTIVE_RUNS,
-    ).expand_kwargs(inputs)
+    )
 
-    collected = collect_outputs(cases, groups)
+    collected = collect_outputs(cases, paths)
     register_tasks.partial(cases=cases, collected=collected).expand(tenant=list_tenants(cases))
 
-    run_pipeline >> collected
+    paths >> run_pipeline >> collected
 
 
 nextflow_quality_control_cases()

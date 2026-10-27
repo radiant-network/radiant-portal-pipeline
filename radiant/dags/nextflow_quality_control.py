@@ -1,4 +1,4 @@
-"""Run the Ferlab quality-control-pipeline from Airflow, in DRAGEN-metrics mode.
+"""Run the Ferlab quality-control-pipeline from Airflow.
 
 A single task launches a Nextflow *driver* pod on qlin-eks; that driver then spawns
 one worker pod per pipeline process through Nextflow's own k8s executor. Airflow
@@ -6,17 +6,18 @@ sees one task, Kubernetes sees a fan-out. Same shape as
 `nextflow_snv_postprocessing.py`, and the same driver image -- only the pipeline asset
 and the ConfigMap pair differ.
 
-DRAGEN metrics only
--------------------
+DRAGEN metrics
+--------------
 The samples this runs on have already been through DRAGEN, so the report is built
-from DRAGEN's per-sample metric CSVs rather than recomputed. That mode is selected
-purely by passing ``--dragen_metrics_dir``, which is why the param is **required**
-here although it is optional upstream: triggering without it would silently launch a
-full BAM_QC/VCF_QC recompute, which is hours of worker pods nobody asked for.
+from DRAGEN's per-sample metric CSVs rather than recomputed. That mode is selected per
+sample by the samplesheet's ``dragenMetrics`` column (a directory or a tarball), not by
+a param here. A row with that column empty silently launches a full BAM_QC/VCF_QC
+recompute for its sample, which is hours of worker pods: the cases DAG always fills it,
+and a hand-written samplesheet should too.
 
 Run-invariant settings (reference genome, somalier sites, QC thresholds, cohort
 mode) live in the `nextflow-qc-params` ConfigMap, the executor and resource layout in
-`nextflow-qc-cfg` -- both owned by the kustomization in qlin-qa-infra. Only the three
+`nextflow-qc-cfg` -- both owned by the kustomization in qlin-qa-infra. Only the two
 values that change every run are exposed here as DAG params.
 
 Resume
@@ -46,17 +47,9 @@ dag_params = {
             "Absolute path to the samplesheet on the shared workspace, e.g. "
             "/workspace/inputs/qc/1000genomes-dragen-v4-4-7/samplesheet.csv. Columns: "
             "participant,sample,fileType,file1 required; file2, familyId, experimentalStrategy, "
-            "sex, status, relationship_to_proband, affected_status, lane, runId optional."
-        ),
-        minLength=1,
-    ),
-    "dragen_metrics_dir": Param(
-        type="string",
-        title="DRAGEN metrics directory",
-        description=(
-            "Absolute path to the directory of DRAGEN per-sample metric CSVs. Globbed at any "
-            "depth and matched to samplesheet rows by sample prefix; files matching no row are "
-            "silently ignored. Setting it is what skips BAM_QC and VCF_QC."
+            "sex, status, relationship_to_proband, affected_status, dragenMetrics, lane, runId "
+            "optional. dragenMetrics is the sample's directory or tarball of DRAGEN metric CSVs; "
+            "setting it is what skips BAM_QC and VCF_QC for that sample."
         ),
         minLength=1,
     ),
@@ -100,7 +93,6 @@ def nextflow_quality_control():
     run = operators.NextflowQualityControl.get_run_quality_control(
         input_csv="{{ params.input }}",
         outdir="{{ params.outdir }}",
-        dragen_metrics_dir="{{ params.dragen_metrics_dir }}",
         run_tag=run_tag,
     )
     cleanup = operators.NextflowQualityControl.get_cleanup_work(run_tag=run_tag)

@@ -14,8 +14,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
     assert set(dag.task_ids) == {
         "discover_scope",
         "select_cases",
-        "locate_metrics",
-        "group_cases",
+        "resolve_cases",
         "generate_inputs",
         "run_pipeline",
         "collect_outputs",
@@ -42,24 +41,32 @@ def test_discovery_uses_the_qc_query(dag_bag):
     assert "radiant_germline_annotation" not in sql
 
 
-def test_one_launcher_run_per_metrics_directory(dag_bag):
-    """`--dragen_metrics_dir` is one directory per Nextflow run, so both the samplesheet and
-    the trigger are mapped over the groups `locate_metrics` produced."""
+def test_one_launcher_run_for_every_case(dag_bag):
+    """The pipeline reads each sample's DRAGEN metrics from its samplesheet row, so nothing
+    splits the cases: one samplesheet, one child run."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert isinstance(dag.get_task("generate_inputs"), MappedOperator)
+    assert not isinstance(dag.get_task("generate_inputs"), MappedOperator)
     run_pipeline = dag.get_task("run_pipeline")
-    assert isinstance(run_pipeline, MappedOperator)
-    assert run_pipeline.partial_kwargs["trigger_dag_id"] == PIPELINE_DAG_ID
-    assert run_pipeline.partial_kwargs["wait_for_completion"] is True
-    assert run_pipeline.partial_kwargs["reset_dag_run"] is True
-    assert run_pipeline.partial_kwargs["deferrable"] is True
+    assert not isinstance(run_pipeline, MappedOperator)
+    assert run_pipeline.trigger_dag_id == PIPELINE_DAG_ID
+    assert run_pipeline.wait_for_completion is True
+    assert run_pipeline.reset_dag_run is True
+    # `_defer` is where TriggerDagRunOperator keeps `deferrable`.
+    assert run_pipeline._defer is True
     assert {t.task_id for t in run_pipeline.upstream_list} == {"generate_inputs"}
+
+
+def test_the_child_run_gets_only_the_samplesheet_and_the_outdir(dag_bag):
+    """No `dragen_metrics_dir`: the launcher no longer has that param."""
+    run_pipeline = dag_bag.get_dag(DAG_ID).get_task("run_pipeline")
+    assert set(run_pipeline.conf) == {"input", "outdir"}
+    assert "generate_inputs" in run_pipeline.trigger_run_id
 
 
 def test_the_pipeline_runs_between_generating_inputs_and_collecting_outputs(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert "run_pipeline" in {t.task_id for t in dag.get_task("collect_outputs").upstream_list}
-    assert {t.task_id for t in dag.get_task("generate_inputs").upstream_list} == {"locate_metrics", "group_cases"}
+    assert {t.task_id for t in dag.get_task("generate_inputs").upstream_list} == {"resolve_cases"}
 
 
 def test_registration_is_last_and_mapped_over_tenants(dag_bag):
@@ -67,7 +74,7 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     register = dag.get_task("register_tasks")
     assert isinstance(register, MappedOperator)
     assert register.downstream_list == []
-    assert {t.task_id for t in register.upstream_list} == {"list_tenants", "collect_outputs", "locate_metrics"}
+    assert {t.task_id for t in register.upstream_list} == {"list_tenants", "collect_outputs", "resolve_cases"}
     assert register.partial_kwargs.get("max_active_tis_per_dagrun") == 1
 
 

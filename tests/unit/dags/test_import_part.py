@@ -202,8 +202,10 @@ def test_dag_contains_all_tasks(dag_bag):
         "refresh_iceberg_tables",
         "germline_cnv_occurrence.sanity_check_cnvs",
         "germline_cnv_occurrence.insert_germline_cnv_occurrences",
+        "germline_cnv_occurrence.aggregate_germline_cnv_variant_freq",
         "somatic_cnv_occurrence.sanity_check_somatic_cnvs",
         "somatic_cnv_occurrence.insert_somatic_cnv_occurrences",
+        "somatic_cnv_occurrence.aggregate_somatic_cnv_variant_freq",
         "insert_variant_hashes",
         "overwrite_snv_tmp_variant",
         "insert_exomiser",
@@ -249,8 +251,17 @@ def test_dag_task_dependencies_are_valid(dag_bag):
     # `trigger_rule=NONE_FAILED` to survive a germline-only part skipping the germline insert.
     assert (
         "somatic_cnv_occurrence.sanity_check_somatic_cnvs"
-        in dag.get_task("germline_cnv_occurrence.insert_germline_cnv_occurrences").downstream_task_ids
+        in dag.get_task("germline_cnv_occurrence.aggregate_germline_cnv_variant_freq").downstream_task_ids
     )
+
+    # RAD-120: each CNV frequency recompute runs after its occurrence insert, and is skipped with it.
+    for kind in ("germline", "somatic"):
+        aggregate = dag.get_task(f"{kind}_cnv_occurrence.aggregate_{kind}_cnv_variant_freq")
+        assert aggregate.upstream_task_ids == {
+            f"{kind}_cnv_occurrence.insert_{kind}_cnv_occurrences",
+            "extract_tenants",
+        }
+        assert aggregate.trigger_rule == TriggerRule.ALL_SUCCESS
     assert dag.get_task("somatic_cnv_occurrence.sanity_check_somatic_cnvs").trigger_rule == TriggerRule.NONE_FAILED
 
     # Phase 5 opens once Phase 4 is fully complete, so both CNV groups sit behind every SNV group --
@@ -271,7 +282,7 @@ def test_dag_task_dependencies_are_valid(dag_bag):
     # Phase 5 closes the run: its checkpoint gates the sequencing-experiment updates.
     assert (
         "checkpoint_after_cnv"
-        in dag.get_task("somatic_cnv_occurrence.insert_somatic_cnv_occurrences").downstream_task_ids
+        in dag.get_task("somatic_cnv_occurrence.aggregate_somatic_cnv_variant_freq").downstream_task_ids
     )
     checkpoint_cnv_downstream = dag.get_task("checkpoint_after_cnv").downstream_task_ids
     assert {"delete_sequencing_experiments", "update_sequencing_experiment"} == checkpoint_cnv_downstream

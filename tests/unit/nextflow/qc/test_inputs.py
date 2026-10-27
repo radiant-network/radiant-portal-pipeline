@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 
 import pytest
 
@@ -59,9 +60,33 @@ def test_strategy_is_per_row(cases):
     assert rows["HG00096"]["experimentalStrategy"] == "WXS"
 
 
+def test_dragen_metrics_is_the_tarball_s_pod_path(cases):
+    rows = {r["sample"]: r for r in _rows(build_samplesheet(cases, BUCKET, MOUNT))}
+    assert rows["NA12878"]["dragenMetrics"] == f"{MOUNT}/dragen/run-42/NA12878/NA12878.extra.tgz"
+
+
+def test_without_a_tarball_dragen_metrics_is_the_cram_s_directory(cases, caplog):
+    with caplog.at_level(logging.WARNING):
+        rows = {r["sample"]: r for r in _rows(build_samplesheet(cases, BUCKET, MOUNT))}
+    assert rows["HG00096"]["dragenMetrics"] == f"{MOUNT}/dragen/run-43/cram"
+    assert "case 8, aliquot HG00096: no DRAGEN metrics tarball" in caplog.text
+    assert "NA12878" not in caplog.text
+
+
+def test_dragen_metrics_is_never_empty(cases):
+    """An empty value makes the pipeline recompute BAM_QC / VCF_QC for that sample."""
+    assert all(r["dragenMetrics"] for r in _rows(build_samplesheet(cases, BUCKET, MOUNT)))
+
+
 def test_a_cram_outside_the_workspace_bucket_fails_here_not_in_the_pod(cases):
     with pytest.raises(ValueError, match="not in the workspace bucket"):
         build_samplesheet(cases, "s3://elsewhere", MOUNT)
+
+
+def test_a_tarball_outside_the_workspace_bucket_fails_here_too(cases):
+    cases[1].proband.dragen_metrics_url = "s3://elsewhere/NA12878.extra.tgz"
+    with pytest.raises(ValueError, match="not in the workspace bucket"):
+        build_samplesheet(cases, BUCKET, MOUNT)
 
 
 def test_the_only_input_is_the_samplesheet(cases):

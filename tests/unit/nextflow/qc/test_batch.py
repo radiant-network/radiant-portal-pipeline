@@ -4,7 +4,7 @@ from radiant.tasks.nextflow.qc.batch import QC_PIPELINE, QC_TASK_TYPE, build_pat
 from radiant.tasks.nextflow.qc.outputs import collect, expected_keys
 from radiant.tasks.nextflow.qc.resolve import resolve_cases, select_cases
 
-OUTDIR = "s3://qlin-nextflow-outputs/run-g0"
+OUTDIR = "s3://qlin-nextflow-outputs/run"
 
 
 @pytest.fixture
@@ -31,12 +31,18 @@ def test_the_task_binds_every_member_and_names_the_pipeline(body):
     assert task["genome_build"] == "GRch38"
 
 
-def test_inputs_are_the_alignment_cram_and_index(body):
+def test_inputs_are_the_alignment_cram_index_and_metrics_tarball(body):
     """Documents that already exist in the tenant, so TASK-005 holds however the portal
     treats TASK-003 for this task type."""
     inputs = [d["url"] for d in body["cases"][1]["tasks"][0]["input_documents"]]
-    assert len(inputs) == 6
-    assert all(u.endswith((".cram", ".cram.crai")) for u in inputs)
+    assert len(inputs) == 9
+    assert all(u.endswith((".cram", ".cram.crai", ".extra.tgz")) for u in inputs)
+
+
+def test_without_a_tarball_the_inputs_are_the_cram_and_index_only(body):
+    """The CRAM directory the pipeline read instead is not a document."""
+    inputs = [d["url"] for d in body["cases"][0]["tasks"][0]["input_documents"]]
+    assert [u.rsplit("/", 1)[-1] for u in inputs] == ["HG00096.cram", "HG00096.cram.crai"]
 
 
 def test_outputs_are_the_whole_multiqc_set(body):
