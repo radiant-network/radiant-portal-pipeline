@@ -209,6 +209,87 @@ def test_process_task_skips_records_no_sample_carries(
     assert not set(consequences.locus_hash) - set(occ.locus_hash), "Consequences written for a skipped record"
 
 
+def test_process_task_writes_cds_position(
+    setup_iceberg_namespace,
+    iceberg_catalog_properties,
+    iceberg_client,
+    rest_iceberg_catalog_instance,
+    tmp_path,
+):
+    """RAD-71: `CDS_position` reaches the Iceberg `snv_consequence` table, split into `cds_start` and `cds_end`.
+
+    The unit tests stop at the extracted dicts, and the StarRocks insert test seeds Iceberg by hand. This is the
+    only test that goes through the writer, which drops a field the table schema does not know, with no error.
+    """
+    with open(RESOURCES_DIR / "test.vcf") as f:
+        header = [line for line in f if line.startswith("##")]
+
+    def csq(consequence, impact, transcript, cds_position, pick=""):
+        # Allele|Consequence|IMPACT|SYMBOL|Feature_type|Gene|PUBMED|PICK|Feature|EXON|BIOTYPE|INTRON|HGVSc|HGVSp|
+        # STRAND|CDS_position|cDNA_position|Protein_position|Amino_acids|Codons|VARIANT_CLASS|HGVSg|CANONICAL|RefSeq
+        fields = ["A", consequence, impact, "GENE1", "Transcript", "ENSG0001", "", pick, transcript, ""]
+        fields += ["protein_coding", "", "", "", "1", cds_position, "", "", "", "", "", "", "", ""]
+        return "|".join(fields)
+
+    records = [
+        # SNV: a single position on its coding transcript, NULL on the intronic one
+        "chr1\t1000\t.\tG\tA\t44.64\tPASS\tCSQ="
+        + csq("missense_variant", "MODERATE", "ENST0001.1", "227", pick="1")
+        + ","
+        + csq("intron_variant", "MODIFIER", "ENST0002.1", "")
+        + "\tGT:AD\t0/1:4,7",
+        # deletion: a range, and a range whose start falls outside the CDS
+        "chr1\t2000\t.\tGACC\tG\t44.64\tPASS\tCSQ="
+        + csq("inframe_deletion", "MODERATE", "ENST0001.1", "621-623", pick="1")
+        + ","
+        + csq("coding_sequence_variant&5_prime_UTR_variant", "MODIFIER", "ENST0003.1", "?-125")
+        + "\tGT:AD\t0/1:4,7",
+    ]
+    vcf_path = tmp_path / "cds.vcf"
+    vcf_path.write_text(
+        "".join(header) + "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSA0001\n" + "\n".join(records) + "\n"
+    )
+
+    task = RadiantGermlineAnnotationTask(
+        task_id=71,
+        part=1,
+        analysis_type="germline",
+        deleted=False,
+        experiments=[
+            Experiment(
+                seq_id=711,
+                patient_id=711,
+                aliquot="SA0001",
+                tenant_code="tenant1",
+                family_role="proband",
+                affected_status="affected",
+                sex="F",
+                experimental_strategy="wgs",
+                request_priority="routine",
+            )
+        ],
+        vcf_filepath=str(vcf_path),
+    )
+    partitions_to_commit = process_task(
+        task,
+        catalog_name=rest_iceberg_catalog_instance.catalog_name,
+        namespace=setup_iceberg_namespace,
+        catalog_properties=iceberg_catalog_properties,
+    )
+    for table_name, partitions in partitions_to_commit.items():
+        commit_files(iceberg_client.load_table(table_name), partitions)
+
+    rows = iceberg_client.load_table(f"{setup_iceberg_namespace}.snv_consequence").scan().to_arrow().to_pylist()
+    positions = {(r["start"], r["transcript_id"]): (r["cds_start"], r["cds_end"]) for r in rows if r["task_id"] == 71}
+
+    assert positions == {
+        (1000, "ENST0001"): (227, 227),
+        (1000, "ENST0002"): (None, None),
+        (2000, "ENST0001"): (621, 623),
+        (2000, "ENST0003"): (None, 125),
+    }, "Unexpected (cds_start, cds_end) in the consequences table"
+
+
 def test_process_task_writes_comphet_pairs(
     setup_iceberg_namespace,
     iceberg_catalog_properties,

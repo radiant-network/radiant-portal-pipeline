@@ -19,6 +19,10 @@ sources:
                 - transcript_id
                 - mane_pair_transcript_id
                 - transcript_version
+                # RAD-71: NULL on every row until the re-import fills them. Remove once every environment
+                # is re-imported, so the test starts guarding the columns.
+                - cds_start
+                - cds_end
 
           # --- Should Not Contain Same Value ---------------------------------
           - should_not_contain_same_value:
@@ -127,3 +131,7 @@ sources:
                   values: "{{ dict_vep_impact() }}"
                   config:
                     where: "vep_impact is not null"
+          - name: cds_start
+            description: "INT"
+          - name: cds_end
+            description: "INT"

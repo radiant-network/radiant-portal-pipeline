@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_snv_consequence }} (
     `scores_from_mane_pair` boolean NOT NULL DEFAULT "false" COMMENT "",
     `vep_impact` VARCHAR(20) NULL COMMENT "",
     `aa_change` varchar(2000) NULL COMMENT "",
-    `dna_change` varchar(2000) NULL COMMENT ""
+    `dna_change` varchar(2000) NULL COMMENT "",
+    `cds_start` INT NULL COMMENT "",
+    `cds_end` INT NULL COMMENT ""
 )
 ENGINE=OLAP
 PRIMARY KEY(`locus_id`, `symbol`, `transcript_id`)

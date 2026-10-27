@@ -1,5 +1,6 @@
 import logging
 from collections import Counter
+from types import SimpleNamespace
 
 import pytest
 
@@ -7,7 +8,9 @@ from radiant.tasks.vcf.experiment import Experiment, RadiantGermlineAnnotationTa
 from radiant.tasks.vcf.snv.common import Common
 from radiant.tasks.vcf.snv.consequence import (
     extract_transcript_version,
+    log_invalid_cds,
     log_source_counts,
+    parse_cds_position,
     parse_csq_header,
     process_consequence,
     resolve_source,
@@ -48,6 +51,8 @@ def test_one_sample():
         "alternate": "A",
         "biotype": "protein_coding",
         "task_id": 1,
+        "cds_end": 227,
+        "cds_start": 227,
         "chromosome": "1",
         "consequences": ["missense_variant"],
         "dna_change": "c.227A>T",
@@ -133,6 +138,9 @@ def test_a_non_merged_file_extracts_exactly_as_before():
         "aa_change": None,
         "alternate": "A",
         "biotype": "protein_coding",
+        # Upstream of the gene: VEP leaves `CDS_position` empty.
+        "cds_end": None,
+        "cds_start": None,
         "chromosome": "1",
         "consequences": ["upstream_gene_variant"],
         "dna_change": None,
@@ -437,3 +445,111 @@ def test_log_source_counts_is_quiet_when_every_row_is_classified(caplog):
 
     assert not [r for r in caplog.records if r.levelno == logging.WARNING]
     assert "unclassified=0" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        # SNV: one base, both ends.
+        ("227", (227, 227)),
+        # Deletion of six bases (test_consequence_merged.vcf, chr1:45343095 GCCCCCT>G).
+        ("927-932", (927, 932)),
+        # Insertion: the two bases on each side of the insertion point, not the inserted bases. A 1-base
+        # dup from a VEP 114 merged VCF of NA12878 (chr21:33576378 G>GA).
+        ("7235-7236", (7235, 7236)),
+        # Indel partly outside the CDS: the known end is kept, the other one is NULL.
+        ("?-125", (None, 125)),
+        ("123-?", (123, None)),
+        # Intronic, UTR, non-coding or intergenic: VEP leaves the value empty.
+        ("", (None, None)),
+        # The column is absent from the CSQ header.
+        (None, (None, None)),
+    ],
+)
+def test_parse_cds_position(value, expected):
+    assert parse_cds_position(value) == expected
+
+
+# Anything else is of unknown shape, reported as such rather than guessed at.
+@pytest.mark.parametrize("value", ["?-?", "?", "abc", "12-", "-12", "1.5", "123-125-127", " 123"])
+def test_parse_cds_position_rejects_unknown_shapes(value):
+    with pytest.raises(ValueError, match="Unexpected CDS_position"):
+        parse_cds_position(value)
+
+
+def test_cds_position_is_read_per_consequence():
+    v = variant("test_consequence_one_sample.vcf", row_number=2)
+    with vcf("test_consequence_one_sample.vcf") as vcf_file:
+        csq_header = parse_csq_header(vcf_file)
+
+    _, consequences = process_consequence(v, csq_header, common)
+
+    assert [(c["cds_start"], c["cds_end"]) for c in consequences] == [(375, 375)]
+
+
+def test_cds_position_is_null_when_the_column_is_absent_from_the_header():
+    # An older VCF whose CSQ header has no `CDS_position` still loads, with no position.
+    v = variant("test_consequence_lowercase_csq_no_exon.vcf")
+    with vcf("test_consequence_lowercase_csq_no_exon.vcf") as vcf_file:
+        csq_header = parse_csq_header(vcf_file)
+
+    assert "cds_position" not in csq_header
+
+    invalid = Counter()
+    _, consequences = process_consequence(v, csq_header, common, invalid)
+
+    assert consequences
+    assert all(c["cds_start"] is None and c["cds_end"] is None for c in consequences)
+    assert not invalid
+
+
+# A plain mapping in place of a parsed header: `Consequence` is the one column extraction cannot do without.
+_CSQ_FIELDS = {"consequence": 0, "cds_position": 1}
+
+
+def _csq_record(*cds_positions):
+    """A stand-in for a cyvcf2 record with one coding CSQ block per `CDS_position` value."""
+    return SimpleNamespace(INFO={"CSQ": ",".join(f"missense_variant|{value}" for value in cds_positions)})
+
+
+def test_cds_position_of_unknown_shape_is_counted_and_loaded_as_null():
+    record = _csq_record("abc", "12", "", "abc")
+    invalid = Counter()
+
+    _, consequences = process_consequence(record, _CSQ_FIELDS, common, invalid)
+
+    assert [(c["cds_start"], c["cds_end"]) for c in consequences] == [
+        (None, None),
+        (12, 12),
+        (None, None),
+        (None, None),
+    ]
+    assert invalid == Counter({"abc": 2})
+
+
+def test_cds_position_of_unknown_shape_does_not_need_a_counter():
+    record = _csq_record("abc")
+
+    _, consequences = process_consequence(record, _CSQ_FIELDS, common)
+
+    assert (consequences[0]["cds_start"], consequences[0]["cds_end"]) == (None, None)
+
+
+def test_log_invalid_cds_warns_once_per_file(caplog):
+    caplog.set_level(logging.INFO, logger="airflow.task")
+
+    log_invalid_cds(Counter({"abc": 3, "?-?": 1}), task_id=1, vcf_filepath="/tmp/merged.vcf.gz")
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "4 consequence rows" in warnings[0].getMessage()
+    assert "'abc'" in warnings[0].getMessage()
+    assert "/tmp/merged.vcf.gz" in warnings[0].getMessage()
+
+
+def test_log_invalid_cds_is_quiet_when_every_value_is_known(caplog):
+    caplog.set_level(logging.INFO, logger="airflow.task")
+
+    log_invalid_cds(Counter(), task_id=1, vcf_filepath="/tmp/merged.vcf.gz")
+
+    assert not caplog.records
