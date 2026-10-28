@@ -1,11 +1,13 @@
 import asyncio
+import threading
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
 from airflow.triggers.base import TriggerEvent
 from pymysql import ProgrammingError
 
-from radiant.tasks.starrocks.trigger import StarRocksTaskCompleteTrigger
+from radiant.tasks.starrocks.trigger import StarRocksTaskCompleteTrigger, UnsupportedConnectionError
 
 
 class _StarRocksMock:
@@ -25,12 +27,14 @@ class _StarRocksMock:
 
 @pytest.fixture
 def starrocks():
-    with patch("radiant.tasks.starrocks.trigger.BaseHook.get_connection") as mock_get_connection:
-        mock_cursor = MagicMock()
-        mock_conn = MagicMock()
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-        mock_connection = MagicMock()
-        mock_connection.get_hook.return_value.get_conn.return_value = mock_conn
+    mock_cursor = MagicMock()
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+    mock_connection = MagicMock()
+    with (
+        patch("radiant.tasks.starrocks.trigger.BaseHook.get_connection") as mock_get_connection,
+        patch.object(StarRocksTaskCompleteTrigger, "_driver_connect", return_value=lambda: mock_conn),
+    ):
         mock_get_connection.return_value = mock_connection
         yield _StarRocksMock(mock_get_connection, mock_connection, mock_conn, mock_cursor)
 
@@ -48,6 +52,10 @@ def no_wait():
 
 def _trigger(sleep_time=1, **kwargs):
     return StarRocksTaskCompleteTrigger(conn_id="test_conn", task_name="test_task", sleep_time=sleep_time, **kwargs)
+
+
+async def _aget_connect():
+    return MagicMock()
 
 
 def _run(trigger):
@@ -202,7 +210,10 @@ def test_run_recovers_from_hung_query():
     # `new=` (not side_effect): patch would otherwise build an AsyncMock for the async `to_thread` and the
     # inner coroutine would come back un-awaited.
     trigger = _trigger(query_timeout=0.05)
-    with patch("radiant.tasks.starrocks.trigger.asyncio.to_thread", new=lambda _fn: fetch()):
+    with (
+        patch.object(trigger, "_aget_connect", new=_aget_connect),
+        patch("radiant.tasks.starrocks.trigger.asyncio.to_thread", new=lambda _fn, _conn: fetch()),
+    ):
         result = _run(trigger)
 
     assert len(result) == 1
@@ -215,11 +226,145 @@ def test_run_fails_after_repeated_hung_queries():
         await asyncio.Event().wait()
 
     trigger = _trigger(query_timeout=0.01)
-    with patch("radiant.tasks.starrocks.trigger.asyncio.to_thread", new=lambda _fn: never_returns()):
+    with (
+        patch.object(trigger, "_aget_connect", new=_aget_connect),
+        patch("radiant.tasks.starrocks.trigger.asyncio.to_thread", new=lambda _fn, _conn: never_returns()),
+    ):
         result = _run(trigger)
 
     assert result[0].payload.get("status") == "error"
     assert "query timed out" in result[0].payload.get("error_message")
+
+
+def test_airflow_is_only_touched_on_the_event_loop():
+    """Airflow 3: any supervisor call from the worker thread (get_connection, or the MaskSecret sent by
+    `extra_dejson`) corrupts the triggerer's supervisor channel. Only the bare driver call may run there."""
+    threads = {}
+    mock_conn = MagicMock()
+    mock_conn.cursor.return_value.__enter__.return_value.fetchone.return_value = ("SUCCESS", None)
+    connection = MagicMock()
+
+    async def aget_connection(conn_id):
+        threads["aget_connection"] = threading.get_ident()
+        return connection
+
+    def driver_connect(hook, conn):
+        threads["driver_connect"] = threading.get_ident()
+
+        def connect():
+            threads["connect"] = threading.get_ident()
+            return mock_conn
+
+        return connect
+
+    async def run_trigger():
+        threads["loop"] = threading.get_ident()
+        return [event async for event in _trigger().run()]
+
+    with (
+        patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new=aget_connection, create=True),
+        patch("radiant.tasks.starrocks.trigger.BaseHook.get_connection") as get_connection,
+        patch.object(StarRocksTaskCompleteTrigger, "_driver_connect", new=staticmethod(driver_connect)),
+    ):
+        result = asyncio.run(run_trigger())
+
+    assert result[0].payload.get("status") == "success"
+    get_connection.assert_not_called()
+    connection.get_hook.assert_called_once_with(hook_params={"connection": connection})
+    assert threads["aget_connection"] == threads["loop"]
+    assert threads["driver_connect"] == threads["loop"]
+    assert threads["connect"] != threads["loop"]
+
+
+def test_airflow2_falls_back_to_sync_get_connection_in_a_thread(starrocks):
+    """No `aget_connection` (Airflow 2): the sync lookup is safe, there is no supervisor socket."""
+    starrocks.cursor.fetchone.return_value = ("SUCCESS", None)
+
+    with patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new=None, create=True):
+        result = _run(_trigger())
+
+    assert result[0].payload.get("status") == "success"
+    starrocks.get_connection.assert_called_once_with("test_conn")
+
+
+def test_connection_lookup_is_not_cancelled_by_query_timeout(starrocks):
+    """Cancelling a supervisor call between request and reply would desync the socket: never bound it."""
+    starrocks.cursor.fetchone.return_value = ("SUCCESS", None)
+
+    async def slow_aget_connection(conn_id):
+        await asyncio.to_thread(time.sleep, 0.05)  # longer than query_timeout; asyncio.sleep is patched out
+        return starrocks.connection
+
+    with patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new=slow_aget_connection, create=True):
+        result = _run(_trigger(query_timeout=0.01))
+
+    assert result[0].payload.get("status") == "success"
+
+
+def test_connection_lookup_error_is_retried(starrocks):
+    starrocks.cursor.fetchone.return_value = ("SUCCESS", None)
+    starrocks.get_connection.side_effect = [RuntimeError("supervisor hiccup"), starrocks.connection]
+
+    trigger = _trigger()
+    result = _run(trigger)
+
+    assert result[0].payload.get("status") == "success"
+    assert starrocks.get_connection.call_count == 2
+
+
+def test_unsupported_connection_fails_without_retrying():
+    with (
+        patch("radiant.tasks.starrocks.trigger.BaseHook.get_connection") as get_connection,
+        patch.object(
+            StarRocksTaskCompleteTrigger, "_driver_connect", side_effect=UnsupportedConnectionError("not mysql")
+        ),
+    ):
+        result = _run(_trigger())
+
+    assert result[0].payload == {"status": "error", "error_message": "not mysql"}
+    assert get_connection.call_count == 1
+
+
+_HOOK_KWARGS = {"host": "starrocks.mock", "port": 9030}
+_TIMEOUTS = {"connect_timeout": 10, "read_timeout": 60, "write_timeout": 60}
+
+
+@pytest.mark.parametrize(
+    ("extra", "module", "builder", "expected_kwargs"),
+    [
+        ({}, "MySQLdb", "_get_conn_config_mysql_client", _HOOK_KWARGS),
+        ({"client": "mysqlclient"}, "MySQLdb", "_get_conn_config_mysql_client", _HOOK_KWARGS),
+        # The provider drops these extras; the trigger forwards them so an abandoned thread's recv() is bounded.
+        (_TIMEOUTS, "MySQLdb", "_get_conn_config_mysql_client", {**_HOOK_KWARGS, **_TIMEOUTS}),
+        (
+            {"client": "mysql-connector-python", **_TIMEOUTS},
+            "mysql.connector",
+            "_get_conn_config_mysql_connector_python",
+            _HOOK_KWARGS,
+        ),
+    ],
+)
+def test_driver_connect_uses_the_hook_kwargs_for_the_configured_client(extra, module, builder, expected_kwargs):
+    hook = MagicMock()
+    getattr(hook, builder).return_value = dict(_HOOK_KWARGS)
+    connection = MagicMock(extra_dejson=extra)
+    driver = MagicMock()
+    modules = {module: driver, "mysql": MagicMock(connector=driver)} if "." in module else {module: driver}
+
+    with patch.dict("sys.modules", modules):
+        connect = StarRocksTaskCompleteTrigger._driver_connect(hook, connection)
+        driver.connect.assert_not_called()
+        connect()
+
+    getattr(hook, builder).assert_called_once_with(connection)
+    driver.connect.assert_called_once_with(**expected_kwargs)
+
+
+def test_driver_connect_rejects_a_non_mysql_hook():
+    connection = MagicMock(extra_dejson={}, conn_id="starrocks_conn")
+
+    with pytest.raises(UnsupportedConnectionError, match="starrocks_conn.*MySqlHook"):
+        StarRocksTaskCompleteTrigger._driver_connect(object(), connection)
 
 
 def test_serialize_round_trips_query_timeout():
