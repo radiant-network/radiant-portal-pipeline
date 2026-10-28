@@ -73,6 +73,22 @@ PROPERTIES (
 )
 """
 
+# Stands in for the staging view, which reads the clinical catalog: the columns the migration reads, one row per
+# (case, sequencing, task) as the view gives them after the PostgreSQL migration.
+_VIEW = """
+CREATE TABLE staging_external_sequencing_experiment
+(
+    case_id           INT,
+    seq_id            INT,
+    task_id           INT,
+    task_type         VARCHAR(100),
+    tenant_code       VARCHAR(50),
+    exomiser_filepath VARCHAR(1024)
+)
+DUPLICATE KEY(`case_id`, `seq_id`, `task_id`)
+DISTRIBUTED BY HASH(`seq_id`) BUCKETS 1
+"""
+
 _STAGING_COLUMNS = (
     "case_id, seq_id, task_id, task_type, part, analysis_type, aliquot, patient_id, experimental_strategy, "
     "tenant_code, vcf_filepath, exomiser_filepath, family_id, family_role, created_at, updated_at, ingested_at, "
@@ -178,6 +194,7 @@ def migration(starrocks_database, radiant_mapping):
                 )
             with connections["shared"].cursor() as cursor:
                 cursor.execute(staging_ddl)
+                cursor.execute(_VIEW)
                 cursor.execute(_LEGACY_RAW_EXOMISER)
             with connections["tenant"].cursor() as cursor:
                 cursor.execute(_LEGACY_EXOMISER.format(colocate_group=radiant_mapping["colocate_query_group"]))
@@ -198,12 +215,18 @@ def migration(starrocks_database, radiant_mapping):
                     cursor.execute(f"DROP DATABASE IF EXISTS {name} FORCE")
 
 
-def _insert(migration, staging_rows, exomiser_seq_ids):
+def _insert(migration, staging_rows, view_rows, exomiser_seq_ids):
+    """`view_rows`: (case_id, seq_id, task_id, exomiser_filepath) of the proband annotation rows of the view."""
     with migration.databases["shared"].cursor() as cursor:
         cursor.executemany(
             f"INSERT INTO staging_sequencing_experiment ({_STAGING_COLUMNS}) "
             f"VALUES ({', '.join(['%s'] * len(_STAGING_COLUMNS.split(',')))})",
             staging_rows,
+        )
+        cursor.executemany(
+            "INSERT INTO staging_external_sequencing_experiment VALUES "
+            f"(%s, %s, %s, 'radiant_germline_annotation', '{_TENANT}', %s)",
+            view_rows,
         )
     with migration.databases["tenant"].cursor() as cursor:
         cursor.executemany(
@@ -251,33 +274,59 @@ def test_migration_moves_the_files_and_rebuilds_exomiser_per_task(migration):
             _staging(3, 24, 301, "radiant_germline_annotation", "mother"),
             _staging(3, 25, 301, "radiant_germline_annotation", "father"),
             _staging(3, 21, 302, "exomiser", "proband", "s3://test/CA3.exomiser.variants.tsv"),
+            # Sequencing 81 in two cases, one annotation task each (801 on case 8, 901 on case 9), legacy tasks 802
+            # and 902: the view gives every task of the sequencing a row in both cases.
+            *(
+                _staging(case_id, 81, task_id, "radiant_germline_annotation", "proband")
+                for case_id in (8, 9)
+                for task_id in (801, 901)
+            ),
+            *(
+                _staging(
+                    case_id, 81, task_id, "exomiser", "proband", f"s3://test/CA{task_id // 100}.exomiser.variants.tsv"
+                )
+                for case_id in (8, 9)
+                for task_id in (802, 902)
+            ),
         ],
-        exomiser_seq_ids={11: 2, 21: 3},
+        view_rows=[
+            (1, 11, 101, "s3://test/CA1.exomiser.variants.tsv"),
+            (2, 21, 201, "s3://test/CA2.exomiser.variants.tsv"),
+            (3, 21, 301, "s3://test/CA3.exomiser.variants.tsv"),
+            *(
+                (case_id, 81, task_id, f"s3://test/CA{task_id // 100}.exomiser.variants.tsv")
+                for case_id in (8, 9)
+                for task_id in (801, 901)
+            ),
+        ],
+        exomiser_seq_ids={11: 2, 21: 3, 81: 2},
     )
 
     # 0. The checks, before any write.
     assert migration.run("0a", "shared") == ()
     assert migration.run("0b", "shared") == ()
     assert migration.run("0c", "tenant") == ()
-    assert migration.run("0d", "shared") == ((21, 2),)
+    assert migration.run("0d", "shared") == ((21, 2), (81, 2))
 
     # 1. Staging rows.
     migration.run("1", "shared")
     with migration.databases["shared"].cursor() as cursor:
-        cursor.execute(
-            "SELECT task_id, seq_id, exomiser_filepath, ingested_at FROM staging_sequencing_experiment "
-            "ORDER BY task_id, seq_id"
-        )
-        staging = {(task_id, seq_id): filepath for task_id, seq_id, filepath, _ in cursor.fetchall()}
+        cursor.execute("SELECT case_id, task_id, seq_id, exomiser_filepath FROM staging_sequencing_experiment")
+        staging = {(case_id, task_id, seq_id): filepath for case_id, task_id, seq_id, filepath in cursor.fetchall()}
     assert staging == {
-        (101, 11): "s3://test/CA1.exomiser.variants.tsv",
-        (101, 12): None,
-        (101, 13): None,
-        (201, 21): "s3://test/CA2.exomiser.variants.tsv",
-        (201, 24): None,
-        (301, 21): "s3://test/CA3.exomiser.variants.tsv",
-        (301, 24): None,
-        (301, 25): None,
+        (1, 101, 11): "s3://test/CA1.exomiser.variants.tsv",
+        (1, 101, 12): None,
+        (1, 101, 13): None,
+        (2, 201, 21): "s3://test/CA2.exomiser.variants.tsv",
+        (2, 201, 24): None,
+        (3, 301, 21): "s3://test/CA3.exomiser.variants.tsv",
+        (3, 301, 24): None,
+        (3, 301, 25): None,
+        # Each task gets its own file, in both cases.
+        (8, 801, 81): "s3://test/CA8.exomiser.variants.tsv",
+        (9, 801, 81): "s3://test/CA8.exomiser.variants.tsv",
+        (8, 901, 81): "s3://test/CA9.exomiser.variants.tsv",
+        (9, 901, 81): "s3://test/CA9.exomiser.variants.tsv",
     }
 
     # 2. raw_exomiser: task_id after acmg_evidence, the generated columns still last.
@@ -294,41 +343,56 @@ def test_migration_moves_the_files_and_rebuilds_exomiser_per_task(migration):
         cursor.execute("DESC exomiser")
         assert [row[0] for row in cursor.fetchall()][:5] == ["part", "seq_id", "task_id", "locus_id", "id"]
         cursor.execute("SELECT seq_id, task_id, count(1) FROM exomiser GROUP BY seq_id, task_id")
-        # The trio's rows get its only Exomiser task; the re-run sequencing 21 is left out, for re-import.
+        # The trio's rows get its only Exomiser task; the re-run sequencings 21 and 81 are left out, for re-import.
         assert cursor.fetchall() == ((11, 101, 2),)
         cursor.execute("SELECT count(1) FROM exomiser_task_id")
-        assert cursor.fetchall() == ((5,),)
+        assert cursor.fetchall() == ((7,),)
 
-    # 4. Re-import marks: every row of the re-run sequencing's annotation tasks, for every family member.
+    # 4. Re-import marks: every row of the re-run sequencings' annotation tasks, for every family member.
     migration.run("4", "shared")
     with migration.databases["shared"].cursor() as cursor:
         cursor.execute(
-            "SELECT task_id, seq_id FROM staging_sequencing_experiment "
-            "WHERE ingested_at IS NULL ORDER BY task_id, seq_id"
+            "SELECT task_id, case_id, seq_id FROM staging_sequencing_experiment "
+            "WHERE ingested_at IS NULL ORDER BY task_id, case_id, seq_id"
         )
-        assert cursor.fetchall() == ((201, 21), (201, 24), (301, 21), (301, 24), (301, 25))
+        assert cursor.fetchall() == (
+            (201, 2, 21),
+            (201, 2, 24),
+            (301, 3, 21),
+            (301, 3, 24),
+            (301, 3, 25),
+            (801, 8, 81),
+            (801, 9, 81),
+            (901, 8, 81),
+            (901, 9, 81),
+        )
 
 
 def test_checks_list_the_rows_the_migration_cannot_place(migration):
     _insert(
         migration,
         [
-            # A legacy Exomiser row with no proband annotation row of its case and sequencing.
+            # A legacy Exomiser row whose file the view gives to no annotation task.
             _staging(4, 41, 402, "exomiser", "proband", "s3://test/CA4.exomiser.variants.tsv"),
             _staging(4, 41, 403, "alignment_germline_variant_calling", "proband"),
-            # A legacy Exomiser row with two proband annotation rows of its case and sequencing.
+            # A legacy Exomiser row whose file the view does not give to the annotation task: another file instead.
             _staging(5, 51, 501, "radiant_germline_annotation", "proband"),
-            _staging(5, 51, 503, "radiant_germline_annotation", "proband"),
             _staging(5, 51, 502, "exomiser", "proband", "s3://test/CA5.exomiser.variants.tsv"),
-            # Two legacy Exomiser rows matching one proband annotation row.
+            # A proband annotation row that the view gives two files.
             _staging(7, 71, 701, "radiant_germline_annotation", "proband"),
-            _staging(7, 71, 702, "exomiser", "proband", "s3://test/CA7.exomiser.variants.tsv"),
-            _staging(7, 71, 704, "exomiser", "proband", "s3://test/CA7.rerun.exomiser.variants.tsv"),
         ],
-        # Sequencing 61 has Exomiser rows and no staging row at all.
+        view_rows=[
+            (5, 51, 501, "s3://test/CA5.other.exomiser.variants.tsv"),
+            (7, 71, 701, "s3://test/CA7.exomiser.variants.tsv"),
+            (7, 71, 701, "s3://test/CA7.rerun.exomiser.variants.tsv"),
+        ],
+        # Sequencings 41 and 61 have Exomiser rows and no annotation task with an Exomiser file in the view.
         exomiser_seq_ids={41: 1, 61: 2},
     )
 
-    assert set(migration.run("0a", "shared")) == {(4, 41, 402, 0), (5, 51, 502, 2)}
+    assert set(migration.run("0a", "shared")) == {
+        (4, 41, 402, "s3://test/CA4.exomiser.variants.tsv"),
+        (5, 51, 502, "s3://test/CA5.exomiser.variants.tsv"),
+    }
     assert migration.run("0b", "shared") == ((7, 71, 701, 2),)
-    assert migration.run("0c", "tenant") == ((61, 2),)
+    assert set(migration.run("0c", "tenant")) == {(41, 1), (61, 2)}
