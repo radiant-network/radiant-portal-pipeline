@@ -1,8 +1,7 @@
 -- The Exomiser files become outputs of the annotation tasks, and the Exomiser tables are keyed per task.
 --
---   staging_sequencing_experiment   the `exomiser_filepath` of each legacy `exomiser` row moves to the proband's
---                                   `radiant_germline_annotation` row of the same case and sequencing; the legacy rows
---                                   are deleted
+--   staging_sequencing_experiment   the proband's `radiant_germline_annotation` rows get the `exomiser_filepath` that
+--                                   the staging view gives them; the legacy `exomiser` rows are deleted
 --   raw_exomiser                    `task_id INT` added after `acmg_evidence`, the last ordinary column (the generated
 --                                   columns `locus` and `locus_hash` stay last), outside the key. No backfill
 --   exomiser                        rebuilt with `task_id INT NOT NULL` as its third column, key
@@ -33,8 +32,15 @@
 --
 -- Run checks 0a to 0c in every database BEFORE any write. If one returns a row, stop and fix the data.
 --
+-- SOURCE OF THE FILES. Step 1 reads the staging view (staging_external_sequencing_experiment), not the legacy rows.
+-- The PostgreSQL migration has moved the legacy documents to the annotation tasks and deleted the legacy tasks, so
+-- the view gives each proband annotation row its Exomiser file, as the import will. The legacy rows cannot be paired
+-- with an annotation row: their task is gone from task_context, and the view gives every task of a sequencing a row
+-- in each case of that sequencing (it joins task_context on the sequencing only), so a sequencing in two cases has
+-- two proband annotation rows per case. Check 0a makes sure that no legacy file is lost.
+--
 -- `UPDATE ... FROM` needs StarRocks 3.0 or later (staging_sequencing_experiment is a Primary Key table). When several
--- rows of the join match one target row, StarRocks uses one at random: checks 0a and 0b make the match unique.
+-- rows of the join match one target row, StarRocks uses one at random: check 0b makes the match unique.
 --
 -- New deployments get the new columns from init/staging_exomiser_create_table.sql and init/exomiser_create_table.sql
 -- and must NOT run this script. StarRocks has no `ADD COLUMN IF NOT EXISTS`, so re-running step 2 fails on the ALTER.
@@ -44,62 +50,51 @@
 -- 0a. Check, base database, read-only. Must return nothing.
 -- ---------------------------------------------------------------------------------------------------
 --
--- A legacy `exomiser` row with no proband annotation row of the same case and sequencing, or with several: step 1
--- would not move its file, or would move it to a random one of them.
+-- A legacy `exomiser` row whose file the view does not give to a proband annotation row of the same sequencing:
+-- step 1 would lose it.
 
-SELECT l.case_id, l.seq_id, l.task_id, COUNT(a.task_id) AS proband_annotation_rows
+SELECT l.case_id, l.seq_id, l.task_id, l.exomiser_filepath
 FROM staging_sequencing_experiment l
-LEFT JOIN staging_sequencing_experiment a
-    ON a.case_id = l.case_id
-   AND a.seq_id = l.seq_id
-   AND a.task_type = 'radiant_germline_annotation'
-   AND a.family_role = 'proband'
-   AND NOT a.deleted
+LEFT JOIN (
+    SELECT DISTINCT seq_id, exomiser_filepath
+    FROM staging_external_sequencing_experiment
+    WHERE task_type = 'radiant_germline_annotation'
+      AND exomiser_filepath IS NOT NULL
+) v ON v.seq_id = l.seq_id AND v.exomiser_filepath = l.exomiser_filepath
 WHERE l.task_type = 'exomiser'
   AND NOT l.deleted
-GROUP BY l.case_id, l.seq_id, l.task_id
-HAVING COUNT(a.task_id) <> 1;
+  AND v.seq_id IS NULL;
 
 
 -- ---------------------------------------------------------------------------------------------------
 -- 0b. Check, base database, read-only. Must return nothing.
 -- ---------------------------------------------------------------------------------------------------
 --
--- A proband annotation row that several legacy `exomiser` rows of the same case and sequencing match: step 1 would
--- keep one of their files at random and lose the others.
+-- A proband annotation row that the view gives several files: step 1 would keep one of them at random.
 
-SELECT a.case_id, a.seq_id, a.task_id, COUNT(l.task_id) AS legacy_rows
-FROM staging_sequencing_experiment a
-JOIN staging_sequencing_experiment l
-    ON l.case_id = a.case_id
-   AND l.seq_id = a.seq_id
-   AND l.task_type = 'exomiser'
-   AND NOT l.deleted
-WHERE a.task_type = 'radiant_germline_annotation'
-  AND a.family_role = 'proband'
-  AND NOT a.deleted
-GROUP BY a.case_id, a.seq_id, a.task_id
-HAVING COUNT(l.task_id) > 1;
+SELECT case_id, seq_id, task_id, COUNT(DISTINCT exomiser_filepath) AS exomiser_files
+FROM staging_external_sequencing_experiment
+WHERE task_type = 'radiant_germline_annotation'
+  AND exomiser_filepath IS NOT NULL
+GROUP BY case_id, seq_id, task_id
+HAVING COUNT(DISTINCT exomiser_filepath) > 1;
 
 
 -- ---------------------------------------------------------------------------------------------------
 -- 0c. Check, every {tenant}_tenant database, read-only. Must return nothing.
 -- ---------------------------------------------------------------------------------------------------
 --
--- An `exomiser` row whose sequencing will have no proband annotation row with an `exomiser_filepath` once step 1 is
--- done: no task can own it. With checks 0a and 0b clean, every legacy row gives its sequencing such a row.
+-- An `exomiser` row whose sequencing has no proband annotation task with an Exomiser file in the view: no task can
+-- own it.
 
 SELECT e.seq_id, COUNT(1) AS exomiser_rows
 FROM exomiser e
 LEFT JOIN (
     SELECT DISTINCT seq_id
-    FROM <shared_db>.staging_sequencing_experiment
+    FROM <shared_db>.staging_external_sequencing_experiment
     WHERE tenant_code = '<tenant>'
-      AND NOT deleted
-      AND (
-          task_type = 'exomiser'
-          OR (task_type = 'radiant_germline_annotation' AND family_role = 'proband' AND exomiser_filepath IS NOT NULL)
-      )
+      AND task_type = 'radiant_germline_annotation'
+      AND exomiser_filepath IS NOT NULL
 ) owned ON owned.seq_id = e.seq_id
 WHERE owned.seq_id IS NULL
 GROUP BY e.seq_id;
@@ -109,41 +104,34 @@ GROUP BY e.seq_id;
 -- 0d. Re-run sequencings, base database, read-only. Save the list: 3.B3, step 4 and checklist step 8 use it.
 -- ---------------------------------------------------------------------------------------------------
 --
--- A sequencing with several proband annotation tasks carrying an Exomiser file once step 1 is done (a duo, then a
--- trio). Its `exomiser` rows cannot tell which file they come from: 3.B2 leaves them out, step 4 re-imports them.
+-- A sequencing with several proband annotation tasks carrying an Exomiser file (a duo, then a trio, or one task per
+-- case). Its `exomiser` rows cannot tell which file they come from: 3.B2 leaves them out, step 4 re-imports them.
 
-SELECT a.seq_id, COUNT(DISTINCT a.task_id) AS exomiser_annotation_tasks
-FROM staging_sequencing_experiment a
-LEFT JOIN (
-    SELECT DISTINCT case_id, seq_id
-    FROM staging_sequencing_experiment
-    WHERE task_type = 'exomiser'
-      AND NOT deleted
-) l ON l.case_id = a.case_id AND l.seq_id = a.seq_id
-WHERE a.task_type = 'radiant_germline_annotation'
-  AND a.family_role = 'proband'
-  AND NOT a.deleted
-  AND (a.exomiser_filepath IS NOT NULL OR l.seq_id IS NOT NULL)
-GROUP BY a.seq_id
-HAVING COUNT(DISTINCT a.task_id) > 1
-ORDER BY a.seq_id;
+SELECT seq_id, COUNT(DISTINCT task_id) AS exomiser_annotation_tasks
+FROM staging_external_sequencing_experiment
+WHERE task_type = 'radiant_germline_annotation'
+  AND exomiser_filepath IS NOT NULL
+GROUP BY seq_id
+HAVING COUNT(DISTINCT task_id) > 1
+ORDER BY seq_id;
 
 
 -- ---------------------------------------------------------------------------------------------------
--- 1. Staging rows, base database. The file path moves to the proband's annotation row, then the legacy rows go.
---    `updated_at` and `ingested_at` stay as they are, so the import does not pick the annotation rows again.
+-- 1. Staging rows, base database. Each proband annotation row gets its file from the view, on the same key, then the
+--    legacy rows go. `updated_at` and `ingested_at` stay as they are, so the import does not pick the rows again.
 -- ---------------------------------------------------------------------------------------------------
 
 UPDATE staging_sequencing_experiment
-SET exomiser_filepath = legacy.exomiser_filepath
+SET exomiser_filepath = v.exomiser_filepath
 FROM (
-    SELECT case_id, seq_id, exomiser_filepath
-    FROM staging_sequencing_experiment
-    WHERE task_type = 'exomiser'
-      AND NOT deleted
-) legacy
-WHERE staging_sequencing_experiment.case_id = legacy.case_id
-  AND staging_sequencing_experiment.seq_id = legacy.seq_id
+    SELECT DISTINCT case_id, seq_id, task_id, exomiser_filepath
+    FROM staging_external_sequencing_experiment
+    WHERE task_type = 'radiant_germline_annotation'
+      AND exomiser_filepath IS NOT NULL
+) v
+WHERE staging_sequencing_experiment.case_id = v.case_id
+  AND staging_sequencing_experiment.seq_id = v.seq_id
+  AND staging_sequencing_experiment.task_id = v.task_id
   AND staging_sequencing_experiment.task_type = 'radiant_germline_annotation'
   AND staging_sequencing_experiment.family_role = 'proband'
   AND NOT staging_sequencing_experiment.deleted;
