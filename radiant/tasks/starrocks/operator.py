@@ -14,7 +14,7 @@ from radiant.tasks.data.radiant_tables import get_radiant_mapping
 from radiant.tasks.starrocks.trigger import (
     StarRocksTaskCompleteTrigger,
 )
-from radiant.tasks.vcf.experiment import EXOMISER_TASK, ExomiserTask
+from radiant.tasks.vcf.experiment import RADIANT_GERMLINE_ANNOTATION_TASK, RadiantGermlineAnnotationTask
 
 STARROCKS_INSERT_POOL = "starrocks_insert_pool"
 STARROCKS_TASK_TEMPLATE = "Radiant_Operator_Task_{uid}"
@@ -571,19 +571,29 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
     def run_insert(self, context, partition_exists):
         _parameters = []
         for task in self.tasks:
-            if task.get("task_type") != EXOMISER_TASK:
+            # A deleted task's rows are dropped by the copy step and never read by the insert, and its file may be
+            # gone from S3: loading it could only fail the part.
+            if (
+                task.get("task_type") != RADIANT_GERMLINE_ANNOTATION_TASK
+                or task.get("deleted")
+                or not task.get("exomiser_filepath")
+            ):
                 continue
 
-            _task = ExomiserTask.model_validate(task)
+            _task = RadiantGermlineAnnotationTask.model_validate(task)
+            # The annotation task holds every family member; the Exomiser report ranks the proband.
+            _proband = next((e for e in _task.experiments if e.family_role == "proband"), None)
+            if _proband is None:
+                raise ValueError(f"No proband found in task [{_task.task_id}] for the Exomiser load.")
             _parameters.append(
                 {
                     "part": self.partition,
-                    "seq_id": _task.experiments[0].seq_id,
+                    "seq_id": _proband.seq_id,
+                    "task_id": _task.task_id,
                     # Tag rows with the tenant in the shared staging table; insert_exomiser routes by it later.
-                    "tenant_code": _task.experiments[0].tenant_code,
+                    "tenant_code": _proband.tenant_code,
                     "tsv_filepath": _task.exomiser_filepath,
-                    "load_label": f"load_exomiser_"
-                    f"{_task.task_id}_{_task.experiments[0].seq_id}_{_task.task_id}_{str(uuid.uuid4().hex)}",
+                    "load_label": f"load_exomiser_{_task.task_id}_{_proband.seq_id}_{str(uuid.uuid4().hex)}",
                 }
             )
 

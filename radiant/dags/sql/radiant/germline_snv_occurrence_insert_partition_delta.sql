@@ -68,11 +68,13 @@ JOIN [BROADCAST] (
     FROM {{ mapping.starrocks_snv_tmp_variant }}
 ) v ON o.locus_hash = v.locus_hash
 LEFT JOIN (
-     SELECT e.locus_id, e.seq_id, e.moi, e.acmg_classification, e.acmg_evidence, e.variant_score, e.gene_combined_score
+     SELECT e.locus_id, e.seq_id, e.task_id, e.moi, e.acmg_classification, e.acmg_evidence, e.variant_score,
+            e.gene_combined_score
      FROM {{ mapping.starrocks_exomiser }} e
      WHERE e.variant_rank = 1 and e.part={{ partition }}
 ) e
     ON o.seq_id = e.seq_id
+   AND o.task_id = e.task_id
    AND v.locus_id = e.locus_id
 LEFT JOIN (
      -- One entry per gene with its number of partners, counted on the rows the portal lists (RAD-39).

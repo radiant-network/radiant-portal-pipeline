@@ -247,19 +247,6 @@ def import_part():
             per_tenant_mapping=lambda t: get_radiant_mapping(conf, tenant_code=t),
         )
 
-    @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
-    def extract_sequencing_ids(tasks) -> dict[str, list[Any]]:
-        # Global (all tenants) seq_ids — used by the single, shared load_exomiser staging step.
-        seq_ids, deleted_seq_ids = set(), set()
-        for t in tasks:
-            target = deleted_seq_ids if t["deleted"] else seq_ids
-            for experiment in t.get("experiments") or []:
-                if experiment:
-                    target.add(experiment["seq_id"])
-        return {"seq_ids": sorted(seq_ids) or [-1], "deleted_seq_ids": sorted(deleted_seq_ids) or [-1]}
-
-    sequencing_ids = extract_sequencing_ids(tasks)
-
     with TaskGroup(group_id="germline_cnv_occurrence") as tg_germline_cnv_occurrence_per_tenant:
 
         @task.short_circuit(
@@ -287,7 +274,18 @@ def import_part():
             max_active_tis_per_dagrun=1,
         ).expand_kwargs(tenant_params)
 
-        sanity_check_cnvs(tasks) >> insert_germline_cnv_occurrences
+        # RAD-120: full recompute over every part, a patient of one part can match an interval of another.
+        aggregate_germline_cnv_variants_frequencies = RadiantStarRocksOperator.partial(
+            task_id="aggregate_germline_cnv_variant_freq",
+            task_display_name="[StarRocks] Aggregate all Germline CNV variants frequencies",
+            sql="./sql/radiant/germline_cnv_variant_frequency_insert.sql",
+            map_index_template="{{ task.tenant_code }}",
+            submit_task_options=std_submit_task_opts,
+            parameters={"tenant_code": "{{ tenant_code }}"},
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
+
+        (sanity_check_cnvs(tasks) >> insert_germline_cnv_occurrences >> aggregate_germline_cnv_variants_frequencies)
 
     with TaskGroup(group_id="somatic_cnv_occurrence") as tg_somatic_cnv_occurrence_per_tenant:
 
@@ -318,10 +316,35 @@ def import_part():
             max_active_tis_per_dagrun=1,
         ).expand_kwargs(tenant_params)
 
-        sanity_check_somatic_cnvs(tasks) >> insert_somatic_cnv_occurrences
+        # RAD-120: full recompute over every part, a patient of one part can match an interval of another.
+        aggregate_somatic_cnv_variants_frequencies = RadiantStarRocksOperator.partial(
+            task_id="aggregate_somatic_cnv_variant_freq",
+            task_display_name="[StarRocks] Aggregate all Somatic CNV variants frequencies",
+            sql="./sql/radiant/somatic_cnv_variant_frequency_insert.sql",
+            map_index_template="{{ task.tenant_code }}",
+            submit_task_options=std_submit_task_opts,
+            parameters={"tenant_code": "{{ tenant_code }}"},
+            max_active_tis_per_dagrun=1,
+        ).expand(tenant_code=tenants)
+
+        (
+            sanity_check_somatic_cnvs(tasks)
+            >> insert_somatic_cnv_occurrences
+            >> aggregate_somatic_cnv_variants_frequencies
+        )
+
+    @task(task_id="extract_task_ids", task_display_name="[PyOp] Extract Task IDs")
+    def extract_task_ids(tasks) -> dict[str, list[Any]]:
+        return {
+            "task_ids": sorted({t["task_id"] for t in tasks if not t["deleted"]}) or [-1],
+            "deleted_task_ids": sorted({t["task_id"] for t in tasks if t["deleted"]}) or [-1],
+        }
+
+    task_ids = extract_task_ids(tasks)
 
     # Single, shared load: all tenants' exomiser files land in one staging table, each row tagged with
     # tenant_code (set during the broker load) so the per-tenant insert_exomiser can route them later.
+    # Global (all tenants) task ids: the copy step keeps the rows of the tasks not in this run.
     load_exomiser = RadiantLoadExomiserOperator(
         task_id="load_exomiser_files",
         task_display_name="[StarRocks] Load Exomiser Files",
@@ -330,16 +353,9 @@ def import_part():
             copy_partition_sql="./sql/radiant/staging_exomiser_insert_partition_delta.sql",
         ),
         table="{{ mapping.starrocks_staging_exomiser }}",
-        parameters=sequencing_ids,
+        parameters=task_ids,
         tasks=tasks,
     )
-
-    @task(task_id="extract_task_ids", task_display_name="[PyOp] Extract Task IDs")
-    def extract_task_ids(tasks) -> dict[str, list[Any]]:
-        return {
-            "task_ids": list(set([t["task_id"] for t in tasks if not t["deleted"]])) or [-1],
-            "deleted_task_ids": list(set([t["task_id"] for t in tasks if t["deleted"]])) or [-1],
-        }
 
     @task.short_circuit(
         task_id="sanity_check_any_snv",
@@ -375,8 +391,6 @@ def import_part():
         sql="REFRESH EXTERNAL TABLE {{ params.table }}",
         task_display_name="[StarRocks] Refresh Iceberg Tables",
     ).expand(params=get_tables_to_refresh())
-
-    task_ids = extract_task_ids(tasks)
 
     insert_hashes = RadiantStarRocksOperator(
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,

@@ -11,7 +11,8 @@ _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
 def test_raw_exomiser_load(starrocks_session, radiant_mapping, minio_instance, sample_exomiser_tsv):
     """
-    Test the loading of raw Exomiser data into StarRocks.
+    Test the loading of raw Exomiser data into StarRocks. The rows are tagged with the proband's seq_id and the
+    annotation task id, as `RadiantLoadExomiserOperator` passes them.
     """
 
     _database_name = radiant_mapping["starrocks_staging_exomiser"].split(".")[0]
@@ -43,6 +44,7 @@ def test_raw_exomiser_load(starrocks_session, radiant_mapping, minio_instance, s
     params = {
         "part": 1,
         "seq_id": 1,
+        "task_id": 63,
         "tenant_code": "tenant1",
         "tsv_filepath": f"s3://{sample_exomiser_tsv}",
     }
@@ -66,12 +68,14 @@ def test_raw_exomiser_load(starrocks_session, radiant_mapping, minio_instance, s
                 raise TimeoutError(f"Load for label {_label} did not finish in time.")
 
         cursor.execute(
-            f"SELECT rank, acmg_classification, acmg_evidence FROM {_database_name}.raw_exomiser ORDER BY rank"
+            f"SELECT part, seq_id, task_id, rank, acmg_classification, acmg_evidence "
+            f"FROM {_database_name}.raw_exomiser WHERE task_id = 63 ORDER BY rank"
         )
         results = cursor.fetchall()
         assert results == (
-            (1, "pathogenic", '["PM2","PP3","PS4"]'),
-            (2, "likely_pathogenic", '["PS1","PM1"]'),
-            (3, "uncertain_significance", '["PP5"]'),
-            (4, "uncertain_significance", None),
+            (1, 1, 63, 1, "pathogenic", '["PM2","PP3","PS4"]'),
+            (1, 1, 63, 2, "likely_pathogenic", '["PS1","PM1"]'),
+            (1, 1, 63, 3, "uncertain_significance", '["PP5"]'),
+            (1, 1, 63, 4, "uncertain_significance", None),
         )
+        cursor.execute(f"DELETE FROM {_database_name}.raw_exomiser WHERE task_id = 63")

@@ -25,10 +25,11 @@ def test_a_case_is_addressed_by_project_and_submitter_id(trio_rows, phenotype_ro
     assert case["submitter_case_id"] == "1KGP-1463"
 
 
-def test_two_tasks_with_the_cnv_specific_type_codes(tasks):
-    """`exomiser_cnv`, not `exomiser`: the ETL ingests every `variants.tsv` of an `exomiser`
-    task into the SNV Exomiser table, and a CNV report there would be wrong data."""
-    assert set(tasks) == {"radiant_germline_cnv_annotation", "exomiser_cnv"}
+def test_one_annotation_task_per_case_and_no_legacy_exomiser_cnv_task(trio_rows, phenotype_rows, tasks):
+    """The Exomiser reports are outputs of the annotation task. The `exomiser_cnv`
+    task type is gone."""
+    assert len(_body(trio_rows, phenotype_rows)["cases"][0]["tasks"]) == 1
+    assert set(tasks) == {"radiant_germline_cnv_annotation"}
 
 
 def test_the_annotation_task_inputs_are_the_cnv_vcfs_and_the_crams_the_run_used(tasks):
@@ -43,36 +44,31 @@ def test_crams_are_not_recorded_as_inputs_when_the_run_did_not_use_them(trio_row
     """TASK-005 aside, lineage should say what actually happened: no refinement, no CRAM."""
     trio_rows[1].update(cram_url=None, crai_url=None)
     body = _body(trio_rows)
-    (annotation, _) = body["cases"][0]["tasks"]
+    (annotation,) = body["cases"][0]["tasks"]
     urls = [d["url"] for d in annotation["input_documents"]]
     assert len(urls) == 3
     assert all(u.endswith(".cnv.vcf.gz") for u in urls)
 
 
-def test_exomisers_input_is_the_slivar_vcf_from_the_sibling_task(tasks):
-    """Exomiser really reads the depth-refined or VEP VCF, neither of which is published as a
-    document; naming one would fail TASK-005. Same compromise as the annotation DAG."""
-    (input_doc,) = tasks["exomiser_cnv"]["input_documents"]
-    output_urls = {d["url"] for d in tasks["radiant_germline_cnv_annotation"]["output_documents"]}
-    assert input_doc["url"] in output_urls
-    assert input_doc["url"].endswith(".cnv.slivar.vcf.gz")
-
-
-def test_exomiser_is_single_aliquot_and_annotation_covers_the_family(tasks):
-    assert tasks["exomiser_cnv"]["aliquots"] == ["NA12878"]
+def test_the_annotation_task_covers_the_family(tasks):
     assert tasks["radiant_germline_cnv_annotation"]["aliquots"] == ["NA12878", "NA12891", "NA12892"]
 
 
-def test_output_documents_are_split_between_the_two_tasks(tasks):
-    annotation = {
+def test_the_annotation_task_outputs_the_slivar_vcf_and_the_exomiser_cnv_reports(tasks):
+    """`exomiser_cnv`, not `exomiser`: the portal tells the CNV report from the SNV one, and the
+    staging view reads only `exomiser` into the SNV Exomiser table."""
+    outputs = {
         (d["data_type_code"], d["format_code"]) for d in tasks["radiant_germline_cnv_annotation"]["output_documents"]
     }
-    exomiser = {(d["data_type_code"], d["format_code"]) for d in tasks["exomiser_cnv"]["output_documents"]}
-    assert annotation == {("gcnv", "vcf"), ("gcnv", "tbi")}
-    assert exomiser == {("exomiser", "tsv"), ("exomiser", "html"), ("exomiser", "json")}
+    assert outputs == {
+        ("gcnv", "vcf"),
+        ("gcnv", "tbi"),
+        ("exomiser_cnv", "tsv"),
+        ("exomiser_cnv", "html"),
+        ("exomiser_cnv", "json"),
+    }
 
 
 def test_pipeline_metadata_names_the_cnv_pipeline_and_the_build(tasks):
     assert tasks["radiant_germline_cnv_annotation"]["pipeline_name"] == "cnv-post-processing"
-    assert tasks["exomiser_cnv"]["pipeline_name"] == "Exomiser"
     assert all(t["genome_build"] == "GRch38" for t in tasks.values())

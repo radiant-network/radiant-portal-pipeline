@@ -35,9 +35,10 @@ def test_the_annotated_vcf_is_declared_vcf_not_gvcf(trio, listing):
 
 
 def test_the_exomiser_tsv_keeps_the_suffix_the_etl_matches_on(trio, listing):
-    """`exomiser_filepath` comes from `url LIKE '%variants.tsv'`."""
+    """`exomiser_filepath` comes from `url LIKE '%variants.tsv'` with the `exomiser` data type."""
     documents = collect([trio], listing, OUTDIR)["CA1072"]
     assert documents["exomiser_tsv"]["url"].endswith("variants.tsv")
+    assert documents["exomiser_tsv"]["data_type_code"] == "exomiser"
 
 
 def test_sizes_and_names_come_from_the_listing(trio, listing):

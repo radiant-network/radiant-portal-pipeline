@@ -6,6 +6,7 @@ import pytest
 from airflow.exceptions import TaskDeferred
 
 from radiant.tasks.starrocks.operator import (
+    RadiantLoadExomiserOperator,
     RadiantStarRocksBaseOperator,
     RadiantStarRocksOperator,
     RadiantStarRocksPartitionSwapOperator,
@@ -186,3 +187,105 @@ def test_rows_output_processor_keys_each_row_by_column_name():
 
 def test_rows_output_processor_handles_an_empty_result():
     assert rows_output_processor([[]], [[("case_id", 3, None)]]) == [[]]
+
+
+def _experiment(seq_id, family_role):
+    return {
+        "seq_id": seq_id,
+        "patient_id": seq_id,
+        "aliquot": f"SA{seq_id}",
+        "tenant_code": "test",
+        "family_role": family_role,
+        "affected_status": "affected",
+        "sex": "female",
+        "experimental_strategy": "wgs",
+    }
+
+
+def _annotation_task(task_id, exomiser_filepath, experiments):
+    return {
+        "task_id": task_id,
+        "task_type": "radiant_germline_annotation",
+        "part": 5,
+        "analysis_type": "germline",
+        "experiments": experiments,
+        "deleted": False,
+        "vcf_filepath": f"s3://test/{task_id}.vcf.gz",
+        "exomiser_filepath": exomiser_filepath,
+    }
+
+
+def _run_exomiser_load(tasks):
+    op = RadiantLoadExomiserOperator(
+        task_id="t",
+        table="radiant.raw_exomiser",
+        swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+        parameters={"task_ids": [1], "deleted_task_ids": [-1]},
+        tasks=tasks,
+    )
+    hook = MagicMock()
+    cursor = hook.get_conn.return_value.cursor.return_value.__enter__.return_value
+    with (
+        patch.object(op, "get_db_hook", return_value=hook),
+        patch.object(op, "render_template", side_effect=lambda content, *_: content),
+        patch.object(op, "verify_load_status"),
+    ):
+        op.run_insert(context={}, partition_exists=False)
+    return [call.args[1] for call in cursor.execute.call_args_list]
+
+
+def test_exomiser_load_reads_the_file_of_the_annotation_task_and_tags_the_proband():
+    """The annotation task holds every family member; the Exomiser rows get the proband's
+    seq_id and the annotation task id."""
+    loads = _run_exomiser_load(
+        [
+            _annotation_task(
+                11,
+                "s3://test/CA1.exomiser.variants.tsv",
+                [_experiment(102, "mother"), _experiment(101, "proband"), _experiment(103, "father")],
+            )
+        ]
+    )
+
+    assert len(loads) == 1
+    assert {k: loads[0][k] for k in ("part", "seq_id", "task_id", "tenant_code", "tsv_filepath")} == {
+        "part": "5",
+        "seq_id": 101,
+        "task_id": 11,
+        "tenant_code": "test",
+        "tsv_filepath": "s3://test/CA1.exomiser.variants.tsv",
+    }
+
+
+def test_exomiser_load_skips_tasks_without_exomiser_file():
+    loads = _run_exomiser_load(
+        [
+            _annotation_task(11, None, [_experiment(101, "proband")]),
+            {
+                "task_id": 12,
+                "task_type": "alignment_germline_variant_calling",
+                "part": 5,
+                "analysis_type": "germline",
+                "experiments": [_experiment(101, "proband")],
+                "deleted": False,
+                "cnv_vcf_filepath": "s3://test/12.cnv.vcf.gz",
+            },
+        ]
+    )
+
+    assert loads == []
+
+
+def test_exomiser_load_skips_deleted_tasks():
+    """A deleted task's file may be gone from S3, and the copy step drops its rows anyway."""
+    deleted = _annotation_task(11, "s3://test/CA1.exomiser.variants.tsv", [_experiment(101, "proband")])
+    deleted["deleted"] = True
+
+    assert _run_exomiser_load([deleted]) == []
+
+
+def test_exomiser_load_without_proband_raises():
+    task = _annotation_task(11, "s3://test/CA1.exomiser.variants.tsv", [_experiment(102, "mother")])
+
+    with pytest.raises(ValueError, match=r"No proband found in task \[11\]"):
+        _run_exomiser_load([task])

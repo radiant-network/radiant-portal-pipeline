@@ -10,6 +10,7 @@ This module defines:
   which is what lets a VEP `--merged` file be told apart from a single-catalogue one.
 - The MANE flags and a version-free copy of the MANE cross-reference, which bridges a RefSeq
   annotation to its Ensembl twin.
+- The CDS position of each annotation, split out of VEP's `CDS_position` into a start and an end.
 
 Dependencies:
 - cyvcf2: for reading VCF records.
@@ -88,6 +89,8 @@ SCHEMA = merge_schemas(
         NestedField(223, "impact_score", IntegerType(), required=True),
         NestedField(224, "mane_pair_transcript_id", StringType(), required=False),
         NestedField(225, "transcript_version", StringType(), required=False),
+        NestedField(226, "cds_start", IntegerType(), required=False),
+        NestedField(227, "cds_end", IntegerType(), required=False),
     ),
 )
 
@@ -117,6 +120,7 @@ class CsqIndexes(NamedTuple):
     strand: int | None
     consequence: int | None
     canonical: int | None
+    cds_position: int | None
 
 
 def resolve_csq_indexes(csq_fields: dict[str, int]) -> CsqIndexes:
@@ -262,8 +266,41 @@ def resolve_source(source: str | None, transcript_id: str | None, gene_id: str |
     return None
 
 
+# VEP's `CDS_position` shapes: a single base (`123`, an SNV), a range (`123-125`, an indel), and a
+# range with one end outside the CDS (`?-125`, `123-?`). An insertion reads as the two bases on each
+# side of the insertion point, not as the inserted bases.
+_CDS_POSITION_RE = re.compile(r"^(?:(\d+)|(\d+|\?)-(\d+|\?))$")
+
+
+def parse_cds_position(value: str | None) -> tuple[int | None, int | None]:
+    """
+    Splits VEP's `CDS_position` into the `cds_start` and `cds_end` of a consequence.
+
+    Args:
+        value (str | None): Raw `CDS_position` value, or None when the column is absent.
+
+    Returns:
+        tuple: `(cds_start, cds_end)`, either of which is None when VEP gives `?` for that end.
+            `(None, None)` when the value is absent or empty, which is the normal case for
+            intronic, UTR, non-coding and intergenic annotations.
+
+    Raises:
+        ValueError: When the value has no known shape. `process_consequence` counts it and loads
+            NULL rather than failing the import.
+    """
+    if not value:
+        return None, None
+    match = _CDS_POSITION_RE.match(value)
+    if match is None or match.group(2) == match.group(3) == "?":
+        raise ValueError(f"Unexpected CDS_position {value!r}")
+    single, start, end = match.groups()
+    if single is not None:
+        return int(single), int(single)
+    return (None if start == "?" else int(start)), (None if end == "?" else int(end))
+
+
 def process_consequence(
-    record: Variant, csq_fields: CsqHeader | dict[str, int], common: Common
+    record: Variant, csq_fields: CsqHeader | dict[str, int], common: Common, invalid_cds: Counter | None = None
 ) -> tuple[dict, list[dict]]:
     """
     Processes VEP CSQ annotations from a VCF record and builds structured consequence data.
@@ -274,6 +311,9 @@ def process_consequence(
             returned by `parse_csq_header`. A plain dict also works, at the cost of
             re-resolving the column indexes on every call.
         common (Common): Shared metadata (e.g. position, allele info).
+        invalid_cds (Counter | None): Counts the `CDS_position` values of unknown shape,
+            which are loaded as NULL. Shared across the records of one file, so that
+            `log_invalid_cds` can report them once.
 
     Returns:
         tuple:
@@ -306,6 +346,7 @@ def process_consequence(
             i_strand,
             i_consequence,
             i_canonical,
+            i_cds_position,
         ) = indexes
         csq_data = csq.split(",")
         for c in csq_data:
@@ -329,6 +370,15 @@ def process_consequence(
             # usable pair, which is what the score borrowing downstream joins on.
             mane = fields[i_mane] if i_mane is not None else None
             mane_select = fields[i_mane_select] if i_mane_select is not None else None
+            # Empty on most blocks (intronic, UTR, non-coding, intergenic), so the parse is skipped for those.
+            cds_position = fields[i_cds_position] if i_cds_position is not None else None
+            cds_start = cds_end = None
+            if cds_position:
+                try:
+                    cds_start, cds_end = parse_cds_position(cds_position)
+                except ValueError:
+                    if invalid_cds is not None:
+                        invalid_cds[cds_position] += 1
             consequence = {
                 "task_id": common.task_id,
                 "locus": common.locus,
@@ -362,6 +412,8 @@ def process_consequence(
                 "aa_change": hgvsp.split(":")[-1] if hgvsp else None,
                 "dna_change": hgvsc.split(":")[-1] if hgvsc else None,
                 "impact_score": IMPACT_SCORE.get(vep_impact, 0),
+                "cds_start": cds_start,
+                "cds_end": cds_end,
             }
             if picked:
                 pick_consequence = consequence
@@ -399,6 +451,27 @@ def log_source_counts(source_counts: Counter, task_id: int, vcf_filepath: str) -
             f"⚠️ Task {task_id}: {unclassified} consequence rows in {vcf_filepath} have no resolvable "
             f"transcript source (intergenic annotations, or identifiers matching neither catalogue). "
             f"They are loaded with a null source, not dropped."
+        )
+
+
+def log_invalid_cds(invalid_cds: Counter, task_id: int, vcf_filepath: str) -> None:
+    """
+    Reports, in one warning per VCF file, the `CDS_position` values that had no known shape.
+
+    Those consequences are loaded with a NULL `cds_start` and `cds_end` rather than failing the
+    import, so the warning is the only trace that VEP wrote something unexpected.
+
+    Args:
+        invalid_cds (Counter): Counts keyed by raw `CDS_position` value.
+        task_id (int): Id of the annotation task being processed, for log correlation.
+        vcf_filepath (str): Path of the VCF file being processed.
+    """
+    total = sum(invalid_cds.values())
+    if total:
+        examples = ", ".join(repr(value) for value, _ in invalid_cds.most_common(5))
+        logger.warning(
+            f"⚠️ Task {task_id}: {total} consequence rows in {vcf_filepath} have a CDS_position of unknown "
+            f"shape (e.g. {examples}). They are loaded with a null cds_start and cds_end, not dropped."
         )
 
 

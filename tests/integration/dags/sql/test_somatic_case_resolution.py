@@ -15,11 +15,11 @@ each test, so no other integration test can see them:
 import os
 
 import jinja2
-import psycopg2
 import pytest
 
 from radiant.dags import DAGS_DIR
 from radiant.tasks.nextflow.somatic.resolve import CaseResolutionError, select_tasks
+from tests.integration.fixtures_common import execute_clinical
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
 DISCOVERY = "pending_somatic_annotation_select.sql"
@@ -43,23 +43,6 @@ def _discover(starrocks_session, radiant_mapping, task_ids=None, excluded_tenant
         return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
 
 
-def _connect(postgres_instance):
-    return psycopg2.connect(
-        host="localhost",
-        port=postgres_instance.port,
-        user=postgres_instance.user,
-        password=postgres_instance.password,
-        database=postgres_instance.radiant_db,
-    )
-
-
-def _execute(postgres_instance, sql):
-    with _connect(postgres_instance) as conn, conn.cursor() as cur:
-        cur.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
-        cur.execute(sql)
-        conn.commit()
-
-
 def _cleanup(postgres_instance, task_ids, document_ids=(), case_ids=()):
     tasks = ", ".join(str(i) for i in task_ids)
     sql = f"""
@@ -75,7 +58,7 @@ def _cleanup(postgres_instance, task_ids, document_ids=(), case_ids=()):
             DELETE FROM case_has_sequencing_experiment WHERE case_id IN ({cases});
             DELETE FROM cases WHERE id IN ({cases});
         """
-    _execute(postgres_instance, sql)
+    execute_clinical(postgres_instance, sql)
 
 
 def _ssnv_document(document_id):
@@ -95,7 +78,7 @@ _DOCUMENT_COLUMNS = (
 
 @pytest.fixture
 def no_ssnv_task(postgres_clinical_seeds, postgres_instance):
-    _execute(
+    execute_clinical(
         postgres_instance,
         f"""
         {_TASK_COLUMNS}
@@ -112,7 +95,7 @@ def no_ssnv_task(postgres_clinical_seeds, postgres_instance):
 def shared_task_fixtures(postgres_clinical_seeds, postgres_instance):
     """Calling task 9521 on experiment 64, which case 23 and the extra somatic case 9520 both hold.
     Its VCF is the input of annotation 9522, registered on case 23 only."""
-    _execute(
+    execute_clinical(
         postgres_instance,
         f"""
         INSERT INTO cases (id, proband_id, project_id, status_code, primary_condition,

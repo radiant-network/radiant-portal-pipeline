@@ -2,6 +2,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_exomiser }}
 (
     part                 INT,
     seq_id               INT,
+    task_id              INT NOT NULL,
     locus_id             BIGINT,
     id                   VARCHAR(2000),
     locus_hash           VARCHAR(256),
@@ -15,7 +16,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_exomiser }}
     acmg_evidence array< VARCHAR (10)>
 )
 ENGINE = OLAP
-DUPLICATE KEY(`part`, `seq_id`, `locus_id`,  `id`)
+DUPLICATE KEY(`part`, `seq_id`, `task_id`, `locus_id`, `id`)
 PARTITION BY (`part`)
 DISTRIBUTED BY HASH(`locus_id`)
 BUCKETS 10

@@ -52,7 +52,7 @@ sequencing_experiments AS (
         COALESCE(se.priority_code, 'routine') AS request_priority,
 	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code IN ('snv', 'ssnv') THEN d.url ELSE NULL END) AS vcf_filepath,
 	    ANY_VALUE(CASE WHEN d.format_code = 'vcf' AND d.data_type_code IN ('gcnv', 'scnv') THEN d.url ELSE NULL END) AS cnv_vcf_filepath,
-	    ANY_VALUE(CASE WHEN d.format_code = 'tsv' THEN d.url ELSE NULL END) AS exomiser_filepath,
+	    ANY_VALUE(CASE WHEN d.format_code = 'tsv' AND d.data_type_code = 'exomiser' THEN d.url ELSE NULL END) AS exomiser_filepath,
         se.created_on AS created_at,
         IF(tctx.case_id IS NOT NULL, c.updated_on, se.updated_on) AS updated_at
 	FROM
@@ -64,11 +64,13 @@ sequencing_experiments AS (
 	LEFT JOIN {{ mapping.clinical_document }} d ON d.id = thd.document_id
 	-- The data-type gate on the two *calling* steps is what keeps a raw, un-annotated VCF out of
 	-- `vcf_filepath`, which must only ever hold the annotated file from a `radiant_*_annotation` task.
+	-- The Exomiser report is an output of the germline SNV annotation task. The `exomiser` data-type
+	-- gate, and no branch for `radiant_germline_cnv_annotation`, keep the CNV report (`exomiser_cnv`) out.
 	WHERE (
 		(d.format_code = 'vcf' AND t.task_type_code IN ('radiant_germline_annotation', 'radiant_somatic_annotation'))
 		OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv' AND t.task_type_code = 'alignment_germline_variant_calling')
 		OR (d.format_code = 'vcf' AND d.data_type_code = 'scnv' AND t.task_type_code = 'tumor_only_variant_calling')
-		OR (d.url LIKE '%variants.tsv' AND t.task_type_code = 'exomiser')
+		OR (d.url LIKE '%variants.tsv' AND d.data_type_code = 'exomiser' AND t.task_type_code = 'radiant_germline_annotation')
 	)
 	GROUP BY
 	    se.case_id,
@@ -97,7 +99,12 @@ SELECT
 	s.request_priority,
 	s.vcf_filepath,
     s.cnv_vcf_filepath,
-	s.exomiser_filepath,
+	-- The annotation task holds the aliquots of every family member, but Exomiser ranks the proband:
+	-- only the proband's row carries the file, so the load tags the rows with the proband's seq_id.
+	CASE
+	    WHEN s.analysis_type = 'germline' AND COALESCE(f.relationship_to_proband_code, "proband") <> "proband" THEN NULL
+	    ELSE s.exomiser_filepath
+	END AS exomiser_filepath,
 	p.sex_code AS sex,
     f.id AS family_id,
     CASE

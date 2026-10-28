@@ -6,6 +6,7 @@ import psycopg2
 import pytest
 
 from radiant.dags import DAGS_DIR
+from tests.integration.fixtures_common import execute_clinical
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 _RADIANT_SQL_PATH = os.path.join(_SQL_DIR, "radiant")
@@ -93,9 +94,10 @@ def test_sequencing_experiment_empty(
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
     # Whole-seed baseline: every (case, seq, task) the view emits. It moves whenever seeds.sql gains a
     # document the view's WHERE clause accepts -- an SNV/CNV VCF on an annotation or calling task, or an
-    # exomiser tsv. SJRA-1928 took it 15 -> 18 by giving the case-16 trio (alignment tasks 44/45/46)
-    # their gcnv VCFs.
-    assert len(result_df) == 18
+    # exomiser tsv on a germline annotation task. SJRA-1928 took it 15 -> 18 by giving the case-16 trio
+    # (alignment tasks 44/45/46) their gcnv VCFs. Moving the exomiser tsvs of the legacy `exomiser` tasks 64
+    # and 66 onto their annotation tasks 63 and 65 took it 18 -> 16.
+    assert len(result_df) == 16
 
 
 def test_sequencing_experiment_delta_carries_tumor_only_tasks(
@@ -184,6 +186,91 @@ def test_sequencing_experiment_delta_gates_somatic_cnv_documents(
     assert pd.isna(annotation["cnv_vcf_filepath"])
 
 
+def _delta(starrocks_session, sequencing_delta_columns):
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
+        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        return pd.DataFrame(cursor.fetchall(), columns=sequencing_delta_columns)
+
+
+def test_sequencing_experiment_delta_sets_exomiser_file_on_the_proband_row_only(
+    postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """The Exomiser tsv is an output of the germline annotation task, which holds the aliquots of
+    every family member. Only the proband's row carries it: the load tags the Exomiser rows with that seq_id.
+
+    Task 63 annotates the case-1 trio (experiments 1, 2 and 3); task 65 the solo case 8 (experiment 22).
+    """
+    delta = _delta(starrocks_session, sequencing_delta_columns)
+
+    assert "exomiser" not in set(delta["task_type"])
+
+    trio = delta.query("task_id == 63")
+    assert sorted(trio["seq_id"]) == [1, 2, 3]
+    proband = trio.query("family_role == 'proband'")
+    assert list(proband["seq_id"]) == [1]
+    assert proband.iloc[0]["exomiser_filepath"].endswith("CEPH-1463.exomiser.variants.tsv")
+    assert trio.query("family_role != 'proband'")["exomiser_filepath"].isna().all()
+
+    (solo,) = delta.query("task_id == 65").itertuples()
+    assert (solo.seq_id, solo.family_role) == (22, "proband")
+    assert solo.exomiser_filepath.endswith("SH032.HG00513.exomiser.variants.tsv")
+
+
+@pytest.fixture
+def cnv_exomiser_reports(postgres_clinical_seeds, postgres_instance):
+    """Two CNV Exomiser tsvs on the case-1 proband (experiment 1), on ids far above the seeded range:
+
+    - task 9601, a germline SNV annotation task whose tsv has the `exomiser_cnv` data type;
+    - task 9602, a `radiant_germline_cnv_annotation` task, with its slivar VCF and its tsv.
+    """
+    execute_clinical(
+        postgres_instance,
+        """
+        INSERT INTO task (id, task_type_code, created_on, pipeline_name, pipeline_version, genome_build, tenant_code)
+        VALUES (9601, 'radiant_germline_annotation', '2026-01-02', 'snv-post-processing', 'mock', 'GRch38', 'radiant'),
+               (9602, 'radiant_germline_cnv_annotation', '2026-01-02', 'cnv-post-processing', 'mock', 'GRch38',
+                'radiant');
+        INSERT INTO task_context (task_id, case_id, sequencing_experiment_id) VALUES (9601, 1, 1), (9602, 1, 1);
+        INSERT INTO document (id, name, data_category_code, data_type_code, format_code, size, url, hash, tenant_code)
+        VALUES (9601, 'mock-9601.snv.vcf.gz', 'genomic', 'snv', 'vcf', 1, 's3://test-vcf/mock-9601.snv.vcf.gz',
+                'mock9601', 'radiant'),
+               (9602, 'mock-9602.exomiser.variants.tsv', 'genomic', 'exomiser_cnv', 'tsv', 1,
+                's3://test-vcf/mock-9602.exomiser.variants.tsv', 'mock9602', 'radiant'),
+               (9603, 'mock-9603.cnv.slivar.vcf.gz', 'genomic', 'gcnv', 'vcf', 1,
+                's3://test-vcf/mock-9603.cnv.slivar.vcf.gz', 'mock9603', 'radiant'),
+               (9604, 'mock-9604.exomiser.variants.tsv', 'genomic', 'exomiser_cnv', 'tsv', 1,
+                's3://test-vcf/mock-9604.exomiser.variants.tsv', 'mock9604', 'radiant');
+        INSERT INTO task_has_document (task_id, document_id, type)
+        VALUES (9601, 9601, 'output'), (9601, 9602, 'output'), (9602, 9603, 'output'), (9602, 9604, 'output');
+        """,
+    )
+    yield
+    execute_clinical(
+        postgres_instance,
+        """
+        DELETE FROM task_has_document WHERE task_id IN (9601, 9602);
+        DELETE FROM task_context WHERE task_id IN (9601, 9602);
+        DELETE FROM task WHERE id IN (9601, 9602);
+        DELETE FROM document WHERE id IN (9601, 9602, 9603, 9604);
+        """,
+    )
+
+
+def test_sequencing_experiment_delta_ignores_cnv_exomiser_reports(
+    cnv_exomiser_reports, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """The CNV Exomiser report must stay out of the SNV `exomiser` table: the view reads only the `exomiser`
+    data type, and never reads a `radiant_germline_cnv_annotation` task."""
+    delta = _delta(starrocks_session, sequencing_delta_columns)
+
+    (snv_annotation,) = delta.query("task_id == 9601").itertuples()
+    assert snv_annotation.vcf_filepath == "s3://test-vcf/mock-9601.snv.vcf.gz"
+    assert pd.isna(snv_annotation.exomiser_filepath)
+
+    assert delta.query("task_id == 9602").empty
+
+
 def test_sequencing_experiment_no_delta(
     postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
 ):
@@ -261,7 +348,7 @@ def test_sequencing_experiment_existing_wgs_task_partition(
                               false as deleted
                        FROM staging_external_sequencing_experiment
                        WHERE seq_id = 22
-                         AND task_id = 66
+                         AND task_id = 65
                        """)
         cursor.execute("""
                        INSERT INTO staging_sequencing_experiment
@@ -296,9 +383,9 @@ def test_sequencing_experiment_existing_wgs_task_partition(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    # The 18-row baseline less task 66, the only one of the two inserts that the view actually emits:
+    # The 16-row baseline less task 65, the only one of the two inserts that the view actually emits:
     # seq 4 / task 4 matches no row in staging_external_sequencing_experiment, so it subtracts nothing.
-    assert len(result_df) == 17
+    assert len(result_df) == 15
 
 
 def test_sequencing_experiment_with_recently_updated_task(
@@ -336,14 +423,14 @@ def test_sequencing_experiment_with_recently_updated_task(
                               false as deleted
                        FROM staging_external_sequencing_experiment
                        WHERE seq_id = 22
-                         AND task_id = 66
+                         AND task_id = 65
                        """)
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    # The 18-row baseline less task 66, which was just inserted into staging_sequencing_experiment.
-    assert len(result_df) == 17
+    # The 16-row baseline less task 65, which was just inserted into staging_sequencing_experiment.
+    assert len(result_df) == 15
 
     with (
         psycopg2.connect(
@@ -367,6 +454,6 @@ def test_sequencing_experiment_with_recently_updated_task(
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
-    # Should capture the updated experiment -- task 66 is back, so the full 18-row baseline again.
+    # Should capture the updated experiment -- task 65 is back, so the full 16-row baseline again.
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 18
+    assert len(result_df) == 16

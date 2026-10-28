@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: tenant_db
+    schema: "{{ env_var('SR_TENANT_SCHEMA', env_var('SR_SCHEMA', 'radiant')) }}"
+    tables:
+      - name: germline__cnv__variant_frequency
+        tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: germline_cnv_variant_frequency__should_not_be_empty
+          # --- Should Be Within Range ----------------------------------------
+          # Frequencies must be in [0,1]. The columns start with pf_, so the default `_pf_` misses them.
+          - should_be_within_range:
+              name: germline_cnv_variant_frequency__should_be_within_range_pf
+              like: pf_
+        columns:
+          - name: cnv_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: germline_cnv_variant_frequency__should_not_contain_null__cnv_id
+              # --- Should Be Unique ------------------------------------------
+              - unique:
+                  name: germline_cnv_variant_frequency__should_be_unique__cnv_id

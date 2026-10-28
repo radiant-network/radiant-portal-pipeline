@@ -4,7 +4,7 @@ Finds the germline cases whose current alignments published a germline CNV VCF t
 never been post-processed, runs the Ferlab
 [cnv-post-processing](https://github.com/Ferlab-Ste-Justine/cnv-post-processing) pipeline
 over them, and registers the result back onto each case as a
-`radiant_germline_cnv_annotation` task and an `exomiser_cnv` task.
+`radiant_germline_cnv_annotation` task, with the Exomiser reports among its outputs.
 
 `radiant-nextflow-cnv-postprocessing` runs the pipeline and nothing else. This DAG closes
 everything around it, exactly as `radiant-nextflow-snv-postprocessing-cases` does for SNV
@@ -95,16 +95,16 @@ case fails the run instead of being excluded.
 
 ## What gets registered
 
-Two tasks per case, through `PATCH /{tenant}/cases/batch`:
+One task per case, through `PATCH /{tenant}/cases/batch`:
 
 | Task | Aliquots | Inputs | Outputs |
 |---|---|---|---|
-| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`) |
-| `exomiser_cnv` | the proband | the slivar VCF above, resolved in-batch | `exomiser/CA<id>.exomiser.{variants.tsv,html,json}` (`exomiser`/`tsv`,`html`,`json`) |
+| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`), `exomiser/CA<id>.exomiser.{variants.tsv,html,json}` (`exomiser_cnv`/`tsv`,`html`,`json`) |
 
-`exomiser_cnv` rather than `exomiser`: the variant ETL ingests every `variants.tsv`
-published by an `exomiser` task into the SNV Exomiser table, and a CNV report there would
-be wrong data. A distinct type keeps it out.
+The Exomiser reports are typed `exomiser_cnv`, not `exomiser`: the SNV and CNV
+reports have the same file names, and the data type tells them apart in the portal. The
+variant ETL reads only the `exomiser` data type, on a `radiant_germline_annotation` task, so
+the CNV report stays out of the SNV Exomiser table.
 
 These documents are **invisible to the variant ETL** for now: the
 `staging_external_sequencing_experiment` view admits a `gcnv`/`vcf` document only on an
@@ -112,8 +112,8 @@ These documents are **invisible to the variant ETL** for now: the
 `germline_cnv_occurrence` is a separate design.
 
 `collect_outputs` requires the complete set for every case in a run; a partial run
-registers nothing. PATCH **appends**: a deliberate re-run adds a second pair of tasks
-alongside the first.
+registers nothing. PATCH **appends**: a deliberate re-run adds a second task alongside the
+first.
 
 ## Where things are written
 
