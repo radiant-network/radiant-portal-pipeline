@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_staging_exomiser }}
     alternate            VARCHAR(2000),
     acmg_classification  VARCHAR(300),
     acmg_evidence        ARRAY<VARCHAR (10)>,
+    task_id              INT,
     locus                VARCHAR(2000) AS (concat_ws('-', chromosome, start, reference, alternate)),
     locus_hash           VARCHAR(256) AS (sha2(concat_ws('-', chromosome, start, reference, alternate), 256))
 )

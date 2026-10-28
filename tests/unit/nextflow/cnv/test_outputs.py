@@ -41,9 +41,13 @@ def test_the_slivar_index_is_a_germline_cnv_tbi(trio, listing):
     assert documents["slivar_tbi"]["format_code"] == "tbi"
 
 
-def test_exomiser_documents_carry_the_exomiser_data_type(trio, listing):
+def test_exomiser_documents_carry_the_exomiser_cnv_data_type(trio, listing):
+    """`exomiser_cnv`, not `exomiser`: the portal tells the CNV report from the SNV one, and the
+    staging view reads only `exomiser` into the SNV Exomiser table."""
     documents = collect([trio], listing, OUTDIR)["CA1072"]
-    assert {documents[n]["data_type_code"] for n in ("exomiser_tsv", "exomiser_html", "exomiser_json")} == {"exomiser"}
+    assert {documents[n]["data_type_code"] for n in ("exomiser_tsv", "exomiser_html", "exomiser_json")} == {
+        "exomiser_cnv"
+    }
 
 
 def test_sizes_and_names_come_from_the_listing(trio, listing):

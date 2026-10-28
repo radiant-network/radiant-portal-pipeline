@@ -29,8 +29,8 @@ _BASE_TABLES = [
 
 dag_params = {
     "udf_release_version": Param(
-        default="v1.2.0",
-        description="Release version of the radiant-starrocks-udf JAR (e.g. v1.2.0).",
+        default="v2.0.0",
+        description="Release version of the radiant-starrocks-udf JAR (e.g. v2.0.0).",
         type="string",
     ),
 }

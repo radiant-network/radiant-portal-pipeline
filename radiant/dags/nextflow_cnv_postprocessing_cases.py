@@ -4,8 +4,8 @@
 closes the two manual ends around it, the way `nextflow_snv_postprocessing_cases` does for SNV
 annotation: it discovers which cases have a germline CNV VCF but no CNV annotation, builds the
 samplesheet, PED files and phenopackets from the clinical model, triggers that DAG, then
-registers what the run published back onto the cases as `radiant_germline_cnv_annotation` and
-`exomiser_cnv` tasks.
+registers what the run published back onto the cases as a `radiant_germline_cnv_annotation`
+task, with the Exomiser reports (data type `exomiser_cnv`) among its outputs.
 
     discover_scope -> select_cases -> fetch_phenotypes -> resolve_cases -> generate_inputs
                                                                                   |

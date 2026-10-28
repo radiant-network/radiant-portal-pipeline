@@ -16,6 +16,7 @@ sources:
                 # Already covered by exomiser__should_not_contain_null__*
                 - part
                 - seq_id
+                - task_id
                 - locus_id
                 - id
 
@@ -42,6 +43,11 @@ sources:
               # --- Should Not Contain Null -----------------------------------
               - not_null:
                   name: exomiser__should_not_contain_null__seq_id
+          - name: task_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: exomiser__should_not_contain_null__task_id
           - name: locus_id
             tests:
               # --- Should Not Contain Null -----------------------------------

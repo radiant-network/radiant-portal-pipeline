@@ -4,7 +4,6 @@ from pydantic import BaseModel, ConfigDict
 
 RADIANT_GERMLINE_ANNOTATION_TASK = "radiant_germline_annotation"
 ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK = "alignment_germline_variant_calling"
-EXOMISER_TASK = "exomiser"
 RADIANT_SOMATIC_ANNOTATION_TASK = "radiant_somatic_annotation"
 TUMOR_ONLY_VARIANT_CALLING_TASK = "tumor_only_variant_calling"
 
@@ -43,6 +42,8 @@ class RadiantGermlineAnnotationTask(BaseTask):
     task_type: str = RADIANT_GERMLINE_ANNOTATION_TASK
     vcf_filepath: str
     index_vcf_filepath: str | None = None
+    # The Exomiser report ranks the proband, so the staging view sets it on the proband's row only.
+    exomiser_filepath: str | None = None
 
     @staticmethod
     def gather_additional_args(rows: list[dict]) -> dict:
@@ -51,6 +52,7 @@ class RadiantGermlineAnnotationTask(BaseTask):
                 return {
                     "vcf_filepath": r["vcf_filepath"],
                     "index_vcf_filepath": r.get("index_vcf_filepath"),
+                    "exomiser_filepath": r.get("exomiser_filepath"),
                 }
         raise ValueError("No proband found in rows for `radiant_germline_annotation` task.")
 
@@ -65,19 +67,6 @@ class AlignmentGermlineVariantCallingTask(BaseTask):
             raise ValueError("`alignment_germline_variant_calling` task expects a single row per task.")
         return {
             "cnv_vcf_filepath": rows[0]["cnv_vcf_filepath"],
-        }
-
-
-class ExomiserTask(BaseTask):
-    task_type: str = EXOMISER_TASK
-    exomiser_filepath: str
-
-    @staticmethod
-    def gather_additional_args(rows: list[dict]) -> dict:
-        if len(rows) > 1:
-            raise ValueError("`exomiser` task expects a single row per task.")
-        return {
-            "exomiser_filepath": rows[0]["exomiser_filepath"],
         }
 
 
@@ -122,7 +111,6 @@ class TumorOnlyVariantCallingTask(BaseTask):
 _TASK_TYPES = {
     RADIANT_GERMLINE_ANNOTATION_TASK: RadiantGermlineAnnotationTask,
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK: AlignmentGermlineVariantCallingTask,
-    EXOMISER_TASK: ExomiserTask,
     RADIANT_SOMATIC_ANNOTATION_TASK: RadiantSomaticAnnotationTask,
     TUMOR_ONLY_VARIANT_CALLING_TASK: TumorOnlyVariantCallingTask,
 }

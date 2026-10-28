@@ -29,12 +29,15 @@ EXOMISER_DIR = "exomiser"
 #
 # The index rides along, as for the SNV slivar VCF: the revision the launcher pins
 # (`CNV_PIPELINE_REV`) indexes the slivar VCF and publishes the `.tbi` next to it.
+#
+# The Exomiser reports are `exomiser_cnv`, not `exomiser`: the portal tells them from
+# the SNV report, which has the same file names, and the staging view reads only `exomiser`.
 OUTPUT_SPEC = {
     "slivar_vcf": (f"{SLIVAR_DIR}/{{family_id}}.cnv.slivar.vcf.gz", "gcnv", "vcf"),
     "slivar_tbi": (f"{SLIVAR_DIR}/{{family_id}}.cnv.slivar.vcf.gz.tbi", "gcnv", "tbi"),
-    "exomiser_tsv": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.variants.tsv", "exomiser", "tsv"),
-    "exomiser_html": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.html", "exomiser", "html"),
-    "exomiser_json": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.json", "exomiser", "json"),
+    "exomiser_tsv": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.variants.tsv", "exomiser_cnv", "tsv"),
+    "exomiser_html": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.html", "exomiser_cnv", "html"),
+    "exomiser_json": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.json", "exomiser_cnv", "json"),
 }
 
 ANNOTATION_OUTPUTS = ("slivar_vcf", "slivar_tbi")

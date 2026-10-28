@@ -15,6 +15,7 @@ SELECT part,
        reference,
        alternate,
        acmg_classification,
-       acmg_evidence
+       acmg_evidence,
+       task_id
 FROM {{ table }} PARTITION ( p{{ partition }})
-WHERE seq_id NOT IN %(seq_ids)s AND seq_id NOT IN %(deleted_seq_ids)s;
+WHERE task_id NOT IN %(task_ids)s AND task_id NOT IN %(deleted_task_ids)s;

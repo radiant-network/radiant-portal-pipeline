@@ -267,6 +267,7 @@ def test_queries_are_valid(
             ("starrocks_germline_cnv_occurrence", "germline_cnv_occurrence_insert_partition_delta.sql"),
             ("starrocks_somatic_cnv_occurrence", "somatic_cnv_occurrence_insert_partition_delta.sql"),
             ("starrocks_germline_snv_comphet", "germline_snv_comphet_insert_partition_delta.sql"),
+            ("starrocks_exomiser", "exomiser_insert_partition_delta.sql"),
             ("starrocks_germline_snv_occurrence", "germline_snv_occurrence_insert_partition_delta.sql"),
         ],
     )
