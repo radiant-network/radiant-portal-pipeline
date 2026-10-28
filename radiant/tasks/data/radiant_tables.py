@@ -143,12 +143,14 @@ STARROCKS_RADIANT_BASE_MAPPING = {
 STARROCKS_RADIANT_PER_TENANT_MAPPING = {
     "starrocks_exomiser": "exomiser",
     "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
+    "starrocks_germline_cnv_variant_frequency": "germline__cnv__variant_frequency",
     "starrocks_germline_snv_comphet": "germline__snv__comphet",
     "starrocks_germline_snv_occurrence": "germline__snv__occurrence",
     "starrocks_germline_snv_variant_frequency": "germline__snv__variant_frequency",
     "starrocks_snv_variant": "snv__variant",
     "starrocks_snv_variant_partitioned": "snv__variant_partitioned",
     "starrocks_somatic_cnv_occurrence": "somatic__cnv__occurrence",
+    "starrocks_somatic_cnv_variant_frequency": "somatic__cnv__variant_frequency",
     "starrocks_somatic_snv_occurrence": "somatic__snv__occurrence",
     "starrocks_somatic_snv_variant_frequency": "somatic__snv__variant_frequency",
 }

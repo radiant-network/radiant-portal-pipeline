@@ -103,6 +103,9 @@ def _consequence_row(
     consequences=("missense_variant",),
     vep_impact="MODERATE",
     impact_score=3,
+    dna_change=None,
+    cds_start=None,
+    cds_end=None,
 ):
     """One Iceberg consequence row, with every non-nullable field of the merged schema filled."""
     return {
@@ -134,8 +137,10 @@ def _consequence_row(
         "is_picked": False,
         "is_canonical": is_mane,
         "aa_change": None,
-        "dna_change": None,
+        "dna_change": dna_change,
         "impact_score": impact_score,
+        "cds_start": cds_start,
+        "cds_end": cds_end,
     }
 
 
@@ -154,6 +159,9 @@ _CONSEQUENCE_ROWS = [
         mane_select="NM_0001.6",
         mane_pair="NM_0001",
         is_mane=True,
+        dna_change="c.227A>T",
+        cds_start=227,
+        cds_end=227,
     ),
     # 2. Its RefSeq twin. Must end up with row 1's scores, from both source tables.
     _consequence_row(
@@ -174,6 +182,8 @@ _CONSEQUENCE_ROWS = [
         mane_select="",
         mane_pair="",
         is_mane=False,
+        cds_start=927,
+        cds_end=932,
     ),
     # 4. Ensembl MANE Select covered by dbNSFP but NOT by gnomAD constraint.
     _consequence_row(
@@ -221,6 +231,8 @@ _CONSEQUENCE_ROWS = [
         consequences=("frameshift_variant",),
         vep_impact="HIGH",
         impact_score=4,
+        cds_start=None,
+        cds_end=125,
     ),
     # 7. Intergenic: `resolve_source()` rule 4 leaves the source NULL. `source = 'RefSeq'` then yields
     #    NULL, which is what the COALESCE around the flag exists to absorb -- the column is NOT NULL.
@@ -476,3 +488,39 @@ def test_filter_table_takes_only_the_refseq_annotations_ensembl_does_not_provide
         # mean the anti join stopped firing; a null `sift_score` would mean it dropped the wrong side.
         ("TP53", "missense_variant", "MODERATE", 1, 0.5, 0.5),
     )
+
+
+# RAD-71: (cds_start, cds_end) per transcript, as seeded above. One SNV, one range, one range with its start
+# outside the CDS, and NULL everywhere else.
+_EXPECTED_CDS_POSITIONS = {
+    "ENST0001": (227, 227),
+    "NM_0001": (None, None),
+    "NM_9999": (927, 932),
+    "NM_8888": (None, 125),
+    "ENST0002": (None, None),
+    "NM_0002": (None, None),
+    "NM_0003": (None, None),
+    "": (None, None),
+}
+
+
+def _cds_positions(rows):
+    return {transcript_id: (row["cds_start"], row["cds_end"]) for transcript_id, row in rows.items()}
+
+
+def test_cds_position_is_loaded_and_survives_the_reannotation(seeded_consequences, starrocks_session, radiant_mapping):
+    """RAD-71 -- both statements are positional INSERTs, so a column out of place lands in its neighbour.
+
+    `dna_change`, the column just before the new ones, is seeded next to a position: a swap or a shift would
+    move one into the other. A re-annotation that dropped the columns would bring the positions back NULL.
+    """
+    _run(starrocks_session, radiant_mapping, "radiant/snv_consequence_insert.sql", {"task_ids": [_TASK_ID]})
+    loaded = _fetch_by_transcript(starrocks_session, radiant_mapping["starrocks_snv_consequence"])
+
+    assert _cds_positions(loaded) == _EXPECTED_CDS_POSITIONS
+    assert loaded["ENST0001"]["dna_change"] == "c.227A>T"
+
+    _run(starrocks_session, radiant_mapping, "radiant/snv_consequence_reannotate.sql")
+    reannotated = _fetch_by_transcript(starrocks_session, radiant_mapping["starrocks_snv_consequence"])
+
+    assert reannotated == loaded

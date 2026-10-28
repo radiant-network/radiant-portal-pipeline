@@ -42,6 +42,7 @@ SOURCE_IDX = 27
 MANE_IDX = 22
 MANE_SELECT_IDX = 23
 FEATURE_IDX = 7
+CDS_POSITION_IDX = 14
 
 
 @pytest.fixture(scope="module")
@@ -61,6 +62,7 @@ def merged():
             "mane": MANE_IDX,
             "mane_select": MANE_SELECT_IDX,
             "feature": FEATURE_IDX,
+            "cds_position": CDS_POSITION_IDX,
         }.items() <= csq_header.items(), f"CSQ column order changed: {csq_header}"
         rows = []
         for record in vcf_file:
@@ -134,6 +136,19 @@ def test_version_stripping_is_applied_to_both_sides_of_the_pair(blocks):
         assert ".".join(filter(None, (consequence["transcript_id"], version))) == raw[FEATURE_IDX]
         stripped += "." in raw[MANE_SELECT_IDX] or "." in raw[FEATURE_IDX]
     assert stripped, "nothing in the fixture was versioned -- the test proves nothing"
+
+
+def test_the_cds_position_matches_the_files_own_value(blocks):
+    # RAD-71: the position is copied from `CDS_position`, never derived from the HGVSc, which VEP
+    # 3'-shifts on indels. A single base fills both ends, a range one each, an empty value neither.
+    shapes = set()
+    for consequence, raw in blocks:
+        value = raw[CDS_POSITION_IDX]
+        start, _, end = value.partition("-")
+        expected = tuple(None if x == "?" else int(x) for x in (start, end or start)) if value else (None, None)
+        assert (consequence["cds_start"], consequence["cds_end"]) == expected, value
+        shapes.add("range" if end else "single" if value else "empty")
+    assert shapes == {"single", "range", "empty"}, f"fixture no longer covers every shape: {shapes}"
 
 
 def test_transcript_version_is_populated_on_refseq_and_empty_on_ensembl(blocks):

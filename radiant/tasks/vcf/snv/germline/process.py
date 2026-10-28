@@ -14,7 +14,7 @@ from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s
 from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.snv.common import process_common
-from radiant.tasks.vcf.snv.consequence import log_source_counts, parse_csq_header, process_consequence
+from radiant.tasks.vcf.snv.consequence import log_invalid_cds, log_source_counts, parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.germline.comphet import process_comphet
 from radiant.tasks.vcf.snv.germline.inheritance import slivar_inheritance_methods
 from radiant.tasks.vcf.snv.germline.occurrence import process_occurrence
@@ -86,6 +86,7 @@ def process_task(
             comphet_table = catalog.load_table(comphets_table_name)
             comphet_buffer = TableAccumulator(comphet_table, partition_filter=occurrence_partition_filter)
             source_counts = Counter()
+            invalid_cds = Counter()
             skipped_no_alt = 0
             for record in vcf:
                 if len(record.ALT) <= 1:
@@ -99,7 +100,7 @@ def process_task(
                         if not any(o["has_alt"] for o in occurrences.values()):
                             skipped_no_alt += 1
                             continue
-                        picked_consequence, consequences = process_consequence(record, csq_header, common)
+                        picked_consequence, consequences = process_consequence(record, csq_header, common, invalid_cds)
                         source_counts.update(c["source"] for c in consequences)
                         consequence_buffer.extend(consequences)
                         occurrence_buffer.extend(list(occurrences.values()))
@@ -120,6 +121,7 @@ def process_task(
 
             #### End of VCF file processing, flush buffers ####
             log_source_counts(source_counts, task.task_id, task.vcf_filepath)
+            log_invalid_cds(invalid_cds, task.task_id, task.vcf_filepath)
             logger.info(f"Task {task.task_id}: skipped {skipped_no_alt} records with no alt call in any sample")
 
             occurrence_buffer.write_files()
