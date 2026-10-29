@@ -1,8 +1,6 @@
 import asyncio
 import logging
 import math
-from collections.abc import Callable
-from functools import partial
 from typing import Any
 
 from airflow.hooks.base import BaseHook
@@ -16,13 +14,6 @@ DEFAULT_QUERY_TIMEOUT = 60
 # legitimately find nothing. Keep the grace window time-based rather than attempt-based, otherwise a short
 # `poll_interval` silently shrinks it.
 _NOT_FOUND_GRACE_SECONDS = 120
-
-# `starrocks_conn` extras forwarded to `MySQLdb.connect` (mysqlclient accepts all three, `_mysql.c`).
-_DRIVER_TIMEOUTS = ("connect_timeout", "read_timeout", "write_timeout")
-
-
-class UnsupportedConnectionError(TypeError):
-    """The trigger's connection is not a MySqlHook one; retrying cannot fix it."""
 
 
 class StarRocksTaskCompleteTrigger(BaseTrigger):
@@ -49,56 +40,16 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
             },
         )
 
-    async def _aget_connect(self) -> Callable[[], Any]:
-        """Resolve everything Airflow-side on the event loop; return a plain driver `connect` for the thread.
-
-        Rule: a worker thread must never call into Airflow. On Airflow 3 any supervisor call from a thread
-        (`get_connection`, or the `MaskSecret` each `Connection.extra_dejson` read sends) runs on a second
-        event loop over the runner's socket, and the runner dies on "Response read out of order!" (fixed in
-        Airflow 3.2.2, apache/airflow#66412; kept so the thread stays free of Airflow). `get_hook` scans
-        provider entry points on its first call, a one-off cost on the loop.
-        """
-        connection = await BaseHook.aget_connection(self.conn_id)
-        hook = connection.get_hook(hook_params={"connection": connection})
-        return self._driver_connect(hook, connection)
-
-    @staticmethod
-    def _driver_connect(hook, connection) -> Callable[[], Any]:
-        """The driver call `MySqlHook.get_conn` would make, minus its Airflow lookups (same kwargs builders).
-
-        mysqlclient also gets the `_DRIVER_TIMEOUTS` from the extra: the provider (6.6.1) drops them, and they
-        are what releases a thread `wait_for` abandoned in `recv()`.
-        """
-        extra = connection.extra_dejson
-        if extra.get("client", "mysqlclient") == "mysql-connector-python":
-            builder_name = "_get_conn_config_mysql_connector_python"
-        else:
-            builder_name = "_get_conn_config_mysql_client"
-        builder = getattr(hook, builder_name, None)
-        if builder is None:
-            raise UnsupportedConnectionError(
-                f"Connection {connection.conn_id!r} resolves to {type(hook).__name__}, which has no "
-                f"{builder_name}: StarRocksTaskCompleteTrigger needs a `mysql` connection (MySqlHook)."
-            )
-
-        if builder_name == "_get_conn_config_mysql_connector_python":
-            import mysql.connector
-
-            return partial(mysql.connector.connect, **builder(connection))
-        import MySQLdb
-
-        timeouts = {key: extra[key] for key in _DRIVER_TIMEOUTS if key in extra}
-        return partial(MySQLdb.connect, **builder(connection), **timeouts)
-
-    def _fetch_last_run(self, connect: Callable[[], Any]) -> tuple | None:
+    def _fetch_last_run(self) -> tuple | None:
         """Read the latest task run state for `self.task_name`.
 
         Blocking: opens a short-lived connection, queries, then closes it. Runs in a worker thread, never on
         the triggerer event loop. A fresh connection per poll re-resolves DNS and sidesteps half-open sockets
-        left behind by an FE restart or a pod being rescheduled. `connect` is a bare driver call: nothing in
-        this thread may call into Airflow (see `_aget_connect`).
+        left behind by an FE restart or a pod being rescheduled.
         """
-        conn = connect()
+        connection = BaseHook.get_connection(self.conn_id)
+        hook = connection.get_hook(hook_params={})
+        conn = hook.get_conn()
         try:
             with conn.cursor() as cursor:
                 cursor.execute(
@@ -143,20 +94,9 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
         `wait_for` bounds a hung socket so the loop can retry with a fresh connection. Note the abandoned
         thread stays blocked on `recv()` and holds a default-executor slot until the socket errors out — set
         `read_timeout`/`connect_timeout` in the `starrocks_conn` extra to bound that too (see README).
-
-        `_aget_connect` stays outside `wait_for`: cancelling it between its supervisor request and the reply
-        would leave the reply on the socket for the runner's next read, which is the very desync it avoids.
-        A stalled supervisor is bounded by the operator's defer timeout instead.
         """
         try:
-            connect = await self._aget_connect()
-        except UnsupportedConnectionError as e:
-            return TriggerEvent({"status": "error", "error_message": str(e)})
-        except Exception as e:  # noqa: BLE001 - a supervisor/secrets hiccup is retryable
-            return self._on_query_error(f"[{type(e)}] {e}")
-
-        try:
-            result = await asyncio.wait_for(asyncio.to_thread(self._fetch_last_run, connect), self._query_timeout)
+            result = await asyncio.wait_for(asyncio.to_thread(self._fetch_last_run), timeout=self._query_timeout)
         except TimeoutError:
             return self._on_query_error(f"query timed out after {self._query_timeout}s")
         except Exception as e:  # noqa: BLE001 - any driver error is retryable
