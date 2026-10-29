@@ -53,7 +53,8 @@
              'not_provided', 'other',
              'pathogenic_low_penetrance', 'Pathogenic', 'protective', 'risk_factor',
              'Uncertain_risk_allele', 'Uncertain_significance', 'VUS-high', 'VUS-low', 'VUS-mid',
-             '_low_penetrance', 'low_penetrance']) }}
+             '_low_penetrance', 'low_penetrance', 'Likely_pathogenic_low_penetrance',
+             'Pathogenic_low_penetrance']) }}
 {% endmacro %}
 
 {% macro dict_consequences() %}
