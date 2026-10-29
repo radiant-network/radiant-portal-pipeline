@@ -12,7 +12,7 @@ from radiant.tasks.vcf.snv.germline.inheritance import (
     slivar_parental_origin,
     slivar_transmission_mode,
 )
-from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT
+from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT, InfoKeys
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -78,7 +78,37 @@ SCHEMA = merge_schemas(
 )
 
 
-def process_occurrence(record: Variant, ped: Pedigree, common: Common, slivar: SlivarMethods = ETL_ONLY) -> dict:
+# The INFO fields `process_occurrence` reads, resolved against each file's header by `resolve_info_keys`.
+INFO_FIELDS = (
+    "OLD_RECORD",
+    "BaseQRankSum",
+    "FS",
+    "DS",
+    "FractionInformativeReads",
+    "InbreedingCoeff",
+    "MLEAC",
+    "MLEAF",
+    "MQ",
+    "MQRankSum",
+    "QD",
+    "R2_5P_bias",
+    "ReadPosRankSum",
+    "SOR",
+    "VQSLOD",
+    "culprit",
+    "DP",
+    "HaplotypeScore",
+    "ExcessHet",
+)
+
+
+def process_occurrence(
+    record: Variant,
+    ped: Pedigree,
+    common: Common,
+    slivar: SlivarMethods = ETL_ONLY,
+    info_keys: InfoKeys | None = None,
+) -> dict:
     """
     Processes a genetic variant occurrence and extracts relevant information for each sample in the pedigree.
 
@@ -88,6 +118,8 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common, slivar: S
         common (Common): A `Common` object containing shared attributes for the variant, such as locus and chromosome.
         slivar (SlivarMethods): Which of the parental origin and the transmission mode come from the slivar tags of
             the VCF (RAD-93); each of the two falls back to the ETL calculation on its own.
+        info_keys (InfoKeys | None): The file's spelling of the INFO fields, from `resolve_info_keys`. None reads
+            each field under the name in `INFO_FIELDS`.
 
     Returns:
         dict: A dictionary where each key is a sample's `seq_id` and the value is a dictionary of extracted attributes
@@ -134,27 +166,28 @@ def process_occurrence(record: Variant, ped: Pedigree, common: Common, slivar: S
     occurrences = {}
 
     info_fields = record.INFO
+    info = (info_keys or InfoKeys()).value
     quality = int(record.QUAL) if record.QUAL is not None else None
     filter = record.FILTER or "PASS"
-    old_record = info_fields.get("OLD_RECORD", None)
-    baseq_ranksum = info_fields.get("BaseQRankSum", None)
-    fs = info_fields.get("FS", None)
-    ds = info_fields.get("DS", None)
-    fraction_informative_reads = info_fields.get("FractionInformativeReads", None)
-    inbreed_coeff = info_fields.get("InbreedCoeff", None)
-    mleac = info_fields.get("MLEAC", None)
-    mleaf = info_fields.get("MLEAF", None)
-    mq = info_fields.get("MQ", None)
-    mq_ranksum = info_fields.get("MQRankSum", None)
-    qd = info_fields.get("QD", None)
-    r2_5p_bias = info_fields.get("R2_5P_bias", None)
-    read_pos_rank_su = info_fields.get("ReadPosRankSum", None)
-    sor = info_fields.get("SOR", None)
-    vqslod = info_fields.get("VQSLod", None)
-    culprit = info_fields.get("Culprit", None)
-    info_dp = info_fields.get("DP", None)
-    haplotype_score = info_fields.get("HaplotypeScore", None)
-    excess_het = info_fields.get("ExcessHet", None)
+    old_record = info(info_fields, "OLD_RECORD")
+    baseq_ranksum = info(info_fields, "BaseQRankSum")
+    fs = info(info_fields, "FS")
+    ds = info(info_fields, "DS")
+    fraction_informative_reads = info(info_fields, "FractionInformativeReads")
+    inbreed_coeff = info(info_fields, "InbreedingCoeff")
+    mleac = info(info_fields, "MLEAC")
+    mleaf = info(info_fields, "MLEAF")
+    mq = info(info_fields, "MQ")
+    mq_ranksum = info(info_fields, "MQRankSum")
+    qd = info(info_fields, "QD")
+    r2_5p_bias = info(info_fields, "R2_5P_bias")
+    read_pos_rank_su = info(info_fields, "ReadPosRankSum")
+    sor = info(info_fields, "SOR")
+    vqslod = info(info_fields, "VQSLOD")
+    culprit = info(info_fields, "culprit")
+    info_dp = info(info_fields, "DP")
+    haplotype_score = info(info_fields, "HaplotypeScore")
+    excess_het = info(info_fields, "ExcessHet")
 
     # Every cyvcf2 `gt_*` property and `format(...)` call re-decodes the FORMAT matrix for
     # *all* samples and allocates a fresh array, so each one is read exactly once per record

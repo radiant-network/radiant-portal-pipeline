@@ -6,7 +6,7 @@ from radiant.tasks.iceberg.utils import merge_schemas
 from radiant.tasks.vcf.experiment import Experiment
 from radiant.tasks.vcf.snv.common import SCHEMA as COMMON_SCHEMA
 from radiant.tasks.vcf.snv.common import Common
-from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_WT, calls_without_phased
+from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_WT, InfoKeys, calls_without_phased
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -71,8 +71,45 @@ SCHEMA = merge_schemas(
 )
 
 
+# The INFO fields `process_occurrence` reads, resolved against each file's header by `resolve_info_keys`.
+# The hotspot flag is not among them: `read_hotspot` tells its two spellings apart itself.
+INFO_FIELDS = (
+    "OLD_RECORD",
+    "BaseQRankSum",
+    "FS",
+    "DS",
+    "FractionInformativeReads",
+    "InbreedingCoeff",
+    "MLEAC",
+    "MLEAF",
+    "MQ",
+    "MQ0",
+    "MQRankSum",
+    "QD",
+    "R2_5P_bias",
+    "ReadPosRankSum",
+    "SOR",
+    "VQSLOD",
+    "culprit",
+    "DP",
+    "HaplotypeScore",
+    "HotspotAllele",
+    "CAL",
+    "ExcessHet",
+    "GERMQ",
+    "TLOD",
+    "MAPQ",
+    "AQ",
+)
+
+
 def process_occurrence(
-    record: Variant, experiments: list[Experiment], common: Common, tumor_index: int, normal_index: int | None
+    record: Variant,
+    experiments: list[Experiment],
+    common: Common,
+    tumor_index: int,
+    normal_index: int | None,
+    info_keys: InfoKeys | None = None,
 ) -> dict:
     """
     Processes a somatic variant occurrence and extracts relevant information.
@@ -83,6 +120,7 @@ def process_occurrence(
         common (Common): A `Common` object containing shared attributes for the variant, such as locus and chromosome.
         tumor_index (int): The index of the tumor sample in the VCF record's samples.
         normal_index (int | None): The index of the normal sample in the VCF record's samples, or `None` for a tumor-only analysis, in which case every `normal_*` value is `None`.
+        info_keys (InfoKeys | None): The file's spelling of the INFO fields, from `resolve_info_keys`. None reads each field under the name in `INFO_FIELDS`.
 
     Returns:
         dict: A dictionary containing the processed occurrence information for the somatic variant, structured as follows:
@@ -163,35 +201,36 @@ def process_occurrence(
     occurrences = {}
 
     info_fields = record.INFO
+    info = (info_keys or InfoKeys()).value
     info_quality = int(record.QUAL) if record.QUAL is not None else None
     info_filter = record.FILTER or "PASS"
-    info_old_record = info_fields.get("OLD_RECORD", None)
-    baseq_ranksum = info_fields.get("BaseQRankSum", None)
-    info_fs = info_fields.get("FS", None)
-    info_ds = info_fields.get("DS", None)
-    info_fraction_informative_reads = info_fields.get("FractionInformativeReads", None)
-    info_inbreed_coeff = info_fields.get("InbreedCoeff", None)
-    info_mleac = info_fields.get("MLEAC", None)
-    info_mleaf = info_fields.get("MLEAF", None)
-    info_mq = info_fields.get("MQ", None)
-    info_mq0 = info_fields.get("MQ0", None)
-    info_mq_ranksum = info_fields.get("MQRankSum", None)
-    info_qd = info_fields.get("QD", None)
-    info_r2_5p_bias = info_fields.get("R2_5P_bias", None)
-    info_read_pos_rank_su = info_fields.get("ReadPosRankSum", None)
-    info_sor = info_fields.get("SOR", None)
-    info_vqslod = info_fields.get("VQSLod", None)
-    info_culprit = info_fields.get("Culprit", None)
-    info_dp = info_fields.get("DP", None)
-    info_haplotype_score = info_fields.get("HaplotypeScore", None)
-    info_hotspotallele = info_fields.get("HotspotAllele", None)
+    info_old_record = info(info_fields, "OLD_RECORD")
+    baseq_ranksum = info(info_fields, "BaseQRankSum")
+    info_fs = info(info_fields, "FS")
+    info_ds = info(info_fields, "DS")
+    info_fraction_informative_reads = info(info_fields, "FractionInformativeReads")
+    info_inbreed_coeff = info(info_fields, "InbreedingCoeff")
+    info_mleac = info(info_fields, "MLEAC")
+    info_mleaf = info(info_fields, "MLEAF")
+    info_mq = info(info_fields, "MQ")
+    info_mq0 = info(info_fields, "MQ0")
+    info_mq_ranksum = info(info_fields, "MQRankSum")
+    info_qd = info(info_fields, "QD")
+    info_r2_5p_bias = info(info_fields, "R2_5P_bias")
+    info_read_pos_rank_su = info(info_fields, "ReadPosRankSum")
+    info_sor = info(info_fields, "SOR")
+    info_vqslod = info(info_fields, "VQSLOD")
+    info_culprit = info(info_fields, "culprit")
+    info_dp = info(info_fields, "DP")
+    info_haplotype_score = info(info_fields, "HaplotypeScore")
+    info_hotspotallele = info(info_fields, "HotspotAllele")
     info_hotspot = read_hotspot(info_fields)
-    info_cal = info_fields.get("CAL", None)
-    info_excess_het = info_fields.get("ExcessHet", None)
-    info_germq = info_fields.get("GERMQ", None)
-    info_tlod = info_fields.get("TLOD", None)
-    info_mapq = info_fields.get("MAPQ", None)
-    info_aq = info_fields.get("AQ", None)
+    info_cal = info(info_fields, "CAL")
+    info_excess_het = info(info_fields, "ExcessHet")
+    info_germq = info(info_fields, "GERMQ")
+    info_tlod = info(info_fields, "TLOD")
+    info_mapq = info(info_fields, "MAPQ")
+    info_aq = info(info_fields, "AQ")
 
     tumor_exp = experiments[tumor_index]
     normal_exp = experiments[normal_index] if normal_index is not None else None
