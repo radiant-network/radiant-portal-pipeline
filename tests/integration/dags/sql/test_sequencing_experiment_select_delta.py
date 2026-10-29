@@ -271,6 +271,103 @@ def test_sequencing_experiment_delta_ignores_cnv_exomiser_reports(
     assert delta.query("task_id == 9602").empty
 
 
+@pytest.fixture
+def shared_sequencing(postgres_clinical_seeds, postgres_instance):
+    """Proband 9610 is sequenced once (experiment 9610) and analysed twice, on ids far above the seeded range:
+
+    - trio case 9610: the proband with father 9611 and mother 9612, annotated by task 9610;
+    - solo case 9611: the same proband alone, annotated by task 9611 over the same experiment 9610;
+    - alignment task 9612 over experiment 9610, with a NULL case_id: it belongs to the experiment, not to a case.
+    """
+    execute_clinical(
+        postgres_instance,
+        """
+        INSERT INTO patient (id, submitter_patient_id, organization_code, sex_code, date_of_birth, life_status_code,
+                             tenant_code)
+        VALUES (9610, 'PT-9610', 'CQGC', 'female', '2015-01-01', 'alive', 'radiant'),
+               (9611, 'PT-9611', 'CQGC', 'male',   '1985-01-01', 'alive', 'radiant'),
+               (9612, 'PT-9612', 'CQGC', 'female', '1986-01-01', 'alive', 'radiant');
+        INSERT INTO cases (id, proband_id, project_id, status_code, primary_condition, created_on, updated_on,
+                           case_type_code, submitter_case_id, tenant_code)
+        VALUES (9610, 9610, 1, 'in_progress', 'MONDO:0700092', now(), now(), 'germline', 'SHARED-TRIO', 'radiant'),
+               (9611, 9610, 1, 'in_progress', 'MONDO:0700092', now(), now(), 'germline', 'SHARED-SOLO', 'radiant');
+        INSERT INTO family (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code,
+                            tenant_code)
+        VALUES (9610, 9610, 9610, 'proband', 'affected',     'radiant'),
+               (9611, 9610, 9611, 'father',  'non_affected', 'radiant'),
+               (9612, 9610, 9612, 'mother',  'non_affected', 'radiant'),
+               (9613, 9611, 9610, 'proband', 'affected',     'radiant');
+        INSERT INTO sample (id, type_code, histology_code, submitter_sample_id, patient_id, organization_code,
+                            tenant_code)
+        VALUES (9610, 'dna', 'normal', 'S9610', 9610, 'CQGC', 'radiant'),
+               (9611, 'dna', 'normal', 'S9611', 9611, 'CQGC', 'radiant'),
+               (9612, 'dna', 'normal', 'S9612', 9612, 'CQGC', 'radiant');
+        INSERT INTO sequencing_experiment (id, sample_id, status_code, aliquot, created_on, updated_on,
+                                           experimental_strategy_code, platform_code, tenant_code)
+        VALUES (9610, 9610, 'completed', 'A9610', '2026-01-01', '2026-01-01', 'wxs', 'illumina', 'radiant'),
+               (9611, 9611, 'completed', 'A9611', '2026-01-01', '2026-01-01', 'wxs', 'illumina', 'radiant'),
+               (9612, 9612, 'completed', 'A9612', '2026-01-01', '2026-01-01', 'wxs', 'illumina', 'radiant');
+        INSERT INTO case_has_sequencing_experiment (case_id, sequencing_experiment_id)
+        VALUES (9610, 9610), (9610, 9611), (9610, 9612), (9611, 9610);
+        INSERT INTO task (id, task_type_code, created_on, pipeline_name, pipeline_version, genome_build, tenant_code)
+        VALUES (9610, 'radiant_germline_annotation', '2026-01-02', 'snv-post-processing', 'mock', 'GRch38', 'radiant'),
+               (9611, 'radiant_germline_annotation', '2026-01-02', 'snv-post-processing', 'mock', 'GRch38', 'radiant'),
+               (9612, 'alignment_germline_variant_calling', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant');
+        INSERT INTO task_context (task_id, case_id, sequencing_experiment_id)
+        VALUES (9610, 9610, 9610), (9610, 9610, 9611), (9610, 9610, 9612),
+               (9611, 9611, 9610),
+               (9612, null, 9610);
+        INSERT INTO document (id, name, data_category_code, data_type_code, format_code, size, url, hash, tenant_code)
+        VALUES (9610, 'trio.snv.vcf.gz', 'genomic', 'snv', 'vcf', 1, 's3://test-vcf/trio.snv.vcf.gz', 'mock9610',
+                'radiant'),
+               (9611, 'solo.snv.vcf.gz', 'genomic', 'snv', 'vcf', 1, 's3://test-vcf/solo.snv.vcf.gz', 'mock9611',
+                'radiant'),
+               (9612, 'a9610.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1, 's3://test-vcf/a9610.cnv.vcf.gz', 'mock9612',
+                'radiant');
+        INSERT INTO task_has_document (task_id, document_id, type)
+        VALUES (9610, 9610, 'output'), (9611, 9611, 'output'), (9612, 9612, 'output');
+        """,
+    )
+    yield
+    execute_clinical(
+        postgres_instance,
+        """
+        DELETE FROM task_has_document WHERE task_id IN (9610, 9611, 9612);
+        DELETE FROM task_context WHERE task_id IN (9610, 9611, 9612);
+        DELETE FROM task WHERE id IN (9610, 9611, 9612);
+        DELETE FROM document WHERE id IN (9610, 9611, 9612);
+        DELETE FROM case_has_sequencing_experiment WHERE case_id IN (9610, 9611);
+        DELETE FROM sequencing_experiment WHERE id IN (9610, 9611, 9612);
+        DELETE FROM sample WHERE id IN (9610, 9611, 9612);
+        DELETE FROM family WHERE case_id IN (9610, 9611);
+        DELETE FROM cases WHERE id IN (9610, 9611);
+        DELETE FROM patient WHERE id IN (9610, 9611, 9612);
+        """,
+    )
+
+
+def test_sequencing_experiment_delta_keeps_a_shared_experiment_in_its_own_cases_tasks(
+    shared_sequencing, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """RAD-171: an experiment in two cases gets, in each case, the annotation task of that case only, once, with that
+    case's family. The alignment task, whose case_id is NULL, stays in both cases."""
+    delta = _delta(starrocks_session, sequencing_delta_columns).query("case_id in [9610, 9611]")
+
+    assert not delta.duplicated(["case_id", "seq_id", "task_id"]).any()
+    assert sorted(
+        (int(r.case_id), int(r.seq_id), int(r.task_id), int(r.family_id), r.family_role) for r in delta.itertuples()
+    ) == [
+        (9610, 9610, 9610, 9610, "proband"),
+        (9610, 9610, 9612, 9610, "proband"),
+        (9610, 9611, 9610, 9611, "father"),
+        (9610, 9612, 9610, 9612, "mother"),
+        (9611, 9610, 9611, 9613, "proband"),
+        (9611, 9610, 9612, 9613, "proband"),
+    ]
+    assert set(delta.query("task_id == 9610")["vcf_filepath"]) == {"s3://test-vcf/trio.snv.vcf.gz"}
+    assert set(delta.query("task_id == 9611")["vcf_filepath"]) == {"s3://test-vcf/solo.snv.vcf.gz"}
+
+
 def test_sequencing_experiment_no_delta(
     postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
 ):
