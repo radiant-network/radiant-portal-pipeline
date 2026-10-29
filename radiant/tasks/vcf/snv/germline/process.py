@@ -17,9 +17,9 @@ from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import log_invalid_cds, log_source_counts, parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.germline.comphet import process_comphet
 from radiant.tasks.vcf.snv.germline.inheritance import slivar_inheritance_methods
-from radiant.tasks.vcf.snv.germline.occurrence import INFO_FIELDS, process_occurrence
+from radiant.tasks.vcf.snv.germline.occurrence import process_occurrence
 from radiant.tasks.vcf.snv.variant import process_variant
-from radiant.tasks.vcf.vcf_utils import resolve_info_keys
+from radiant.tasks.vcf.vcf_utils import InfoKeys
 
 logger = logging.getLogger("airflow.task")
 tracer = get_tracer(__name__)
@@ -63,9 +63,7 @@ def process_task(
             raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
 
         csq_header = parse_csq_header(vcf)
-        info_keys = resolve_info_keys(vcf, INFO_FIELDS)
-        if info_keys.missing():
-            logger.info(f"Task {task.task_id}: INFO fields absent from the header, left null: {info_keys.missing()}")
+        info_keys = InfoKeys(vcf)
         pedigree = Pedigree(task, vcf.samples)
         slivar = slivar_inheritance_methods(vcf)
         logger.info(

@@ -3,8 +3,8 @@ import pytest
 from radiant.tasks.vcf.experiment import Experiment, RadiantGermlineAnnotationTask
 from radiant.tasks.vcf.pedigree import Pedigree
 from radiant.tasks.vcf.snv.common import Common
-from radiant.tasks.vcf.snv.germline.occurrence import INFO_FIELDS, process_occurrence
-from radiant.tasks.vcf.vcf_utils import InfoKeys, resolve_info_keys
+from radiant.tasks.vcf.snv.germline.occurrence import process_occurrence
+from radiant.tasks.vcf.vcf_utils import InfoKeys
 from tests.unit.vcf.vcf_test_utils import variant, vcf
 
 # Declares VQSLOD as `VQSLod` and InbreedingCoeff under its alias `InbreedCoeff`, and no HaplotypeScore.
@@ -36,22 +36,20 @@ common = Common(task.task_id, task.part, "1-1000-A-G", "hash", "1", 1000, 1000, 
 @pytest.fixture
 def info_keys():
     with vcf(INFO_KEYS_VCF) as v:
-        return resolve_info_keys(v, INFO_FIELDS)
+        return InfoKeys(v)
 
 
-def test_resolve_ignores_case(info_keys):
-    assert info_keys["VQSLOD"] == "VQSLod"
-    assert info_keys["culprit"] == "culprit"
+def test_reads_ignoring_case(info_keys):
+    assert info_keys.value({"VQSLod": 7.5}, "VQSLOD") == 7.5
+    assert info_keys.value({"culprit": "MQ"}, "culprit") == "MQ"
 
 
-def test_resolve_falls_back_to_an_alias(info_keys):
-    assert info_keys["InbreedingCoeff"] == "InbreedCoeff"
+def test_reads_through_an_alias(info_keys):
+    assert info_keys.value({"InbreedCoeff": -0.25}, "InbreedingCoeff") == -0.25
 
 
-def test_resolve_marks_a_field_absent_from_the_header(info_keys):
-    assert info_keys["HaplotypeScore"] is None
-    assert "HaplotypeScore" in info_keys.missing()
-    assert "VQSLOD" not in info_keys.missing()
+def test_a_field_absent_from_the_header_reads_none(info_keys):
+    assert info_keys.value({"HaplotypeScore": 1.0}, "HaplotypeScore") is None
 
 
 def test_occurrence_reads_the_header_spelling(info_keys):
@@ -71,5 +69,6 @@ def test_occurrence_without_keys_reads_the_names_as_is():
     assert occ["info_vqslod"] is None
 
 
-def test_empty_info_keys_read_the_names_as_is():
+def test_info_keys_without_a_vcf_read_the_names_as_is():
     assert InfoKeys().value({"QD": 1.0}, "QD") == 1.0
+    assert InfoKeys().value({"VQSLod": 7.5}, "VQSLOD") is None

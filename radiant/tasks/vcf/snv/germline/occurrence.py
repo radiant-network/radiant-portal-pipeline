@@ -78,30 +78,6 @@ SCHEMA = merge_schemas(
 )
 
 
-# The INFO fields `process_occurrence` reads, resolved against each file's header by `resolve_info_keys`.
-INFO_FIELDS = (
-    "OLD_RECORD",
-    "BaseQRankSum",
-    "FS",
-    "DS",
-    "FractionInformativeReads",
-    "InbreedingCoeff",
-    "MLEAC",
-    "MLEAF",
-    "MQ",
-    "MQRankSum",
-    "QD",
-    "R2_5P_bias",
-    "ReadPosRankSum",
-    "SOR",
-    "VQSLOD",
-    "culprit",
-    "DP",
-    "HaplotypeScore",
-    "ExcessHet",
-)
-
-
 def process_occurrence(
     record: Variant,
     ped: Pedigree,
@@ -118,8 +94,8 @@ def process_occurrence(
         common (Common): A `Common` object containing shared attributes for the variant, such as locus and chromosome.
         slivar (SlivarMethods): Which of the parental origin and the transmission mode come from the slivar tags of
             the VCF (RAD-93); each of the two falls back to the ETL calculation on its own.
-        info_keys (InfoKeys | None): The file's spelling of the INFO fields, from `resolve_info_keys`. None reads
-            each field under the name in `INFO_FIELDS`.
+        info_keys (InfoKeys | None): The INFO fields as the file's header spells them. None reads
+            each field under the name used here.
 
     Returns:
         dict: A dictionary where each key is a sample's `seq_id` and the value is a dictionary of extracted attributes

@@ -71,38 +71,6 @@ SCHEMA = merge_schemas(
 )
 
 
-# The INFO fields `process_occurrence` reads, resolved against each file's header by `resolve_info_keys`.
-# The hotspot flag is not among them: `read_hotspot` tells its two spellings apart itself.
-INFO_FIELDS = (
-    "OLD_RECORD",
-    "BaseQRankSum",
-    "FS",
-    "DS",
-    "FractionInformativeReads",
-    "InbreedingCoeff",
-    "MLEAC",
-    "MLEAF",
-    "MQ",
-    "MQ0",
-    "MQRankSum",
-    "QD",
-    "R2_5P_bias",
-    "ReadPosRankSum",
-    "SOR",
-    "VQSLOD",
-    "culprit",
-    "DP",
-    "HaplotypeScore",
-    "HotspotAllele",
-    "CAL",
-    "ExcessHet",
-    "GERMQ",
-    "TLOD",
-    "MAPQ",
-    "AQ",
-)
-
-
 def process_occurrence(
     record: Variant,
     experiments: list[Experiment],
@@ -120,7 +88,7 @@ def process_occurrence(
         common (Common): A `Common` object containing shared attributes for the variant, such as locus and chromosome.
         tumor_index (int): The index of the tumor sample in the VCF record's samples.
         normal_index (int | None): The index of the normal sample in the VCF record's samples, or `None` for a tumor-only analysis, in which case every `normal_*` value is `None`.
-        info_keys (InfoKeys | None): The file's spelling of the INFO fields, from `resolve_info_keys`. None reads each field under the name in `INFO_FIELDS`.
+        info_keys (InfoKeys | None): The INFO fields as the file's header spells them. None reads each field under the name used here.
 
     Returns:
         dict: A dictionary containing the processed occurrence information for the somatic variant, structured as follows:

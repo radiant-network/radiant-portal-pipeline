@@ -13,9 +13,9 @@ from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s
 from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import log_invalid_cds, log_source_counts, parse_csq_header, process_consequence
-from radiant.tasks.vcf.snv.somatic.occurrence import INFO_FIELDS, process_occurrence
+from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence
 from radiant.tasks.vcf.snv.variant import process_variant
-from radiant.tasks.vcf.vcf_utils import resolve_info_keys
+from radiant.tasks.vcf.vcf_utils import InfoKeys
 
 logger = logging.getLogger("airflow.task")
 
@@ -85,9 +85,7 @@ def process_task(
         )
 
     csq_header = parse_csq_header(vcf)
-    info_keys = resolve_info_keys(vcf, INFO_FIELDS)
-    if info_keys.missing():
-        logger.info(f"Task {task.task_id}: INFO fields absent from the header, left null: {info_keys.missing()}")
+    info_keys = InfoKeys(vcf)
 
     logger.info(f"Starting processing vcf for task {task.task_id} with file {task.vcf_filepath}")
     occurrence_table = catalog.load_table(occurrences_table_name)

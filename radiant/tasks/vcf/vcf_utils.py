@@ -29,30 +29,33 @@ def calls_without_phased(record: Variant, sample_idx: int) -> list[int]:
 INFO_ALIASES = {"InbreedingCoeff": ("InbreedCoeff",)}
 
 
-class InfoKeys(dict):
-    """INFO field name as the ETL reads it -> the ID the VCF header declares it under, None when absent.
+class InfoKeys:
+    """Reads INFO fields under the ID the VCF header declares them, whatever the spelling the ETL uses.
 
     The spelling is the callers' and moves across tools and versions (`VQSLOD`, `culprit`,
     `InbreedingCoeff`), while cyvcf2 looks INFO up case-sensitively: a wrong spelling reads None on every
-    record, silently. Built once per file by `resolve_info_keys`; an empty one reads every name as is.
+    record, silently. A name matches a header ID ignoring case, then through `INFO_ALIASES`; each name is
+    resolved once and cached. Built without a VCF, it reads every name as is.
     """
 
-    def value(self, info, name: str):
-        key = self.get(name, name)
-        return info.get(key, None) if key is not None else None
+    def __init__(self, vcf: VCF | None = None):
+        self._header_ids = (
+            None
+            if vcf is None
+            else {h.info()["ID"].lower(): h.info()["ID"] for h in vcf.header_iter() if h.type == "INFO"}
+        )
+        self._keys: dict[str, str | None] = {}
 
-    def missing(self) -> list[str]:
-        return [name for name, key in self.items() if key is None]
-
-
-def resolve_info_keys(vcf: VCF, names: tuple[str, ...]) -> InfoKeys:
-    """Matches each name, then its aliases, to an INFO ID of the header, ignoring case."""
-    header_ids = {h.info()["ID"].lower(): h.info()["ID"] for h in vcf.header_iter() if h.type == "INFO"}
-    return InfoKeys(
-        {
-            name: next(
-                (header_ids[c.lower()] for c in (name, *INFO_ALIASES.get(name, ())) if c.lower() in header_ids), None
+    def _key(self, name: str) -> str | None:
+        if self._header_ids is None:
+            return name
+        if name not in self._keys:
+            candidates = (name, *INFO_ALIASES.get(name, ()))
+            self._keys[name] = next(
+                (self._header_ids[c.lower()] for c in candidates if c.lower() in self._header_ids), None
             )
-            for name in names
-        }
-    )
+        return self._keys[name]
+
+    def value(self, info, name: str):
+        key = self._key(name)
+        return info.get(key, None) if key is not None else None
