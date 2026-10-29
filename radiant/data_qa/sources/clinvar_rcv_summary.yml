@@ -53,5 +53,5 @@ sources:
               # --- Accepted Values (array) -----------------------------------
               # values: dict_clinvar_interpretation() — see macros/dictionaries.sql
               - accepted_values_in_array:
-                  name: clinvar_rcv_summary__accepted_values_clinical_significance_SJRA-1624
+                  name: clinvar_rcv_summary__accepted_values_clinical_significance_RAD-173
                   values: "{{ dict_clinvar_interpretation() }}"

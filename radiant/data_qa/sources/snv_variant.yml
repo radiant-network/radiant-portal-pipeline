@@ -134,13 +134,15 @@ sources:
           - name: symbol
             tests:
               # --- Relationships ---------------------------------------------
-              # gene symbol must exist in the ensembl_gene.name
+              # gene symbol must exist in the ensembl_gene.name. Only for symbols picked from
+              # Ensembl (null pick_source = pre-merged loads, Ensembl-only): a RefSeq pick carries
+              # NCBI names (LOC…, readthroughs) that Ensembl does not have (RAD-176).
               - relationships:
-                  name: snv_variant__relationships__symbol__ensembl_gene_SJRA-1667
+                  name: snv_variant__relationships__symbol__ensembl_gene_RAD-176
                   to: source('radiant', 'ensembl_gene')
                   field: name
                   config:
-                    where: "symbol is not null and symbol <> ''"
+                    where: "symbol is not null and symbol <> '' and (pick_source is null or pick_source <> 'RefSeq')"
           - name: vep_impact
             tests:
               # --- Accepted Values -------------------------------------------
