@@ -15,6 +15,7 @@ from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import log_invalid_cds, log_source_counts, parse_csq_header, process_consequence
 from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence
 from radiant.tasks.vcf.snv.variant import process_variant
+from radiant.tasks.vcf.vcf_utils import InfoKeys
 
 logger = logging.getLogger("airflow.task")
 
@@ -84,6 +85,7 @@ def process_task(
         )
 
     csq_header = parse_csq_header(vcf)
+    info_keys = InfoKeys(vcf)
 
     logger.info(f"Starting processing vcf for task {task.task_id} with file {task.vcf_filepath}")
     occurrence_table = catalog.load_table(occurrences_table_name)
@@ -110,6 +112,7 @@ def process_task(
                     common=common,
                     tumor_index=filtered_experiments.tumor_index,
                     normal_index=filtered_experiments.normal_index,
+                    info_keys=info_keys,
                 )
                 # RAD-75: a record the tumor does not carry is dropped from all three tables together, even
                 # when the normal carries the alt. The StarRocks load keeps `tumor_has_alt` occurrences only.

@@ -1,0 +1,12 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=248956422>
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Allelic depths">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description="Read depth">
+##FORMAT=<ID=GQ,Number=1,Type=Integer,Description="Genotype Quality">
+##INFO=<ID=VQSLod,Number=1,Type=Float,Description="VQSLOD, spelled as another tool does">
+##INFO=<ID=culprit,Number=1,Type=String,Description="Worst performing annotation in VQSR">
+##INFO=<ID=InbreedCoeff,Number=1,Type=Float,Description="InbreedingCoeff, under its alias">
+##INFO=<ID=QD,Number=1,Type=Float,Description="Quality by depth">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	SA0001
+chr1	1000	.	A	G	50	PASS	VQSLod=7.5;culprit=MQ;InbreedCoeff=-0.25;QD=12.5	GT:AD:DP:GQ	0/1:10,12:22:99
