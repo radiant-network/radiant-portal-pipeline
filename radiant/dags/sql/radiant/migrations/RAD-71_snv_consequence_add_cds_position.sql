@@ -37,10 +37,9 @@
 --   3. Re-import every experiment. That is the backfill: until a locus is re-imported, its consequences
 --      keep NULL in both columns.
 --
--- Data QA during the backfill: snv_consequence__should_not_contain_only_null skips cds_start and cds_end, and
--- snv_consequence__validate_cds_position_on_coding_terms_RAD-71 reports every coding consequence not yet
--- re-imported as a known error, which does not fail the run. Once every environment is re-imported, remove
--- both columns from that `except:` and the `_RAD-71` suffix, so the two tests guard the columns.
+-- Data QA during the backfill: snv_consequence__should_not_contain_only_null skips cds_start and cds_end, but
+-- snv_consequence__validate_cds_position_on_coding_terms fails on every coding consequence not yet
+-- re-imported. Once every environment is re-imported, remove both columns from that `except:`.
 
 
 ALTER TABLE snv__consequence
