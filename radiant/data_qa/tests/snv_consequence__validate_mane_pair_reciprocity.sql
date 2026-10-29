@@ -1,7 +1,10 @@
 {#
-  SJRA-1830 — a RefSeq MANE Select row's `mane_pair_transcript_id` must resolve to an Ensembl row
-  at the same locus that is itself MANE Select and points back. SJRA-1827's score borrow joins on
-  that pointer, so a wrong one silently reads another transcript's scores.
+  SJRA-1830 — when a RefSeq MANE Select row's `mane_pair_transcript_id` resolves to an Ensembl row
+  at the same locus, that row must itself be MANE Select and point back. SJRA-1827's score borrow
+  joins on that pointer, so a wrong one silently reads another transcript's scores.
+
+  A pointer that resolves to nothing is not checked here: it borrows no scores, and VEP's merged
+  cache produces some on its own (RAD-175). snv_consequence__validate_mane_pair_resolves bounds it.
 
   RefSeq -> Ensembl only: the reverse is red table-wide, since rows from pre-merged loads point at
   RefSeq transcripts that were never ingested. MANE Plus Clinical is excluded — VEP fills
@@ -29,12 +32,11 @@ select
     t.twin_is_mane_select,
     t.twin_pair_transcript_id
 from {{ source('radiant', 'snv__consequence') }} r
-left join ensembl_twin t
+join ensembl_twin t
     on t.locus_id = r.locus_id
    and t.transcript_id = r.mane_pair_transcript_id
 where r.source = 'RefSeq'
   and r.is_mane_select
   and nullif(r.mane_pair_transcript_id, '') is not null
-  and (t.locus_id is null
-    or t.twin_is_mane_select = 0
+  and (t.twin_is_mane_select = 0
     or coalesce(t.twin_pair_transcript_id, '') <> r.transcript_id)
