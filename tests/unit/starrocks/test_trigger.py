@@ -1,7 +1,7 @@
 import asyncio
 import threading
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from airflow.triggers.base import TriggerEvent
@@ -13,8 +13,8 @@ from radiant.tasks.starrocks.trigger import StarRocksTaskCompleteTrigger, Unsupp
 class _StarRocksMock:
     """Handles on the mocked connection chain, so tests can assert reconnect/close behaviour."""
 
-    def __init__(self, get_connection, connection, conn, cursor):
-        self.get_connection = get_connection
+    def __init__(self, aget_connection, connection, conn, cursor):
+        self.aget_connection = aget_connection
         self.connection = connection
         self.conn = conn
         self.cursor = cursor
@@ -22,7 +22,7 @@ class _StarRocksMock:
     @property
     def poll_count(self) -> int:
         """How many times the trigger opened a fresh connection."""
-        return self.get_connection.call_count
+        return self.aget_connection.await_count
 
 
 @pytest.fixture
@@ -32,11 +32,11 @@ def starrocks():
     mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
     mock_connection = MagicMock()
     with (
-        patch("radiant.tasks.starrocks.trigger.BaseHook.get_connection") as mock_get_connection,
+        patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new_callable=AsyncMock) as mock_aget,
         patch.object(StarRocksTaskCompleteTrigger, "_driver_connect", return_value=lambda: mock_conn),
     ):
-        mock_get_connection.return_value = mock_connection
-        yield _StarRocksMock(mock_get_connection, mock_connection, mock_conn, mock_cursor)
+        mock_aget.return_value = mock_connection
+        yield _StarRocksMock(mock_aget, mock_connection, mock_conn, mock_cursor)
 
 
 @pytest.fixture(autouse=True)
@@ -262,7 +262,7 @@ def test_airflow_is_only_touched_on_the_event_loop():
         return [event async for event in _trigger().run()]
 
     with (
-        patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new=aget_connection, create=True),
+        patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new=aget_connection),
         patch("radiant.tasks.starrocks.trigger.BaseHook.get_connection") as get_connection,
         patch.object(StarRocksTaskCompleteTrigger, "_driver_connect", new=staticmethod(driver_connect)),
     ):
@@ -276,17 +276,6 @@ def test_airflow_is_only_touched_on_the_event_loop():
     assert threads["connect"] != threads["loop"]
 
 
-def test_airflow2_falls_back_to_sync_get_connection_in_a_thread(starrocks):
-    """No `aget_connection` (Airflow 2): the sync lookup is safe, there is no supervisor socket."""
-    starrocks.cursor.fetchone.return_value = ("SUCCESS", None)
-
-    with patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new=None, create=True):
-        result = _run(_trigger())
-
-    assert result[0].payload.get("status") == "success"
-    starrocks.get_connection.assert_called_once_with("test_conn")
-
-
 def test_connection_lookup_is_not_cancelled_by_query_timeout(starrocks):
     """Cancelling a supervisor call between request and reply would desync the socket: never bound it."""
     starrocks.cursor.fetchone.return_value = ("SUCCESS", None)
@@ -295,7 +284,7 @@ def test_connection_lookup_is_not_cancelled_by_query_timeout(starrocks):
         await asyncio.to_thread(time.sleep, 0.05)  # longer than query_timeout; asyncio.sleep is patched out
         return starrocks.connection
 
-    with patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new=slow_aget_connection, create=True):
+    with patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new=slow_aget_connection):
         result = _run(_trigger(query_timeout=0.01))
 
     assert result[0].payload.get("status") == "success"
@@ -303,18 +292,18 @@ def test_connection_lookup_is_not_cancelled_by_query_timeout(starrocks):
 
 def test_connection_lookup_error_is_retried(starrocks):
     starrocks.cursor.fetchone.return_value = ("SUCCESS", None)
-    starrocks.get_connection.side_effect = [RuntimeError("supervisor hiccup"), starrocks.connection]
+    starrocks.aget_connection.side_effect = [RuntimeError("supervisor hiccup"), starrocks.connection]
 
     trigger = _trigger()
     result = _run(trigger)
 
     assert result[0].payload.get("status") == "success"
-    assert starrocks.get_connection.call_count == 2
+    assert starrocks.aget_connection.await_count == 2
 
 
 def test_unsupported_connection_fails_without_retrying():
     with (
-        patch("radiant.tasks.starrocks.trigger.BaseHook.get_connection") as get_connection,
+        patch("radiant.tasks.starrocks.trigger.BaseHook.aget_connection", new_callable=AsyncMock) as aget_connection,
         patch.object(
             StarRocksTaskCompleteTrigger, "_driver_connect", side_effect=UnsupportedConnectionError("not mysql")
         ),
@@ -322,7 +311,7 @@ def test_unsupported_connection_fails_without_retrying():
         result = _run(_trigger())
 
     assert result[0].payload == {"status": "error", "error_message": "not mysql"}
-    assert get_connection.call_count == 1
+    assert aget_connection.await_count == 1
 
 
 _HOOK_KWARGS = {"host": "starrocks.mock", "port": 9030}

@@ -1,4 +1,8 @@
 --constraint /usr/local/airflow/plugins/constraints-3.12.txt
 
+# Must match the MWAA environment's Airflow version (`airflow_v3_version` in radiant-portal-deployment).
+# The constraints file does not pin it, so without this the bundle ships whatever Airflow resolves highest.
+apache-airflow==3.3.1
+
 # Radiant specific additional requirements for MWAA
-apache-airflow-providers-mysql==6.5.2
+apache-airflow-providers-mysql==6.6.1

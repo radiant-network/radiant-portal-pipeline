@@ -33,7 +33,7 @@ USE_DOCKER_FIXTURES=false make test-integration   # runs against the external ra
 ```
 CI (`.github/workflows/test.yml`) runs on every PR with `USE_DOCKER_FIXTURES=true`: static → unit → integration → docker. Tagged `v*` pushes build/push the four images (`build_and_push*.yml`). Security checks (radiant-hub `docs/ci/security-checks.md`): `dependency-review.yml` fails a PR that adds a high or critical vulnerable dependency, `trivy.yml` scans the four images and the Dockerfiles (PRs, main, daily on `latest`), `dependabot-alerts.yml` keeps a `dependabot-gate` issue and a Slack message up to date.
 
-**Two Airflow versions.** The venv and the tests pin `apache-airflow==2.10.5` (`requirements-dev.txt`, `requirements-airflow.txt`); the deployed Airflow is **3.2.1** (`mwaa/` keeps separate `airflow2/` and `airflow3/` builds). Check scheduler behaviour (pools, deferred tasks, run-id rules, task-id changes in active runs) against the 3.2.1 source, not against the venv.
+**Airflow 3.3.1 everywhere.** The venv, the tests (`requirements-dev.txt`), the Airflow image (`Dockerfile`, `requirements-airflow.txt`) and MWAA (`mwaa/airflow3/`, `airflow_v3_version` in `radiant-portal-deployment`) all pin `3.3.1`. Change them together (see `mwaa/README.md`).
 
 **Integration test data.** `radiant/dags/sql/clinical/seeds.sql` feeds every clinical integration test, including the whole-delta row count in `tests/integration/dags/sql/test_sequencing_experiment_select_delta.py` (16 rows): a seeded document that the staging view admits moves that count. Shapes the seeds do not have are inserted by test-local fixtures on ids far above the seeded range — 90xx–93xx are taken by `test_case_resolution.py`, 95xx by `test_somatic_case_resolution.py`, 96xx by `test_sequencing_experiment_select_delta.py` — and a fixture that inserts rows must delete them afterwards, or it changes the results of other tests in the same session.
 
@@ -58,7 +58,7 @@ Apache Airflow ETL pipeline importing genomic data into a clinical data model. T
 - `radiant/dags/operators/` — `k8s.py` and `ecs.py` task operators (selected at runtime, see deployment)
 - `radiant/data_qa/` — standalone dbt project for data-quality assertions (see below); **not** part of pytest
 - `tests/{unit,integration,docker}/`, `tests/resources/` — test suites + sample VCF/TSV data
-- `mwaa/` — AWS MWAA + ECS deployment artifacts (separate dep builders for `airflow2/` and `airflow3/`)
+- `mwaa/` — AWS MWAA + ECS deployment artifacts (dep builder in `airflow3/`)
 
 ### Data flow
 
@@ -111,7 +111,7 @@ Tables are **not** hard-coded in SQL. DAGs set `template_searchpath` to `radiant
 
 ### StarRocks operator patterns
 
-`radiant/tasks/starrocks/operator.py` — long-running loads run as StarRocks **async tasks** (`SUBMIT TASK`), then a **deferrable** `StarRocksTaskCompleteTrigger` (`trigger.py`) polls for completion without holding a worker slot. `SubmitTaskOptions` controls timeout/poll/spill. **In a trigger, never call into Airflow from a worker thread** (`asyncio.to_thread`): on Airflow 3 a `get_connection`, or the `MaskSecret` every `Connection.extra_dejson` read sends, runs over the runner's supervisor socket from a second event loop and kills the trigger runner ("Response read out of order!", every deferred task stays deferred). Resolve the connection and driver kwargs on the loop (`aget_connection`), hand the thread a bare driver call — see `_aget_connect` in `trigger.py`. Key operators: `RadiantStarRocksOperator` (query + optional async submit + `output_processor`), `RadiantStarRocksPartitionSwapOperator` / `SwapPartition` (atomic partition replace for idempotent reloads), `RadiantLoadExomiserOperator`. Inserts serialize via `max_active_tis_per_dagrun=1` on the mapped operators plus the serial `>>` chains in `import_part.py` — note `STARROCKS_INSERT_POOL` is declared in `operator.py` but never referenced, so no pool is actually involved.
+`radiant/tasks/starrocks/operator.py` — long-running loads run as StarRocks **async tasks** (`SUBMIT TASK`), then a **deferrable** `StarRocksTaskCompleteTrigger` (`trigger.py`) polls for completion without holding a worker slot. `SubmitTaskOptions` controls timeout/poll/spill. **In a trigger, never call into Airflow from a worker thread** (`asyncio.to_thread`): a `get_connection`, or the `MaskSecret` every `Connection.extra_dejson` read sends, runs over the runner's supervisor socket from a second event loop. Up to Airflow 3.2.1 that killed the trigger runner ("Response read out of order!", every deferred task stays deferred; fixed in 3.2.2, apache/airflow#66412). Resolve the connection and driver kwargs on the loop (`aget_connection`), hand the thread a bare driver call — see `_aget_connect` in `trigger.py`. Key operators: `RadiantStarRocksOperator` (query + optional async submit + `output_processor`), `RadiantStarRocksPartitionSwapOperator` / `SwapPartition` (atomic partition replace for idempotent reloads), `RadiantLoadExomiserOperator`. Inserts serialize via `max_active_tis_per_dagrun=1` on the mapped operators plus the serial `>>` chains in `import_part.py` — note `STARROCKS_INSERT_POOL` is declared in `operator.py` but never referenced, so no pool is actually involved.
 
 ### Data QA (dbt) — separate from pytest
 

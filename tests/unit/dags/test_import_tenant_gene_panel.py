@@ -13,7 +13,7 @@ def test_it_is_manual_and_serial(dag_bag):
     """Each run replaces the tenant's full set of panels: nothing may trigger it on its own, and two
     runs at once would race on which file wins."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert dag.schedule_interval is None
+    assert dag.schedule is None
     assert dag.max_active_runs == 1
     assert "manual" in dag.tags
 

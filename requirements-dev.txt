@@ -1,6 +1,12 @@
-apache-airflow==2.10.5
-apache-airflow-providers-cncf-kubernetes==10.6.1
-apache-airflow-providers-amazon==9.2.0
+apache-airflow==3.3.1
+# Pinned to mwaa/airflow3/constraints-3.12.txt, so the tests run what MWAA runs (the full
+# constraints file can't be applied here: it conflicts with requirements.txt's pyarrow/pydantic pins).
+sqlalchemy==2.0.51
+apache-airflow-providers-cncf-kubernetes==10.21.0
+apache-airflow-providers-amazon==9.34.0
+apache-airflow-providers-common-sql==2.1.0
+apache-airflow-providers-standard==1.17.0
+apache-airflow-providers-mysql==6.6.1
 testcontainers==4.10.0
 requests
 pysam
@@ -10,7 +16,5 @@ psycopg2-binary==2.9.10
 ruff==0.11.4
 pymysql
 cyvcf2
-# flask 3.7.0 removed support for some features used in Airflow
-flask-limiter<3.7.0
 # Needed for filesystem abstraction in tests
 fs>=2.4.16

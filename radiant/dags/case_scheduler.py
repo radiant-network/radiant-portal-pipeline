@@ -196,7 +196,7 @@ def case_scheduler():
         import_rows: Any,
         status_rows: Any,
     ) -> Any:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.case_status import plan_processing
 
@@ -237,7 +237,7 @@ def case_scheduler():
         import_rows: Any,
         status_rows: Any,
     ) -> Any:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.case_status import plan_in_progress
 
@@ -268,7 +268,7 @@ def case_scheduler():
         The cases moved to `in_progress`, and the cases past it this run finished processing.
         """
         from airflow.exceptions import AirflowSkipException
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.case_status import cases_now_in, skip_if_not_granted
         from radiant.tasks.nextflow.notify import group_name, post_group
@@ -284,7 +284,7 @@ def case_scheduler():
     def notify_labs(batch: dict, name: str) -> Any:
         """Stateless on the portal side: a retry of this instance emails the tenant's labs again."""
         from airflow.exceptions import AirflowSkipException
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.notify import send_notification
 

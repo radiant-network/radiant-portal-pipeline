@@ -182,6 +182,8 @@ logs
 
 # ECS related files
 *plugins.zip
+# MWAA plugin bundles (mwaa/README.md step 1)
+mwaa/plugins-*.zip
 
 *.DS_STORE
 .testquality

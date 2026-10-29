@@ -54,15 +54,11 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
 
         Rule: a worker thread must never call into Airflow. On Airflow 3 any supervisor call from a thread
         (`get_connection`, or the `MaskSecret` each `Connection.extra_dejson` read sends) runs on a second
-        event loop over the runner's socket, and the runner dies on "Response read out of order!". Airflow 2
-        has no `aget_connection` and no supervisor, so a thread is fine there. `get_hook` scans provider entry
-        points on its first call, a one-off cost on the loop.
+        event loop over the runner's socket, and the runner dies on "Response read out of order!" (fixed in
+        Airflow 3.2.2, apache/airflow#66412; kept so the thread stays free of Airflow). `get_hook` scans
+        provider entry points on its first call, a one-off cost on the loop.
         """
-        aget_connection = getattr(BaseHook, "aget_connection", None)
-        if aget_connection is not None:
-            connection = await aget_connection(self.conn_id)
-        else:
-            connection = await asyncio.to_thread(BaseHook.get_connection, self.conn_id)
+        connection = await BaseHook.aget_connection(self.conn_id)
         hook = connection.get_hook(hook_params={"connection": connection})
         return self._driver_connect(hook, connection)
 
@@ -70,7 +66,7 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
     def _driver_connect(hook, connection) -> Callable[[], Any]:
         """The driver call `MySqlHook.get_conn` would make, minus its Airflow lookups (same kwargs builders).
 
-        mysqlclient also gets the `_DRIVER_TIMEOUTS` from the extra: the provider (6.5.2) drops them, and they
+        mysqlclient also gets the `_DRIVER_TIMEOUTS` from the extra: the provider (6.6.1) drops them, and they
         are what releases a thread `wait_for` abandoned in `recv()`.
         """
         extra = connection.extra_dejson

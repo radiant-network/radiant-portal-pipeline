@@ -1,4 +1,4 @@
-from airflow.models.mappedoperator import MappedOperator
+from airflow.sdk.definitions.mappedoperator import MappedOperator
 
 DAG_ID = "radiant-nextflow-quality-control-cases"
 PIPELINE_DAG_ID = "radiant-nextflow-quality-control"
@@ -27,7 +27,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
 def test_it_finds_its_own_work(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
-    assert dag.schedule_interval is None
+    assert dag.schedule is None
     assert dag.get_task("discover_scope").upstream_list == []
     assert dag.params["task_ids"] == []
     assert dag.params["dry_run"] is False
@@ -52,7 +52,7 @@ def test_one_launcher_run_for_every_case(dag_bag):
     assert run_pipeline.wait_for_completion is True
     assert run_pipeline.reset_dag_run is True
     # `_defer` is where TriggerDagRunOperator keeps `deferrable`.
-    assert run_pipeline._defer is True
+    assert run_pipeline.deferrable is True
     assert {t.task_id for t in run_pipeline.upstream_list} == {"generate_inputs"}
 
 

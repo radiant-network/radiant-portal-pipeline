@@ -83,7 +83,7 @@ def import_radiant():
 
             import jinja2
             from airflow.hooks.base import BaseHook
-            from airflow.operators.python import get_current_context
+            from airflow.sdk import get_current_context
 
             from radiant.dags import DAGS_DIR
             from radiant.tasks.data.radiant_tables import get_radiant_mapping
@@ -125,7 +125,7 @@ def import_radiant():
         from radiant.tasks.starrocks.partition import SequencingExperimentPriorityAssigner
 
         prioritized = SequencingExperimentPriorityAssigner.assign_priorities(sequencing_experiment_to_process)
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         context = get_current_context()
         dag_conf = context["dag_run"].conf or {}
@@ -142,7 +142,7 @@ def import_radiant():
 
         import jinja2
         from airflow.hooks.base import BaseHook
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.dags import DAGS_DIR
         from radiant.tasks.data.radiant_tables import STARROCKS_RADIANT_PER_TENANT_MAPPING, get_radiant_mapping

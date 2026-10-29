@@ -10,7 +10,7 @@ def test_it_is_manual_and_serial(dag_bag):
     """Every run emails the laboratories, so nothing may trigger it on its own, and two runs
     on the same group at once would double the mail."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert dag.schedule_interval is None
+    assert dag.schedule is None
     assert dag.max_active_runs == 1
     assert "manual" in dag.tags
 
