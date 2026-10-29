@@ -77,7 +77,7 @@ sources:
               # --- Accepted Values -------------------------------------------
               # values: dict_biotype() — see macros/dictionaries.sql
               - accepted_values:
-                  name: snv_consequence__accepted_values_biotype_SJRA-1857
+                  name: snv_consequence__accepted_values_biotype_RAD-172
                   values: "{{ dict_biotype() }}"
                   config:
                     where: "biotype is not null"
