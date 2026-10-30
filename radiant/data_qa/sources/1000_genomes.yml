@@ -36,4 +36,4 @@ sources:
                   name: 1000_genomes__should_not_contain_null__locus_id
               # --- Should Be Unique ------------------------------------------
               - unique:
-                  name: 1000_genomes__should_be_unique__locus_id_SJRA-1583
+                  name: 1000_genomes__should_be_unique__locus_id_RAD-185
