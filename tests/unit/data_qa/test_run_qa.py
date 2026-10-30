@@ -223,3 +223,16 @@ def test_run_pass_clears_a_stale_artifact_before_each_run(run_qa, tmp_path, monk
 
     assert run_qa.run_pass(qa_pass, {}, tmp_path) is None
     assert not stale.exists()
+
+
+def test_run_pass_hands_the_tenant_code_to_dbt(run_qa, tmp_path, monkeypatch):
+    """tenant_has_task_type reads the tenant's rows of staging_sequencing_experiment by code."""
+    envs = []
+    monkeypatch.setattr(run_qa.subprocess, "run", lambda *a, **kw: envs.append(kw["env"]))
+    shared, chusj, _ = run_qa.plan_passes(TENANTS, "radiant")
+
+    run_qa.run_pass(shared, {"SR_TENANT_CODE": "stale"}, tmp_path)
+    run_qa.run_pass(chusj, {}, tmp_path)
+
+    assert envs[0]["SR_TENANT_CODE"] == ""
+    assert (envs[1]["SR_TENANT_CODE"], envs[1]["SR_TENANT_SCHEMA"]) == ("chusj", "chusj_tenant")

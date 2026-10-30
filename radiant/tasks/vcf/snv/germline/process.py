@@ -19,6 +19,7 @@ from radiant.tasks.vcf.snv.germline.comphet import process_comphet
 from radiant.tasks.vcf.snv.germline.inheritance import slivar_inheritance_methods
 from radiant.tasks.vcf.snv.germline.occurrence import process_occurrence
 from radiant.tasks.vcf.snv.variant import process_variant
+from radiant.tasks.vcf.vcf_utils import InfoKeys
 
 logger = logging.getLogger("airflow.task")
 tracer = get_tracer(__name__)
@@ -62,6 +63,7 @@ def process_task(
             raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
 
         csq_header = parse_csq_header(vcf)
+        info_keys = InfoKeys(vcf)
         pedigree = Pedigree(task, vcf.samples)
         slivar = slivar_inheritance_methods(vcf)
         logger.info(
@@ -92,7 +94,9 @@ def process_task(
                 if len(record.ALT) <= 1:
                     if record.CHROM in SUPPORTED_CHROMOSOMES:
                         common = process_common(record, task_id=task.task_id, part=task.part)
-                        occurrences = process_occurrence(record, pedigree, common=common, slivar=slivar)
+                        occurrences = process_occurrence(
+                            record, pedigree, common=common, slivar=slivar, info_keys=info_keys
+                        )
                         # RAD-75: a record no sample carries is dropped from all the tables together. The
                         # StarRocks load keeps `has_alt` occurrences only and inner-joins them to the variants,
                         # so the tables must hold the same loci; the consequences of such a locus were loaded

@@ -53,7 +53,8 @@
              'not_provided', 'other',
              'pathogenic_low_penetrance', 'Pathogenic', 'protective', 'risk_factor',
              'Uncertain_risk_allele', 'Uncertain_significance', 'VUS-high', 'VUS-low', 'VUS-mid',
-             '_low_penetrance', 'low_penetrance']) }}
+             '_low_penetrance', 'low_penetrance', 'Likely_pathogenic_low_penetrance',
+             'Pathogenic_low_penetrance']) }}
 {% endmacro %}
 
 {% macro dict_consequences() %}
@@ -121,7 +122,8 @@
              'translated_processed_pseudogene', 'translated_unprocessed_pseudogene',
              'unitary_pseudogene', 'unprocessed_pseudogene', 'artifact', 'lincRNA',
              'macro_lncRNA', '3prime_overlapping_ncRNA', 'disrupted_domain', 'vault_RNA',
-             'bidirectional_promoter_lncRNA', '']) }}
+             'bidirectional_promoter_lncRNA', 'transcribed_pseudogene', 'ncRNA_pseudogene',
+             'ncRNA', 'Y_RNA', 'RNase_P_RNA', 'RNase_MRP_RNA', 'telomerase_RNA', 'tRNA', '']) }}
 {% endmacro %}
 
 {% macro dict_sift_pred() %}

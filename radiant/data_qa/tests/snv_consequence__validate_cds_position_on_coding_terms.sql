@@ -5,12 +5,8 @@
   overlaps the coding sequence. An indel partly outside the CDS keeps one end only (`?-125`), so the rule is
   that at least one of the two is set.
 
-  A failure means the CSQ lookup lost `CDS_position`, or the rows predate the RAD-71 re-import: the migration
-  adds the columns with NULL on every existing row, and only a re-import fills them. Expect this test to fail
-  in an environment until its re-import is done.
-
-  The `_RAD-71` suffix makes those failures known errors, so they do not fail the data integrity run during the
-  backfill. Drop it once every environment is re-imported, so the test starts guarding the CSQ lookup.
+  A failure means the CSQ lookup lost `CDS_position`, or the rows were imported before the columns existed and
+  need a re-import.
 #}
 
 select

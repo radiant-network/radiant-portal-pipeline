@@ -57,7 +57,12 @@ sequencing_experiments AS (
         IF(tctx.case_id IS NOT NULL, c.updated_on, se.updated_on) AS updated_at
 	FROM
 	    sequencing_context se
-	LEFT JOIN {{ mapping.clinical_task_context }} tctx ON tctx.sequencing_experiment_id = se.id
+	-- A task naming a case belongs to that case alone, even when its experiment is shared with another
+	-- case. A NULL case_id is a per-experiment task (e.g. alignment_germline_variant_calling), shared
+	-- by every case of the experiment.
+	LEFT JOIN {{ mapping.clinical_task_context }} tctx
+	    ON tctx.sequencing_experiment_id = se.id
+	    AND (tctx.case_id IS NULL OR tctx.case_id = se.case_id)
 	LEFT JOIN {{ mapping.clinical_case }} c ON tctx.case_id = c.id
 	LEFT JOIN {{ mapping.clinical_task }} t ON t.id = tctx.task_id
 	LEFT JOIN {{ mapping.clinical_task_has_document }} thd ON thd.task_id = t.id AND thd.type = 'output'
@@ -121,4 +126,5 @@ SELECT
 FROM sequencing_experiments s
 LEFT JOIN {{ mapping.clinical_sample }} sa ON sa.id = s.sample_id
 LEFT JOIN {{ mapping.clinical_patient }} p ON p.id = sa.patient_id
-LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = p.id
+-- A patient has one family row per case: without the case, a patient in two cases doubles every row.
+LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = p.id AND f.case_id = s.case_id
