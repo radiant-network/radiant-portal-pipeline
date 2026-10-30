@@ -246,7 +246,7 @@ export DBT_PROFILES_DIR=$(pwd)
 export DBT_SEND_ANONYMOUS_USAGE_STATS=false
 ```
 
-Two more vars drive the per-tenant passes (see [Multi-tenancy](#multi-tenancy)):
+More vars drive the per-tenant passes (see [Multi-tenancy](#multi-tenancy)):
 
 - `SR_TENANT_SCHEMA` — the tenant database a single `dbt` invocation reads.
   Defaults to `SR_SCHEMA`, which is only useful for parsing: the per-tenant
@@ -263,6 +263,12 @@ Two more vars drive the per-tenant passes (see [Multi-tenancy](#multi-tenancy)):
 
   Entries also accept `reference` and `absent_tables` — see
   [Two tiers inside the tenant pass](#two-tiers-inside-the-tenant-pass).
+- `SR_TENANT_CODE` — the tenant code of the pass, set by `run_qa.py`. The
+  `tenant_has_task_type` macro uses it to read the tenant's tasks in
+  `staging_sequencing_experiment`, so `should_not_be_empty` and
+  `should_not_contain_only_null` can take `expected_if` and pass on a table
+  the tenant's tasks never fill (e.g. somatic CNVs without a tumor-only
+  task). Unset, the condition is `true` and the tests stay strict.
 
 ## Run
 
