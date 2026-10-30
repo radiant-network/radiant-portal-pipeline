@@ -161,11 +161,13 @@ def test_the_import_follows_post_processing_whatever_its_outcome(dag_bag):
     }
 
 
-def test_evaluation_waits_for_every_pipeline_and_runs_whatever_their_outcome(dag_bag):
+def test_evaluation_waits_for_every_pipeline_and_stops_if_one_failed(dag_bag):
+    """A failed import, CNV post-processing or quality control leaves the second pass, and so the
+    status changes and the emails after it, upstream_failed."""
     dag = dag_bag.get_dag(DAG_ID)
     second_pass = ["refresh_case_statuses", *(f"re{task_id}" for task_id in DISCOVERY), "rediscover_import_cases"]
     for task_id in second_pass:
-        assert dag.get_task(task_id).trigger_rule == TriggerRule.ALL_DONE
+        assert dag.get_task(task_id).trigger_rule == TriggerRule.NONE_FAILED
         assert _upstream(dag, task_id) == {
             "trigger_import",
             "trigger_germline_cnv_postprocessing",
@@ -174,6 +176,9 @@ def test_evaluation_waits_for_every_pipeline_and_runs_whatever_their_outcome(dag
     # The statuses are read again: the pipelines and the import have run since the first read.
     assert dag.get_task("refresh_case_statuses").sql == dag.get_task("fetch_case_statuses").sql
     assert _upstream(dag, "select_ready_cases") == set(second_pass)
+    evaluation = ("set_in_progress", "create_case_group", "notify_labs")
+    for task_id in ("select_ready_cases", *(f"evaluate_cases.{name}" for name in evaluation)):
+        assert dag.get_task(task_id).trigger_rule == TriggerRule.ALL_SUCCESS
 
 
 def test_evaluation_asks_the_same_work_waiting_question_as_discovery(dag_bag):
