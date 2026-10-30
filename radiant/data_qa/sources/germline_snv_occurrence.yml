@@ -11,9 +11,7 @@ sources:
               name: germline_snv_occurrence__should_not_be_empty
           # --- Should Not Contain Only Null ----------------------------------
           - should_not_contain_only_null:
-              # RAD-178 (was SJRA-1559): info_vqslod and info_culprit stay null until the VCFs are re-imported;
-              # the ETL read them as `VQSLod` / `Culprit`, and GATK writes `VQSLOD` / `culprit`.
-              name: germline_snv_occurrence__should_not_contain_only_null_RAD-178
+              name: germline_snv_occurrence__should_not_contain_only_null
               except:
                 # Already covered by germline_snv_occurrence__should_not_contain_null__*
                 - part
@@ -29,9 +27,10 @@ sources:
                 - transmission_mode_candidate
                 - parental_origin_source
                 - transmission_mode_source
-                # RAD-178: HaplotypeScore, DS and R2_5P_bias are absent from the header of the pipeline's
-                # DRAGEN + GATK VCFs. InbreedingCoeff is declared but GATK computes it from 10 samples, never
-                # on a trio.
+                # RAD-178: BaseQRankSum, HaplotypeScore, DS and R2_5P_bias are absent from the header of the
+                # pipeline's DRAGEN + GATK VCFs. InbreedingCoeff is declared but GATK computes it from 10 samples,
+                # never on a trio.
+                - info_baseq_rank_sum
                 - info_haplotype_score
                 - info_ds
                 - info_r2_5p_bias
