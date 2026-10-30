@@ -20,11 +20,15 @@
     - The column is legitimately allowed to be entirely null in some
       environments (e.g. a feature gated by a flag that is off in QA).
 
+  `expected_if` (optional): as for should_not_be_empty, a SQL condition
+  saying whether the tenant is expected to fill the table. An empty table
+  makes every column null, so a table the tenant never fills needs it too.
+
   Schema evolution: new columns are picked up on the next run, dropped
   columns disappear automatically. Only `except` needs maintenance.
 #}
 
-{% test should_not_contain_only_null(model, except=[]) %}
+{% test should_not_contain_only_null(model, except=[], expected_if=none) %}
 
     {%- set columns = adapter.get_columns_in_relation(model) -%}
     {%- set checked = columns | rejectattr('name', 'in', except) | list -%}
@@ -43,6 +47,9 @@
             {%- endfor %}
         ) checks
         where n_non_null = 0
+        {%- if expected_if %}
+          and {{ expected_if }}
+        {%- endif %}
     {%- endif -%}
 
 {% endtest %}

@@ -185,7 +185,8 @@ def run_pass(qa_pass: Pass, env: dict, data_qa_dir: Path = DATA_QA_DIR) -> dict 
     # mechanism failure. A pass that truly could not run leaves no artifact behind.
     subprocess.run(
         ["dbt", "test", *qa_pass.select_args],
-        env={**env, "SR_TENANT_SCHEMA": qa_pass.schema},
+        # SR_TENANT_CODE lets a test read the tenant's rows of the shared tables (tenant_has_task_type).
+        env={**env, "SR_TENANT_SCHEMA": qa_pass.schema, "SR_TENANT_CODE": qa_pass.tenant or ""},
         cwd=data_qa_dir,
         check=False,
     )
