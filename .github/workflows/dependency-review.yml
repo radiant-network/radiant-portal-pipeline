@@ -1,0 +1,21 @@
+# Fails the PR when it adds or bumps a dependency with a known vulnerability
+# at or above the threshold. Make the `dependency-review` job a required
+# status check in the ruleset of main so the failure blocks the merge.
+name: Dependency Review
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check dependencies changed by the PR
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

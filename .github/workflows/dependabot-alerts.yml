@@ -1,0 +1,130 @@
+# Reports the open Dependabot and Trivy (code scanning) alerts of main at or above
+# the threshold: keeps one issue labelled `dependabot-gate` up to date (closed when
+# none is left) and posts a Slack message while some remain.
+name: Security Alerts
+
+on:
+  schedule:
+    # After the daily Trivy scan of the published image (trivy.yml, 11:00 UTC)
+    - cron: '30 11 * * 1-5'
+  workflow_dispatch:
+
+env:
+  # Space-separated `ecosystem=severities` pairs, as accepted by the Dependabot alerts API
+  DEPENDABOT_THRESHOLDS: pip=high,critical
+  # Space-separated code scanning security severities reported for Trivy
+  TRIVY_SEVERITIES: critical high
+  LABEL: dependabot-gate
+
+concurrency:
+  group: security-alerts
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      security-events: read
+
+    steps:
+      # The GITHUB_TOKEN cannot read Dependabot alerts: use a GitHub App with "Dependabot alerts: read"
+      - name: Get a token to read the Dependabot alerts
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.DEPENDABOT_APP_ID }}
+          private-key: ${{ secrets.DEPENDABOT_APP_PRIVATE_KEY }}
+
+      - name: List open alerts above the threshold
+        id: alerts
+        env:
+          DEPENDABOT_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          : > dependabot.md
+          for t in $DEPENDABOT_THRESHOLDS; do
+            GH_TOKEN=$DEPENDABOT_TOKEN gh api --paginate "repos/$GH_REPO/dependabot/alerts?state=open&ecosystem=${t%%=*}&severity=${t#*=}&per_page=100" \
+              --jq '.[] | "- **\(.security_advisory.severity)** `\(.dependency.package.ecosystem)/\(.dependency.package.name)` in `\(.dependency.manifest_path)`: \(.security_advisory.summary) ([#\(.number)](\(.html_url)))"' \
+              >> dependabot.md
+          done
+
+          gh api --paginate "repos/$GH_REPO/code-scanning/alerts?tool_name=Trivy&state=open&per_page=100" \
+            --jq '.[] | select(.rule.security_severity_level as $s | env.TRIVY_SEVERITIES | split(" ") | index($s)) | "- **\(.rule.security_severity_level)** `\(.rule.id)` in `\(.most_recent_instance.location.path)`: \(.rule.description) ([#\(.number)](\(.html_url)))"' \
+            > trivy.md
+
+          DEPENDABOT=$(grep -c '^- ' dependabot.md || true)
+          TRIVY=$(grep -c '^- ' trivy.md || true)
+          {
+            echo "dependabot=$DEPENDABOT"
+            echo "trivy=$TRIVY"
+            echo "count=$((DEPENDABOT + TRIVY))"
+          } >> "$GITHUB_OUTPUT"
+          cat dependabot.md trivy.md
+
+      - name: Update the tracking issue
+        id: issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          COUNT: ${{ steps.alerts.outputs.count }}
+          DEPENDABOT: ${{ steps.alerts.outputs.dependabot }}
+          TRIVY: ${{ steps.alerts.outputs.trivy }}
+        run: |
+          gh label create "$LABEL" --color B60205 --description "Open security alerts above the CI threshold" --force
+          ISSUE=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number // empty')
+
+          if [ "$COUNT" -eq 0 ]; then
+            if [ -n "$ISSUE" ]; then
+              gh issue close "$ISSUE" --comment "No open security alert above the threshold."
+            fi
+            exit 0
+          fi
+
+          {
+            echo "$COUNT open security alert(s) on the default branch at or above the threshold."
+            echo
+            echo "## Dependabot: $DEPENDABOT (\`$DEPENDABOT_THRESHOLDS\`)"
+            echo
+            cat dependabot.md
+            echo
+            echo "## Trivy, image and Dockerfile: $TRIVY (\`$TRIVY_SEVERITIES\`)"
+            echo
+            cat trivy.md
+            echo
+            echo "_A vulnerable package can appear in both sections. Updated by the [Security Alerts workflow]($GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID). This issue closes itself once no alert is left._"
+          } > body.md
+
+          TITLE="Security: open vulnerabilities above the CI threshold"
+          if [ -n "$ISSUE" ]; then
+            gh issue edit "$ISSUE" --title "$TITLE" --body-file body.md
+            URL=$(gh issue view "$ISSUE" --json url --jq .url)
+          else
+            URL=$(gh issue create --title "$TITLE" --label "$LABEL" --body-file body.md)
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Notify Slack
+        if: steps.alerts.outputs.count != '0'
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_SECURITY_WEBHOOK }}
+          DEPENDABOT: ${{ steps.alerts.outputs.dependabot }}
+          TRIVY: ${{ steps.alerts.outputs.trivy }}
+          URL: ${{ steps.issue.outputs.url }}
+        run: |
+          if [ -z "$SLACK_WEBHOOK" ]; then
+            echo "::warning::SLACK_SECURITY_WEBHOOK is not set, no Slack message sent"
+            exit 0
+          fi
+          # A secret pasted from the clipboard can carry a trailing newline, which curl rejects
+          SLACK_WEBHOOK=$(printf '%s' "$SLACK_WEBHOOK" | tr -d '[:space:]')
+          case "$SLACK_WEBHOOK" in
+            https://hooks.slack.com/services/*) ;;
+            *) echo "::error::SLACK_SECURITY_WEBHOOK is not a Slack webhook URL (${#SLACK_WEBHOOK} chars, starts with '${SLACK_WEBHOOK:0:8}')"; exit 1 ;;
+          esac
+          PAYLOAD=$(jq -n \
+            --arg title "Radiant ETL - open security alerts 🚨" \
+            --arg text "On main, at or above the threshold: ${DEPENDABOT} Dependabot (${DEPENDABOT_THRESHOLDS}), ${TRIVY} Trivy (${TRIVY_SEVERITIES}). <${URL}|Tracking issue>" \
+            '{attachments:[{title:$title,text:$text,color:"danger"}]}')
+          curl -sf -X POST "$SLACK_WEBHOOK" -H 'Content-Type: application/json' -d "$PAYLOAD"
