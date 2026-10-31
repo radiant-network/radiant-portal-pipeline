@@ -39,7 +39,7 @@ def test_retries_make_resume_reachable_and_one_driver_runs_at_a_time(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert dag.default_args["retries"] >= 1
     assert dag.max_active_runs == 1
-    assert dag.schedule_interval is None
+    assert dag.schedule is None
 
 
 def _build(cls, method, env):

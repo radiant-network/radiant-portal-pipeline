@@ -159,7 +159,7 @@ def nextflow_snv_postprocessing_cases():
     def select_cases(member_rows: Any) -> Any:
         """Keep what can run, report what cannot, and skip the run if nothing can."""
         from airflow.exceptions import AirflowSkipException
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.resolve import select_cases as select
 
@@ -229,7 +229,7 @@ def nextflow_snv_postprocessing_cases():
         """Write the run's input prefix on S3. FSx auto-imports it, so the pipeline sees
         the files on its mount without this task needing the PVC."""
         import boto3
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.inputs import build_inputs
         from radiant.tasks.nextflow.model import Family
@@ -321,7 +321,7 @@ def nextflow_snv_postprocessing_cases():
 
         from airflow.exceptions import AirflowFailException, AirflowNotFoundException
         from airflow.hooks.base import BaseHook
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.batch import build_patch_body
         from radiant.tasks.nextflow.model import Family

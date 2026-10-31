@@ -8,8 +8,7 @@
 # Only DAG discovery is affected; `sys.path` imports from task bodies still resolve,
 # so the k8s/ECS operators keep working.
 #
-# Bare `tasks/` on purpose: Airflow 2 matches these as regex and Airflow 3 as glob,
-# and this is the spelling that works under both. `radiant/tasks/` would match the
-# regex but not the glob.
+# Bare `tasks/` on purpose: Airflow 3 matches these as glob, and `radiant/tasks/`
+# would not match.
 tasks/
 data_qa/

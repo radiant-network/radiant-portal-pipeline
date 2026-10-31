@@ -13,7 +13,7 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_maps_one_build_task_per_track(dag_bag):
     dag = dag_bag.get_dag(_DAG_ID)
-    assert dag.schedule_interval is None
+    assert dag.schedule is None
     assert dag.max_active_runs == 1
     assert {t.task_id for t in dag.tasks} == {
         "list_igv_tracks",

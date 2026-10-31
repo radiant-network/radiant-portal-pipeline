@@ -139,7 +139,7 @@ def nextflow_somatic_snv_annotation_cases():
     def select_tasks(rows: Any) -> Any:
         """Keep what can run, report what cannot, and skip the run if nothing can."""
         from airflow.exceptions import AirflowSkipException
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.somatic.resolve import select_tasks as select
 
@@ -181,7 +181,7 @@ def nextflow_somatic_snv_annotation_cases():
         """Write the run's input prefix on S3. FSx auto-imports it, so the pipeline sees
         the samplesheet on its mount without this task needing the PVC."""
         import boto3
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
         from botocore.exceptions import ClientError
 
         from radiant.tasks.nextflow.paths import run_paths, sanitize_run_tag, split_s3_uri
@@ -287,7 +287,7 @@ def nextflow_somatic_snv_annotation_cases():
     )
     def register_tasks(tenant: str, tasks: Any, collected: Any) -> Any:
         from airflow.exceptions import AirflowFailException
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.register import register_case_batch
         from radiant.tasks.nextflow.somatic.batch import build_patch_body

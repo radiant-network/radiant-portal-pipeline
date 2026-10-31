@@ -61,7 +61,7 @@ def notify_cases():
     @task(task_id="create_case_group", task_display_name="[PyOp] Create or reuse the case group")
     def create_case_group() -> str:
         from airflow.exceptions import AirflowFailException
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.notify import group_name, post_group
 
@@ -80,7 +80,7 @@ def notify_cases():
 
     @task(task_id="notify_labs", task_display_name="[PyOp] Email the laboratories their manifest")
     def notify_labs(name: str) -> dict:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.notify import send_notification
 

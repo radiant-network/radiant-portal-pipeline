@@ -108,7 +108,7 @@ def import_part():
         task_display_name="[PyOp] Acquire Import Lock",
     )
     def acquire_import_lock():
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         context = get_current_context()
         holder = f"{context['dag'].dag_id}:{context['run_id']}"
@@ -119,7 +119,7 @@ def import_part():
         task_display_name="[PyOp] Release Import Lock",
     )
     def release_import_lock():
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         context = get_current_context()
         holder = f"{context['dag'].dag_id}:{context['run_id']}"
@@ -164,7 +164,7 @@ def import_part():
 
     @task(task_id="prepare_config", task_display_name="[PyOp] Prepare Config")
     def prepare_config(tasks: Any) -> Any:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         context = get_current_context()
         conf = context["dag_run"].conf or {}
@@ -221,7 +221,7 @@ def import_part():
     def extract_all_tenants() -> list[str]:
         # Every tenant known to the platform (not just this batch). The shared consequence filter
         # pools loci across all of these, so it reflects the current state of all tenants.
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.tenants import list_all_tenants
 
@@ -234,7 +234,7 @@ def import_part():
     def render_pooled_sql(sql_file: str, tenants: list[str]) -> str:
         # Necessary to render SQL using tenant unions
         import jinja2
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.dags import DAGS_DIR
         from radiant.tasks.data.radiant_tables import get_radiant_mapping
@@ -373,7 +373,7 @@ def import_part():
 
     @task(task_id="get_tables_to_refresh", task_display_name="[PyOp] Get list of iceberg tables to refresh")
     def get_tables_to_refresh():
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.open_data import list_iceberg_source_tables
 

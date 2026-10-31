@@ -113,7 +113,7 @@ def reannotate_open_data():
         task_display_name="[PyOp] Acquire Import Lock",
     )
     def acquire_import_lock():
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         context = get_current_context()
         holder = f"{context['dag'].dag_id}:{context['run_id']}"
@@ -121,7 +121,7 @@ def reannotate_open_data():
 
     @task(task_id="release_import_lock", task_display_name="[PyOp] Release Import Lock")
     def release_import_lock():
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         context = get_current_context()
         holder = f"{context['dag'].dag_id}:{context['run_id']}"
@@ -133,7 +133,7 @@ def reannotate_open_data():
     @task(task_id="preflight_tables_exist", task_display_name="[PyOp] Preflight: Tables Exist?")
     def preflight_tables_exist():
         from airflow.exceptions import AirflowFailException
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.open_data import format_missing_tables, list_missing_open_data_tables
 
@@ -165,7 +165,7 @@ def reannotate_open_data():
         ignore_downstream_trigger_rules=False,
     )
     def extract_all_tenants() -> list[str]:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.tenants import list_all_tenants
 
@@ -178,7 +178,7 @@ def reannotate_open_data():
         ignore_downstream_trigger_rules=False,
     )
     def extract_all_parts() -> list[int]:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.tenants import list_all_parts
 
@@ -191,7 +191,7 @@ def reannotate_open_data():
         ignore_downstream_trigger_rules=False,
     )
     def extract_tenant_parts() -> list[dict]:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.tenants import list_tenant_parts
 
@@ -225,7 +225,7 @@ def reannotate_open_data():
 
     @task(task_id=GATES_TASK_ID, task_display_name="[PyOp] Collect updated upstream Iceberg branches")
     def compute_reannotation_gates() -> dict[str, bool]:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.open_data import branches_to_reannotate, changed_sources
 
@@ -240,7 +240,7 @@ def reannotate_open_data():
     @task(task_id="render_pooled_sql", task_display_name="[PyOp] Render Pooled SQL")
     def render_pooled_sql(sql_file: str, tenants: list[str]) -> str:
         import jinja2
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.dags import DAGS_DIR
         from radiant.tasks.data.radiant_tables import get_radiant_mapping

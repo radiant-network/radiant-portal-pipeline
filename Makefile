@@ -12,7 +12,7 @@ install-dev:
 	pip install -r requirements.txt -r requirements-dev.txt
 
 	# Required for standalone unit tests
-	airflow db init
+	airflow db migrate
 
 test-docker: build-docker
 	pytest tests/docker/

@@ -58,7 +58,7 @@ def import_tenant_gene_panel():
         retry_delay=timedelta(minutes=1),
     )
     def upload_gene_panels() -> dict:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.gene_panel.upload import upload_gene_panels
 

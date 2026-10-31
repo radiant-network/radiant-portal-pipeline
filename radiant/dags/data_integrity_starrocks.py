@@ -157,7 +157,7 @@ def data_integrity_starrocks():
         import requests
         from airflow.exceptions import AirflowFailException, AirflowNotFoundException, AirflowSkipException
         from airflow.hooks.base import BaseHook
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         context = get_current_context()
         if context["params"]["skip_testquality_push"]:
@@ -208,7 +208,7 @@ def data_integrity_starrocks():
         """
         import json
 
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.tenants import list_all_tenants
 

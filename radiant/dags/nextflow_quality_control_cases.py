@@ -132,7 +132,7 @@ def nextflow_quality_control_cases():
     def select_cases(member_rows: Any) -> Any:
         """Keep the cases that can run, report the ones that cannot."""
         from airflow.exceptions import AirflowSkipException
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.qc.resolve import select_cases as select
 
@@ -168,7 +168,7 @@ def nextflow_quality_control_cases():
         """Write the run's samplesheet to its own S3 prefix. FSx auto-imports it, so the
         pipeline sees it on its mount without this task needing the PVC."""
         import boto3
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.paths import run_paths, sanitize_run_tag, split_s3_uri
         from radiant.tasks.nextflow.qc.inputs import build_inputs
@@ -257,7 +257,7 @@ def nextflow_quality_control_cases():
     )
     def register_tasks(tenant: str, cases: Any, collected: Any) -> Any:
         from airflow.exceptions import AirflowFailException
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.qc.batch import build_patch_body
         from radiant.tasks.nextflow.qc.model import QcCase
