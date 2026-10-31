@@ -1,0 +1,114 @@
+# Scans the Docker images and the Dockerfiles with Trivy and uploads the results to
+# code scanning (Security tab). PRs and pushes to main scan the images built from the
+# Dockerfiles; the daily run scans the published `latest` images, to catch
+# vulnerabilities disclosed after they were built. The "Require code scanning results"
+# rule of main blocks a PR that adds high or critical alerts: it needs results for
+# every category, so every image is scanned on every PR.
+name: Trivy
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 11 * * 1-5'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io/radiant-network
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: radiant-airflow
+            file: Dockerfile
+          - name: radiant-task-operator
+            file: Dockerfile.radiant.operator
+          - name: radiant-dbt
+            file: Dockerfile.radiant.dbt
+          - name: nextflow-launcher
+            file: Dockerfile.nextflow.launcher
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Pick the image to scan
+        id: image
+        env:
+          NAME: ${{ matrix.name }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] || [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "ref=$REGISTRY/$NAME:ci" >> "$GITHUB_OUTPUT"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=$REGISTRY/$NAME:latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.image.outputs.build == 'true'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the image
+        if: steps.image.outputs.build == 'true'
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          load: true
+          push: false
+          tags: ${{ steps.image.outputs.ref }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Scan the image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.image.outputs.ref }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
+          ignore-unfixed: true
+
+      - name: Upload the results
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image-${{ matrix.name }}
+
+  config:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Scan the Dockerfile configuration
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-config.sarif
+          severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
+
+      - name: Upload the results
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config

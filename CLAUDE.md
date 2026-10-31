@@ -31,7 +31,7 @@ Integration tests select their fixtures via an env var (not a make flag):
 USE_DOCKER_FIXTURES=true  make test-integration   # spins up local Docker (testcontainers): RustFS (S3) + Iceberg REST catalog. CI default.
 USE_DOCKER_FIXTURES=false make test-integration   # runs against the external radiant-portal-sandbox environment
 ```
-CI (`.github/workflows/test.yml`) runs on every PR with `USE_DOCKER_FIXTURES=true`: static → unit → integration → docker. Tagged `v*` pushes build/push the two images (`build_and_push*.yml`).
+CI (`.github/workflows/test.yml`) runs on every PR with `USE_DOCKER_FIXTURES=true`: static → unit → integration → docker. Tagged `v*` pushes build/push the four images (`build_and_push*.yml`). Security checks (radiant-hub `docs/ci/security-checks.md`): `dependency-review.yml` fails a PR that adds a high or critical vulnerable dependency, `trivy.yml` scans the four images and the Dockerfiles (PRs, main, daily on `latest`), `dependabot-alerts.yml` keeps a `dependabot-gate` issue and a Slack message up to date.
 
 **Two Airflow versions.** The venv and the tests pin `apache-airflow==2.10.5` (`requirements-dev.txt`, `requirements-airflow.txt`); the deployed Airflow is **3.2.1** (`mwaa/` keeps separate `airflow2/` and `airflow3/` builds). Check scheduler behaviour (pools, deferred tasks, run-id rules, task-id changes in active runs) against the 3.2.1 source, not against the venv.
 
