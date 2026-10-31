@@ -1,5 +1,5 @@
-from airflow.models.mappedoperator import MappedOperator
-from airflow.utils.task_group import MappedTaskGroup
+from airflow.sdk.definitions.mappedoperator import MappedOperator
+from airflow.sdk.definitions.taskgroup import MappedTaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
 DAG_ID = "radiant-case-scheduler"
@@ -61,7 +61,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
 def test_it_is_the_daily_entry_point_one_run_at_a_time(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert dag.dag_display_name == "Radiant - Case Scheduler"
-    assert dag.schedule_interval == "@daily"
+    assert dag.schedule == "@daily"
     assert dag.max_active_runs == 1
     assert not dag.catchup
     assert dag.params.validate() is not None
@@ -71,7 +71,7 @@ def test_the_cases_dags_have_no_schedule_of_their_own(dag_bag):
     """Scheduled on their own they would process cases without moving their status, and race
     this DAG. They stay manually runnable for a targeted rerun."""
     for dag_id in CASES_DAG_IDS.values():
-        assert dag_bag.get_dag(dag_id).schedule_interval is None
+        assert dag_bag.get_dag(dag_id).schedule is None
 
 
 def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
@@ -199,7 +199,7 @@ def test_every_child_run_is_waited_for_and_pinned_to_this_run(dag_bag):
         trigger = dag.get_task(task_id)
         assert trigger.wait_for_completion
         assert trigger.reset_dag_run
-        assert trigger._defer
+        assert trigger.deferrable
         assert trigger.trigger_run_id == "{{ sanitize_run_tag(run_id) }}"
 
 
@@ -243,7 +243,7 @@ def _run_select_ready_cases(dag, monkeypatch, cases_with_work):
             return cases_with_work
 
     context = {"ti": TaskInstance(), "params": {"excluded_tenants": []}}
-    monkeypatch.setattr("airflow.operators.python.get_current_context", lambda: context)
+    monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
     monkeypatch.setattr(case_scheduler, "_cases_with_work", lambda *_: set())
     status_rows = [
         {"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True},
@@ -288,7 +288,7 @@ def test_somatic_candidates_count_as_work_in_both_passes(dag_bag, monkeypatch):
             return pushed.get(key)
 
     context = {"ti": TaskInstance(), "params": {"excluded_tenants": []}}
-    monkeypatch.setattr("airflow.operators.python.get_current_context", lambda: context)
+    monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
     dag = dag_bag.get_dag(DAG_ID)
     inputs = {
         "germline_snv_rows": [],

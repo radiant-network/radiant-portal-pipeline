@@ -1,4 +1,4 @@
-from airflow.models.mappedoperator import MappedOperator
+from airflow.sdk.definitions.mappedoperator import MappedOperator
 
 DAG_ID = "radiant-nextflow-snv-postprocessing-cases"
 PIPELINE_DAG_ID = "radiant-nextflow-snv-postprocessing"
@@ -30,7 +30,7 @@ def test_it_finds_its_own_work(dag_bag):
     cases that have been aligned but never annotated."""
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
-    assert dag.schedule_interval is None
+    assert dag.schedule is None
     assert dag.get_task("discover_scope").upstream_list == []
     # No default would make a scheduled run fail validation at trigger time.
     assert dag.params["task_ids"] == []
@@ -100,7 +100,7 @@ def test_it_triggers_the_pipeline_dag_rather_than_duplicating_it(dag_bag):
     assert run_pipeline.trigger_dag_id == PIPELINE_DAG_ID
     assert run_pipeline.wait_for_completion
     # A WGS run takes hours; `_defer` is where TriggerDagRunOperator keeps `deferrable`.
-    assert run_pipeline._defer
+    assert run_pipeline.deferrable
 
 
 def test_the_child_run_id_is_pinned_to_this_run(dag_bag):

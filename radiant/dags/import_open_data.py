@@ -139,7 +139,7 @@ with DAG(
 
     @task(task_id="get_tables_to_refresh", task_display_name="[PyOp] Iceberg Tables to Refresh")
     def get_tables_to_refresh() -> list[dict[str, str]]:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.open_data import list_iceberg_source_tables
 
@@ -157,7 +157,7 @@ with DAG(
 
     @task(task_id=IMPORT_GATES_TASK_ID, task_display_name="[PyOp] Which Sources Have New Data?")
     def compute_import_gates() -> dict[str, bool]:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.open_data import (
             IMPORTED_SNAPSHOT,
@@ -352,7 +352,7 @@ with DAG(
 
     @task(task_id="build_import_rows", task_display_name="[PyOp] Build Open Data Release Rows")
     def build_import_rows() -> list[dict[str, str]]:
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.tasks.data.open_data import annotated_snapshots, build_open_data_release_rows
 
@@ -364,7 +364,7 @@ with DAG(
     @task(task_id="render_import_sql", task_display_name="[PyOp] Render Open Data Release SQL")
     def render_import_sql(releases: list[dict[str, str]]) -> str:
         import jinja2
-        from airflow.operators.python import get_current_context
+        from airflow.sdk import get_current_context
 
         from radiant.dags import DAGS_DIR
         from radiant.tasks.data.radiant_tables import get_radiant_mapping

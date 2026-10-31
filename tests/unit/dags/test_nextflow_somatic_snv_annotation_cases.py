@@ -1,5 +1,5 @@
 import pytest
-from airflow.models.mappedoperator import MappedOperator
+from airflow.sdk.definitions.mappedoperator import MappedOperator
 
 DAG_ID = "radiant-nextflow-somatic-snv-annotation-cases"
 PIPELINE_DAG_ID = "radiant-nextflow-somatic-snv-annotation"
@@ -27,7 +27,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
 def test_it_finds_its_own_work(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     # The case scheduler starts it; a schedule of its own would race it.
-    assert dag.schedule_interval is None
+    assert dag.schedule is None
     assert dag.get_task("discover_scope").upstream_list == []
     assert set(dag.params) == {"task_ids", "excluded_tenants", "dry_run"}
     assert dag.params["task_ids"] == []
@@ -89,8 +89,8 @@ def test_the_queries_resolve_from_the_sql_search_path(dag_bag):
 
 def _run_generate_inputs(dag_bag, monkeypatch, head_error_code):
     """Call the `generate_inputs` callable with S3 and the Airflow context faked."""
+    import airflow.sdk as airflow_sdk
     import boto3
-    from airflow.operators import python as airflow_python
     from botocore.exceptions import ClientError
 
     from tests.unit.nextflow.somatic.conftest import BUCKET, calling_task
@@ -109,7 +109,7 @@ def _run_generate_inputs(dag_bag, monkeypatch, head_error_code):
     monkeypatch.setenv("NEXTFLOW_INPUTS_ROOT", BUCKET)
     monkeypatch.setenv("NEXTFLOW_OUTPUTS_ROOT", "s3://mock-nextflow-outputs")
     monkeypatch.setattr(boto3, "client", lambda *_: FakeS3())
-    monkeypatch.setattr(airflow_python, "get_current_context", lambda: {"run_id": "manual__2026-10-15"})
+    monkeypatch.setattr(airflow_sdk, "get_current_context", lambda: {"run_id": "manual__2026-10-15"})
     callable_ = dag_bag.get_dag(DAG_ID).get_task("generate_inputs").python_callable
     return callable_([calling_task(70).model_dump()])
 

@@ -38,7 +38,7 @@ def test_runs_weekly_on_saturday_midnight(dag):
     Pinned so a change to the schedule is a deliberate edit, not something that arrives unnoticed
     with an unrelated change.
     """
-    assert dag.schedule_interval == "0 0 * * 6"
+    assert dag.schedule == "0 0 * * 6"
     assert dag.catchup is False
     assert "manual" not in dag.tags
 
@@ -196,7 +196,7 @@ def test_cnv_params_are_one_per_existing_pair_not_the_cross_product():
 
 def _starrocks_tasks(dag):
     """Every task that runs a statement on StarRocks, mapped ones included."""
-    from airflow.models.mappedoperator import MappedOperator
+    from airflow.sdk.definitions.mappedoperator import MappedOperator
 
     from radiant.tasks.starrocks.operator import RadiantStarRocksOperator
 
@@ -354,7 +354,7 @@ _TENANT_PARTS = [
 
 
 def _mapped_tasks(dag):
-    from airflow.models.mappedoperator import MappedOperator
+    from airflow.sdk.definitions.mappedoperator import MappedOperator
 
     return {task.task_id: task for task in dag.tasks if isinstance(task, MappedOperator)}
 

@@ -1,4 +1,4 @@
-from airflow.models.mappedoperator import MappedOperator
+from airflow.sdk.definitions.mappedoperator import MappedOperator
 
 DAG_ID = "radiant-nextflow-cnv-postprocessing-cases"
 PIPELINE_DAG_ID = "radiant-nextflow-cnv-postprocessing"
@@ -28,7 +28,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
 def test_it_finds_its_own_work(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
-    assert dag.schedule_interval is None
+    assert dag.schedule is None
     assert dag.get_task("discover_scope").upstream_list == []
     assert set(dag.params) == {"task_ids", "excluded_tenants", "dry_run"}
     assert dag.params["task_ids"] == []

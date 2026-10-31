@@ -47,4 +47,13 @@ RUN /home/airflow/.venv/radiant/bin/pip wheel --no-deps \
       -w /home/airflow/.venv/radiant/wheels /src
 
 RUN cp /usr/local/airflow/plugins/constraints-3.12.txt /home/airflow/.venv/radiant/wheels/constraints-3.12.txt
-RUN zip -j /home/airflow/.venv/radiant/plugins.zip /home/airflow/.venv/radiant/wheels/*.whl /home/airflow/.venv/radiant/wheels/constraints-3.12.txt
+
+# Name the bundle after the Airflow version it targets (the `apache-airflow==X.Y.Z` pin in
+# requirements-deps.txt), and ship that version inside it as AIRFLOW_VERSION.
+RUN AIRFLOW_VERSION=$(sed -n 's/^apache-airflow==\([0-9]*\.[0-9]*\.[0-9]*\)$/\1/p' /home/airflow/.venv/radiant/requirements.txt) && \
+    test -n "$AIRFLOW_VERSION" || { echo "requirements-deps.txt must pin apache-airflow==X.Y.Z" >&2; exit 1; } && \
+    echo "$AIRFLOW_VERSION" > /home/airflow/.venv/radiant/wheels/AIRFLOW_VERSION && \
+    zip -j "/home/airflow/.venv/radiant/plugins-airflow-${AIRFLOW_VERSION}.zip" \
+      /home/airflow/.venv/radiant/wheels/*.whl \
+      /home/airflow/.venv/radiant/wheels/constraints-3.12.txt \
+      /home/airflow/.venv/radiant/wheels/AIRFLOW_VERSION

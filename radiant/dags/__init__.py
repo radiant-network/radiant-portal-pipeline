@@ -61,7 +61,7 @@ def load_docs_md(file_name: str) -> str:
 @task(task_id="get_iceberg_namespace", task_display_name="[PyOp] Get Iceberg Namespace")
 def get_namespace():
     """Get the Iceberg namespace from conf or use the one defined in environment variable or use default."""
-    from airflow.operators.python import get_current_context
+    from airflow.sdk import get_current_context
 
     context = get_current_context()
     dag_conf = context["dag_run"].conf or {}
