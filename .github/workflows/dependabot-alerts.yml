@@ -82,16 +82,25 @@ jobs:
             exit 0
           fi
 
+          # An issue body is limited to 65536 characters: cut each list at a budget,
+          # critical first, and link to the full list
+          cut_list() {
+            sort "$1" | awk -v max="$2" -v url="$3" '
+              size + length($0) + 1 <= max { print; size += length($0) + 1; next }
+              { skipped++ }
+              END { if (skipped) printf "- … and %d more in [the Security tab](%s)\n", skipped, url }'
+          }
+
           {
             echo "$COUNT open security alert(s) on the default branch at or above the threshold."
             echo
             echo "## Dependabot: $DEPENDABOT (\`$DEPENDABOT_THRESHOLDS\`)"
             echo
-            cat dependabot.md
+            cut_list dependabot.md 15000 "$GITHUB_SERVER_URL/$GH_REPO/security/dependabot"
             echo
             echo "## Trivy, image and Dockerfile: $TRIVY (\`$TRIVY_SEVERITIES\`)"
             echo
-            cat trivy.md
+            cut_list trivy.md 45000 "$GITHUB_SERVER_URL/$GH_REPO/security/code-scanning?query=is%3Aopen+tool%3ATrivy"
             echo
             echo "_A vulnerable package can appear in both sections. Updated by the [Security Alerts workflow]($GITHUB_SERVER_URL/$GH_REPO/actions/runs/$GITHUB_RUN_ID). This issue closes itself once no alert is left._"
           } > body.md
