@@ -30,8 +30,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: radiant-airflow
-            file: Dockerfile
           - name: radiant-task-operator
             file: Dockerfile.radiant.operator
           - name: radiant-dbt
