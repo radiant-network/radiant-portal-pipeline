@@ -1,2 +1,5 @@
 dbt-core~=1.12.0
 dbt-starrocks~=1.12.0
+# dbt dependencies, above the versions with a high CVE that dbt's own ranges still allow
+urllib3>=2.8.0
+msgpack>=1.2.3

@@ -2,15 +2,15 @@ FROM --platform=linux/amd64 python:3.12-slim
 
 RUN useradd --create-home --uid 1000 dbt
 
-RUN pip install --no-cache-dir --upgrade pip setuptools
-
 ENV DBT_PROFILES_DIR=/opt/dbt/data_qa \
     DBT_SEND_ANONYMOUS_USAGE_STATS=false
 
-# Install python requirements; boto3 is to upload reports to S3. urllib3 and msgpack are dbt
-# dependencies, raised above the versions with a high CVE that dbt's own ranges still allow
+# Install python requirements; boto3 is to upload reports to S3. pip is removed afterwards: nothing
+# installs packages at runtime, and the copies of urllib3, msgpack and setuptools it bundles carry CVEs
 COPY radiant/data_qa/requirements.txt /opt/dbt/data_qa/requirements.txt
-RUN pip install --no-cache-dir -r /opt/dbt/data_qa/requirements.txt "boto3~=1.43.36" "urllib3>=2.8.0" "msgpack>=1.2.3"
+RUN pip install --no-cache-dir -r /opt/dbt/data_qa/requirements.txt "boto3~=1.43.36" \
+    && pip uninstall -y pip \
+    && rm -rf /usr/local/lib/python3.12/ensurepip
 
 COPY --chown=dbt:dbt radiant/data_qa/ /opt/dbt/data_qa/
 COPY --chown=dbt:dbt scripts/dbt/entrypoint.py /opt/dbt/entrypoint.py
