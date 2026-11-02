@@ -5,16 +5,17 @@
 # `pr-title` job a required status check in the ruleset of main so a bad title
 # cannot merge.
 #
-# `pull_request_target` runs the workflow from main, never the PR's code, so a change
-# to this file applies to the PRs opened after it is merged. The job checks out
-# nothing and reads only the title.
+# `edited` is the event of a title change: without it, a fixed title is not checked
+# again. The job checks out nothing and reads only the title.
 #
 # The person who squash-merges can still edit the commit message: commit-subject.yml
 # checks the subjects that reach main. Keep `types` equal to its TYPES.
 name: Check Conventional PR Title
 
 on:
-  pull_request_target:
+  pull_request:
+    branches:
+      - main
     types:
       - opened
       - edited
