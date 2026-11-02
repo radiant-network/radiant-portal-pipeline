@@ -50,7 +50,12 @@ ARG CNV_PIPELINE_REV=cad99b4e0b7e39f5d88dfbd028d426df693dee4e
 # plugin directories side by side, so
 # both resolve; a missing one fails at plugin resolution, offline, with no way to
 # recover at runtime.
-ARG NXF_PLUGINS="nf-schema@2.1.0 nf-schema@2.3.0 nf-amazon"
+#
+# No nf-amazon: Nextflow never sees S3 here (it reads and writes the FSx PVC, the
+# data repository association syncs with S3), and the plugin carried most of the
+# image's Trivy alerts. An s3:// path, an `aws` scope or the awsbatch executor
+# would make Nextflow load it, and the run would fail at plugin resolution.
+ARG NXF_PLUGINS="nf-schema@2.1.0 nf-schema@2.3.0"
 
 # Set NXF_HOME *before* installing Nextflow, so the build-time
 # `nextflow -version` populates ${NXF_HOME}/framework/... and the build-time
@@ -90,7 +95,7 @@ WORKDIR /workspace
 # Each plugin is checked by name, not by one grep over the directory: `nf-schema`
 # matches on either version alone, and a single missing version is exactly the
 # case this needs to catch. `nf-schema@2.1.0` installs as `nf-schema-2.1.0`, while
-# an unversioned `nf-amazon` resolves to whatever version it pulled - hence the
+# an unversioned plugin resolves to whatever version it pulled - hence the
 # `@`->`-` rewrite plus a trailing glob rather than an exact directory name.
 #
 # `set -eu` and `{ ...; exit 1; }` are load-bearing: inside `( ... )` the exit
