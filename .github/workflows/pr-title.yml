@@ -1,0 +1,44 @@
+# Fails the PR when its title is not a conventional commit. With squash merge, the
+# title becomes the commit subject on main, and the release reads the version bump
+# from it: a breaking change (`!` after the type) is a major, `feat` a minor, `fix`,
+# `perf` and `revert` a patch; the other types make no release. Make the
+# `pr-title` job a required status check in the ruleset of main so a bad title
+# cannot merge.
+#
+# `pull_request_target` runs the workflow from main, never the PR's code, so a change
+# to this file applies to the PRs opened after it is merged. The job checks out
+# nothing and reads only the title.
+name: Check Conventional PR Title
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+permissions:
+  pull-requests: read
+
+jobs:
+  pr-title:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the PR title is a conventional commit
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            revert
+            docs
+            style
+            chore
+            refactor
+            test
+            build
+            ci
