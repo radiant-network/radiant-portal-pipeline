@@ -8,6 +8,9 @@
 # `pull_request_target` runs the workflow from main, never the PR's code, so a change
 # to this file applies to the PRs opened after it is merged. The job checks out
 # nothing and reads only the title.
+#
+# The person who squash-merges can still edit the commit message: commit-subject.yml
+# checks the subjects that reach main. Keep `types` equal to its TYPES.
 name: Check Conventional PR Title
 
 on:
