@@ -1,0 +1,67 @@
+# Trivy findings accepted on purpose, read by `.github/workflows/trivy.yml`.
+#
+# Every entry is scoped to one file with `paths`, so the same CVE anywhere else
+# (another jar, another image) is still reported, and carries an `expired_at` that
+# brings it back for review. The paths hold the version: bumping the component
+# brings its real findings back as well.
+
+vulnerabilities:
+  # Nextflow 24.10.5 framework jar (nextflow-launcher image).
+  #
+  # The driver is an offline K8s Job: no exposed port, no egress, and it only reads
+  # inputs we produce (pipeline code baked in the image, ConfigMaps from qlin-qa-infra,
+  # samplesheets written by the ETL, files on FSx). Nextflow references jackson-databind
+  # only from the Groovy YAML parser and Micronaut serde, never with polymorphic typing;
+  # jsoup only from the unused mail module; pf4j extracts plugins at image build only.
+  # Nextflow 26.x clears all but guava, but the bioinfo pipelines pin
+  # `nextflowVersion '!>=24.10.5, <26.0.0'`; 25.10.x fixes only commons-io and adds
+  # bouncycastle criticals through nf-k8s. See RAD-207.
+  - id: CVE-2026-54512
+    paths: &nextflow_jar
+      - "opt/nextflow/framework/24.10.5/nextflow-24.10.5-one.jar"
+    statement: jackson-databind RCE through a PolymorphicTypeValidator bypass; Nextflow enables no polymorphic typing and parses no untrusted JSON (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2026-54513
+    paths: *nextflow_jar
+    statement: jackson-databind RCE through a security bypass of polymorphic typing; Nextflow enables no polymorphic typing and parses no untrusted JSON (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2026-68497
+    paths: *nextflow_jar
+    statement: jackson-databind CPU DoS on untrusted numeric input; offline driver fed internal inputs only (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2026-91776
+    paths: *nextflow_jar
+    statement: jackson-databind DoS through type deserializer cache growth; offline driver fed internal inputs only (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2026-91777
+    paths: *nextflow_jar
+    statement: jackson-databind DoS through forward-reference completion; offline driver fed internal inputs only (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2026-68494
+    paths: *nextflow_jar
+    statement: jackson-core DoS in the async JSON parser; offline driver fed internal inputs only (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2026-89407
+    paths: *nextflow_jar
+    statement: jackson-core regex backtracking DoS; offline driver fed internal inputs only (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2026-89425
+    paths: *nextflow_jar
+    statement: jackson-core DoS on malformed tokens; offline driver fed internal inputs only (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2026-75140
+    paths: *nextflow_jar
+    statement: jsoup DoS on deeply nested XML; only used by the Nextflow mail module, mail is not configured (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2025-70952
+    paths: *nextflow_jar
+    statement: pf4j path traversal in plugin extraction; plugins are installed at image build from the Nextflow registry, never at runtime (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2024-47554
+    paths: *nextflow_jar
+    statement: commons-io XmlStreamReader DoS on untrusted XML; offline driver fed internal inputs only (RAD-207)
+    expired_at: 2027-05-01
+  - id: CVE-2026-102554
+    paths: *nextflow_jar
+    statement: guava deserialization memory DoS; offline driver fed internal inputs only (RAD-207)
+    expired_at: 2027-05-01
