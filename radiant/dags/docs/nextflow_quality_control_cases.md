@@ -119,10 +119,11 @@ as outputs, everything the pipeline published for the family under its multiqc/C
 |:--|:--|:--|
 | CA_ID_multiqc_report.html | aggqc | html |
 | CA_ID_multiqc_report_data.zip | aggqc | zip |
+| qc_json/ALIQUOT.metrics.json, one per member | aggqc | json |
 
-The pipeline also writes a qc_json metrics.json per sample. Those are **not** registered:
-everything in them is in the archive's tables, so they only lengthened each case's document
-list.
+The metrics.json names are built from the case's own aliquots, so the JSON of a sample outside
+the case is never registered. The portal hides the aggqc / json documents from its files list and
+lab manifest.
 
 **collect_outputs** requires the complete set for every case in a run; a partial run
 registers nothing. PATCH **appends**, so a deliberate re-run adds a second task alongside the
