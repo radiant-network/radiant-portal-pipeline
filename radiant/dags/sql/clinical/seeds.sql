@@ -1392,7 +1392,11 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (277, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 31975067, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e63', 'radiant'),
     (278, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz.tbi', 'genomic', 'ssnv', 'tbi', 913443, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz.tbi', 'a1c4e2f09b37d6851e0f2c9d4b7a3e64', 'radiant'),
     (279, 'TCRBOA6_SRX1166091-T.v2.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 19974233, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.v2.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e65', 'radiant'),
-    (280, 'TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1214512, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e66', 'radiant');
+    (280, 'TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1214512, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e66', 'radiant'),
+    -- Per-member metrics.json of QC task 71, one per aliquot of case 1.
+    (281, 'NA12878_NA12878.metrics.json', 'genomic', 'aggqc', 'json', 5120, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/qc_json/NA12878_NA12878.metrics.json', '5d41402abc4b2a76b9719d911017c902', 'radiant'),
+    (282, 'NA12892_NA12892.metrics.json', 'genomic', 'aggqc', 'json', 5120, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/qc_json/NA12892_NA12892.metrics.json', '5d41402abc4b2a76b9719d911017c903', 'radiant'),
+    (283, 'NA12891_NA12891.metrics.json', 'genomic', 'aggqc', 'json', 5120, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/qc_json/NA12891_NA12891.metrics.json', '5d41402abc4b2a76b9719d911017c904', 'radiant');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1666,9 +1670,12 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (70, 263, 'output'),
     (70, 264, 'output'),
     (70, 265, 'output'),
-    -- QC task 71 -> its MultiQC set.
+    -- QC task 71 -> its MultiQC report and archive, and each member's metrics.json.
     (71, 266, 'output'),
     (71, 267, 'output'),
+    (71, 281, 'output'),
+    (71, 282, 'output'),
+    (71, 283, 'output'),
     -- Calling tasks 73-76 -> their raw VCFs.
     (73, 274, 'output'),
     (73, 275, 'output'),

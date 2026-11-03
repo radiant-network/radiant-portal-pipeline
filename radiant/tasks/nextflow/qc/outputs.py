@@ -1,11 +1,11 @@
 """Find what a QC run published for each case, and refuse to register a partial set.
 
 With `cohort_mode = false` the pipeline runs MultiQC once per `familyId` and publishes
-`multiqc/{familyId}/` -- confirmed on a real QA run, sizes and all. Two files are registered
-under the `aggqc` data type: the report and its parsed-data archive. The per-sample
-`qc_json/<aliquot>.metrics.json` sidecars are deliberately *not* registered: everything they
-hold is in the archive's tables (General Status, somalier, DRAGEN ploidy), so they only added
-documents to each case with no reader. Re-adding them is one entry in `expected_keys`.
+`multiqc/{familyId}/` -- confirmed on a real QA run, sizes and all. Registered under the
+`aggqc` data type: the report, its parsed-data archive, and one `qc_json/<aliquot>.metrics.json`
+per member of the case. The JSON names are built from the case's own aliquots, so the JSON of a
+sample outside the case is never registered. The portal hides the `aggqc` / `json` documents
+from its files list and lab manifest: they are an input of the ETL, not a deliverable.
 """
 
 from radiant.tasks.nextflow.outputs import MissingOutputsError
@@ -20,15 +20,22 @@ DATA_CATEGORY = "genomic"
 
 REPORT = "multiqc_html"
 REPORT_DATA = "multiqc_data"
+METRICS_JSON = "metrics_json"
 
 
 def expected_keys(case: QcCase) -> dict[str, tuple[str, str]]:
     """`{logical name: (relative key under outdir, format_code)}` for one case."""
     fid = case.family_id
-    return {
+    keys = {
         REPORT: (f"{MULTIQC_DIR}/{fid}/{fid}_multiqc_report.html", "html"),
         REPORT_DATA: (f"{MULTIQC_DIR}/{fid}/{fid}_multiqc_report_data.zip", "zip"),
     }
+    for member in case.members:
+        keys[f"{METRICS_JSON}_{member.aliquot}"] = (
+            f"{MULTIQC_DIR}/{fid}/qc_json/{member.aliquot}.metrics.json",
+            "json",
+        )
+    return keys
 
 
 def collect(cases: list[QcCase], listing: dict[str, int], outdir_s3: str) -> dict[str, dict]:

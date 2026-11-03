@@ -174,7 +174,7 @@ of the *content*.
    |---|---|---|
    | `multiqc/{familyId}/{familyId}_multiqc_report.html` | `aggqc` / `html` | the report itself — **mandatory** |
    | `multiqc/{familyId}/{familyId}_multiqc_report_data.zip` | `aggqc` / `zip` | MultiQC parsed data — **mandatory** |
-   | `multiqc/{familyId}/qc_json/{aliquot}.metrics.json` | **not registered** | per-sample GA4GH sidecar; a strict subset of the archive's tables (decision 2026-09-03, after inspecting a real archive) |
+   | `multiqc/{familyId}/qc_json/{aliquot}.metrics.json` | `aggqc` / `json`, one per member | per-sample GA4GH sidecar — **mandatory**. Not registered at first (decision 2026-09-03, a strict subset of the archive's tables); registered since RAD-153, the input of the portal's Quality Control tab, and hidden by the portal from its files list and lab manifest |
 
    Sizes were real (3.7 MB html, 1.6 MB zip), so the symlink-publish trap of the runbook did not
    occur in QA.
