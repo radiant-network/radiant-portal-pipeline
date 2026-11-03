@@ -441,20 +441,27 @@ def _staged(starrocks_session, case_id):
         return sorted((int(seq_id), int(task_id), bool(deleted)) for seq_id, task_id, deleted in cursor.fetchall())
 
 
+@pytest.fixture
+def empty_staging(starrocks_session, sequencing_experiment_tables):
+    """An empty staging table, emptied again afterwards: the rows `_stage` writes must not reach other tests."""
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
+    yield
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
+
+
 _CNV_TRIO_DRAGEN_ROWS = [(9620, 9620, False), (9621, 9621, False), (9622, 9622, False)]
 _CNV_TRIO_SLIVAR_ROWS = [(9620, 9623, False), (9621, 9623, False), (9622, 9623, False)]
 
 
 @pytest.mark.parametrize("cnv_trio", ["later"], indirect=True)
 def test_a_later_slivar_vcf_adds_the_slivar_set_and_keeps_every_dragen_set(
-    cnv_trio, postgres_instance, starrocks_session, radiant_mapping, sequencing_experiment_tables
+    cnv_trio, empty_staging, postgres_instance, starrocks_session, radiant_mapping
 ):
     """Proband source rule, slivar VCF in a later import: the run holds the annotation task only. The DRAGEN tasks
     of every member, the proband's included, are not in the run and stay staged, not deleted: the copy step keeps
     their occurrences (`germline_cnv_occurrence_copy_partition.sql` keeps the tasks not in the run)."""
-    with starrocks_session.cursor() as cursor:
-        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
-
     first_run = _stage(starrocks_session, radiant_mapping, 9620)
     assert first_run == [(9620, 9620), (9621, 9621), (9622, 9622)]
 
@@ -467,13 +474,11 @@ def test_a_later_slivar_vcf_adds_the_slivar_set_and_keeps_every_dragen_set(
 
 @pytest.mark.parametrize("cnv_trio", ["later"], indirect=True)
 def test_a_new_proband_alignment_task_after_the_slivar_vcf_is_not_imported(
-    cnv_trio, postgres_instance, starrocks_session, radiant_mapping, sequencing_experiment_tables
+    cnv_trio, empty_staging, postgres_instance, starrocks_session, radiant_mapping
 ):
     """Proband source rule, new delivery of the proband's alignment task after the slivar VCF: it stays out of the
     view, so no run selects it and no row loads. The proband keeps the sets it has, and the task stays in the
     clinical model."""
-    with starrocks_session.cursor() as cursor:
-        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
     _stage(starrocks_session, radiant_mapping, 9620)
     _publish_cnv_trio_output(postgres_instance, 9623)
     _stage(starrocks_session, radiant_mapping, 9620)
