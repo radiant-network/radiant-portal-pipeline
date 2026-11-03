@@ -272,49 +272,41 @@ def test_sequencing_experiment_delta_ignores_cnv_exomiser_reports(
 
 
 @pytest.fixture
-def maf_documents(postgres_clinical_seeds, postgres_instance):
-    """RAD-140: somatic MAFs on the seeded case-22 tumor-normal tasks, typed `ssnv` like their VCFs:
-
-    - document 9620 on the calling task 73;
-    - document 9621 on its annotation task 67, next to the VEP VCF the view must keep reading.
-
-    The tasks are seeds, so only the documents and their links are removed afterwards.
-    """
+def maf_only_annotation(postgres_clinical_seeds, postgres_instance):
+    """RAD-140: task 9620, a `radiant_somatic_annotation` on case 23 / experiment 64 whose only output is
+    an `ssnv` MAF (document 9620). With no VCF next to it, the MAF alone decides whether the task gets a row."""
     execute_clinical(
         postgres_instance,
         """
+        INSERT INTO task (id, task_type_code, created_on, pipeline_name, pipeline_version, genome_build, tenant_code)
+        VALUES (9620, 'radiant_somatic_annotation', '2026-01-02', 'snv-post-processing', 'mock', 'GRch38', 'radiant');
+        INSERT INTO task_context (task_id, case_id, sequencing_experiment_id) VALUES (9620, 23, 64);
         INSERT INTO document (id, name, data_category_code, data_type_code, format_code, size, url, hash, tenant_code)
         VALUES (9620, 'mock-9620.somatic.maf', 'genomic', 'ssnv', 'maf', 1, 's3://test-vcf/mock-9620.somatic.maf',
-                'mock9620', 'radiant'),
-               (9621, 'mock-9621.somatic.maf', 'genomic', 'ssnv', 'maf', 1, 's3://test-vcf/mock-9621.somatic.maf',
-                'mock9621', 'radiant');
-        INSERT INTO task_has_document (task_id, document_id, type) VALUES (73, 9620, 'output'), (67, 9621, 'output');
+                'mock9620', 'radiant');
+        INSERT INTO task_has_document (task_id, document_id, type) VALUES (9620, 9620, 'output');
         """,
     )
     yield
     execute_clinical(
         postgres_instance,
         """
-        DELETE FROM task_has_document WHERE document_id IN (9620, 9621);
-        DELETE FROM document WHERE id IN (9620, 9621);
+        DELETE FROM task_has_document WHERE task_id = 9620;
+        DELETE FROM task_context WHERE task_id = 9620;
+        DELETE FROM task WHERE id = 9620;
+        DELETE FROM document WHERE id = 9620;
         """,
     )
 
 
 def test_sequencing_experiment_delta_ignores_maf_documents(
-    maf_documents, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+    maf_only_annotation, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
 ):
-    """A MAF is never a `vcf_filepath`: every branch of the view's WHERE clause asks for a `vcf` (or the
-    exomiser tsv), so the MAFs add no row and leave the annotation task pointing at its VEP VCF."""
+    """A MAF is never a `vcf_filepath`: the annotation branch of the view's WHERE clause asks for a `vcf`,
+    so an annotation task that published only a MAF gets no row (without that gate, it would get one)."""
     delta = _delta(starrocks_session, sequencing_delta_columns)
 
-    assert len(delta) == 16
-    assert delta.query("task_id == 73").empty
-    annotation = delta.query("task_id == 67")
-    assert sorted(annotation["seq_id"]) == [62, 63]
-    assert {path.rsplit("/", 1)[-1] for path in annotation["vcf_filepath"]} == {
-        "variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz"
-    }
+    assert delta.query("task_id == 9620").empty
 
 
 @pytest.fixture

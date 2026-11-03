@@ -175,13 +175,18 @@ def test_only_the_ssnv_vcf_is_selected(postgres_clinical_seeds, starrocks_sessio
 
 def test_a_maf_next_to_the_ssnv_vcf_is_never_selected(maf_document, starrocks_session, radiant_mapping):
     """RAD-140: the MAF shares the VCF's `ssnv` data type, but only the `vcf` format is the trigger.
-    Counted, it would make task 75 `ambiguous_ssnv` and stop its annotation."""
-    assert PENDING_TN_TASK in {r["calling_task_id"] for r in _discover(starrocks_session, radiant_mapping)}
+    Counted, it would make task 75 `ambiguous_ssnv`: the nightly run would drop it without a word, and a
+    targeted run would fail on it. Both runs are checked."""
+    vcf_url = "s3://test-vcf/TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz"
 
-    rows = _discover(starrocks_session, radiant_mapping, task_ids=[PENDING_TN_TASK])
-    assert {r["ssnv_url"].rsplit("/", 1)[-1] for r in rows} == {"TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz"}
-    assert all(r["exclusion_reason"] is None for r in rows)
-    [task] = select_tasks(rows, [PENDING_TN_TASK]).tasks
+    nightly = [r for r in _discover(starrocks_session, radiant_mapping) if r["calling_task_id"] == PENDING_TN_TASK]
+    targeted = _discover(starrocks_session, radiant_mapping, task_ids=[PENDING_TN_TASK])
+
+    for rows in (nightly, targeted):
+        assert rows
+        assert {(r["ssnv_url"], r["exclusion_reason"]) for r in rows} == {(vcf_url, None)}
+    assert PENDING_TN_TASK in {t.task_id for t in select_tasks(nightly).tasks}
+    [task] = select_tasks(targeted, [PENDING_TN_TASK]).tasks
     assert task.task_id == PENDING_TN_TASK
 
 
