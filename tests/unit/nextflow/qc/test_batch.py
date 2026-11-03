@@ -45,10 +45,18 @@ def test_without_a_tarball_the_inputs_are_the_cram_and_index_only(body):
     assert [u.rsplit("/", 1)[-1] for u in inputs] == ["HG00096.cram", "HG00096.cram.crai"]
 
 
-def test_outputs_are_the_whole_multiqc_set(body):
+def test_outputs_are_the_multiqc_set_and_each_member_metrics_json(body):
     outputs = body["cases"][1]["tasks"][0]["output_documents"]
     assert sorted(d["name"] for d in outputs) == [
         "CA1072_multiqc_report.html",
         "CA1072_multiqc_report_data.zip",
+        "NA12878.metrics.json",
+        "NA12891.metrics.json",
+        "NA12892.metrics.json",
     ]
     assert {d["data_type_code"] for d in outputs} == {"aggqc"}
+
+
+def test_a_singleton_registers_its_own_metrics_json(body):
+    outputs = body["cases"][0]["tasks"][0]["output_documents"]
+    assert [d["name"] for d in outputs if d["format_code"] == "json"] == ["HG00096.metrics.json"]
