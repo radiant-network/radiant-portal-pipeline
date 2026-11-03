@@ -1,0 +1,58 @@
+# Fails when a commit pushed to main does not have a conventional commit subject. The
+# PR title check runs before the merge, but the person who squash-merges can still
+# edit the commit message, and a commit pushed to main without a PR has no title
+# check at all. The release reads the version bump from these subjects and leaves out
+# a commit it cannot parse, so this job reports such a commit right after the push.
+# It blocks nothing: the commit is already on main.
+#
+# To repair a squash commit, edit the body of its merged PR and add the corrected
+# message between `BEGIN_COMMIT_OVERRIDE` and `END_COMMIT_OVERRIDE`: release-please
+# reads it in place of the commit message (https://github.com/googleapis/release-please).
+#
+# Keep TYPES equal to the types of pr-title.yml.
+name: Check Conventional Commit Subject
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  commit-subject:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the subjects of the pushed commits
+        env:
+          # The push payload lists at most 2048 commits, enough for one push to main.
+          COMMITS: ${{ toJSON(github.event.commits) }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TYPES: feat fix perf revert docs style chore refactor test build ci
+        run: |
+          # Header pattern of the conventionalcommits preset, as action-semantic-pull-request parses the title.
+          pattern='^([[:alnum:]_]+)(\(.*\))?!?: (.+)$'
+          failed=0
+          while IFS=$'\t' read -r sha subject; do
+            if [[ "$subject" =~ $pattern ]] && [[ " $TYPES " == *" ${BASH_REMATCH[1]} "* ]]; then
+              continue
+            fi
+            failed=1
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" --jq '.[0].html_url // empty' || true)
+            echo "::error::${sha:0:7} is not a conventional commit: $subject"
+            {
+              echo "- ${sha:0:7} ${pr:-(no PR)}"
+              echo "  - subject: $subject"
+            } >> "$GITHUB_STEP_SUMMARY"
+          done < <(jq -r '.[] | [.id, (.message | split("\n")[0])] | @tsv' <<< "$COMMITS")
+          if [ "$failed" = 1 ]; then
+            {
+              echo
+              echo "Allowed types: $TYPES."
+              echo "The release leaves these commits out. To repair a squash commit, add the corrected message"
+              echo "between BEGIN_COMMIT_OVERRIDE and END_COMMIT_OVERRIDE in the body of its merged PR."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
