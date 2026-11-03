@@ -261,14 +261,233 @@ def test_sequencing_experiment_delta_ignores_cnv_exomiser_reports(
     cnv_exomiser_reports, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
 ):
     """The CNV Exomiser report must stay out of the SNV `exomiser` table: the view reads only the `exomiser`
-    data type, and never reads a `radiant_germline_cnv_annotation` task."""
+    data type. It reads the slivar VCF of a `radiant_germline_cnv_annotation` task, and nothing else."""
     delta = _delta(starrocks_session, sequencing_delta_columns)
 
     (snv_annotation,) = delta.query("task_id == 9601").itertuples()
     assert snv_annotation.vcf_filepath == "s3://test-vcf/mock-9601.snv.vcf.gz"
     assert pd.isna(snv_annotation.exomiser_filepath)
 
-    assert delta.query("task_id == 9602").empty
+    (cnv_annotation,) = delta.query("task_id == 9602").itertuples()
+    assert cnv_annotation.cnv_vcf_filepath == "s3://test-vcf/mock-9603.cnv.slivar.vcf.gz"
+    assert pd.isna(cnv_annotation.exomiser_filepath)
+    assert pd.isna(cnv_annotation.vcf_filepath)
+
+
+@pytest.fixture
+def cnv_trio(request, postgres_clinical_seeds, postgres_instance):
+    """Trio case 9620 on ids far above the seeded range: proband 9620, father 9621, mother 9622, each with
+    the `gcnv` VCF of an alignment task (9620, 9621, 9622: NULL case_id, as in the portal). Task 9623 is the case's
+    `radiant_germline_cnv_annotation` task, over the three experiments. Task 9624 is a later alignment task of the
+    proband, a new delivery.
+
+    Parametrized by what task 9623 published: "slivar" (its slivar VCF) or "none" (no output). "later": no output
+    on task 9623 nor on task 9624 yet; the test publishes them with `_publish_cnv_trio_output`.
+    """
+    with_slivar = request.param == "slivar"
+    with_new_delivery = request.param != "later"
+    execute_clinical(
+        postgres_instance,
+        f"""
+        INSERT INTO patient (id, submitter_patient_id, organization_code, sex_code, date_of_birth, life_status_code,
+                             tenant_code)
+        VALUES (9620, 'PT-9620', 'CQGC', 'female', '2015-01-01', 'alive', 'radiant'),
+               (9621, 'PT-9621', 'CQGC', 'male',   '1985-01-01', 'alive', 'radiant'),
+               (9622, 'PT-9622', 'CQGC', 'female', '1986-01-01', 'alive', 'radiant');
+        INSERT INTO cases (id, proband_id, project_id, status_code, primary_condition, created_on, updated_on,
+                           case_type_code, submitter_case_id, tenant_code)
+        VALUES (9620, 9620, 1, 'in_progress', 'MONDO:0700092', now(), now(), 'germline', 'CNV-TRIO', 'radiant');
+        INSERT INTO family (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code,
+                            tenant_code)
+        VALUES (9620, 9620, 9620, 'proband', 'affected',     'radiant'),
+               (9621, 9620, 9621, 'father',  'non_affected', 'radiant'),
+               (9622, 9620, 9622, 'mother',  'non_affected', 'radiant');
+        INSERT INTO sample (id, type_code, histology_code, submitter_sample_id, patient_id, organization_code,
+                            tenant_code)
+        VALUES (9620, 'dna', 'normal', 'S9620', 9620, 'CQGC', 'radiant'),
+               (9621, 'dna', 'normal', 'S9621', 9621, 'CQGC', 'radiant'),
+               (9622, 'dna', 'normal', 'S9622', 9622, 'CQGC', 'radiant');
+        INSERT INTO sequencing_experiment (id, sample_id, status_code, aliquot, created_on, updated_on,
+                                           experimental_strategy_code, platform_code, tenant_code)
+        VALUES (9620, 9620, 'completed', 'A9620', '2026-01-01', '2026-01-01', 'wgs', 'illumina', 'radiant'),
+               (9621, 9621, 'completed', 'A9621', '2026-01-01', '2026-01-01', 'wgs', 'illumina', 'radiant'),
+               (9622, 9622, 'completed', 'A9622', '2026-01-01', '2026-01-01', 'wgs', 'illumina', 'radiant');
+        INSERT INTO case_has_sequencing_experiment (case_id, sequencing_experiment_id)
+        VALUES (9620, 9620), (9620, 9621), (9620, 9622);
+        INSERT INTO task (id, task_type_code, created_on, pipeline_name, pipeline_version, genome_build, tenant_code)
+        VALUES (9620, 'alignment_germline_variant_calling', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
+               (9621, 'alignment_germline_variant_calling', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
+               (9622, 'alignment_germline_variant_calling', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
+               (9623, 'radiant_germline_cnv_annotation', '2026-01-03', 'cnv-post-processing', 'mock', 'GRch38',
+                'radiant'),
+               (9624, 'alignment_germline_variant_calling', '2026-01-04', 'Dragen', '4.4.4', 'GRch38', 'radiant');
+        INSERT INTO task_context (task_id, case_id, sequencing_experiment_id)
+        VALUES (9620, null, 9620), (9621, null, 9621), (9622, null, 9622),
+               (9623, 9620, 9620), (9623, 9620, 9621), (9623, 9620, 9622),
+               (9624, null, 9620);
+        INSERT INTO document (id, name, data_category_code, data_type_code, format_code, size, url, hash, tenant_code)
+        VALUES (9620, 'a9620.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1, 's3://test-vcf/a9620.cnv.vcf.gz', 'mock9620',
+                'radiant'),
+               (9621, 'a9621.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1, 's3://test-vcf/a9621.cnv.vcf.gz', 'mock9621',
+                'radiant'),
+               (9622, 'a9622.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1, 's3://test-vcf/a9622.cnv.vcf.gz', 'mock9622',
+                'radiant'),
+               (9623, 'CA9620.cnv.slivar.vcf.gz', 'genomic', 'gcnv', 'vcf', 1,
+                's3://test-vcf/CA9620.cnv.slivar.vcf.gz', 'mock9623', 'radiant'),
+               (9624, 'a9620-v2.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1, 's3://test-vcf/a9620-v2.cnv.vcf.gz',
+                'mock9624', 'radiant');
+        INSERT INTO task_has_document (task_id, document_id, type)
+        VALUES (9620, 9620, 'output'), (9621, 9621, 'output'), (9622, 9622, 'output')
+               {", (9624, 9624, 'output')" if with_new_delivery else ""}
+               {", (9623, 9623, 'output')" if with_slivar else ""};
+        """,
+    )
+    yield request.param
+    execute_clinical(
+        postgres_instance,
+        """
+        DELETE FROM task_has_document WHERE task_id IN (9620, 9621, 9622, 9623, 9624);
+        DELETE FROM task_context WHERE task_id IN (9620, 9621, 9622, 9623, 9624);
+        DELETE FROM task WHERE id IN (9620, 9621, 9622, 9623, 9624);
+        DELETE FROM document WHERE id IN (9620, 9621, 9622, 9623, 9624);
+        DELETE FROM case_has_sequencing_experiment WHERE case_id = 9620;
+        DELETE FROM sequencing_experiment WHERE id IN (9620, 9621, 9622);
+        DELETE FROM sample WHERE id IN (9620, 9621, 9622);
+        DELETE FROM family WHERE case_id = 9620;
+        DELETE FROM cases WHERE id = 9620;
+        DELETE FROM patient WHERE id IN (9620, 9621, 9622);
+        """,
+    )
+
+
+@pytest.mark.parametrize("cnv_trio", ["slivar"], indirect=True)
+def test_sequencing_experiment_delta_takes_the_probands_cnvs_from_the_slivar_vcf(
+    cnv_trio, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """Proband source rule: with a slivar VCF on the case, the proband's alignment tasks stay out of the view,
+    the first delivery (9620) and the new one (9624) alike. The parents keep theirs. The annotation task gives every
+    member a row, each with the slivar VCF."""
+    delta = _delta(starrocks_session, sequencing_delta_columns).query("case_id == 9620")
+
+    assert sorted((int(r.seq_id), int(r.task_id), r.family_role) for r in delta.itertuples()) == [
+        (9620, 9623, "proband"),
+        (9621, 9621, "father"),
+        (9621, 9623, "father"),
+        (9622, 9622, "mother"),
+        (9622, 9623, "mother"),
+    ]
+    annotation = delta.query("task_id == 9623")
+    assert set(annotation["task_type"]) == {"radiant_germline_cnv_annotation"}
+    assert set(annotation["cnv_vcf_filepath"]) == {"s3://test-vcf/CA9620.cnv.slivar.vcf.gz"}
+    assert annotation["vcf_filepath"].isna().all()
+
+
+@pytest.mark.parametrize("cnv_trio", ["none"], indirect=True)
+def test_sequencing_experiment_delta_keeps_the_probands_dragen_set_without_slivar_vcf(
+    cnv_trio, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """An annotation task with no output does not hide the DRAGEN set: the proband's alignment tasks load."""
+    delta = _delta(starrocks_session, sequencing_delta_columns).query("case_id == 9620")
+
+    assert sorted((int(r.seq_id), int(r.task_id)) for r in delta.itertuples()) == [
+        (9620, 9620),
+        (9620, 9624),
+        (9621, 9621),
+        (9622, 9622),
+    ]
+
+
+def _publish_cnv_trio_output(postgres_instance, task_id):
+    """Register the output document of a `cnv_trio` task: the slivar VCF (9623) or the new delivery (9624)."""
+    execute_clinical(
+        postgres_instance,
+        f"INSERT INTO task_has_document (task_id, document_id, type) VALUES ({task_id}, {task_id}, 'output');",
+    )
+
+
+def _stage(starrocks_session, radiant_mapping, case_id):
+    """Write the case's delta rows to staging and flag the deleted tasks, as `import_radiant` does. Returns the
+    delta's (seq_id, task_id) pairs: the run's tasks."""
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(
+            "SELECT seq_id, task_id FROM staging_sequencing_experiment_delta WHERE case_id = %s", (case_id,)
+        )
+        run = sorted((int(seq_id), int(task_id)) for seq_id, task_id in cursor.fetchall())
+        cursor.execute(
+            """
+            INSERT INTO staging_sequencing_experiment
+            SELECT case_id, seq_id, task_id, task_type, 0 AS part, analysis_type, aliquot, patient_id,
+                   experimental_strategy, tenant_code, request_priority, vcf_filepath, cnv_vcf_filepath,
+                   exomiser_filepath, sex, family_id, family_role, affected_status, histology_type, created_at,
+                   updated_at, now() AS ingested_at, false AS deleted
+            FROM staging_sequencing_experiment_delta
+            WHERE case_id = %s
+            """,
+            (case_id,),
+        )
+    _run_radiant_sql(
+        starrocks_session,
+        radiant_mapping,
+        sql_file=os.path.join(_RADIANT_SQL_PATH, "sequencing_experiment_update_deleted.sql"),
+    )
+    return run
+
+
+def _staged(starrocks_session, case_id):
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(
+            "SELECT seq_id, task_id, deleted FROM staging_sequencing_experiment WHERE case_id = %s", (case_id,)
+        )
+        return sorted((int(seq_id), int(task_id), bool(deleted)) for seq_id, task_id, deleted in cursor.fetchall())
+
+
+_CNV_TRIO_DRAGEN_ROWS = [(9620, 9620, False), (9621, 9621, False), (9622, 9622, False)]
+_CNV_TRIO_SLIVAR_ROWS = [(9620, 9623, False), (9621, 9623, False), (9622, 9623, False)]
+
+
+@pytest.mark.parametrize("cnv_trio", ["later"], indirect=True)
+def test_a_later_slivar_vcf_adds_the_slivar_set_and_keeps_every_dragen_set(
+    cnv_trio, postgres_instance, starrocks_session, radiant_mapping, sequencing_experiment_tables
+):
+    """Proband source rule, slivar VCF in a later import: the run holds the annotation task only. The DRAGEN tasks
+    of every member, the proband's included, are not in the run and stay staged, not deleted: the copy step keeps
+    their occurrences (`germline_cnv_occurrence_copy_partition.sql` keeps the tasks not in the run)."""
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
+
+    first_run = _stage(starrocks_session, radiant_mapping, 9620)
+    assert first_run == [(9620, 9620), (9621, 9621), (9622, 9622)]
+
+    _publish_cnv_trio_output(postgres_instance, 9623)
+    second_run = _stage(starrocks_session, radiant_mapping, 9620)
+
+    assert second_run == [(9620, 9623), (9621, 9623), (9622, 9623)]
+    assert _staged(starrocks_session, 9620) == sorted(_CNV_TRIO_DRAGEN_ROWS + _CNV_TRIO_SLIVAR_ROWS)
+
+
+@pytest.mark.parametrize("cnv_trio", ["later"], indirect=True)
+def test_a_new_proband_alignment_task_after_the_slivar_vcf_is_not_imported(
+    cnv_trio, postgres_instance, starrocks_session, radiant_mapping, sequencing_experiment_tables
+):
+    """Proband source rule, new delivery of the proband's alignment task after the slivar VCF: it stays out of the
+    view, so no run selects it and no row loads. The proband keeps the sets it has, and the task stays in the
+    clinical model."""
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
+    _stage(starrocks_session, radiant_mapping, 9620)
+    _publish_cnv_trio_output(postgres_instance, 9623)
+    _stage(starrocks_session, radiant_mapping, 9620)
+    before = _staged(starrocks_session, 9620)
+
+    _publish_cnv_trio_output(postgres_instance, 9624)
+
+    assert _stage(starrocks_session, radiant_mapping, 9620) == []
+    assert _staged(starrocks_session, 9620) == before
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("SELECT count(1) FROM staging_external_sequencing_experiment WHERE task_id = 9624")
+        assert cursor.fetchone() == (0,)
+        cursor.execute(f"SELECT count(1) FROM {radiant_mapping['clinical_task']} WHERE id = 9624")
+        assert cursor.fetchone() == (1,)
 
 
 @pytest.fixture

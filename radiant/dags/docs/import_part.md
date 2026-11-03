@@ -103,6 +103,27 @@ See design/SJRA-1751-snv-vcf-ingestion-fan-out.md.
 
 ---
 
+## Germline CNV sets
+
+A sequencing can hold two germline CNV sets, each under its own task:
+
+| Set | Task | Members | Extra columns |
+|:--|:--|:--|:--|
+| DRAGEN | **alignment_germline_variant_calling** | every member | none |
+| slivar | **radiant_germline_cnv_annotation** | the proband only | parental origin, transmission mode, the parents' calls |
+
+- The slivar set holds the proband's carrier records of the family's slivar VCF. A **0/0** or
+  **./.** record of the proband gives no row.
+- Once the case has a slivar VCF, the staging view leaves out the proband's alignment task: the
+  proband gets its DRAGEN set only when no slivar VCF is available. A DRAGEN set already loaded stays.
+- The copy step of **insert_germline_cnv_occurrences** keeps the rows of the tasks not in the
+  run, keyed on **task_id**, so a run with one set keeps the other. The cytoband, gene, SNV-count
+  and gnomAD joins are keyed on **task_id** too.
+
+See radiant-hub docs/features/RAD-169-cnv-post-processing.md.
+
+---
+
 ## CNV frequencies
 
 **aggregate_germline_cnv_variant_freq** and **aggregate_somatic_cnv_variant_freq** run after

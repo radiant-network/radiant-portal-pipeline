@@ -106,10 +106,14 @@ reports have the same file names, and the data type tells them apart in the port
 variant ETL reads only the `exomiser` data type, on a `radiant_germline_annotation` task, so
 the CNV report stays out of the SNV Exomiser table.
 
-These documents are **invisible to the variant ETL** for now: the
-`staging_external_sequencing_experiment` view admits a `gcnv`/`vcf` document only on an
-`alignment_germline_variant_calling` task. Ingesting the post-processed CNV VCF into
-`germline_cnv_occurrence` is a separate design.
+The variant ETL loads the slivar VCF: the
+**staging_external_sequencing_experiment** view admits the **gcnv** / **vcf** document of a
+**radiant_germline_cnv_annotation** task, and **radiant-import-part** loads the proband's records
+as a CNV set of their own, under this task, with the parental origin, the transmission mode and
+the parents' calls. Once a case has a slivar VCF, the view leaves out the proband's
+**alignment_germline_variant_calling** row, so the proband's DRAGEN set is loaded only when no
+slivar VCF is available. The parents and the siblings keep their DRAGEN set only. Design:
+radiant-hub docs/features/RAD-169-cnv-post-processing.md.
 
 `collect_outputs` requires the complete set for every case in a run; a partial run
 registers nothing. PATCH **appends**: a deliberate re-run adds a second task alongside the

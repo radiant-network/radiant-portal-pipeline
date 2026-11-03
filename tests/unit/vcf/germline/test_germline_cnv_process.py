@@ -71,3 +71,29 @@ def test_import_cnv_vcf_processes_all_when_downloads_succeed():
 
     processed = mock_process.call_args.args[0]
     assert [t["task_id"] for t in processed] == [1, 2]
+
+
+def test_import_cnv_vcf_validates_each_cnv_task_type_with_its_own_model():
+    """The CNV annotation task (slivar VCF) is imported next to the alignment task; other types are not."""
+    from radiant.tasks.vcf.experiment import RADIANT_GERMLINE_ANNOTATION_TASK, RADIANT_GERMLINE_CNV_ANNOTATION_TASK
+
+    tasks = [
+        _task(1, "s3://bucket/a.cnv.vcf.gz"),
+        {"task_id": 2, "task_type": RADIANT_GERMLINE_CNV_ANNOTATION_TASK, "cnv_vcf_filepath": "s3://bucket/b.vcf.gz"},
+        {"task_id": 3, "task_type": RADIANT_GERMLINE_ANNOTATION_TASK, "vcf_filepath": "s3://bucket/c.vcf.gz"},
+    ]
+
+    with (
+        patch.object(cnv_process, "download_s3_file", side_effect=lambda s3_path, *_a, **_k: f"/tmp/{s3_path[-8:]}"),
+        patch.object(
+            cnv_process.AlignmentGermlineVariantCallingTask, "model_validate", side_effect=lambda t: ("alignment", t)
+        ),
+        patch.object(
+            cnv_process.RadiantGermlineCnvAnnotationTask, "model_validate", side_effect=lambda t: ("annotation", t)
+        ),
+        patch.object(cnv_process, "process_tasks") as mock_process,
+    ):
+        cnv_process.import_cnv_vcf(tasks, namespace="radiant")
+
+    processed = mock_process.call_args.args[0]
+    assert [(kind, t["task_id"]) for kind, t in processed] == [("alignment", 1), ("annotation", 2)]

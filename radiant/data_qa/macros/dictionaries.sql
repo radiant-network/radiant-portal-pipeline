@@ -88,11 +88,22 @@
   {# Notion: https://app.notion.com/p/ferlab/2ef5a320b986493694e8a820d467d017?v=2808ef9b129c443e853d939a5524805d #}
   {# mirrors facets.go + transmission-mode-badge.tsx — keep in sync #}
   {# RAD-93: uniparental_disomy comes from slivar; the portal side is RAD-98 #}
+  {# The CNV mode tags of cnv-post-processing, one dictionary for SNVs and CNVs (x_linked_recessive is in both) #}
   {{ return(['autosomal_dominant_de_novo', 'autosomal_dominant', 'autosomal_recessive',
              'x_linked_dominant_de_novo', 'x_linked_recessive_de_novo', 'x_linked_dominant',
              'x_linked_recessive', 'non_carrier_proband', 'unknown_parents_genotype',
              'unknown_father_genotype', 'unknown_mother_genotype', 'unknown_proband_genotype',
-             'uniparental_disomy']) }}
+             'uniparental_disomy',
+             'denovo', 'denovo_suspect', 'possible_denovo', 'inherited_maternal', 'inherited_paternal',
+             'possible_inherited_maternal', 'possible_inherited_paternal', 'recessive', 'recessive_lowconf',
+             'inheritance_unresolved', 'mendelian_inconsistent', 'unknown_cn', 'x_linked_denovo']) }}
+{% endmacro %}
+
+{% macro dict_parental_origin() %}
+  {# The `po_*` tag values of radiant/tasks/vcf/snv/germline/inheritance.py (PO_TAGS) #}
+  {# mirrors i18n common.facets.values.parental_origin — keep in sync #}
+  {{ return(['DENOVO', 'MOTHER', 'FATHER', 'BOTH', 'AMBIGUOUS', 'POSSIBLE_DENOVO', 'POSSIBLE_MOTHER',
+             'POSSIBLE_FATHER', 'UNKNOWN']) }}
 {% endmacro %}
 
 {% macro dict_exomiser_acmg_classification() %}

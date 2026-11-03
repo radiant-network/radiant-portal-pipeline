@@ -33,7 +33,21 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_cnv_occurrence }} (
      gnomad_sn int(11) NULL COMMENT "",
      gnomad_sf FLOAT NULL COMMENT "",
      gnomad_sc_hom int(11) NULL COMMENT "",
-     gnomad_sc_het int(11) NULL COMMENT ""
+     gnomad_sc_het int(11) NULL COMMENT "",
+     parental_origin varchar(25) NULL COMMENT "",
+     transmission_mode varchar(50) NULL COMMENT "",
+     mother_calls array<int(11)> NULL COMMENT "",
+     mother_cn int(11) NULL COMMENT "",
+     mother_bc int(11) NULL COMMENT "",
+     mother_pe array<int(11)> NULL COMMENT "",
+     mother_sm FLOAT NULL COMMENT "",
+     mother_name varchar(1048576) NULL COMMENT "",
+     father_calls array<int(11)> NULL COMMENT "",
+     father_cn int(11) NULL COMMENT "",
+     father_bc int(11) NULL COMMENT "",
+     father_pe array<int(11)> NULL COMMENT "",
+     father_sm FLOAT NULL COMMENT "",
+     father_name varchar(1048576) NULL COMMENT ""
 ) ENGINE=OLAP
 DUPLICATE KEY(part, seq_id, task_id, cnv_id)
 PARTITION BY (part);

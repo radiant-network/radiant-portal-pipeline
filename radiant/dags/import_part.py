@@ -25,6 +25,7 @@ from radiant.tasks.starrocks.operator import (
 from radiant.tasks.vcf.experiment import (
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
     RADIANT_GERMLINE_ANNOTATION_TASK,
+    RADIANT_GERMLINE_CNV_ANNOTATION_TASK,
     RADIANT_SOMATIC_ANNOTATION_TASK,
     TUMOR_ONLY_VARIANT_CALLING_TASK,
     build_task_from_rows,
@@ -256,7 +257,11 @@ def import_part():
             trigger_rule=TriggerRule.NONE_FAILED,
         )
         def sanity_check_cnvs(tasks: Any) -> Any:
-            has_cnv = any(t.get("task_type") == ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK for t in tasks)
+            # The proband's slivar set (CNV annotation task) loads next to the DRAGEN sets.
+            has_cnv = any(
+                t.get("task_type") in (ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK, RADIANT_GERMLINE_CNV_ANNOTATION_TASK)
+                for t in tasks
+            )
             return has_cnv
 
         # max_active_tis_per_dagrun=1: process tenants one at a time within a dagrun

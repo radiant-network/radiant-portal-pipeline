@@ -8,15 +8,82 @@ from pyiceberg.catalog import load_catalog
 
 from radiant.tasks.tracing.trace import get_tracer
 from radiant.tasks.utils import S3DownloadError, download_s3_file
-from radiant.tasks.vcf.cnv.germline.occurrence import process_occurrence
+from radiant.tasks.vcf.cnv.germline.occurrence import is_carrier, process_occurrence, process_slivar_occurrence
 from radiant.tasks.vcf.experiment import (
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
+    RADIANT_GERMLINE_CNV_ANNOTATION_TASK,
     AlignmentGermlineVariantCallingTask,
     BaseTask,
+    RadiantGermlineCnvAnnotationTask,
 )
+from radiant.tasks.vcf.pedigree import Pedigree
 
 logger = logging.getLogger("airflow.task")
 tracer = get_tracer(__name__)
+
+CNV_TASK_TYPES = {
+    ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK: AlignmentGermlineVariantCallingTask,
+    RADIANT_GERMLINE_CNV_ANNOTATION_TASK: RadiantGermlineCnvAnnotationTask,
+}
+
+
+def _alignment_occurrences(vcf: VCF, task: BaseTask) -> list[dict]:
+    occurrences = []
+    for exp in task.experiments:
+        logger.info(f"Process aliquot: {exp.aliquot} (seq_id: {exp.seq_id})")
+        sample_idx = vcf.samples.index(exp.aliquot)
+        with tracer.start_as_current_span(f"vcf_task_{task.task_id}_{exp.seq_id}"):
+            for record in vcf:
+                if not record.ALT:
+                    logger.warning(f"Skipping record with no ALT: {record.CHROM}:{record.POS}-{record.end}")
+                    continue
+                occurrences.append(
+                    process_occurrence(
+                        record, task.part, exp.seq_id, exp.tenant_code, task.task_id, exp.aliquot, sample_idx
+                    )
+                )
+    return occurrences
+
+
+def _slivar_occurrences(vcf: VCF, task: RadiantGermlineCnvAnnotationTask) -> list[dict]:
+    """The proband's records of the family's slivar VCF, under the proband's sequencing. The parents' and
+    the siblings' records give no row: these members keep the DRAGEN set of their alignment task."""
+    proband = next((exp for exp in task.experiments if exp.family_role == "proband"), None)
+    if proband is None or proband.aliquot not in vcf.samples:
+        raise ValueError(f"Task {task.task_id} has no proband sample in the slivar VCF file {task.cnv_vcf_filepath}")
+
+    pedigree = Pedigree(task, vcf.samples)
+    sample_idx = vcf.samples.index(proband.aliquot)
+    mother_idx = vcf.samples.index(pedigree.mother_experiment.aliquot) if pedigree.mother_experiment else None
+    father_idx = vcf.samples.index(pedigree.father_experiment.aliquot) if pedigree.father_experiment else None
+    logger.info(
+        f"Process proband aliquot: {proband.aliquot} (seq_id: {proband.seq_id}), "
+        f"mother in VCF: {mother_idx is not None}, father in VCF: {father_idx is not None}"
+    )
+
+    occurrences = []
+    with tracer.start_as_current_span(f"vcf_task_{task.task_id}_{proband.seq_id}"):
+        for record in vcf:
+            if not record.ALT:
+                logger.warning(f"Skipping record with no ALT: {record.CHROM}:{record.POS}-{record.end}")
+                continue
+            # The family VCF holds every member's calls: a `0/0` or `./.` record of the proband is a relative's CNV.
+            if not is_carrier(record.genotypes[sample_idx][:-1]):
+                continue
+            occurrences.append(
+                process_slivar_occurrence(
+                    record,
+                    task.part,
+                    proband.seq_id,
+                    proband.tenant_code,
+                    task.task_id,
+                    proband.aliquot,
+                    sample_idx,
+                    mother_idx,
+                    father_idx,
+                )
+            )
+    return occurrences
 
 
 # Required decoration because cyvcf2 doesn't fail when it encounters an error, it just prints to stderr.
@@ -61,18 +128,10 @@ def process_tasks(
                 )
 
             logger.info(f"Starting processing CNV VCF for task {task.task_id} with file {task.cnv_vcf_filepath}")
-            for exp in task.experiments:
-                logger.info(f"Process aliquot: {exp.aliquot} (seq_id: {exp.seq_id})")
-                sample_idx = vcf.samples.index(exp.aliquot)
-                with tracer.start_as_current_span(f"vcf_task_{task.task_id}_{exp.seq_id}"):
-                    for record in vcf:
-                        if not record.ALT:
-                            logger.warning(f"Skipping record with no ALT: {record.CHROM}:{record.POS}-{record.end}")
-                            continue
-                        occurrence = process_occurrence(
-                            record, task.part, exp.seq_id, exp.tenant_code, task.task_id, exp.aliquot, sample_idx
-                        )
-                        occurrence_buffer.append(occurrence)
+            if task.task_type == RADIANT_GERMLINE_CNV_ANNOTATION_TASK:
+                occurrence_buffer.extend(_slivar_occurrences(vcf, task))
+            else:
+                occurrence_buffer.extend(_alignment_occurrences(vcf, task))
             vcf.close()
         df = pa.Table.from_pylist(occurrence_buffer, schema=occurrence_table.schema().as_arrow())
         occurrence_table.overwrite(df)
@@ -90,7 +149,8 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
     skipped = 0
     with tempfile.TemporaryDirectory() as tmpdir:
         for task in tasks:
-            if task.get("task_type") != ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK:
+            task_cls = CNV_TASK_TYPES.get(task.get("task_type"))
+            if task_cls is None:
                 continue
 
             attempted += 1
@@ -109,7 +169,7 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
             logger.info(f"Downloaded CNV VCF to {cnv_vcf_local}")
             task["cnv_vcf_filepath"] = cnv_vcf_local
 
-            task = AlignmentGermlineVariantCallingTask.model_validate(task)
+            task = task_cls.model_validate(task)
             updated_tasks.append(task)
 
         if skipped:
