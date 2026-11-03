@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
+from cyvcf2 import VCF
 
 from radiant.tasks.vcf.cnv.germline import process as cnv_process
 from radiant.tasks.vcf.cnv.germline.occurrence import (
@@ -12,6 +13,7 @@ from radiant.tasks.vcf.cnv.germline.occurrence import (
     CNV_MODE_TAGS,
     SCHEMA,
     is_carrier,
+    sample_format,
     slivar_transmission_mode,
 )
 from radiant.tasks.vcf.experiment import (
@@ -315,6 +317,25 @@ def test_unaffected_proband_gets_an_origin_and_no_mode():
 )
 def test_is_carrier(calls, carrier):
     assert is_carrier(calls) is carrier
+
+
+def test_integer_vector_stops_at_the_padding_and_keeps_missing_values(tmp_path):
+    vcf_path = tmp_path / "padding.vcf"
+    vcf_path.write_text(
+        "##fileformat=VCFv4.2\n"
+        "##contig=<ID=chr1>\n"
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+        '##FORMAT=<ID=CN,Number=1,Type=Integer,Description="Copy number">\n'
+        '##FORMAT=<ID=BC,Number=1,Type=Integer,Description="Bin count">\n'
+        '##FORMAT=<ID=PE,Number=.,Type=Integer,Description="Paired-end reads">\n'
+        '##FORMAT=<ID=SM,Number=1,Type=Float,Description="Segment mean">\n'
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tA\tB\tC\tD\n"
+        "chr1\t1\t.\tN\t<DEL>\t.\tPASS\t.\tGT:CN:PE\t0/1:.:5,7,9\t0/1:2:3\t0/1:2:.,4\t0/1:2:.\n"
+    )
+    record = next(VCF(str(vcf_path)))
+
+    assert [sample_format(record, idx)["pe"] for idx in range(4)] == [[5, 7, 9], [3], [None, 4], None]
+    assert sample_format(record, 0)["cn"] is None
 
 
 def _row(aliquot: str, filepath: str = "s3://test-vcf/mock-9701.cnv.slivar.vcf.gz") -> dict:

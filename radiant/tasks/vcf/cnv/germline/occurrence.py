@@ -81,8 +81,10 @@ CNV_MODE_ORIGINS: dict[str, frozenset[str | None] | None] = {
 }
 CNV_MODE_TAGS = tuple(CNV_MODE_ORIGINS)
 
-# cyvcf2 reads a missing Integer FORMAT value as INT32 min, and the padding of a shorter vector as INT32 min + 1.
-_INT_MISSING = (-(2**31), -(2**31) + 1)
+# cyvcf2 returns htslib's raw Integer FORMAT values (htslib/vcf.h): `bcf_int32_missing` (INT32 min) for `.`, and
+# `bcf_int32_vector_end` (INT32 min + 1) for the padding after a vector shorter than the record's longest.
+_INT_MISSING = -(2**31)
+_INT_VECTOR_END = -(2**31) + 1
 
 # Each sample's DRAGEN record ID, written by cnv-post-processing before the truvari collapses (BIOINFO-214), with
 # `:` percent-encoded as `%3A`: FORMAT values are `:`-separated, and DRAGEN IDs contain it.
@@ -91,7 +93,7 @@ ORIGINAL_ID_FORMAT = "OID"
 
 def _int(value) -> int | None:
     value = int(value)
-    return None if value in _INT_MISSING else value
+    return None if value in (_INT_MISSING, _INT_VECTOR_END) else value
 
 
 def _float(value) -> float | None:
@@ -113,7 +115,11 @@ def _format_ints(record: Variant, field: str, sample_idx: int) -> list[int | Non
     values = record.format(field)
     if values is None:
         return None
-    ints = [_int(v) for v in values[sample_idx]]
+    raw = [int(v) for v in values[sample_idx]]
+    # The sample's vector stops at the padding; a `.` inside it stays a None element.
+    if _INT_VECTOR_END in raw:
+        raw = raw[: raw.index(_INT_VECTOR_END)]
+    ints = [None if v == _INT_MISSING else v for v in raw]
     return None if all(v is None for v in ints) else ints
 
 

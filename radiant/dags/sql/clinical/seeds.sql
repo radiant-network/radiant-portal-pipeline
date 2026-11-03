@@ -1000,6 +1000,8 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (71, 'quality_control_metrics', 'quality-control-pipeline', '2.0.0', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- CNV post-processing of case 1, whose alignments (tasks 1-3) publish `gcnv` VCFs. Case 1 is
     -- therefore *not* pending CNV annotation, while case 16 (below) is the seeded pending trio.
+    -- Its slivar VCF (document 281) is the proband's CNV set: the staging view leaves out the
+    -- proband's alignment task 1, and keeps the parents' tasks 2 and 3 (RAD-169).
     (72, 'radiant_germline_cnv_annotation', 'cnv-post-processing', 'cad99b4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- The calling steps behind the annotation tasks 67 (tumor-normal) and 68 (tumor-only). Their raw
     -- `ssnv` VCFs are the inputs of those annotations, so neither is pending somatic annotation.
@@ -1392,7 +1394,10 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (277, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 31975067, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e63', 'radiant'),
     (278, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz.tbi', 'genomic', 'ssnv', 'tbi', 913443, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz.tbi', 'a1c4e2f09b37d6851e0f2c9d4b7a3e64', 'radiant'),
     (279, 'TCRBOA6_SRX1166091-T.v2.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 19974233, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.v2.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e65', 'radiant'),
-    (280, 'TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1214512, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e66', 'radiant');
+    (280, 'TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1214512, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e66', 'radiant'),
+    -- The slivar VCF of CNV annotation task 72 (case 1, RAD-169), samples renamed to the aliquots. No FORMAT/OID.
+    (281, 'CA1000019.reheader.cnv.slivar.vcf.gz', 'genomic', 'gcnv', 'vcf', 273788, '{{ params.vcf_bucket_prefix }}/CA1000019.reheader.cnv.slivar.vcf.gz', '3a083327e495851558b067cc2f29d7c2', 'radiant'),
+    (282, 'CA1000019.reheader.cnv.slivar.vcf.gz.tbi', 'genomic', 'gcnv', 'tbi', 17217, '{{ params.vcf_bucket_prefix }}/CA1000019.reheader.cnv.slivar.vcf.gz.tbi', '57bba5e9397eb80632eaafea7b5bbf9e', 'radiant');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1669,6 +1674,9 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     -- QC task 71 -> its MultiQC set.
     (71, 266, 'output'),
     (71, 267, 'output'),
+    -- CNV annotation task 72 -> the family's slivar VCF.
+    (72, 281, 'output'),
+    (72, 282, 'output'),
     -- Calling tasks 73-76 -> their raw VCFs.
     (73, 274, 'output'),
     (73, 275, 'output'),
