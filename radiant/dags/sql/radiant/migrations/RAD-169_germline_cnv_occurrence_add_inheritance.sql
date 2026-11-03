@@ -74,7 +74,8 @@ ALTER TABLE germline__cnv__occurrence ADD COLUMN (
 --       -- expect State = FINISHED
 --
 --   DESC germline__cnv__occurrence;
---       -- the fourteen columns must be the last ones, after gnomad_sc_het.
+--       -- the fourteen columns must be the last ones, after gnomad_ac (RAD-194). RAD-194 adds gnomad_ac
+--       -- `AFTER gnomad_sc_het`, so the two migrations give this order in either order.
 --
 -- After the next import of a case with a slivar VCF:
 --

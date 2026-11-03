@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_somatic_cnv_occurrence }} (
      gnomad_sn int(11) NULL COMMENT "",
      gnomad_sf FLOAT NULL COMMENT "",
      gnomad_sc_hom int(11) NULL COMMENT "",
-     gnomad_sc_het int(11) NULL COMMENT ""
+     gnomad_sc_het int(11) NULL COMMENT "",
+     gnomad_ac int(11) NULL COMMENT ""
 ) ENGINE=OLAP
 DUPLICATE KEY(part, seq_id, task_id, cnv_id)
 PARTITION BY (part);

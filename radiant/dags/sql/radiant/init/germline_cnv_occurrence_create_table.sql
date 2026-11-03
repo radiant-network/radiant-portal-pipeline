@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_cnv_occurrence }} (
      gnomad_sf FLOAT NULL COMMENT "",
      gnomad_sc_hom int(11) NULL COMMENT "",
      gnomad_sc_het int(11) NULL COMMENT "",
+     gnomad_ac int(11) NULL COMMENT "",
      parental_origin varchar(25) NULL COMMENT "",
      transmission_mode varchar(50) NULL COMMENT "",
      mother_calls array<int(11)> NULL COMMENT "",
