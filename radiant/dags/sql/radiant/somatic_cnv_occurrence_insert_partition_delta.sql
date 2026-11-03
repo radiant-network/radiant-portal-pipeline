@@ -41,6 +41,7 @@ WITH cytoband AS (SELECT o.name, o.seq_id, array_agg(c.cytoband) AS cytoband
             cnv.seq_id,
             cnv.name,
             gnomad.af as af,
+            gnomad.ac as ac,
             gnomad.n_het + gnomad.n_homalt as sc,
             gnomad.n_het as sc_het,
             gnomad.n_homalt as sc_hom,
@@ -118,7 +119,8 @@ SELECT o.part,
        gnomad_ranked.sn AS gnomad_sn,
        gnomad_ranked.sf AS gnomad_sf,
        gnomad_ranked.sc_hom AS gnomad_sc_hom,
-       gnomad_ranked.sc_het AS gnomad_sc_het
+       gnomad_ranked.sc_het AS gnomad_sc_het,
+       gnomad_ranked.ac AS gnomad_ac
 FROM {{ mapping.iceberg_somatic_cnv_occurrence }} o
          LEFT JOIN cytoband ON cytoband.seq_id = o.seq_id AND o.name = cytoband.name
          LEFT JOIN genes ON genes.seq_id = o.seq_id AND o.name = genes.name
