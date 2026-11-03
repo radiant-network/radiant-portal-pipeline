@@ -93,13 +93,18 @@ sequencing_experiments AS (
 		se.created_on,
 		updated_at
 ),
--- Proband source rule: the cases whose CNV annotation task has a slivar VCF. The task alone is not enough:
--- an annotation task with no output does not hide the DRAGEN set.
-slivar_cases AS (
-	SELECT DISTINCT case_id
-	FROM sequencing_experiments
-	WHERE task_type = 'radiant_germline_cnv_annotation'
-	  AND cnv_vcf_filepath IS NOT NULL
+-- Proband source rule: the proband's alignment tasks of each case whose CNV annotation task has a slivar VCF.
+-- The task alone is not enough: an annotation task with no output does not hide the DRAGEN set.
+superseded_dragen AS (
+	SELECT dragen.case_id, dragen.task_id
+	FROM sequencing_experiments dragen
+	JOIN sequencing_experiments slivar ON slivar.case_id = dragen.case_id AND slivar.seq_id = dragen.seq_id
+	JOIN {{ mapping.clinical_sample }} sa ON sa.id = dragen.sample_id
+	LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = sa.patient_id AND f.case_id = dragen.case_id
+	WHERE dragen.task_type = 'alignment_germline_variant_calling'
+	  AND slivar.task_type = 'radiant_germline_cnv_annotation'
+	  AND slivar.cnv_vcf_filepath IS NOT NULL
+	  AND COALESCE(f.relationship_to_proband_code, "proband") = "proband"
 )
 SELECT
     s.case_id,
@@ -138,11 +143,9 @@ LEFT JOIN {{ mapping.clinical_sample }} sa ON sa.id = s.sample_id
 LEFT JOIN {{ mapping.clinical_patient }} p ON p.id = sa.patient_id
 -- A patient has one family row per case: without the case, a patient in two cases doubles every row.
 LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = p.id AND f.case_id = s.case_id
-LEFT JOIN slivar_cases sc ON sc.case_id = s.case_id AND s.task_type = 'alignment_germline_variant_calling'
 -- Proband source rule: in a case with a slivar VCF, the proband's alignment task stays out, so the proband's
 -- CNVs come from the slivar set only. The parents' and the siblings' alignment tasks stay. A row left out never enters
 -- staging, so it is never loaded nor seen as pending; its `deleted` flag comes from the clinical tasks, not from this
 -- view, so nothing is deleted. The task and its files stay in the clinical model: the portal still shows them.
-WHERE sc.case_id IS NULL
-   OR s.analysis_type <> 'germline'
-   OR COALESCE(f.relationship_to_proband_code, "proband") <> "proband"
+LEFT JOIN superseded_dragen x ON x.case_id = s.case_id AND x.task_id = s.task_id
+WHERE x.task_id IS NULL
