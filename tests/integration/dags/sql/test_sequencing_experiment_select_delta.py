@@ -272,6 +272,52 @@ def test_sequencing_experiment_delta_ignores_cnv_exomiser_reports(
 
 
 @pytest.fixture
+def maf_documents(postgres_clinical_seeds, postgres_instance):
+    """RAD-140: somatic MAFs on the seeded case-22 tumor-normal tasks, typed `ssnv` like their VCFs:
+
+    - document 9620 on the calling task 73;
+    - document 9621 on its annotation task 67, next to the VEP VCF the view must keep reading.
+
+    The tasks are seeds, so only the documents and their links are removed afterwards.
+    """
+    execute_clinical(
+        postgres_instance,
+        """
+        INSERT INTO document (id, name, data_category_code, data_type_code, format_code, size, url, hash, tenant_code)
+        VALUES (9620, 'mock-9620.somatic.maf', 'genomic', 'ssnv', 'maf', 1, 's3://test-vcf/mock-9620.somatic.maf',
+                'mock9620', 'radiant'),
+               (9621, 'mock-9621.somatic.maf', 'genomic', 'ssnv', 'maf', 1, 's3://test-vcf/mock-9621.somatic.maf',
+                'mock9621', 'radiant');
+        INSERT INTO task_has_document (task_id, document_id, type) VALUES (73, 9620, 'output'), (67, 9621, 'output');
+        """,
+    )
+    yield
+    execute_clinical(
+        postgres_instance,
+        """
+        DELETE FROM task_has_document WHERE document_id IN (9620, 9621);
+        DELETE FROM document WHERE id IN (9620, 9621);
+        """,
+    )
+
+
+def test_sequencing_experiment_delta_ignores_maf_documents(
+    maf_documents, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """A MAF is never a `vcf_filepath`: every branch of the view's WHERE clause asks for a `vcf` (or the
+    exomiser tsv), so the MAFs add no row and leave the annotation task pointing at its VEP VCF."""
+    delta = _delta(starrocks_session, sequencing_delta_columns)
+
+    assert len(delta) == 16
+    assert delta.query("task_id == 73").empty
+    annotation = delta.query("task_id == 67")
+    assert sorted(annotation["seq_id"]) == [62, 63]
+    assert {path.rsplit("/", 1)[-1] for path in annotation["vcf_filepath"]} == {
+        "variants.SRX1091647-T_vs_SRX1091646-N.snv.vep.vcf.gz"
+    }
+
+
+@pytest.fixture
 def shared_sequencing(postgres_clinical_seeds, postgres_instance):
     """Proband 9610 is sequenced once (experiment 9610) and analysed twice, on ids far above the seeded range:
 
