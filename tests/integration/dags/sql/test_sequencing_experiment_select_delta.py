@@ -96,8 +96,34 @@ def test_sequencing_experiment_empty(
     # document the view's WHERE clause accepts -- an SNV/CNV VCF on an annotation or calling task, or an
     # exomiser tsv on a germline annotation task. SJRA-1928 took it 15 -> 18 by giving the case-16 trio
     # (alignment tasks 44/45/46) their gcnv VCFs. Moving the exomiser tsvs of the legacy `exomiser` tasks 64
-    # and 66 onto their annotation tasks 63 and 65 took it 18 -> 16.
-    assert len(result_df) == 16
+    # and 66 onto their annotation tasks 63 and 65 took it 18 -> 16. The slivar VCF of case 1's CNV annotation
+    # task 72 (RAD-169) took it 16 -> 18: one row per trio member, less the proband's alignment task 1.
+    assert len(result_df) == 18
+
+
+def test_seeded_trio_takes_the_probands_cnvs_from_the_slivar_vcf(
+    postgres_clinical_seeds, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """Proband source rule on the seeds: case 1's CNV annotation task 72 has a slivar VCF, so the proband's
+    alignment task 1 stays out. The parents keep their alignment tasks 2 and 3, and every member gets a task-72 row
+    with the slivar VCF."""
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
+        # The CNV rows only: the SNV annotation task 63 of case 1 is not part of the rule.
+        cursor.execute(
+            "SELECT * FROM staging_sequencing_experiment_delta WHERE case_id = 1 AND cnv_vcf_filepath IS NOT NULL;"
+        )
+        case_1 = pd.DataFrame(cursor.fetchall(), columns=sequencing_delta_columns)
+
+    assert sorted((int(r.seq_id), int(r.task_id), r.family_role) for r in case_1.itertuples()) == [
+        (1, 72, "proband"),
+        (2, 2, "mother"),
+        (2, 72, "mother"),
+        (3, 3, "father"),
+        (3, 72, "father"),
+    ]
+    slivar = case_1.query("task_id == 72")
+    assert set(slivar["cnv_vcf_filepath"]) == {"s3://test-vcf/CA1000019.reheader.cnv.slivar.vcf.gz"}
 
 
 def test_sequencing_experiment_delta_carries_tumor_only_tasks(
@@ -704,9 +730,9 @@ def test_sequencing_experiment_existing_wgs_task_partition(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    # The 16-row baseline less task 65, the only one of the two inserts that the view actually emits:
+    # The 18-row baseline less task 65, the only one of the two inserts that the view actually emits:
     # seq 4 / task 4 matches no row in staging_external_sequencing_experiment, so it subtracts nothing.
-    assert len(result_df) == 15
+    assert len(result_df) == 17
 
 
 def test_sequencing_experiment_with_recently_updated_task(
@@ -750,8 +776,8 @@ def test_sequencing_experiment_with_recently_updated_task(
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    # The 16-row baseline less task 65, which was just inserted into staging_sequencing_experiment.
-    assert len(result_df) == 15
+    # The 18-row baseline less task 65, which was just inserted into staging_sequencing_experiment.
+    assert len(result_df) == 17
 
     with (
         psycopg2.connect(
@@ -775,6 +801,6 @@ def test_sequencing_experiment_with_recently_updated_task(
         cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
         results = cursor.fetchall()
 
-    # Should capture the updated experiment -- task 65 is back, so the full 16-row baseline again.
+    # Should capture the updated experiment -- task 65 is back, so the full 18-row baseline again.
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 16
+    assert len(result_df) == 18
