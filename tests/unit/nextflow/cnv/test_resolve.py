@@ -119,6 +119,15 @@ def test_a_member_still_awaiting_alignment_is_not_also_reported_as_unknown_calle
     assert [e.reason for e in selection.excluded] == ["pending_alignment"]
 
 
+def test_a_member_without_an_aliquot_is_excluded(trio_rows):
+    """The aliquot is every id the pipeline sees, and the `<proband>` segment of the Exomiser report
+    names: a missing one is reported here, not found as `None` in the samplesheet hours later."""
+    trio_rows[1]["aliquot"] = None
+    (excluded,) = select_cases(trio_rows).excluded
+    assert excluded.reason == "missing_aliquot"
+    assert "patient 101" in excluded.detail
+
+
 def test_a_case_without_exactly_one_proband_is_excluded(trio_rows):
     trio_rows.append(member_row(role="proband", patient_id=103, aliquot="NA12000"))
     (excluded,) = select_cases(trio_rows).excluded
