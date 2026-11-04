@@ -114,11 +114,22 @@ A sequencing can hold two germline CNV sets, each under its own task:
 
 - The slivar set holds the proband's carrier records of the family's slivar VCF. A **0/0** or
   **./.** record of the proband gives no row.
+- On the slivar set, **name** is the proband's own DRAGEN call ID (FORMAT/OID), the same value as
+  on its alignment-task row. The record's ID is the call truvari kept for the cluster, often a
+  parent's: it names the row only when the VCF has no OID. **mother_name** and **father_name** hold
+  the parents' own call IDs the same way.
 - Once the case has a slivar VCF, the staging view leaves out the proband's alignment task: the
   proband gets its DRAGEN set only when no slivar VCF is available. A DRAGEN set already loaded stays.
+- A slivar VCF that cannot be downloaded fails **import_cnv_vcf** (a DRAGEN VCF is skipped with a
+  warning): skipped, the proband would have no CNV set at all, and its staging row would be marked
+  ingested with nothing loaded. A deleted task is never fetched: nothing of it reaches StarRocks, and
+  its VCF may be gone from S3.
 - The copy step of **insert_germline_cnv_occurrences** keeps the rows of the tasks not in the
   run, keyed on **task_id**, so a run with one set keeps the other. The cytoband, gene, SNV-count
   and gnomAD joins are keyed on **task_id** too.
+- Keyed on **task_id**, the copy step also keeps the rows of an older alignment task of the same
+  sequencing: a re-alignment adds a DRAGEN set, it no longer replaces the old one. The old set goes
+  when its task is deleted in the clinical model. The portal's task selector opens the newest task.
 
 See radiant-hub docs/features/RAD-169-cnv-post-processing.md.
 

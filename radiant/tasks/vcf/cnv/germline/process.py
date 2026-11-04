@@ -152,6 +152,9 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
             task_cls = CNV_TASK_TYPES.get(task.get("task_type"))
             if task_cls is None:
                 continue
+            if task.get("deleted"):
+                logger.info(f"Skipping deleted CNV task [{task.get('task_id')}]")
+                continue
 
             attempted += 1
             # No index is fetched, unlike SNV: the whole file is iterated, never queried by region.
@@ -159,6 +162,11 @@ def import_cnv_vcf(tasks: list[dict], namespace: str) -> None:
             try:
                 cnv_vcf_local = download_s3_file(task["cnv_vcf_filepath"], tmpdir, randomize_filename=True)
             except S3DownloadError as e:
+                if task.get("task_type") == RADIANT_GERMLINE_CNV_ANNOTATION_TASK:
+                    raise RuntimeError(
+                        f"Failed to download the slivar VCF of task [{task.get('task_id')}] "
+                        f"from {task['cnv_vcf_filepath']}: {e}"
+                    ) from e
                 skipped += 1
                 logger.warning(
                     f"Failed to download CNV VCF for task [{task.get('task_id')}] "

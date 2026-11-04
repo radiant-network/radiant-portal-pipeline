@@ -1,8 +1,11 @@
 """The proband's slivar CNV set, read from the family VCF of a `radiant_germline_cnv_annotation` task."""
 
+import io
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 from cyvcf2 import VCF
 
@@ -13,6 +16,7 @@ from radiant.tasks.vcf.cnv.germline.occurrence import (
     CNV_MODE_TAGS,
     SCHEMA,
     is_carrier,
+    process_slivar_occurrence,
     sample_format,
     slivar_transmission_mode,
 )
@@ -89,7 +93,7 @@ def test_only_the_probands_carrier_records_give_rows(trio_rows):
     assert sorted(trio_rows) == sorted(
         [
             "DRAGEN:GAIN:chr1:1001-5000",
-            "DRAGEN:LOSS:chr1:10001-20000",
+            "DRAGEN:LOSS:chr1:10101-19900",
             "DRAGEN:GAIN:chr1:50001-60000",
             "DRAGEN:GAIN:chr1:70001-80000",
             "DRAGEN:LOSS:chr1:90001-99000",
@@ -102,7 +106,9 @@ def test_only_the_probands_carrier_records_give_rows(trio_rows):
 
 
 def test_proband_row_keeps_the_slivar_record_fields(trio_rows):
-    row = trio_rows["DRAGEN:LOSS:chr1:10001-20000"]
+    """The interval is the slivar record's, i.e. the call truvari kept for the cluster (here the mother's,
+    `DRAGEN:LOSS:chr1:10001-20000`), not the proband's own `10101-19900`; the FORMAT values are the proband's."""
+    row = trio_rows["DRAGEN:LOSS:chr1:10101-19900"]
     assert (row["chromosome"], row["start"], row["end"], row["type"], row["alternate"]) == (
         "1",
         10000,
@@ -115,19 +121,49 @@ def test_proband_row_keeps_the_slivar_record_fields(trio_rows):
 
 
 def test_parent_fields_come_from_the_same_record(trio_rows):
-    row = trio_rows["DRAGEN:LOSS:chr1:10001-20000"]
+    row = trio_rows["DRAGEN:LOSS:chr1:10101-19900"]
     assert (row["mother_calls"], row["mother_cn"], row["mother_bc"], row["mother_pe"]) == ([0, 1], 1, 9, [11, 12])
     assert row["mother_sm"] == pytest.approx(0.52)
     assert (row["father_calls"], row["father_cn"], row["father_bc"], row["father_pe"]) == ([0, 0], 2, 9, [0, 0])
     assert row["father_sm"] == pytest.approx(1.01)
 
 
+def test_proband_name_is_its_own_decoded_dragen_id(trio_rows):
+    """The record's `ID` is the call truvari kept for the cluster, here the mother's. `name` is the proband's own
+    call from `FORMAT/OID` (`%3A` decoded), equal to `name` on its alignment-task row, so the kept call's ID
+    names no proband row."""
+    assert "DRAGEN:LOSS:chr1:10101-19900" in trio_rows
+    assert "DRAGEN:LOSS:chr1:10001-20000" not in trio_rows
+    assert trio_rows["DRAGEN:LOSS:chr1:10101-19900"]["mother_name"] == "DRAGEN:LOSS:chr1:10001-20000"
+
+
 def test_parent_names_are_their_own_decoded_dragen_ids(trio_rows):
     """`FORMAT/OID` is percent-encoded (`%3A`); the column holds the DRAGEN ID, as `name` on the parent's
     alignment-task row. A parent with no call of its own in the record has `.`: no name."""
-    row = trio_rows["DRAGEN:LOSS:chr1:10001-20000"]
+    row = trio_rows["DRAGEN:LOSS:chr1:10101-19900"]
     assert row["mother_name"] == "DRAGEN:LOSS:chr1:10001-20000"
     assert row["father_name"] is None
+
+
+def test_proband_name_falls_back_to_the_record_id_without_an_oid(tmp_path):
+    """`FORMAT/OID` declared but `.` for the proband: the record's own `ID` names the row."""
+    vcf_path = tmp_path / "no_proband_oid.vcf"
+    vcf_path.write_text(
+        "##fileformat=VCFv4.2\n"
+        "##contig=<ID=chr1>\n"
+        '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+        '##FORMAT=<ID=CN,Number=1,Type=Integer,Description="Copy number">\n'
+        '##FORMAT=<ID=BC,Number=1,Type=Integer,Description="Bin count">\n'
+        '##FORMAT=<ID=PE,Number=.,Type=Integer,Description="Paired-end reads">\n'
+        '##FORMAT=<ID=SM,Number=1,Type=Float,Description="Segment mean">\n'
+        '##FORMAT=<ID=OID,Number=1,Type=String,Description="ID of the original caller record">\n'
+        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tKID\tMOM\n"
+        "chr1\t1\tDRAGEN:LOSS:chr1:1-2\tN\t<DEL>\t.\tPASS\t.\tGT:CN:OID\t0/1:1:.\t0/1:1:DRAGEN%3ALOSS%3Achr1%3A1-2\n"
+    )
+    record = next(VCF(str(vcf_path)))
+
+    row = process_slivar_occurrence(record, 1, 11, "test", 9701, "KID", 0, mother_idx=1, father_idx=None)
+    assert (row["name"], row["mother_name"]) == ("DRAGEN:LOSS:chr1:1-2", "DRAGEN:LOSS:chr1:1-2")
 
 
 def test_missing_parent_values_are_null(trio_rows):
@@ -148,7 +184,7 @@ def test_missing_parent_values_are_null(trio_rows):
     "name,origin,mode",
     [
         ("DRAGEN:GAIN:chr1:1001-5000", "DENOVO", "denovo"),
-        ("DRAGEN:LOSS:chr1:10001-20000", "MOTHER", "inherited_maternal"),
+        ("DRAGEN:LOSS:chr1:10101-19900", "MOTHER", "inherited_maternal"),
         ("DRAGEN:GAIN:chr1:50001-60000", "POSSIBLE_DENOVO", "possible_denovo"),
         ("DRAGEN:LOSS:chrX:100001-120000", "DENOVO", "x_linked_denovo"),
     ],
@@ -176,8 +212,8 @@ def test_haploid_proband_call_is_a_carrier(trio_rows):
 
 
 def test_vcf_without_original_ids_gives_null_parent_names():
-    """A slivar VCF made before FORMAT/OID (BIOINFO-214): the mother's calls load, her name stays NULL. A duo has no
-    father: his columns stay NULL."""
+    """A slivar VCF made before FORMAT/OID (BIOINFO-214): the record's `ID` names the proband's row, the mother's
+    calls load, her name stays NULL. A duo has no father: his columns stay NULL."""
     rows = {r["name"]: r for r in _process([_task(NO_OID_VCF, ["S_MOM", "S_KID"])])}
     assert sorted(rows) == ["DRAGEN:GAIN:chr1:50001-60000", "DRAGEN:LOSS:chr1:10001-20000"]
     row = rows["DRAGEN:LOSS:chr1:10001-20000"]
@@ -330,12 +366,23 @@ def test_integer_vector_stops_at_the_padding_and_keeps_missing_values(tmp_path):
         '##FORMAT=<ID=PE,Number=.,Type=Integer,Description="Paired-end reads">\n'
         '##FORMAT=<ID=SM,Number=1,Type=Float,Description="Segment mean">\n'
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tA\tB\tC\tD\n"
-        "chr1\t1\t.\tN\t<DEL>\t.\tPASS\t.\tGT:CN:PE\t0/1:.:5,7,9\t0/1:2:3\t0/1:2:.,4\t0/1:2:.\n"
+        "chr1\t1\tDRAGEN:LOSS:chr1:1-2\tN\t<DEL>\t.\tPASS\t.\tGT:CN:PE\t0/1:.:5,7,9\t0/1:2:3\t0/1:2:.,4\t0/1:2:.\n"
     )
     record = next(VCF(str(vcf_path)))
 
     assert [sample_format(record, idx)["pe"] for idx in range(4)] == [[5, 7, 9], [3], [None, 4], None]
     assert sample_format(record, 0)["cn"] is None
+
+    # A partly missing vector must reach the Iceberg table: the parquet writer rejects a NULL element of a list
+    # whose elements are required, and one such vector fails the whole part's load.
+    row = process_slivar_occurrence(record, 1, 11, "test", 9701, "A", 0, mother_idx=2, father_idx=3)
+    table = pa.Table.from_pylist([row], schema=SCHEMA.as_arrow())
+    pq.write_table(table, io.BytesIO())
+    assert (table.to_pylist()[0]["pe"], table.to_pylist()[0]["mother_pe"], table.to_pylist()[0]["father_pe"]) == (
+        [5, 7, 9],
+        [None, 4],
+        None,
+    )
 
 
 def _row(aliquot: str, filepath: str = "s3://test-vcf/mock-9701.cnv.slivar.vcf.gz") -> dict:

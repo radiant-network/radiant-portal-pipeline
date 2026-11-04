@@ -26,7 +26,9 @@ SCHEMA: Schema = Schema(
     NestedField(114, "filter", StringType(), required=False),
     NestedField(115, "bc", IntegerType(), required=False),
     NestedField(116, "cn", IntegerType(), required=False),
-    NestedField(117, "pe", ListType(201, IntegerType()), required=False),
+    # Nullable elements: a `PE` vector can be partly missing (`.,12`), and the parquet writer rejects a NULL in a
+    # required element. The table has to be recreated for this to apply: the write uses the table's own schema.
+    NestedField(117, "pe", ListType(201, IntegerType(), element_required=False), required=False),
     NestedField(118, "sm", FloatType(), required=False),
     NestedField(119, "svtype", StringType(), required=False),
     NestedField(120, "svlen", IntegerType(), required=False),
@@ -41,13 +43,13 @@ SCHEMA: Schema = Schema(
     NestedField(127, "mother_calls", ListType(204, IntegerType()), required=False),
     NestedField(128, "mother_cn", IntegerType(), required=False),
     NestedField(129, "mother_bc", IntegerType(), required=False),
-    NestedField(130, "mother_pe", ListType(205, IntegerType()), required=False),
+    NestedField(130, "mother_pe", ListType(205, IntegerType(), element_required=False), required=False),
     NestedField(131, "mother_sm", FloatType(), required=False),
     NestedField(132, "mother_name", StringType(), required=False),
     NestedField(133, "father_calls", ListType(206, IntegerType()), required=False),
     NestedField(134, "father_cn", IntegerType(), required=False),
     NestedField(135, "father_bc", IntegerType(), required=False),
-    NestedField(136, "father_pe", ListType(207, IntegerType()), required=False),
+    NestedField(136, "father_pe", ListType(207, IntegerType(), element_required=False), required=False),
     NestedField(137, "father_sm", FloatType(), required=False),
     NestedField(138, "father_name", StringType(), required=False),
 )
@@ -235,10 +237,15 @@ def process_slivar_occurrence(
     """The proband's occurrence of one slivar record: its DRAGEN fields, the parental origin and the
     transmission mode slivar gave it, and each parent's FORMAT values of the same record.
 
+    `name` is the proband's own DRAGEN call ID (`FORMAT/OID`), equal to `name` on its alignment-task row. The
+    record's `ID`, like its `POS` and `END`, is the call truvari kept for the cluster, often a parent's; it stays
+    the name only when the VCF has no `OID` (made before BIOINFO-214).
+
     `mother_idx` / `father_idx` are the parents' indexes in the record, None when the parent is not in the VCF: its
     columns then stay None, as do the origin and mode columns of a record with no tag listing the proband.
     """
     occurrence = process_occurrence(record, part, seq_id, tenant_code, task_id, aliquot, sample_idx)
+    occurrence["name"] = original_id(record, sample_idx) or record.ID
     occurrence["parental_origin"] = slivar_parental_origin(record, aliquot)
     occurrence["transmission_mode"] = slivar_transmission_mode(record, aliquot, occurrence["parental_origin"])
     for role, idx in (("mother", mother_idx), ("father", father_idx)):

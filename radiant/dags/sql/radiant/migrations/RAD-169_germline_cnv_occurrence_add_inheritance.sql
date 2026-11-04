@@ -11,7 +11,9 @@
 --   father_*                                  the same six columns for the father
 --
 -- The columns are filled on the proband's rows of a `radiant_germline_cnv_annotation` task only. The rows of an
--- `alignment_germline_variant_calling` task keep them NULL.
+-- `alignment_germline_variant_calling` task keep them NULL. On the annotation-task rows, `name` is the proband's own
+-- DRAGEN call ID (FORMAT/OID), equal to `name` on its alignment-task row, not the slivar record's ID (the call
+-- truvari kept for the cluster, often a parent's). A slivar VCF with no OID keeps the record's ID.
 --
 -- Run manually, ONCE in every {tenant}_tenant database (germline__cnv__occurrence is per tenant,
 -- STARROCKS_RADIANT_PER_TENANT_MAPPING in radiant/tasks/data/radiant_tables.py). `USE` each database in turn.
@@ -30,7 +32,10 @@
 --      every CNV import breaks;
 --   2. the Iceberg `germline_cnv_occurrence` table recreated with the new schema: run ONLY the germline CNV
 --      occurrence task of the init-iceberg-tables DAG (the other tasks drop and recreate their own tables). Each
---      import overwrites this table, so nothing is lost;
+--      import overwrites this table, so nothing is lost. The schema also makes the elements of `pe`, `mother_pe`
+--      and `father_pe` nullable (a partly missing `PE` vector): a table created from an earlier revision of this
+--      branch has to be recreated again, or the parquet writer rejects the first such vector and the whole part's
+--      germline CNV load fails;
 --   3. the two staging views dropped (base database), then `radiant-init-starrocks-base-tables` run: the views are
 --      created with `IF NOT EXISTS`. Otherwise the slivar VCFs stay invisible, and the proband source rule does not
 --      apply:

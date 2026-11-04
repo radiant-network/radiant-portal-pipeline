@@ -49,7 +49,8 @@ WITH cytoband AS (SELECT o.name, o.seq_id, o.task_id, array_agg(c.cytoband) AS c
             cnv.task_id,
             cnv.name,
             gnomad.af as af,
-            gnomad.ac as ac,
+            -- Only the `gnomad_sv_v1` contract table has `ac`: on the legacy table, gnomad_ac stays NULL.
+            {% if mapping.iceberg_gnomad_sv_is_contract %}gnomad.ac{% else %}CAST(NULL AS INT){% endif %} as ac,
             gnomad.n_het + gnomad.n_homalt as sc,
             gnomad.n_het as sc_het,
             gnomad.n_homalt as sc_hom,

@@ -115,7 +115,10 @@ def test_process_slivar_task_writes_the_probands_set(
     occ = iceberg_client.load_table(f"{setup_iceberg_namespace}.germline_cnv_occurrence").scan().to_arrow().to_pylist()
     assert {(r["seq_id"], r["aliquot"], r["task_id"]) for r in occ} == {(9711, "S_KID", 9710)}
     assert len(occ) == 6
-    maternal = next(r for r in occ if r["name"] == "DRAGEN:LOSS:chr1:10001-20000")
+    # `name` is the proband's own call (FORMAT/OID); the record's ID, `DRAGEN:LOSS:chr1:10001-20000`, is the
+    # mother's call truvari kept for the cluster, and names no row.
+    assert not any(r["name"] == "DRAGEN:LOSS:chr1:10001-20000" for r in occ)
+    maternal = next(r for r in occ if r["name"] == "DRAGEN:LOSS:chr1:10101-19900")
     assert (maternal["parental_origin"], maternal["transmission_mode"]) == ("MOTHER", "inherited_maternal")
     assert (maternal["mother_calls"], maternal["mother_cn"], maternal["mother_name"]) == (
         [0, 1],
