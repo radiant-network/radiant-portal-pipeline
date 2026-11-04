@@ -1,7 +1,9 @@
 """Find what a CNV post-processing run published, and refuse to register a partial one.
 
 Every case runs the pipeline's family route (see `inputs`), so every output is named after
-`familyId` alone and maps back to a case by arithmetic.
+`familyId` and maps back to a case by arithmetic. The Exomiser reports add the proband's
+aliquot when Exomiser ran on the proband VCF (`<familyId>.<proband>.exomiser.*`); see
+`expected_keys`.
 
 Sizes come from the S3 listing, as for post-processing: the batch API compares `size`
 against any existing document with the same URL and raises DOCUMENT-006 on a mismatch.
@@ -18,6 +20,9 @@ EXOMISER_DIR = "exomiser"
 
 # logical name -> (relative key template, data_type_code, format_code)
 #
+# `{prefix}` is the family id, or `<family id>.<proband aliquot>` for the Exomiser reports of
+# a family run on its proband VCF (see `expected_keys`).
+#
 # The slivar VCF is the final artefact -- VEP CSQ plus the mode-of-inheritance INFO tags --
 # and is declared `gcnv`/`vcf`, the CNV analogue of the annotation DAG's `snv`/`vcf`.
 #
@@ -31,20 +36,36 @@ EXOMISER_DIR = "exomiser"
 # The Exomiser reports are `exomiser_cnv`, not `exomiser`: the portal tells them from
 # the SNV report, which has the same file names, and the staging view reads only `exomiser`.
 OUTPUT_SPEC = {
-    "slivar_vcf": (f"{SLIVAR_DIR}/{{family_id}}.cnv.slivar.vcf.gz", "gcnv", "vcf"),
-    "slivar_tbi": (f"{SLIVAR_DIR}/{{family_id}}.cnv.slivar.vcf.gz.tbi", "gcnv", "tbi"),
-    "exomiser_tsv": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.variants.tsv", "exomiser_cnv", "tsv"),
-    "exomiser_html": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.html", "exomiser_cnv", "html"),
-    "exomiser_json": (f"{EXOMISER_DIR}/{{family_id}}.exomiser.json", "exomiser_cnv", "json"),
+    "slivar_vcf": (f"{SLIVAR_DIR}/{{prefix}}.cnv.slivar.vcf.gz", "gcnv", "vcf"),
+    "slivar_tbi": (f"{SLIVAR_DIR}/{{prefix}}.cnv.slivar.vcf.gz.tbi", "gcnv", "tbi"),
+    "exomiser_tsv": (f"{EXOMISER_DIR}/{{prefix}}.exomiser.variants.tsv", "exomiser_cnv", "tsv"),
+    "exomiser_html": (f"{EXOMISER_DIR}/{{prefix}}.exomiser.html", "exomiser_cnv", "html"),
+    "exomiser_json": (f"{EXOMISER_DIR}/{{prefix}}.exomiser.json", "exomiser_cnv", "json"),
 }
 
 ANNOTATION_OUTPUTS = ("slivar_vcf", "slivar_tbi")
 EXOMISER_OUTPUTS = ("exomiser_tsv", "exomiser_html", "exomiser_json")
 
 
-def expected_keys(family_id: str) -> dict[str, str]:
-    """Relative keys, under the run's outdir, of everything one family must produce."""
-    return {name: template.format(family_id=family_id) for name, (template, _, _) in OUTPUT_SPEC.items()}
+def expected_keys(family_id: str, proband: str) -> dict[str, list[str]]:
+    """Relative keys, under the run's outdir, of everything one family must produce: for each
+    output, the keys one of which must exist, the preferred one first.
+
+    The slivar VCF is named after the family. An Exomiser report has two possible names
+    (cnv-post-processing `docs/output.md`): `<familyId>.<proband>.exomiser.*` when
+    Exomiser ran on the proband VCF of the phenopacket's `proband.subject.id` -- `proband` is
+    that id, the proband's aliquot as `inputs.build_phenopacket` writes it -- and
+    `<familyId>.exomiser.*` when it ran on the family VCF instead, which the pipeline does for
+    a phenopacket proband who is not one of the PED's sequenced affected children. Which route
+    a family took is the pipeline's call, read off the listing rather than predicted here. A
+    family gets one family-mode Exomiser run, so the two names never coexist; the proband one
+    is preferred all the same, so the choice is deterministic.
+    """
+    keys = {}
+    for name, (template, _, _) in OUTPUT_SPEC.items():
+        prefixes = [f"{family_id}.{proband}", family_id] if name in EXOMISER_OUTPUTS else [family_id]
+        keys[name] = [template.format(prefix=prefix) for prefix in prefixes]
+    return keys
 
 
 def collect(families: list[CnvFamily], listing: dict[str, int], outdir_s3: str) -> dict[str, dict]:
@@ -52,9 +73,10 @@ def collect(families: list[CnvFamily], listing: dict[str, int], outdir_s3: str) 
     collected, missing = {}, []
     for family in families:
         documents = {}
-        for name, key in expected_keys(family.family_id).items():
-            if key not in listing:
-                missing.append(f"{family.family_id} (case {family.case_id}): {key}")
+        for name, candidates in expected_keys(family.family_id, family.proband.aliquot).items():
+            key = next((candidate for candidate in candidates if candidate in listing), None)
+            if key is None:
+                missing.append(f"{family.family_id} (case {family.case_id}): {' or '.join(candidates)}")
                 continue
             _, data_type, file_format = OUTPUT_SPEC[name]
             documents[name] = {

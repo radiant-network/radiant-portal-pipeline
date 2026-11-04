@@ -2,8 +2,8 @@
 
 One `quality_control_metrics` task per case, bound to every member's aliquot, with the
 alignment's CRAM, index and DRAGEN metrics tarball as inputs (documents that already exist in
-the tenant, so TASK-005 holds) and the per-family MultiQC set as outputs. PATCH appends: a
-re-run adds a second task alongside the first.
+the tenant, so TASK-005 holds) and, as outputs, the per-family MultiQC report and archive plus
+each member's metrics.json. PATCH appends: a re-run adds a second task alongside the first.
 """
 
 from radiant.tasks.nextflow.batch import GENOME_BUILD

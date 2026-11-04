@@ -83,6 +83,7 @@ A candidate that cannot be run is dropped with a reason and the rest continues.
 | `ambiguous_gcnv` | more than one `gcnv`/`vcf` on one alignment task -- a mistyped document | no, fix the data |
 | `unsupported_caller` | the alignment's `pipeline_name` is not DRAGEN; the pipeline only implements DRAGEN CNV conventions | no |
 | `unknown_caller` | the alignment task has no `pipeline_name`, so `caller=DRAGEN` cannot be asserted | no, record the caller on the task |
+| `missing_aliquot` | a member's sequencing experiment has no aliquot, the id the samplesheet, PED, phenopacket and the Exomiser report names are built from | no, fix the data |
 | `proband_count` | two different patients are marked proband on the case | no, fix the data |
 | `unsupported_strategy` | a strategy outside `{wgs, wxs, wes}`, or members spanning several | no |
 | `no_project_code` | `cases.project_id` did not resolve; the batch PATCH needs it | no |
@@ -99,7 +100,7 @@ One task per case, through `PATCH /{tenant}/cases/batch`:
 
 | Task | Aliquots | Inputs | Outputs |
 |---|---|---|---|
-| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`), `exomiser/CA<id>.exomiser.{variants.tsv,html,json}` (`exomiser_cnv`/`tsv`,`html`,`json`) |
+| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`), `exomiser/CA<id>.<proband>.exomiser.{variants.tsv,html,json}` (`exomiser_cnv`/`tsv`,`html`,`json`) |
 
 The Exomiser reports are typed `exomiser_cnv`, not `exomiser`: the SNV and CNV
 reports have the same file names, and the data type tells them apart in the portal. The
@@ -119,6 +120,14 @@ radiant-hub docs/features/RAD-169-cnv-post-processing.md.
 registers nothing. PATCH **appends**: a deliberate re-run adds a second task alongside the
 first.
 
+`<proband>` is the proband's aliquot, the `proband.subject.id` of the phenopacket this DAG
+writes: Exomiser runs on that child's proband VCF and names its reports after both. A family
+with no proband VCF (its proband is not an affected child with a father or mother in the PED:
+a proband without a parent in the case, or an unaffected one) runs on the family VCF and names
+them `exomiser/CA<id>.exomiser.*`. Which of the two a family gets is the pipeline's call, so
+`collect_outputs` accepts either name for each report, the proband one first, and the
+registered document carries the name the run gave the file.
+
 ## Where things are written
 
 | Var | Default | Used by |
@@ -134,7 +143,7 @@ first.
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/pedigrees/CA<id>.ped
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/phenotypes/CA<id>.yml
 {NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}
-{NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/exomiser/CA<id>.exomiser.*
+{NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/exomiser/CA<id>.<proband>.exomiser.*   (CA<id>.exomiser.* without a proband VCF)
 ```
 
 The `cnv-runs/` and `cnv/` subdirectories keep these apart from post-processing
