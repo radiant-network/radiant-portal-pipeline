@@ -22,7 +22,7 @@ ANNOTATION_TASK_TYPE = "radiant_germline_cnv_annotation"
 # The revision the launcher image pins (`CNV_PIPELINE_REV` in Dockerfile.nextflow.launcher).
 # A commit of feat/BIOINFO-214-expand-CNV-post-processing until the pipeline is tagged.
 # Bump both together.
-ANNOTATION_PIPELINE = ("cnv-post-processing", "cad99b4")
+ANNOTATION_PIPELINE = ("cnv-post-processing", "c9e7768")
 
 
 def build_patch_body(families: list[CnvFamily], collected: dict[str, dict]) -> dict:
