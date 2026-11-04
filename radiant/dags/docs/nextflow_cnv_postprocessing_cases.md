@@ -99,12 +99,20 @@ One task per case, through `PATCH /{tenant}/cases/batch`:
 
 | Task | Aliquots | Inputs | Outputs |
 |---|---|---|---|
-| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`), `exomiser/CA<id>.exomiser.{variants.tsv,html,json}` (`exomiser_cnv`/`tsv`,`html`,`json`) |
+| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`), `exomiser/CA<id>.<proband>.exomiser.{variants.tsv,html,json}` (`exomiser_cnv`/`tsv`,`html`,`json`) |
 
 The Exomiser reports are typed `exomiser_cnv`, not `exomiser`: the SNV and CNV
 reports have the same file names, and the data type tells them apart in the portal. The
 variant ETL reads only the `exomiser` data type, on a `radiant_germline_annotation` task, so
 the CNV report stays out of the SNV Exomiser table.
+
+`<proband>` is the proband's aliquot, the `proband.subject.id` of the phenopacket this DAG
+writes: Exomiser runs on that child's proband VCF and names its reports after both. A family
+with no proband VCF (its proband is not an affected child with a father or mother in the PED:
+a proband without a parent in the case, or an unaffected one) runs on the family VCF and names
+them `exomiser/CA<id>.exomiser.*`. Which of the two a family gets is
+the pipeline's call, so `collect_outputs` accepts either name for each report, the proband
+one first, and the registered document carries the name the run gave the file.
 
 These documents are **invisible to the variant ETL** for now: the
 `staging_external_sequencing_experiment` view admits a `gcnv`/`vcf` document only on an
@@ -130,7 +138,7 @@ first.
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/pedigrees/CA<id>.ped
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/phenotypes/CA<id>.yml
 {NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}
-{NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/exomiser/CA<id>.exomiser.*
+{NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/exomiser/CA<id>.<proband>.exomiser.*   (CA<id>.exomiser.* without a proband VCF)
 ```
 
 The `cnv-runs/` and `cnv/` subdirectories keep these apart from post-processing

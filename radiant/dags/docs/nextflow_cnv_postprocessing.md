@@ -62,7 +62,8 @@ Per family, under `outdir`:
 |---|---|
 | `slivar/<familyId>.cnv.slivar.vcf.gz{,.tbi}` | The final VCF: VEP `CSQ` plus slivar INFO tags, one per mode of inheritance (`denovo`, `inherited_maternal`, `recessive`, `x_linked_denovo`, ...) and one per parent of origin (`po_mother`, `po_father`, `po_denovo`, ...), named as in the SNV pipeline. The full list is in the pipeline's `docs/output.md`. |
 | `ensemblvep/variants.<familyId>.cnv.vep.vcf.gz{,.tbi}` | The VEP-annotated family VCF. |
-| `exomiser/<familyId>.exomiser.{variants.tsv,genes.tsv,html,json,vcf.gz,vcf.gz.tbi}` | Exomiser (family mode). |
+| `slivar/<familyId>.<proband>.cnv.proband.vcf.gz{,.tbi}` | One per affected child of the PED with a parent in the case: the slivar records where that child has a call, as the child's own DRAGEN call (`FORMAT/OID`). |
+| `exomiser/<familyId>.<proband>.exomiser.{variants.tsv,genes.tsv,html,json,vcf.gz,vcf.gz.tbi}` | Exomiser (family mode), on the proband VCF of the child the phenopacket names (`proband.subject.id`). A family with no such VCF (its proband is not an affected child with a father or mother in the PED) runs on the family VCF instead and names the reports `exomiser/<familyId>.exomiser.*`. |
 | `merged/`, `truvari/`, `depth_refined/`, `joint/` | Intermediates. |
 
 ## Retries and resume
