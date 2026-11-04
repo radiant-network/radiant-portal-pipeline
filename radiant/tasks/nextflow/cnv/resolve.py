@@ -145,6 +145,14 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[str, str]]:
             text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
             problems.append((member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}"))
 
+    # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket), and the
+    # `<proband>` segment of the Exomiser report names `collect_outputs` expects. The query
+    # does not filter on it; this names the failure instead of a `None` in the samplesheet.
+    for member in members:
+        if not member.exclusion_reason and not member.aliquot:
+            detail = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
+            problems.append(("missing_aliquot", detail))
+
     # Fails closed: the samplesheet states `caller=DRAGEN` as a fact, and `task.pipeline_name`
     # is nullable. An alignment that does not say what produced it is excluded and reported
     # rather than asserted to be DRAGEN and found out hours in, every night.

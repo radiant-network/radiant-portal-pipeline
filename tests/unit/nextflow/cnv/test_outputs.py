@@ -1,5 +1,7 @@
 import pytest
+import yaml
 
+from radiant.tasks.nextflow.cnv.inputs import build_phenopacket
 from radiant.tasks.nextflow.cnv.outputs import MissingOutputsError, collect, expected_keys
 from radiant.tasks.nextflow.cnv.resolve import resolve_families
 
@@ -38,13 +40,14 @@ def test_the_slivar_vcf_is_keyed_on_the_family_id_and_the_exomiser_reports_on_th
     assert keys["exomiser_json"] == ["exomiser/CA1072.NA12878.exomiser.json", "exomiser/CA1072.exomiser.json"]
 
 
-def test_the_proband_is_the_phenopacket_subject(trio):
-    """The pipeline names the reports after the phenopacket's `proband.subject.id`, which `build_phenopacket`
-    writes as the proband's aliquot: the same member, the same string."""
-    assert trio.proband.aliquot == "NA12878"
-    assert expected_keys(trio.family_id, trio.proband.aliquot)["exomiser_html"][0] == (
-        "exomiser/CA1072.NA12878.exomiser.html"
-    )
+def test_the_proband_segment_is_the_phenopacket_subject(trio):
+    """The pipeline names the reports after the phenopacket's `proband.subject.id`. Whatever member field
+    `build_phenopacket` writes there, a report named after that very string must be found."""
+    subject = yaml.safe_load(build_phenopacket(trio))["proband"]["subject"]["id"]
+    listing = {f"exomiser/CA1072.{subject}.exomiser.{ext}": 4096 for ext in ("variants.tsv", "html", "json")}
+    listing |= {"slivar/CA1072.cnv.slivar.vcf.gz": 4096, "slivar/CA1072.cnv.slivar.vcf.gz.tbi": 4096}
+    documents = collect([trio], listing, OUTDIR)["CA1072"]
+    assert documents["exomiser_html"]["name"] == f"CA1072.{subject}.exomiser.html"
 
 
 def test_the_annotated_vcf_is_a_germline_cnv_vcf(trio, listing):

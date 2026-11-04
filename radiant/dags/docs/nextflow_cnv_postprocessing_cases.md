@@ -83,6 +83,7 @@ A candidate that cannot be run is dropped with a reason and the rest continues.
 | `ambiguous_gcnv` | more than one `gcnv`/`vcf` on one alignment task -- a mistyped document | no, fix the data |
 | `unsupported_caller` | the alignment's `pipeline_name` is not DRAGEN; the pipeline only implements DRAGEN CNV conventions | no |
 | `unknown_caller` | the alignment task has no `pipeline_name`, so `caller=DRAGEN` cannot be asserted | no, record the caller on the task |
+| `missing_aliquot` | a member's sequencing experiment has no aliquot, the id the samplesheet, PED, phenopacket and the Exomiser report names are built from | no, fix the data |
 | `proband_count` | two different patients are marked proband on the case | no, fix the data |
 | `unsupported_strategy` | a strategy outside `{wgs, wxs, wes}`, or members spanning several | no |
 | `no_project_code` | `cases.project_id` did not resolve; the batch PATCH needs it | no |
@@ -106,14 +107,6 @@ reports have the same file names, and the data type tells them apart in the port
 variant ETL reads only the `exomiser` data type, on a `radiant_germline_annotation` task, so
 the CNV report stays out of the SNV Exomiser table.
 
-`<proband>` is the proband's aliquot, the `proband.subject.id` of the phenopacket this DAG
-writes: Exomiser runs on that child's proband VCF and names its reports after both. A family
-with no proband VCF (its proband is not an affected child with a father or mother in the PED:
-a proband without a parent in the case, or an unaffected one) runs on the family VCF and names
-them `exomiser/CA<id>.exomiser.*`. Which of the two a family gets is
-the pipeline's call, so `collect_outputs` accepts either name for each report, the proband
-one first, and the registered document carries the name the run gave the file.
-
 These documents are **invisible to the variant ETL** for now: the
 `staging_external_sequencing_experiment` view admits a `gcnv`/`vcf` document only on an
 `alignment_germline_variant_calling` task. Ingesting the post-processed CNV VCF into
@@ -122,6 +115,14 @@ These documents are **invisible to the variant ETL** for now: the
 `collect_outputs` requires the complete set for every case in a run; a partial run
 registers nothing. PATCH **appends**: a deliberate re-run adds a second task alongside the
 first.
+
+`<proband>` is the proband's aliquot, the `proband.subject.id` of the phenopacket this DAG
+writes: Exomiser runs on that child's proband VCF and names its reports after both. A family
+with no proband VCF (its proband is not an affected child with a father or mother in the PED:
+a proband without a parent in the case, or an unaffected one) runs on the family VCF and names
+them `exomiser/CA<id>.exomiser.*`. Which of the two a family gets is the pipeline's call, so
+`collect_outputs` accepts either name for each report, the proband one first, and the
+registered document carries the name the run gave the file.
 
 ## Where things are written
 
