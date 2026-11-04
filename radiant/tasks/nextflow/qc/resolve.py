@@ -3,8 +3,10 @@
 Same two-step shape as `radiant.tasks.nextflow.resolve`, for the same reasons: `select_cases`
 decides which candidate cases can run and why the others cannot, in strict mode (an operator
 named alignment tasks) or lenient mode (the nightly query found them); `resolve_cases` builds
-the cases it kept. What differs is the trigger document -- a CRAM, not a gVCF -- and that a
-case may mix strategies, since the QC samplesheet carries `experimentalStrategy` per row.
+the cases it kept. What differs is the trigger document -- a CRAM, not a gVCF; for a somatic
+member, the DRAGEN metrics tarball, with no CRAM -- that a case may mix strategies, since the QC
+samplesheet carries `experimentalStrategy` per row, and that a somatic case is one member, its
+proband's tumor.
 """
 
 import logging
@@ -23,7 +25,7 @@ STRATEGIES = {"wgs": "WGS", "wxs": "WXS", "wes": "WXS"}
 REASON_TEXT = {
     "pending_sequencing": "has no completed sequencing experiment yet",
     "pending_alignment": "its current sequencing experiment has no alignment task yet",
-    "no_cram": "its current alignment published no CRAM, and somalier needs one",
+    "no_cram": "its current germline alignment published no CRAM, and somalier needs one",
     "ambiguous_cram": (
         "its current alignment published more than one CRAM. One alignment task cannot "
         "legitimately produce two, so a document is mistyped at the source -- typically an "
@@ -40,6 +42,10 @@ REASON_TEXT = {
     "ambiguous_dragen_metrics": (
         "its current alignment published more than one DRAGEN metrics tarball (`ssup`/`tgz`), "
         "and the samplesheet takes exactly one per sample"
+    ),
+    "no_metrics": (
+        "its current somatic alignment published no DRAGEN metrics tarball (`ssup`/`tgz`). A tumor "
+        "row has no CRAM-directory fallback: the pipeline would give a green run with an empty report"
     ),
 }
 
@@ -79,8 +85,9 @@ def select_cases(
         if unmatched:
             problems.append(
                 f"alignment task(s) {unmatched} produced no candidate case -- either the id does "
-                f"not exist or is not an `alignment_germline_variant_calling` task, or every case "
-                f"it belongs to already carries a `quality_control_metrics` task"
+                f"not exist, is not the current `alignment_germline_variant_calling` or "
+                f"`alignment_somatic_variant_calling` task of its experiment, or every case it "
+                f"belongs to already carries a `quality_control_metrics` task"
             )
 
     selection = Selection()
@@ -164,6 +171,7 @@ def _build(case_id: int, members: list[QcMember]) -> QcCase:
         family_id=family_id(case_id),
         submitter_case_id=proband.submitter_case_id,
         tenant_code=proband.tenant_code,
+        case_type=proband.case_type,
         project_code=proband.project_code,
         members=members,
     )

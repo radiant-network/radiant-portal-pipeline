@@ -50,6 +50,17 @@ def test_a_qc_case_without_a_metrics_tarball_is_work_waiting():
     assert case_status.cases_with_work([], [], [], [qc_member_row(case_id=3, tarball=False)], []) == {3}
 
 
+def test_a_tumor_only_case_waiting_for_qc_is_work_waiting():
+    row = qc_member_row(case_id=23, case_type="somatic", affected_status="unknown")
+    assert case_status.cases_with_work([], [], [], [row], []) == {23}
+
+
+def test_a_tumor_without_a_metrics_tarball_is_not_work_waiting():
+    """The QC DAG excludes it as `no_metrics`: a tumor has no CRAM-directory fallback."""
+    row = qc_member_row(case_id=23, case_type="somatic", tarball=False, exclusion_reason="no_metrics")
+    assert case_status.cases_with_work([], [], [], [row], []) == set()
+
+
 def test_nothing_discovered_is_no_work():
     assert case_status.cases_with_work([], [], [], [], []) == set()
 

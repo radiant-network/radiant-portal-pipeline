@@ -3,7 +3,8 @@
 One `quality_control_metrics` task per case, bound to every member's aliquot, with the
 alignment's CRAM, index and DRAGEN metrics tarball as inputs (documents that already exist in
 the tenant, so TASK-005 holds) and, as outputs, the per-family MultiQC report and archive plus
-each member's metrics.json. PATCH appends: a re-run adds a second task alongside the first.
+each member's metrics.json. A somatic case is one member, its tumor, whose only input is the
+tarball. PATCH appends: a re-run adds a second task alongside the first.
 """
 
 from radiant.tasks.nextflow.batch import GENOME_BUILD
@@ -11,9 +12,10 @@ from radiant.tasks.nextflow.qc.model import QcCase
 
 QC_TASK_TYPE = "quality_control_metrics"
 
-# The revision the launcher image pins (`QC_PIPELINE_REV` in Dockerfile.nextflow.launcher).
-# Bump both together. The tag, not the manifest: v2.1.0-beta.1 still declares `version = '2.0.0'`.
-QC_PIPELINE = ("quality-control-pipeline", "2.1.0-beta.1")
+# The revision the launcher image pins (`QC_PIPELINE_REV` in Dockerfile.nextflow.launcher), short
+# like the SNV and CNV pins: bump both together. On each bump, check that a `VCF` row with
+# `dragenMetrics` is still never read: the somatic rows rely on it to skip somalier.
+QC_PIPELINE = ("quality-control-pipeline", "77d819e")
 
 
 def build_patch_body(cases: list[QcCase], collected: dict[str, dict]) -> dict:

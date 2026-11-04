@@ -192,9 +192,20 @@ of the *content*.
 5. **Portal side is ready.** `quality_control_metrics` and `aggqc` exist in the QA portal's value
    sets. The task declares the CRAM and crai as `input_documents`; they already exist in the tenant,
    so TASK-005 holds whether or not the portal enforces TASK-003 for this type.
-6. **Germline only.** `case_type_code = 'germline'`, `alignment_germline_variant_calling` tasks,
-   mirroring post-processing. The QC samplesheet supports tumor rows (`status = 1`), so somatic is
-   a later widening of this DAG, not a change to post-processing.
+6. **Germline only, widened by RAD-132 to the tumor of somatic cases.** At first
+   `case_type_code = 'germline'`, `alignment_germline_variant_calling` tasks, mirroring
+   post-processing. RAD-132 (radiant-hub `docs/features/RAD-132-qc-somatic-tumor-only.md`) adds every
+   somatic case, through the same query and the same launcher run: one row per case, the
+   proband's tumor (`status = 1`), its `alignment_somatic_variant_calling`
+   tarball in `dragenMetrics`. The tumor's CRAM plays no role (the pipeline never reads it): the
+   tarball alone selects the case and is the task's only `input_document`. The row is a `VCF` row on an empty placeholder, not a `CRAM` row,
+   because the pipeline runs somalier on every CRAM / BAM row, and a lone tumor has nothing to be
+   compared with here; in DRAGEN mode a VCF row is only checked to exist, never read. That is
+   undocumented pipeline behaviour, re-checked on each pin bump. A tumor has no CRAM-directory
+   fallback (`no_metrics`), and one whose tarball holds no file named after its aliquot is not
+   registered: either the family has no report at all, or its metrics.json has no
+   `dragen_metrics.mapping_metrics`. A normal experiment of the case is ignored: QC of the
+   normal and somalier between the pair stay out.
 
 ## 5. The DAG, in one picture
 
@@ -222,7 +233,8 @@ status, which the discovery rows already carry.
 - Full recompute mode (`BAM_QC` / `VCF_QC`). The launcher only runs DRAGEN-metrics mode.
 - The upstream pipeline change (a list of metrics directories). Worth a ticket on
   quality-control-pipeline; this DAG works without it, one run per case.
-- Somatic cases, and any change to `radiant-nextflow-postprocessing-cases`.
+- The normal of a somatic case, and somalier between a tumor and its normal (somatic tumors are
+  QC'd since RAD-132, decision 6), and any change to `radiant-nextflow-postprocessing-cases`.
 
 ## 7. How this gets verified
 

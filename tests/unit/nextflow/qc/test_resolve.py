@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 from radiant.tasks.nextflow.qc.resolve import CaseResolutionError, resolve_cases, select_cases, tenants_of
@@ -87,8 +89,10 @@ def test_strict_mode_raises_instead(trio_rows):
 
 
 def test_a_requested_task_with_no_candidate_is_reported(trio_rows):
-    with pytest.raises(CaseResolutionError, match=r"\[999\]"):
+    with pytest.raises(CaseResolutionError, match=r"\[999\]") as error:
         select_cases(trio_rows, [999])
+    assert "`alignment_germline_variant_calling`" in str(error.value)
+    assert "`alignment_somatic_variant_calling`" in str(error.value)
 
 
 def test_mixed_strategies_within_a_case_are_allowed(trio_rows):
@@ -118,3 +122,55 @@ def test_resolve_builds_one_case_with_a_ca_family_id(trio_rows, singleton_rows):
     assert trio.submitter_case_id == "1KGP-1463"
     assert trio.project_code == "N1"
     assert tenants_of(cases) == ["radiant"]
+
+
+def test_a_tumor_only_case_runs_on_its_tumor_alone(tumor_rows, trio_rows):
+    selection = select_cases(trio_rows + tumor_rows)
+    assert selection.case_ids == [23, 1072]
+    tumor = resolve_cases([m.model_dump() for m in selection.members])[0]
+    assert (tumor.family_id, tumor.case_type, tumor.is_somatic) == ("CA23", "somatic", True)
+    assert [(m.role, m.aliquot) for m in tumor.members] == [("proband", "TCRBOA6-T")]
+
+
+def test_a_tumor_needs_no_cram(tumor_rows):
+    """The pipeline never reads a tumor's CRAM: a member with a tarball and no CRAM is valid."""
+    assert tumor_rows[0]["cram_url"] is None and tumor_rows[0]["dragen_metrics_url"]
+    assert select_cases(tumor_rows).case_ids == [23]
+
+
+def test_a_germline_member_without_a_cram_is_still_excluded(trio_rows):
+    rows = [
+        r | {"cram_url": None, "crai_url": None, "cram_matches": 0, "exclusion_reason": "no_cram"} for r in trio_rows
+    ]
+    selection = select_cases(rows)
+    assert selection.case_ids == []
+    assert {e.reason for e in selection.excluded} == {"no_cram"}
+
+
+def test_a_tumor_with_two_tarballs_is_excluded_as_ambiguous(tumor_rows):
+    rows = [r | {"dragen_metrics_matches": 2, "exclusion_reason": "ambiguous_dragen_metrics"} for r in tumor_rows]
+    selection = select_cases(rows)
+    assert selection.case_ids == []
+    assert [(e.case_id, e.reason) for e in selection.excluded] == [(23, "ambiguous_dragen_metrics")]
+
+
+def test_a_tumor_without_a_tarball_is_excluded_as_no_metrics(tumor_rows, trio_rows, caplog):
+    """No CRAM-directory fallback for a tumor: it would give a green run with an empty report."""
+    rows = [r | {"dragen_metrics_url": None, "exclusion_reason": "no_metrics"} for r in tumor_rows]
+    with caplog.at_level(logging.WARNING):
+        selection = select_cases(rows + trio_rows)
+    assert selection.case_ids == [1072]
+    assert [(e.case_id, e.reason) for e in selection.excluded] == [(23, "no_metrics")]
+    assert "case 23 excluded (no_metrics)" in caplog.text
+    assert "no DRAGEN metrics tarball" in caplog.text
+
+
+def test_a_targeted_rerun_of_a_tumor_without_a_tarball_fails(tumor_rows):
+    rows = [r | {"dragen_metrics_url": None, "exclusion_reason": "no_metrics"} for r in tumor_rows]
+    with pytest.raises(CaseResolutionError, match="no CRAM-directory fallback"):
+        select_cases(rows, [76])
+
+
+def test_a_germline_case_keeps_its_type(trio_rows):
+    case = resolve_cases([m.model_dump() for m in select_cases(trio_rows).members])[0]
+    assert (case.case_type, case.is_somatic) == ("germline", False)

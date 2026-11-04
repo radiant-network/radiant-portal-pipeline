@@ -1,4 +1,4 @@
-"""Find the germline cases waiting for a QC report, run the pipeline, register the result.
+"""Find the cases waiting for a QC report, run the pipeline, register the result.
 
 `radiant-nextflow-quality-control` runs the Ferlab quality-control-pipeline. This DAG closes the
 two manual ends around it, the way `nextflow_snv_postprocessing_cases` does for annotation: it
@@ -10,9 +10,12 @@ task each, carrying the per-family MultiQC set as `aggqc` documents.
                                                                                |
                       register_tasks (one per tenant) <- collect_outputs <-----+
 
-The DRAGEN metrics come from the clinical model: each member's samplesheet row carries its
-alignment's `ssup`/`tgz` tarball in `dragenMetrics`, or its CRAM's directory when there is none.
-The pipeline handles each sample on its own, so every case of the run goes into one launcher run.
+Germline cases bring every family member; somatic cases their tumor alone. The DRAGEN metrics
+come from the clinical model: each member's samplesheet row carries its alignment's `ssup`/`tgz`
+tarball in `dragenMetrics`, or, for germline only, its CRAM's directory when there is none. The
+pipeline handles each sample on its own, so every case of the run goes into one launcher run. A
+somatic case with no report, or whose tumor metrics.json holds no DRAGEN mapping metrics, is not
+registered.
 
 Full analysis: `design/SJRA-1879-nextflow-quality-control-automation.md`, and radiant-hub
 `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the `dragenMetrics` column.
@@ -38,6 +41,9 @@ INPUTS_ROOT_ENV = "NEXTFLOW_INPUTS_ROOT"
 OUTPUTS_ROOT_ENV = "NEXTFLOW_OUTPUTS_ROOT"
 DEFAULT_INPUTS_MOUNT = "/workspace/inputs"
 DEFAULT_OUTPUTS_MOUNT = "/workspace/outputs"
+# The file1 of every somatic row.
+PLACEHOLDER_VCF_ENV = "NEXTFLOW_QC_PLACEHOLDER_VCF"
+DEFAULT_PLACEHOLDER_VCF = "/workspace/reference/qc/placeholder.vcf.gz"
 
 OUTPUT_POLL_ATTEMPTS = max(1, int(os.getenv("NEXTFLOW_OUTPUT_POLL_ATTEMPTS", "10")))
 OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "30"))
@@ -56,9 +62,9 @@ dag_params = {
         items={"type": "integer"},
         title="Alignment task ids",
         description=(
-            "`alignment_germline_variant_calling` task ids, for a targeted rerun. Leave empty -- "
-            "as a scheduled run does -- to process every case that has been aligned but never "
-            "QC'd. A task shared by several cases runs all of them."
+            "`alignment_germline_variant_calling` or `alignment_somatic_variant_calling` task ids, "
+            "for a targeted rerun. Leave empty -- as a scheduled run does -- to process every case "
+            "that has been aligned but never QC'd. A task shared by several cases runs all of them."
         ),
     ),
     "excluded_tenants": Param(
@@ -94,6 +100,7 @@ def _workspace_env() -> dict[str, str]:
         "outputs_root": outputs_root,
         "inputs_mount": os.getenv("NEXTFLOW_INPUTS_MOUNT", DEFAULT_INPUTS_MOUNT),
         "outputs_mount": os.getenv("NEXTFLOW_OUTPUTS_MOUNT", DEFAULT_OUTPUTS_MOUNT),
+        "placeholder": os.getenv(PLACEHOLDER_VCF_ENV, DEFAULT_PLACEHOLDER_VCF),
     }
 
 
@@ -184,7 +191,7 @@ def nextflow_quality_control_cases():
             inputs_subdir=INPUTS_SUBDIR,
             outputs_subdir=OUTPUTS_SUBDIR,
         )
-        files = build_inputs([QcCase(**c) for c in cases], env["inputs_root"], env["inputs_mount"])
+        files = build_inputs([QcCase(**c) for c in cases], env["inputs_root"], env["inputs_mount"], env["placeholder"])
 
         bucket, prefix = split_s3_uri(paths["input_prefix_s3"])
         # Load-bearing: the next block deletes everything under `prefix` on a bucket shared
@@ -215,7 +222,13 @@ def nextflow_quality_control_cases():
 
         from radiant.tasks.nextflow.paths import split_s3_uri
         from radiant.tasks.nextflow.qc.model import QcCase
-        from radiant.tasks.nextflow.qc.outputs import MissingOutputsError, collect
+        from radiant.tasks.nextflow.qc.outputs import (
+            MissingOutputsError,
+            check_tumor_metrics,
+            collect,
+            kept_cases,
+            tumor_metrics_keys,
+        )
 
         parsed = [QcCase(**c) for c in cases]
         bucket, prefix = split_s3_uri(paths["outdir_s3"])
@@ -231,23 +244,30 @@ def nextflow_quality_control_cases():
                 for obj in page.get("Contents", [])
             }
             try:
-                collected = collect(parsed, listing, paths["outdir_s3"])
+                collected = collect(parsed, listing, paths["outdir_s3"], last_attempt=attempt == OUTPUT_POLL_ATTEMPTS)
             except MissingOutputsError as error:
                 last_error = error
                 LOGGER.warning("attempt %d/%d: %s", attempt, OUTPUT_POLL_ATTEMPTS, error)
                 if attempt < OUTPUT_POLL_ATTEMPTS:
                     time.sleep(OUTPUT_POLL_INTERVAL_SECONDS)
                 continue
-            LOGGER.info("collected outputs for %d case(s)", len(collected))
-            return collected
+            published = kept_cases(parsed, collected)
+            metrics = {
+                family_id: s3.get_object(Bucket=bucket, Key=f"{prefix}/{key}")["Body"].read()
+                for family_id, key in tumor_metrics_keys(published).items()
+            }
+            kept = check_tumor_metrics(published, collected, metrics)
+            LOGGER.info("collected outputs for %d case(s), %d to register", len(collected), len(kept))
+            return kept
         raise last_error
 
     @task(task_id="list_tenants", task_display_name="[PyOp] List the tenants to register into")
-    def list_tenants(cases: Any) -> Any:
+    def list_tenants(cases: Any, collected: Any) -> Any:
         from radiant.tasks.nextflow.qc.model import QcCase
+        from radiant.tasks.nextflow.qc.outputs import kept_cases
         from radiant.tasks.nextflow.qc.resolve import tenants_of
 
-        return tenants_of([QcCase(**c) for c in cases])
+        return tenants_of(kept_cases([QcCase(**c) for c in cases], collected))
 
     @task(
         task_id="register_tasks",
@@ -261,10 +281,11 @@ def nextflow_quality_control_cases():
 
         from radiant.tasks.nextflow.qc.batch import build_patch_body
         from radiant.tasks.nextflow.qc.model import QcCase
+        from radiant.tasks.nextflow.qc.outputs import kept_cases
         from radiant.tasks.nextflow.register import register_case_batch
 
         context = get_current_context()
-        parsed = [QcCase(**c) for c in cases if c["tenant_code"] == tenant]
+        parsed = kept_cases([QcCase(**c) for c in cases if c["tenant_code"] == tenant], collected)
         if not parsed:
             raise AirflowFailException(f"no resolved case belongs to tenant '{tenant}'")
         body = build_patch_body(parsed, collected)
@@ -291,7 +312,7 @@ def nextflow_quality_control_cases():
     )
 
     collected = collect_outputs(cases, paths)
-    register_tasks.partial(cases=cases, collected=collected).expand(tenant=list_tenants(cases))
+    register_tasks.partial(cases=cases, collected=collected).expand(tenant=list_tenants(cases, collected))
 
     paths >> run_pipeline >> collected
 

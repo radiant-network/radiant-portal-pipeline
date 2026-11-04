@@ -78,6 +78,19 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     assert register.partial_kwargs.get("max_active_tis_per_dagrun") == 1
 
 
+def test_only_the_cases_kept_after_the_tumor_metrics_check_are_registered(dag_bag):
+    """`collect_outputs` drops a tumor whose metrics.json has no mapping metrics: the tenants come
+    from what it kept, so a tenant left with no case gets no registration."""
+    dag = dag_bag.get_dag(DAG_ID)
+    assert {t.task_id for t in dag.get_task("list_tenants").upstream_list} == {"resolve_cases", "collect_outputs"}
+
+
+def test_task_ids_accept_both_alignment_types(dag_bag):
+    description = dag_bag.get_dag(DAG_ID).params.get_param("task_ids").description
+    assert "alignment_germline_variant_calling" in description
+    assert "alignment_somatic_variant_calling" in description
+
+
 def test_only_one_run_at_a_time(dag_bag):
     assert dag_bag.get_dag(DAG_ID).max_active_runs == 1
 

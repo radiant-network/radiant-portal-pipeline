@@ -16,7 +16,7 @@ discover_{germline_snv,germline_cnv,somatic_snv,qc,import}_cases, fetch_case_sta
 ```
 
 Each key names the case type and the variant type: **germline_snv**, **germline_cnv** and
-**somatic_snv**. Quality control (**qc**) is germline only.
+**somatic_snv**. Quality control (**qc**) covers the germline cases and the tumor of the somatic ones.
 
 The import waits for SNV post-processing and somatic annotation, success or not: it loads the
 annotation tasks they register. Without that order the import could run first, and the case's
