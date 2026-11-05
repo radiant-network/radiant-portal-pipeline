@@ -14,8 +14,7 @@ task each, carrying the per-family MultiQC set as `aggqc` documents.
 Germline cases bring every family member; somatic cases their tumor alone. The DRAGEN metrics
 come from the clinical model: each member's samplesheet row carries its alignment's `ssup`/`tgz`
 tarball in `dragenMetrics`, or, for germline only, its CRAM's directory when there is none. The
-pipeline handles each sample on its own, so every case of the run goes into one launcher run. A
-somatic case with no report is not registered.
+pipeline handles each sample on its own, so every case of the run goes into one launcher run.
 
 Full analysis: `design/SJRA-1879-nextflow-quality-control-automation.md`, and radiant-hub
 `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the `dragenMetrics` column.
@@ -257,17 +256,16 @@ def nextflow_quality_control_cases():
                 if attempt < OUTPUT_POLL_ATTEMPTS:
                     time.sleep(OUTPUT_POLL_INTERVAL_SECONDS)
                 continue
-            LOGGER.info("collected outputs for %d of %d case(s)", len(collected), len(parsed))
+            LOGGER.info("collected outputs for %d case(s)", len(collected))
             return collected
         raise last_error
 
     @task(task_id="list_tenants", task_display_name="[PyOp] List the tenants to register into")
-    def list_tenants(cases: Any, collected: Any) -> Any:
+    def list_tenants(cases: Any) -> Any:
         from radiant.tasks.nextflow.qc.model import QcCase
-        from radiant.tasks.nextflow.qc.outputs import kept_cases
         from radiant.tasks.nextflow.qc.resolve import tenants_of
 
-        return tenants_of(kept_cases([QcCase(**c) for c in cases], collected))
+        return tenants_of([QcCase(**c) for c in cases])
 
     @task(
         task_id="register_tasks",
@@ -281,11 +279,10 @@ def nextflow_quality_control_cases():
 
         from radiant.tasks.nextflow.qc.batch import build_patch_body
         from radiant.tasks.nextflow.qc.model import QcCase
-        from radiant.tasks.nextflow.qc.outputs import kept_cases
         from radiant.tasks.nextflow.register import register_case_batch
 
         context = get_current_context()
-        parsed = kept_cases([QcCase(**c) for c in cases if c["tenant_code"] == tenant], collected)
+        parsed = [QcCase(**c) for c in cases if c["tenant_code"] == tenant]
         if not parsed:
             raise AirflowFailException(f"no resolved case belongs to tenant '{tenant}'")
         body = build_patch_body(parsed, collected)
@@ -312,7 +309,7 @@ def nextflow_quality_control_cases():
     )
 
     collected = collect_outputs(cases, paths)
-    register_tasks.partial(cases=cases, collected=collected).expand(tenant=list_tenants(cases, collected))
+    register_tasks.partial(cases=cases, collected=collected).expand(tenant=list_tenants(cases))
 
     paths >> run_pipeline >> collected
 

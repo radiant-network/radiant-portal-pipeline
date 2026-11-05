@@ -1,8 +1,6 @@
-import logging
-
 import pytest
 
-from radiant.tasks.nextflow.qc.outputs import MissingOutputsError, collect, expected_keys, kept_cases
+from radiant.tasks.nextflow.qc.outputs import MissingOutputsError, collect, expected_keys
 from radiant.tasks.nextflow.qc.resolve import resolve_cases, select_cases
 
 OUTDIR = "s3://qlin-nextflow-outputs/scheduled-2026-09-02"
@@ -88,28 +86,11 @@ def _without_family(listing, family_id):
     return {key: size for key, size in listing.items() if not key.startswith(f"multiqc/{family_id}/")}
 
 
-def test_a_tumor_with_no_report_is_dropped_and_logged(run_listing, caplog):
+def test_a_tumor_with_no_report_fails_the_run_like_a_germline_case(run_listing):
     """No DRAGEN file named after the aliquot: the pipeline publishes nothing for the family."""
     cases, listing = run_listing
-    with caplog.at_level(logging.ERROR):
-        collected = collect(cases, _without_family(listing, "CA23"), OUTDIR)
-    assert sorted(collected) == ["CA1072", "CA8"]
-    assert [c.case_id for c in kept_cases(cases, collected)] == [8, 1072]
-    [record] = caplog.records
-    assert record.levelno == logging.ERROR
-    assert "case 23, aliquot TCRBOA6-T: no report" in record.getMessage()
-
-
-def test_a_tumor_missing_one_file_is_dropped(run_listing):
-    cases, listing = run_listing
-    del listing["multiqc/CA23/qc_json/TCRBOA6-T.metrics.json"]
-    assert "CA23" not in collect(cases, listing, OUTDIR)
-
-
-def test_a_missing_germline_report_still_fails_the_run(run_listing):
-    cases, listing = run_listing
-    with pytest.raises(MissingOutputsError, match="CA1072_multiqc_report.html"):
-        collect(cases, _without_family(listing, "CA1072"), OUTDIR)
+    with pytest.raises(MissingOutputsError, match="CA23_multiqc_report.html"):
+        collect(cases, _without_family(listing, "CA23"), OUTDIR)
 
 
 def test_a_complete_tumor_set_is_collected(run_listing):

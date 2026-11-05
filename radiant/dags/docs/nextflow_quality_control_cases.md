@@ -17,7 +17,7 @@ annotation.
 | 3 | **resolve_cases** | Builds one family per case, proband first |
 | 4 | **generate_inputs** | Writes one samplesheet for every case of the run |
 | 5 | **run_pipeline** | One launcher run, for every case |
-| 6 | **collect_outputs** | Lists what the pipeline published, drops a tumor with no report |
+| 6 | **collect_outputs** | Lists what the pipeline published |
 | 7 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 
 It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
@@ -121,12 +121,10 @@ shared by every somatic row: a pod path, not an S3 url under the inputs bucket.
 > **SOMALIER_RELATE** task for the tumor. Without the placeholder on the mount, the launch check
 > fails the whole run, germline cases included.
 
-**After the run.** When no DRAGEN file of the tarball is named after the tumor's aliquot, the
-family gets no report at all, so multiqc/CA_ID/ is missing. **collect_outputs** then drops the
-case instead of failing the run, and logs it at ERROR (grep for "no report under"); the other cases
-of the run are registered. The dropped case stays pending, so it runs again each night until its
-data is fixed. A germline case with a missing set still fails the run. As for germline, the
-content of the report is not checked: whatever the pipeline produced is registered.
+**After the run.** A somatic case is collected like a germline one: whatever the pipeline produced
+is registered, and its content is not checked. When no DRAGEN file of the tarball is named after
+the tumor's aliquot, the family gets no report, so multiqc/CA_ID/ is missing and **collect_outputs**
+fails the run once its polling ends: that is bad data to fix by hand.
 
 > **One aliquot, one case per run.** The pipeline refuses a samplesheet where the same sample
 > appears twice, so a tumor held by two somatic cases of the same run fails the whole run.
@@ -179,9 +177,8 @@ the case is never registered. The portal hides the aggqc / json documents from i
 lab manifest.
 
 **collect_outputs** requires the complete set for every case in a run; a partial run
-registers nothing. Only a somatic case that fails a check after the run is left out on its
-own, and a tenant left with no case gets no PATCH. PATCH **appends**, so a deliberate re-run
-adds a second task alongside the first.
+registers nothing. PATCH **appends**, so a deliberate re-run adds a second task alongside the
+first.
 
 ---
 
