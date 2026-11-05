@@ -14,8 +14,7 @@ Germline cases bring every family member; somatic cases their tumor alone. The D
 come from the clinical model: each member's samplesheet row carries its alignment's `ssup`/`tgz`
 tarball in `dragenMetrics`, or, for germline only, its CRAM's directory when there is none. The
 pipeline handles each sample on its own, so every case of the run goes into one launcher run. A
-somatic case with no report, or whose tumor metrics.json holds no DRAGEN mapping metrics, is not
-registered.
+somatic case with no report is not registered.
 
 Full analysis: `design/SJRA-1879-nextflow-quality-control-automation.md`, and radiant-hub
 `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the `dragenMetrics` column.
@@ -222,13 +221,7 @@ def nextflow_quality_control_cases():
 
         from radiant.tasks.nextflow.paths import split_s3_uri
         from radiant.tasks.nextflow.qc.model import QcCase
-        from radiant.tasks.nextflow.qc.outputs import (
-            MissingOutputsError,
-            check_tumor_metrics,
-            collect,
-            kept_cases,
-            tumor_metrics_keys,
-        )
+        from radiant.tasks.nextflow.qc.outputs import MissingOutputsError, collect
 
         parsed = [QcCase(**c) for c in cases]
         bucket, prefix = split_s3_uri(paths["outdir_s3"])
@@ -244,21 +237,15 @@ def nextflow_quality_control_cases():
                 for obj in page.get("Contents", [])
             }
             try:
-                collected = collect(parsed, listing, paths["outdir_s3"], last_attempt=attempt == OUTPUT_POLL_ATTEMPTS)
+                collected = collect(parsed, listing, paths["outdir_s3"])
             except MissingOutputsError as error:
                 last_error = error
                 LOGGER.warning("attempt %d/%d: %s", attempt, OUTPUT_POLL_ATTEMPTS, error)
                 if attempt < OUTPUT_POLL_ATTEMPTS:
                     time.sleep(OUTPUT_POLL_INTERVAL_SECONDS)
                 continue
-            published = kept_cases(parsed, collected)
-            metrics = {
-                family_id: s3.get_object(Bucket=bucket, Key=f"{prefix}/{key}")["Body"].read()
-                for family_id, key in tumor_metrics_keys(published).items()
-            }
-            kept = check_tumor_metrics(published, collected, metrics)
-            LOGGER.info("collected outputs for %d case(s), %d to register", len(collected), len(kept))
-            return kept
+            LOGGER.info("collected outputs for %d of %d case(s)", len(collected), len(parsed))
+            return collected
         raise last_error
 
     @task(task_id="list_tenants", task_display_name="[PyOp] List the tenants to register into")

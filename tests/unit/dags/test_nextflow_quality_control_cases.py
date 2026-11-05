@@ -78,9 +78,9 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     assert register.partial_kwargs.get("max_active_tis_per_dagrun") == 1
 
 
-def test_only_the_cases_kept_after_the_tumor_metrics_check_are_registered(dag_bag):
-    """`collect_outputs` drops a tumor whose metrics.json has no mapping metrics: the tenants come
-    from what it kept, so a tenant left with no case gets no registration."""
+def test_only_the_collected_cases_are_registered(dag_bag):
+    """`collect_outputs` drops a tumor with no report: the tenants come from what it kept, so a
+    tenant left with no case gets no registration."""
     dag = dag_bag.get_dag(DAG_ID)
     assert {t.task_id for t in dag.get_task("list_tenants").upstream_list} == {"resolve_cases", "collect_outputs"}
 

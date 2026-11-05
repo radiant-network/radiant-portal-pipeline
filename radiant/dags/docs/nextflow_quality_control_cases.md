@@ -17,7 +17,7 @@ annotation.
 | 3 | **resolve_cases** | Builds one family per case, proband first |
 | 4 | **generate_inputs** | Writes one samplesheet for every case of the run |
 | 5 | **run_pipeline** | One launcher run, for every case |
-| 6 | **collect_outputs** | Lists what the pipeline published, drops a tumor with no report or no DRAGEN mapping metrics |
+| 6 | **collect_outputs** | Lists what the pipeline published, drops a tumor with no report |
 | 7 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 
 It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
@@ -119,21 +119,12 @@ shared by every somatic row: a pod path, not an S3 url under the inputs bucket.
 > **SOMALIER_RELATE** task for the tumor. Without the placeholder on the mount, the launch check
 > fails the whole run, germline cases included.
 
-**The checks after the run.** A tarball whose files are not named after the tumor's aliquot
-gives a green run, and **collect_outputs** catches it in two ways:
-
-- **No DRAGEN file matched the aliquot:** the family gets no report at all, so multiqc/CA_ID/ is
-  missing. On the **last** poll only (the export can lag), the case is dropped instead of failing
-  the run; grep for "no report under".
-- **Some file matched, but not ALIQUOT.mapping_metrics.csv:** the set is published, and the
-  tumor's qc_json/ALIQUOT.metrics.json has no **dragen_metrics.mapping_metrics**, the raw copy of
-  that CSV. **collect_outputs** reads that file and requires that section to be a non-empty
-  object; grep for "no DRAGEN mapping metrics". The **qc_metrics.aln_metrics** values are not
-  enough: their coverage fields come from the coverage CSV alone.
-
-A case dropped either way is **not registered** and is logged at ERROR; the other cases of the
-run are registered. It stays pending, so it runs again each night until its data is fixed.
-Germline cases are not checked, and a germline case with a missing set still fails the run.
+**After the run.** When no DRAGEN file of the tarball is named after the tumor's aliquot, the
+family gets no report at all, so multiqc/CA_ID/ is missing. **collect_outputs** then drops the
+case instead of failing the run, and logs it at ERROR (grep for "no report under"); the other cases
+of the run are registered. The dropped case stays pending, so it runs again each night until its
+data is fixed. A germline case with a missing set still fails the run. As for germline, the
+content of the report is not checked: whatever the pipeline produced is registered.
 
 > **One aliquot, one case per run.** The pipeline refuses a samplesheet where the same sample
 > appears twice, so a tumor held by two somatic cases of the same run fails the whole run.

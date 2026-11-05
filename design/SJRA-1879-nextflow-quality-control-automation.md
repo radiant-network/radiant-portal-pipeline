@@ -202,9 +202,8 @@ of the *content*.
    because the pipeline runs somalier on every CRAM / BAM row, and a lone tumor has nothing to be
    compared with here; in DRAGEN mode a VCF row is only checked to exist, never read. That is
    undocumented pipeline behaviour, re-checked on each pin bump. A tumor has no CRAM-directory
-   fallback (`no_metrics`), and one whose tarball holds no file named after its aliquot is not
-   registered: either the family has no report at all, or its metrics.json has no
-   `dragen_metrics.mapping_metrics`. A normal experiment of the case is ignored: QC of the
+   fallback (`no_metrics`), and one whose tarball holds no file named after its aliquot gets no
+   report and is not registered. As for germline, the content of a report is not checked. A normal experiment of the case is ignored: QC of the
    normal and somalier between the pair stay out.
 
 ## 5. The DAG, in one picture
