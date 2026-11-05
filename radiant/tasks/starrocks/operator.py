@@ -43,7 +43,7 @@ class SubmitTaskOptions:
 
     DEFER_TIMEOUT_MARGIN = 600
 
-    max_query_timeout: int = 10000
+    max_query_timeout: int = 14400
     poll_interval: int = 30
     enable_spill: bool = True
     spill_mode: str = "auto"

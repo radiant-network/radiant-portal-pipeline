@@ -84,7 +84,7 @@ dag_params = {
     ),
 }
 
-std_submit_task_opts = SubmitTaskOptions(max_query_timeout=10800, poll_interval=10)
+std_submit_task_opts = SubmitTaskOptions(max_query_timeout=14400, poll_interval=10)
 
 
 @dag(
