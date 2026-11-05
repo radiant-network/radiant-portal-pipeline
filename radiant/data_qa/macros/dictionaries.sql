@@ -86,17 +86,29 @@
 
 {% macro dict_transmission_mode() %}
   {# Notion: https://app.notion.com/p/ferlab/2ef5a320b986493694e8a820d467d017?v=2808ef9b129c443e853d939a5524805d #}
-  {# mirrors facets.go + transmission-mode-badge.tsx — keep in sync #}
+  {# The SNV modes. mirrors facets.go + transmission-mode-badge.tsx — keep in sync #}
   {# RAD-93: uniparental_disomy comes from slivar; the portal side is RAD-98 #}
-  {# The CNV mode tags of cnv-post-processing, one dictionary for SNVs and CNVs (x_linked_recessive is in both) #}
+  {# The CNV modes are a dictionary of their own (dict_cnv_transmission_mode): an SNV row with a CNV
+     value is a load bug, and this list stays the one the portal renders. #}
   {{ return(['autosomal_dominant_de_novo', 'autosomal_dominant', 'autosomal_recessive',
              'x_linked_dominant_de_novo', 'x_linked_recessive_de_novo', 'x_linked_dominant',
              'x_linked_recessive', 'non_carrier_proband', 'unknown_parents_genotype',
              'unknown_father_genotype', 'unknown_mother_genotype', 'unknown_proband_genotype',
-             'uniparental_disomy',
-             'denovo', 'denovo_suspect', 'possible_denovo', 'inherited_maternal', 'inherited_paternal',
-             'possible_inherited_maternal', 'possible_inherited_paternal', 'recessive', 'recessive_lowconf',
-             'inheritance_unresolved', 'mendelian_inconsistent', 'unknown_cn', 'x_linked_denovo']) }}
+             'uniparental_disomy']) }}
+{% endmacro %}
+
+{% macro dict_cnv_transmission_mode() %}
+  {# RAD-169. The CNV mode tags of cnv-post-processing, stored under their own names on the slivar set
+     of germline__cnv__occurrence — mirrors CNV_MODE_ORIGINS in radiant/tasks/vcf/cnv/germline/occurrence.py.
+     x_linked_recessive is the only value shared with the SNV dictionary. #}
+  {# Not a portal value set yet: facets.go, transmission-mode-badge.tsx and i18n list the SNV modes only.
+     The portal side is the Portal section of the RAD-169 spec (radiant-hub docs/features/RAD-169-cnv-post-processing.md),
+     no sub-task of RAD-169 yet. When it lands, add these to facets.go + i18n and keep this list in sync with them. #}
+  {{ return(['denovo', 'denovo_suspect', 'possible_denovo', 'x_linked_denovo',
+             'inherited_maternal', 'inherited_paternal',
+             'possible_inherited_maternal', 'possible_inherited_paternal',
+             'recessive', 'recessive_lowconf', 'x_linked_recessive',
+             'inheritance_unresolved', 'mendelian_inconsistent', 'unknown_cn']) }}
 {% endmacro %}
 
 {% macro dict_parental_origin() %}

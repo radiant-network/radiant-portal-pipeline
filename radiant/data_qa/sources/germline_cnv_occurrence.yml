@@ -23,6 +23,8 @@ sources:
                 - ciend
                 # Filled on the proband's slivar set only, so NULL in a tenant with no CNV annotation task.
                 # mother_name and father_name also stay NULL for a slivar VCF made before FORMAT/OID (BIOINFO-214).
+                # parental_origin is guarded per annotation task instead, by
+                # germline_cnv_occurrence__validate_annotation_tasks_have_parental_origin (tests/).
                 - parental_origin
                 - transmission_mode
                 - mother_calls
@@ -94,10 +96,10 @@ sources:
             description: "VARCHAR(50). The CNV mode tag that lists the proband, slivar set only."
             tests:
               # --- Accepted Values -------------------------------------------
-              # values: dict_transmission_mode() — see macros/dictionaries.sql
+              # values: dict_cnv_transmission_mode() — see macros/dictionaries.sql
               - accepted_values:
                   name: germline_cnv_occurrence__accepted_values_transmission_mode
-                  values: "{{ dict_transmission_mode() }}"
+                  values: "{{ dict_cnv_transmission_mode() }}"
                   config:
                     where: "transmission_mode is not null"
           - name: parental_origin
