@@ -43,7 +43,7 @@ ARG QC_PIPELINE_REV=77d819e5cc141b9920511d16ba6f03010e6cf527
 # is tagged; `radiant/tasks/nextflow/cnv/batch.py::ANNOTATION_PIPELINE` records
 # the same revision on every task it registers -- bump both together.
 ARG CNV_PIPELINE_REPO=Ferlab-Ste-Justine/cnv-post-processing
-ARG CNV_PIPELINE_REV=cad99b4e0b7e39f5d88dfbd028d426df693dee4e
+ARG CNV_PIPELINE_REV=c9e7768d411c954edf005bba4d994b14cd5484b1
 
 # Keep in sync with each pipeline's own `plugins` block: snv-post-processing
 # (v3.0.0 through the pinned commit) declares nf-schema@2.1.0 (v2.11.0 declared

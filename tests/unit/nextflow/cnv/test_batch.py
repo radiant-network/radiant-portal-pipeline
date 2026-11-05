@@ -9,7 +9,9 @@ OUTDIR = "s3://qlin-nextflow-outputs/cnv/scheduled-2026-09-18T00-00-00-00-00"
 
 def _body(rows, phenotype_rows=()):
     families = resolve_families(rows, list(phenotype_rows))
-    listing = {key: 4096 for f in families for key in expected_keys(f.family_id).values()}
+    listing = {
+        candidates[0]: 4096 for f in families for candidates in expected_keys(f.family_id, f.proband.aliquot).values()
+    }
     return build_patch_body(families, collect(families, listing, OUTDIR))
 
 
@@ -67,6 +69,14 @@ def test_the_annotation_task_outputs_the_slivar_vcf_and_the_exomiser_cnv_reports
         ("exomiser_cnv", "html"),
         ("exomiser_cnv", "json"),
     }
+
+
+def test_the_exomiser_reports_are_registered_under_the_name_the_run_gave_them(tasks):
+    """Named after the family and its proband when Exomiser ran on the proband VCF: the document name
+    follows the listing, so the portal shows the file as it sits on S3."""
+    names = {d["name"] for d in tasks["radiant_germline_cnv_annotation"]["output_documents"]}
+    expected = {f"CA1072.NA12878.exomiser.{ext}" for ext in ("variants.tsv", "html", "json")}
+    assert expected <= names
 
 
 def test_pipeline_metadata_names_the_cnv_pipeline_and_the_build(tasks):
