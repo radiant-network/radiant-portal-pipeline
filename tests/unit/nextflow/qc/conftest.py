@@ -1,4 +1,4 @@
-"""Row fixtures shaped like what `sql/clinical/pending_quality_control_select.sql` returns:
+"""Row fixtures shaped like what `sql/clinical/pending_quality_control_select.sql` and its somatic sibling return:
 one row per member."""
 
 import pytest

@@ -1,4 +1,4 @@
-"""Execute `pending_quality_control_select.sql` against a real StarRocks + clinical Postgres.
+"""Execute the two pending QC queries against a real StarRocks + clinical Postgres.
 
 The unit tests pin what the template says; what only a database shows is that the joins hold
 over the JDBC catalog and that the query returns exactly one row per member.
@@ -27,7 +27,8 @@ from radiant.tasks.nextflow.qc.resolve import select_cases
 from tests.integration.fixtures_common import execute_clinical
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
-DISCOVERY = "pending_quality_control_select.sql"
+GERMLINE_QUERY = "pending_quality_control_select.sql"
+SOMATIC_QUERY = "pending_quality_control_somatic_select.sql"
 
 TRIO_CASE_ID = 16
 TRIO_PROBAND_ID = 44
@@ -43,20 +44,24 @@ TRIO_PROBAND_ALIGNMENT_TASK = 44
 TARBALL_URL = "s3://test-vcf/dragen/NA12878.extra.tgz"
 
 
-def _render(radiant_mapping, params=None):
-    with open(os.path.join(_CLINICAL_SQL, DISCOVERY)) as f:
+def _render(radiant_mapping, params=None, query=GERMLINE_QUERY):
+    with open(os.path.join(_CLINICAL_SQL, query)) as f:
         return jinja2.Template(f.read()).render(
             mapping=radiant_mapping,
             params=params if params is not None else {"task_ids": [], "excluded_tenants": []},
         )
 
 
-def _discover(starrocks_session, radiant_mapping, case_id=None, parameters=None, params=None):
+def _discover(starrocks_session, radiant_mapping, case_id=None, parameters=None, params=None, query=GERMLINE_QUERY):
     with starrocks_session.cursor() as cursor:
-        cursor.execute(_render(radiant_mapping, params), parameters or {})
+        cursor.execute(_render(radiant_mapping, params, query), parameters or {})
         columns = [d[0] for d in cursor.description]
         rows = [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
     return [r for r in rows if case_id is None or r["case_id"] == case_id]
+
+
+def _discover_somatic(*args, **kwargs):
+    return _discover(*args, query=SOMATIC_QUERY, **kwargs)
 
 
 def _execute(postgres_instance, sql):
@@ -174,7 +179,7 @@ def test_a_tumor_normal_case_without_a_somatic_alignment_is_not_discovered(
     postgres_clinical_seeds, starrocks_session, radiant_mapping
 ):
     """Its tumor has calling tasks only, and its normal is never a QC member: nothing to run on."""
-    assert _discover(starrocks_session, radiant_mapping, TUMOR_NORMAL_CASE_ID) == []
+    assert _discover_somatic(starrocks_session, radiant_mapping, TUMOR_NORMAL_CASE_ID) == []
 
 
 def test_germline_rows_carry_their_case_type(postgres_clinical_seeds, starrocks_session, radiant_mapping):
@@ -385,7 +390,7 @@ def test_a_tumor_only_case_runs_its_tumor_on_its_current_alignment(
     tumor_alignment, starrocks_session, radiant_mapping
 ):
     [tarball] = tumor_alignment
-    [row] = _discover(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
+    [row] = _discover_somatic(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
     assert row["case_type"] == "somatic"
     assert (row["role"], row["affected_status"]) == ("proband", "unknown")
     assert (row["patient_id"], row["seq_id"]) == (TUMOR_ONLY_PROBAND_ID, TUMOR_ONLY_EXPERIMENT)
@@ -400,7 +405,7 @@ def test_a_tumor_only_case_runs_its_tumor_on_its_current_alignment(
 def test_a_tumor_s_cram_is_ignored(tumor_alignment_with_cram, starrocks_session, radiant_mapping):
     """The tarball selects the tumor and the CRAM comes back as nothing, as if it were not there."""
     _, _, tarball = tumor_alignment_with_cram
-    [row] = _discover(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
+    [row] = _discover_somatic(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
     assert (row["cram_url"], row["cram_matches"], row["crai_url"]) == (None, 0, None)
     assert row["dragen_metrics_url"].endswith(f"tumor-{tarball}.extra.tgz")
     assert row["exclusion_reason"] is None
@@ -408,14 +413,15 @@ def test_a_tumor_s_cram_is_ignored(tumor_alignment_with_cram, starrocks_session,
 
 
 def test_a_tumor_only_case_is_selected_next_to_the_germline_ones(tumor_alignment, starrocks_session, radiant_mapping):
-    case_ids = select_cases(_discover(starrocks_session, radiant_mapping)).case_ids
+    rows = _discover(starrocks_session, radiant_mapping) + _discover_somatic(starrocks_session, radiant_mapping)
+    case_ids = select_cases(rows).case_ids
     assert {TRIO_CASE_ID, TUMOR_ONLY_CASE_ID} <= set(case_ids)
     # Its tumor has no somatic alignment in the seeds.
     assert TUMOR_NORMAL_CASE_ID not in case_ids
 
 
 def test_a_targeted_run_takes_a_somatic_alignment(tumor_alignment, starrocks_session, radiant_mapping):
-    rows = _discover(
+    rows = _discover_somatic(
         starrocks_session,
         radiant_mapping,
         parameters={"task_ids": [TUMOR_ONLY_ALIGNMENT_TASK]},
@@ -428,7 +434,7 @@ def test_a_targeted_run_takes_a_somatic_alignment(tumor_alignment, starrocks_ses
 def test_a_tumor_with_a_cram_and_no_tarball_comes_back_as_no_metrics(
     tumor_alignment_without_tarball, starrocks_session, radiant_mapping
 ):
-    [row] = _discover(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
+    [row] = _discover_somatic(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
     assert (row["dragen_metrics_url"], row["dragen_metrics_matches"]) == (None, 0)
     assert row["cram_url"] is None
     assert row["exclusion_reason"] == "no_metrics"
@@ -440,7 +446,7 @@ def test_a_tumor_with_a_cram_and_no_tarball_comes_back_as_no_metrics(
 def test_a_tumor_with_two_tarballs_comes_back_as_ambiguous(
     tumor_alignment_with_two_tarballs, starrocks_session, radiant_mapping
 ):
-    [row] = _discover(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
+    [row] = _discover_somatic(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
     assert row["dragen_metrics_matches"] == 2
     assert row["exclusion_reason"] == "ambiguous_dragen_metrics"
     assert [e.reason for e in select_cases([row]).excluded] == ["ambiguous_dragen_metrics"]
@@ -448,10 +454,10 @@ def test_a_tumor_with_two_tarballs_comes_back_as_ambiguous(
 
 def test_a_superseded_somatic_alignment_is_not_selected(tumor_realigned, starrocks_session, radiant_mapping):
     tarball = tumor_realigned[0]
-    [row] = _discover(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
+    [row] = _discover_somatic(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
     assert row["alignment_task_id"] == 9710
     assert row["dragen_metrics_url"].endswith(f"tumor-{tarball}.extra.tgz")
-    stale = _discover(
+    stale = _discover_somatic(
         starrocks_session,
         radiant_mapping,
         parameters={"task_ids": [TUMOR_ONLY_ALIGNMENT_TASK]},
@@ -462,7 +468,7 @@ def test_a_superseded_somatic_alignment_is_not_selected(tumor_realigned, starroc
 
 def test_a_tumor_normal_case_runs_its_tumor_alone(tumor_normal_alignment, starrocks_session, radiant_mapping):
     """The normal experiment of the case is never QC'd here: one member, the tumor."""
-    [row] = _discover(starrocks_session, radiant_mapping, TUMOR_NORMAL_CASE_ID)
+    [row] = _discover_somatic(starrocks_session, radiant_mapping, TUMOR_NORMAL_CASE_ID)
     assert row["case_type"] == "somatic"
     assert (row["role"], row["patient_id"]) == ("proband", TUMOR_NORMAL_PROBAND_ID)
     assert row["seq_id"] == TUMOR_NORMAL_TUMOR_EXPERIMENT
@@ -470,7 +476,7 @@ def test_a_tumor_normal_case_runs_its_tumor_alone(tumor_normal_alignment, starro
     assert row["alignment_task_id"] == 9720
     assert row["exclusion_reason"] is None
     assert select_cases([row]).case_ids == [TUMOR_NORMAL_CASE_ID]
-    targeted = _discover(
+    targeted = _discover_somatic(
         starrocks_session,
         radiant_mapping,
         parameters={"task_ids": [9720]},
@@ -480,15 +486,24 @@ def test_a_tumor_normal_case_runs_its_tumor_alone(tumor_normal_alignment, starro
 
 
 def test_a_revoked_somatic_case_is_not_discovered(revoked_tumor_only_case, starrocks_session, radiant_mapping):
-    case_ids = {r["case_id"] for r in _discover(starrocks_session, radiant_mapping)}
+    case_ids = {r["case_id"] for r in _discover_somatic(starrocks_session, radiant_mapping)}
     assert TUMOR_ONLY_CASE_ID in case_ids
     assert 9730 not in case_ids
 
 
 def test_a_quality_controlled_tumor_is_not_discovered(tumor_quality_controlled, starrocks_session, radiant_mapping):
-    assert _discover(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID) == []
+    assert _discover_somatic(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID) == []
 
 
 def test_a_somatic_family_row_gives_the_affected_status(tumor_only_family_row, starrocks_session, radiant_mapping):
-    [row] = _discover(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
+    [row] = _discover_somatic(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
     assert (row["role"], row["affected_status"]) == ("proband", "affected")
+
+
+def test_each_query_returns_its_own_case_type_only(tumor_alignment, starrocks_session, radiant_mapping):
+    germline = _discover(starrocks_session, radiant_mapping)
+    somatic = _discover_somatic(starrocks_session, radiant_mapping)
+    assert TRIO_CASE_ID in {r["case_id"] for r in germline}
+    assert {r["case_type"] for r in germline} == {"germline"}
+    assert TUMOR_ONLY_CASE_ID in {r["case_id"] for r in somatic}
+    assert {r["case_type"] for r in somatic} == {"somatic"}

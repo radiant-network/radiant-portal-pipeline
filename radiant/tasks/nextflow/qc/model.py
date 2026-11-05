@@ -10,7 +10,7 @@ SOMATIC = "somatic"
 
 
 class QcMember(BaseModel):
-    """One member of a case: one row of `sql/clinical/pending_quality_control_select.sql`.
+    """One member of a case: one row of `sql/clinical/pending_quality_control_select.sql` or its somatic twin.
 
     A member with no alignment comes back with null document fields and an
     `exclusion_reason`. A somatic case has one member, its proband's tumor sample.

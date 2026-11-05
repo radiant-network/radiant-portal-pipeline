@@ -1,8 +1,8 @@
 # Automating Nextflow quality control from cases — analysis
 
 **Status:** implemented on `feat/sjra-1879` (2026-09-02). DAG `radiant/dags/nextflow_quality_control_cases.py`,
-modules `radiant/tasks/nextflow/qc/`, query `sql/clinical/pending_quality_control_select.sql`,
-runbook `radiant/dags/docs/nextflow_quality_control_cases.md`.
+modules `radiant/tasks/nextflow/qc/`, queries `sql/clinical/pending_quality_control_select.sql` (germline) and
+`pending_quality_control_somatic_select.sql` (somatic), runbook `radiant/dags/docs/nextflow_quality_control_cases.md`.
 
 **Audience:** dev, QA, product owner.
 
@@ -195,7 +195,8 @@ of the *content*.
 6. **Germline only, widened by RAD-132 to the tumor of somatic cases.** At first
    `case_type_code = 'germline'`, `alignment_germline_variant_calling` tasks, mirroring
    post-processing. RAD-132 (radiant-hub `docs/features/RAD-132-qc-somatic-tumor-only.md`) adds every
-   somatic case, through the same query and the same launcher run: one row per case, the
+   somatic case, through a sibling query (`pending_quality_control_somatic_select.sql`, its own
+   discovery task, concatenated with the germline rows) and the same launcher run: one row per case, the
    proband's tumor (`status = 1`), its `alignment_somatic_variant_calling`
    tarball in `dragenMetrics`. The tumor's CRAM plays no role (the pipeline never reads it): the
    tarball alone selects the case and is the task's only `input_document`. The row is a `VCF` row on an empty placeholder, not a `CRAM` row,

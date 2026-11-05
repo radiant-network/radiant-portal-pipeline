@@ -6,9 +6,10 @@ discovers which cases have been aligned but never QC'd, builds the samplesheet, 
 DAG, then registers what the run published back onto the cases as one `quality_control_metrics`
 task each, carrying the per-family MultiQC set as `aggqc` documents.
 
-    discover_scope -> select_cases -> resolve_cases -> generate_inputs -> run_pipeline
-                                                                               |
-                      register_tasks (one per tenant) <- collect_outputs <-----+
+    discover_germline -+
+                       +-> select_cases -> resolve_cases -> generate_inputs -> run_pipeline
+    discover_somatic --+                                                                  |
+                                     register_tasks (one per tenant) <- collect_outputs <-+
 
 Germline cases bring every family member; somatic cases their tumor alone. The DRAGEN metrics
 come from the clinical model: each member's samplesheet row carries its alignment's `ssup`/`tgz`
@@ -122,20 +123,32 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_quality_control_cases():
-    discover_scope = RadiantStarRocksOperator(
-        task_id="discover_scope",
-        task_display_name="[StarRocks] Discover cases pending quality control",
-        sql="./sql/clinical/pending_quality_control_select.sql",
-        parameters={
-            "task_ids": "{{ params.task_ids }}",
-            "excluded_tenants": "{{ params.excluded_tenants }}",
-        },
-        output_processor=rows_output_processor,
-        do_xcom_push=True,
+    def discover(task_id: str, display_name: str, sql: str) -> RadiantStarRocksOperator:
+        return RadiantStarRocksOperator(
+            task_id=task_id,
+            task_display_name=f"[StarRocks] {display_name}",
+            sql=sql,
+            parameters={
+                "task_ids": "{{ params.task_ids }}",
+                "excluded_tenants": "{{ params.excluded_tenants }}",
+            },
+            output_processor=rows_output_processor,
+            do_xcom_push=True,
+        )
+
+    discover_germline = discover(
+        "discover_germline",
+        "Discover germline cases pending quality control",
+        "./sql/clinical/pending_quality_control_select.sql",
+    )
+    discover_somatic = discover(
+        "discover_somatic",
+        "Discover somatic cases pending quality control",
+        "./sql/clinical/pending_quality_control_somatic_select.sql",
     )
 
     @task(task_id="select_cases", task_display_name="[PyOp] Select the cases that can run")
-    def select_cases(member_rows: Any) -> Any:
+    def select_cases(germline_rows: Any, somatic_rows: Any) -> Any:
         """Keep the cases that can run, report the ones that cannot."""
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
@@ -144,7 +157,7 @@ def nextflow_quality_control_cases():
 
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
-        selection = select(member_rows, requested, strict=bool(requested))
+        selection = select([*germline_rows, *somatic_rows], requested, strict=bool(requested))
 
         if not selection.case_ids:
             raise AirflowSkipException(
@@ -278,7 +291,7 @@ def nextflow_quality_control_cases():
         body = build_patch_body(parsed, collected)
         return register_case_batch(tenant, body, context["params"]["dry_run"])
 
-    cases = resolve_cases(select_cases(discover_scope.output))
+    cases = resolve_cases(select_cases(discover_germline.output, discover_somatic.output))
     paths = generate_inputs(cases)
 
     run_pipeline = TriggerDagRunOperator(

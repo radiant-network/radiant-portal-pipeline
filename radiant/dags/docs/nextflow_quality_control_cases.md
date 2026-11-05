@@ -12,8 +12,8 @@ annotation.
 
 | # | Task | Does |
 |:--|:--|:--|
-| 1 | **discover_scope** | Establishes what this run is allowed to look at |
-| 2 | **select_cases** | Finds eligible cases, excludes the rest with a reason |
+| 1 | **discover_germline**, **discover_somatic** | Run the two pending queries, one per case type |
+| 2 | **select_cases** | Joins their rows, finds eligible cases, excludes the rest with a reason |
 | 3 | **resolve_cases** | Builds one family per case, proband first |
 | 4 | **generate_inputs** | Writes one samplesheet for every case of the run |
 | 5 | **run_pipeline** | One launcher run, for every case |
@@ -44,13 +44,15 @@ parameters exist for targeted reruns and for configuration, not for normal opera
 
 A (case, sequencing experiment) pair is eligible when the pair's *current* experiment has an
 alignment (for a germline member, one publishing a CRAM), and no **quality_control_metrics**
-task is scoped to that same pair. The rule lives in sql/clinical/pending_quality_control_select.sql,
-and its two selections are the same as the annotation query's:
+task is scoped to that same pair. The rule lives in two queries, one per case type:
+sql/clinical/pending_quality_control_select.sql (germline) and
+sql/clinical/pending_quality_control_somatic_select.sql (somatic). Their two selections are the
+same as the annotation query's:
 
 - **One experiment per (case, member)** — the newest completed one.
 - **One alignment per experiment** — the newest, of the case's alignment type.
 
-> Keep the supersession policy the same in both templates when touching either.
+> Keep the supersession policy the same in every template when touching one.
 
 | Case type | Members | Alignment |
 |:--|:--|:--|
@@ -61,8 +63,8 @@ A normal experiment of a somatic case is ignored: QC of the normal, and somalier
 tumor and the normal, are out of scope. A somatic case usually has no family row: its member's role is **proband**, its affected status comes from its family
 row when there is one, else **unknown**.
 
-The query returns **one row per member**, with its case type, its DRAGEN metrics tarball and,
-for a germline member, its CRAM and index. The pipeline never reads a tumor's CRAM, so the CRAM
+Both queries return **one row per member**, with the same columns: its case type, its DRAGEN
+metrics tarball and, for a germline member, its CRAM and index. The pipeline never reads a tumor's CRAM, so the CRAM
 neither selects nor excludes a somatic case, and its columns come back empty.
 
 ---
