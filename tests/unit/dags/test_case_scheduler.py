@@ -10,11 +10,13 @@ CASES_DAG_IDS = {
     "trigger_somatic_snv_annotation": "radiant-nextflow-somatic-snv-annotation-cases",
     "trigger_quality_control": "radiant-nextflow-quality-control-cases",
 }
+# Each discovery task: the cases DAG and the task of it that runs the same query.
 DISCOVERY = {
-    "discover_germline_snv_cases": "radiant-nextflow-snv-postprocessing-cases",
-    "discover_germline_cnv_cases": "radiant-nextflow-cnv-postprocessing-cases",
-    "discover_somatic_snv_cases": "radiant-nextflow-somatic-snv-annotation-cases",
-    "discover_qc_cases": "radiant-nextflow-quality-control-cases",
+    "discover_germline_snv_cases": ("radiant-nextflow-snv-postprocessing-cases", "discover_scope"),
+    "discover_germline_cnv_cases": ("radiant-nextflow-cnv-postprocessing-cases", "discover_scope"),
+    "discover_somatic_snv_cases": ("radiant-nextflow-somatic-snv-annotation-cases", "discover_scope"),
+    "discover_qc_cases": ("radiant-nextflow-quality-control-cases", "discover_germline"),
+    "discover_qc_somatic_cases": ("radiant-nextflow-quality-control-cases", "discover_somatic"),
 }
 
 
@@ -34,6 +36,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "discover_germline_cnv_cases",
         "discover_somatic_snv_cases",
         "discover_qc_cases",
+        "discover_qc_somatic_cases",
         "discover_import_cases",
         "fetch_case_statuses",
         "discover_cases",
@@ -47,6 +50,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "rediscover_germline_cnv_cases",
         "rediscover_somatic_snv_cases",
         "rediscover_qc_cases",
+        "rediscover_qc_somatic_cases",
         "rediscover_import_cases",
         "refresh_case_statuses",
         "select_ready_cases",
@@ -77,9 +81,9 @@ def test_the_cases_dags_have_no_schedule_of_their_own(dag_bag):
 def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
     """Only count what the DAG would actually run: same query, same excluded tenants."""
     dag = dag_bag.get_dag(DAG_ID)
-    for task_id, cases_dag_id in DISCOVERY.items():
+    for task_id, (cases_dag_id, cases_task_id) in DISCOVERY.items():
         discover = dag.get_task(task_id)
-        assert discover.sql == dag_bag.get_dag(cases_dag_id).get_task("discover_scope").sql
+        assert discover.sql == dag_bag.get_dag(cases_dag_id).get_task(cases_task_id).sql
         assert discover.parameters == {"excluded_tenants": "{{ params.excluded_tenants }}"}
         # Inherited from the DAG, not set per task: a run conf `excluded_tenants` must reach it.
         assert discover.params["excluded_tenants"] == dag.params["excluded_tenants"]
@@ -185,7 +189,7 @@ def test_evaluation_asks_the_same_work_waiting_question_as_discovery(dag_bag):
     """A case still pending anywhere after the pipelines stays processing; the two passes must
     not drift, or a case would be moved on with a pipeline left to run, or never at all."""
     dag = dag_bag.get_dag(DAG_ID)
-    for name in ("germline_snv", "germline_cnv", "somatic_snv", "qc", "import"):
+    for name in ("germline_snv", "germline_cnv", "somatic_snv", "qc", "qc_somatic", "import"):
         first, second = dag.get_task(f"discover_{name}_cases"), dag.get_task(f"rediscover_{name}_cases")
         assert second.sql == first.sql
         assert second.params == first.params
@@ -254,6 +258,7 @@ def _run_select_ready_cases(dag, monkeypatch, cases_with_work):
         germline_cnv_rows=[],
         somatic_snv_rows=[],
         qc_rows=[],
+        qc_somatic_rows=[],
         import_rows=[],
         status_rows=status_rows,
     )
@@ -295,6 +300,7 @@ def test_somatic_candidates_count_as_work_in_both_passes(dag_bag, monkeypatch):
         "germline_cnv_rows": [],
         "somatic_snv_rows": calling_task_rows(case_id=23),
         "qc_rows": [],
+        "qc_somatic_rows": [],
         "import_rows": [],
     }
 
@@ -304,3 +310,30 @@ def test_somatic_candidates_count_as_work_in_both_passes(dag_bag, monkeypatch):
 
     processing = [{"case_id": 23, "tenant_code": "radiant", "status_code": "processing", "has_variants": True}]
     assert dag.get_task("select_ready_cases").python_callable(**inputs, status_rows=processing) == []
+
+
+def test_germline_and_somatic_quality_control_rows_both_count_as_work(dag_bag, monkeypatch):
+    """The two QC discoveries reach `_cases_with_work` together: either one makes its case work waiting."""
+    from tests.unit.nextflow.qc.conftest import member_row
+
+    class TaskInstance:
+        def xcom_push(self, key, value):
+            pass
+
+    context = {"ti": TaskInstance(), "params": {"excluded_tenants": []}}
+    monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
+    submitted = [
+        {"case_id": case_id, "tenant_code": "radiant", "status_code": "submitted", "has_variants": False}
+        for case_id in (3, 23)
+    ]
+    discover = dag_bag.get_dag(DAG_ID).get_task("discover_cases")
+    batches = discover.python_callable(
+        germline_snv_rows=[],
+        germline_cnv_rows=[],
+        somatic_snv_rows=[],
+        qc_rows=[member_row(case_id=3)],
+        qc_somatic_rows=[member_row(case_id=23, case_type="somatic", affected_status="unknown")],
+        import_rows=[],
+        status_rows=submitted,
+    )
+    assert batches == [{"tenant": "radiant", "case_ids": [3, 23]}]

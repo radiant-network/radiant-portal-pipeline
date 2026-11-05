@@ -107,7 +107,7 @@ def _trigger(task_id: str, display_name: str, dag_id: str, conf: dict | None = N
 
 
 def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksOperator]:
-    """The five "work waiting" queries, `{prefix}_{germline_snv,germline_cnv,somatic_snv,qc,import}_cases`.
+    """The six "work waiting" queries, `{prefix}_{germline_snv,germline_cnv,somatic_snv,qc,qc_somatic,import}_cases`.
 
     Built once before the pipelines (`discover`) and once after (`rediscover`), so the question
     asked both times cannot drift. Each "from Cases" DAG's own query, with the run's
@@ -144,6 +144,11 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
             "./sql/clinical/pending_somatic_annotation_select.sql",
         ),
         query("qc", "Cases pending quality control", "./sql/clinical/pending_quality_control_select.sql"),
+        query(
+            "qc_somatic",
+            "Somatic cases pending quality control",
+            "./sql/clinical/pending_quality_control_somatic_select.sql",
+        ),
         query(
             "import",
             "Cases the import has work for",
@@ -193,6 +198,7 @@ def case_scheduler():
         germline_cnv_rows: Any,
         somatic_snv_rows: Any,
         qc_rows: Any,
+        qc_somatic_rows: Any,
         import_rows: Any,
         status_rows: Any,
     ) -> Any:
@@ -201,6 +207,7 @@ def case_scheduler():
         from radiant.tasks.nextflow.case_status import plan_processing
 
         context = get_current_context()
+        qc_rows = [*qc_rows, *qc_somatic_rows]
         waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
         context["ti"].xcom_push(key=CASES_WITH_WORK_KEY, value=sorted(waiting))
         return plan_processing(status_rows, waiting, context["params"]["excluded_tenants"])
@@ -234,6 +241,7 @@ def case_scheduler():
         germline_cnv_rows: Any,
         somatic_snv_rows: Any,
         qc_rows: Any,
+        qc_somatic_rows: Any,
         import_rows: Any,
         status_rows: Any,
     ) -> Any:
@@ -245,6 +253,7 @@ def case_scheduler():
         processed = context["ti"].xcom_pull(task_ids="discover_cases", key=CASES_WITH_WORK_KEY)
         if processed is None:
             LOGGER.warning("discover_cases did not run: only the cases moved to in_progress are notified")
+        qc_rows = [*qc_rows, *qc_somatic_rows]
         still_waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
         return plan_in_progress(
             status_rows, set(processed or []), still_waiting, context["params"]["excluded_tenants"]

@@ -9,9 +9,12 @@ registered outside the workspace bucket fails here, in `to_mount`, rather than i
 
 `dragenMetrics` is never empty: an empty value makes the pipeline recompute BAM_QC / VCF_QC for
 that sample, hours of worker pods nobody asked for. It is the alignment's DRAGEN metrics tarball
-or, when the alignment published none, the CRAM's directory. That fallback is not checked: the
-pipeline keeps only the files named after the sample, so a directory without them gives a green
-run with empty alignment sections. Each fallback is logged so it can be traced back.
+or, when a germline alignment published none, the CRAM's directory. That fallback is not checked:
+the pipeline keeps only the files named after the sample, so a directory without them gives a
+green run with empty alignment sections. Each fallback is logged so it can be traced back.
+
+A somatic tumor is a `VCF` row on a shared placeholder, not a `CRAM` row (see `QC_PIPELINE` in
+`batch.py`). The placeholder sits on the reference mount: a pod path already, not an S3 url.
 """
 
 import csv
@@ -53,8 +56,8 @@ RELATIONSHIP = {
     "sister": "Sister",
     "fetus": "Fetus",
 }
-# Germline: every sample is a normal.
 STATUS_NORMAL = "0"
+STATUS_TUMOR = "1"
 
 
 def participant_id(member: QcMember) -> str:
@@ -68,24 +71,21 @@ def dragen_metrics_url(member: QcMember) -> str:
     return member.dragen_metrics_url or member.cram_url.rsplit("/", 1)[0]
 
 
-def build_inputs(cases: list[QcCase], inputs_root: str, inputs_mount: str) -> dict[str, str]:
+def build_inputs(cases: list[QcCase], inputs_root: str, inputs_mount: str, placeholder_vcf: str) -> dict[str, str]:
     """`{relative key: content}` for one launcher run -- a single samplesheet."""
-    return {"samplesheet.csv": build_samplesheet(cases, inputs_root, inputs_mount)}
+    return {"samplesheet.csv": build_samplesheet(cases, inputs_root, inputs_mount, placeholder_vcf)}
 
 
-def build_samplesheet(cases: list[QcCase], inputs_root: str, inputs_mount: str) -> str:
+def build_samplesheet(cases: list[QcCase], inputs_root: str, inputs_mount: str, placeholder_vcf: str) -> str:
     buffer = io.StringIO()
     writer = csv.DictWriter(buffer, fieldnames=SAMPLESHEET_COLUMNS, lineterminator="\n")
     writer.writeheader()
     for case in cases:
         for member in case.members:
-            if not member.dragen_metrics_url:
-                LOGGER.warning(
-                    "case %d, aliquot %s: no DRAGEN metrics tarball, the pipeline reads %s",
-                    case.case_id,
-                    member.aliquot,
-                    dragen_metrics_url(member),
-                )
+            if case.is_somatic:
+                files = _tumor_files(case, member, inputs_root, inputs_mount, placeholder_vcf)
+            else:
+                files = _germline_files(case, member, inputs_root, inputs_mount)
             writer.writerow(
                 {
                     "participant": participant_id(member),
@@ -93,15 +93,42 @@ def build_samplesheet(cases: list[QcCase], inputs_root: str, inputs_mount: str) 
                     # pipeline matches on the exact first dot-token.
                     "sample": member.aliquot,
                     "familyId": case.family_id,
-                    "fileType": "CRAM",
-                    "file1": to_mount(member.cram_url, inputs_root, inputs_mount),
-                    "file2": to_mount(member.crai_url, inputs_root, inputs_mount) if member.crai_url else "",
                     "experimentalStrategy": strategy_of(member),
                     "sex": SEX.get(member.sex, "NA"),
-                    "status": STATUS_NORMAL,
                     "relationship_to_proband": RELATIONSHIP.get(member.role, "Other"),
                     "affected_status": AFFECTED.get(member.affected_status, "Unknown"),
-                    "dragenMetrics": to_mount(dragen_metrics_url(member), inputs_root, inputs_mount),
                 }
+                | files
             )
     return buffer.getvalue()
+
+
+def _germline_files(case: QcCase, member: QcMember, inputs_root: str, inputs_mount: str) -> dict[str, str]:
+    if not member.dragen_metrics_url:
+        LOGGER.warning(
+            "case %d, aliquot %s: no DRAGEN metrics tarball, the pipeline reads %s",
+            case.case_id,
+            member.aliquot,
+            dragen_metrics_url(member),
+        )
+    return {
+        "fileType": "CRAM",
+        "file1": to_mount(member.cram_url, inputs_root, inputs_mount),
+        "file2": to_mount(member.crai_url, inputs_root, inputs_mount) if member.crai_url else "",
+        "status": STATUS_NORMAL,
+        "dragenMetrics": to_mount(dragen_metrics_url(member), inputs_root, inputs_mount),
+    }
+
+
+def _tumor_files(
+    case: QcCase, member: QcMember, inputs_root: str, inputs_mount: str, placeholder_vcf: str
+) -> dict[str, str]:
+    if not member.dragen_metrics_url:
+        raise ValueError(f"case {case.case_id}, aliquot {member.aliquot}: a tumor row needs a DRAGEN metrics tarball")
+    return {
+        "fileType": "VCF",
+        "file1": placeholder_vcf,
+        "file2": "",
+        "status": STATUS_TUMOR,
+        "dragenMetrics": to_mount(member.dragen_metrics_url, inputs_root, inputs_mount),
+    }

@@ -73,3 +73,26 @@ def test_the_metrics_json_of_a_sample_outside_the_case_is_not_registered(trio, l
     documents = collect([trio], listing, OUTDIR)["CA1072"]
     assert "NA12877.metrics.json" not in {d["name"] for d in documents.values()}
     assert len(documents) == 5
+
+
+@pytest.fixture
+def run_listing(trio_rows, singleton_rows, tumor_rows):
+    """Two germline cases and a tumor-only one, and a listing holding every expected file."""
+    cases = resolve_cases([m.model_dump() for m in select_cases(trio_rows + singleton_rows + tumor_rows).members])
+    return cases, {key: 4096 for case in cases for key, _ in expected_keys(case).values()}
+
+
+def _without_family(listing, family_id):
+    return {key: size for key, size in listing.items() if not key.startswith(f"multiqc/{family_id}/")}
+
+
+def test_a_tumor_with_no_report_fails_the_run_like_a_germline_case(run_listing):
+    """No DRAGEN file named after the aliquot: the pipeline publishes nothing for the family."""
+    cases, listing = run_listing
+    with pytest.raises(MissingOutputsError, match="CA23_multiqc_report.html"):
+        collect(cases, _without_family(listing, "CA23"), OUTDIR)
+
+
+def test_a_complete_tumor_set_is_collected(run_listing):
+    cases, listing = run_listing
+    assert sorted(collect(cases, listing, OUTDIR)) == ["CA1072", "CA23", "CA8"]

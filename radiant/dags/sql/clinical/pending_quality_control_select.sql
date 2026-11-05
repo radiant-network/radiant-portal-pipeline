@@ -2,7 +2,7 @@
 -- experiment, the CRAM and the DRAGEN metrics tarball of that experiment's *current*
 -- alignment, and why the case cannot run if it cannot.
 --
--- Consumed by `radiant-nextflow-quality-control-cases` (discover_scope). Full analysis:
+-- Consumed by `radiant-nextflow-quality-control-cases` (discover_germline). Full analysis:
 -- `design/SJRA-1879-nextflow-quality-control-automation.md`, and radiant-hub
 -- `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the tarball.
 --
@@ -136,6 +136,7 @@ candidate AS (
 SELECT gc.case_id                      AS case_id,
        gc.submitter_case_id            AS submitter_case_id,
        gc.tenant_code                  AS tenant_code,
+       'germline'                      AS case_type,
        pr.code                         AS project_code,
        f.relationship_to_proband_code  AS role,
        f.affected_status_code          AS affected_status,
