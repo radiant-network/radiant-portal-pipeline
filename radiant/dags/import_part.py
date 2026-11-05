@@ -84,7 +84,9 @@ dag_params = {
     ),
 }
 
-std_submit_task_opts = SubmitTaskOptions(max_query_timeout=14400, poll_interval=10)
+std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=10)
+
+cnv_submit_task_opts = SubmitTaskOptions(max_query_timeout=14400, poll_interval=10)
 
 
 @dag(
@@ -274,7 +276,7 @@ def import_part():
                 partition="{{ params.part }}",
                 copy_partition_sql="./sql/radiant/germline_cnv_occurrence_copy_partition.sql",
             ),
-            submit_task_options=std_submit_task_opts,
+            submit_task_options=cnv_submit_task_opts,
             insert_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
             max_active_tis_per_dagrun=1,
         ).expand_kwargs(tenant_params)
@@ -316,7 +318,7 @@ def import_part():
                 partition="{{ params.part }}",
                 copy_partition_sql="./sql/radiant/somatic_cnv_occurrence_copy_partition.sql",
             ),
-            submit_task_options=std_submit_task_opts,
+            submit_task_options=cnv_submit_task_opts,
             insert_partition_sql="./sql/radiant/somatic_cnv_occurrence_insert_partition_delta.sql",
             max_active_tis_per_dagrun=1,
         ).expand_kwargs(tenant_params)
