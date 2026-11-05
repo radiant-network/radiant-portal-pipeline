@@ -9,7 +9,8 @@ The shapes the seeds do not have are built on ids far above the seeded range, an
 each test, so no other integration test can see them:
 
 - `no_ssnv_task`: a calling task with no `ssnv` VCF;
-- `shared_task_fixtures`: one calling task framed by two somatic cases, annotated on one only.
+- `shared_task_fixtures`: one calling task framed by two somatic cases, annotated on one only;
+- `maf_document`: a MAF on the pending calling task 75, next to its `ssnv` VCF.
 """
 
 import os
@@ -28,6 +29,7 @@ PENDING_TN_TASK = 75
 PENDING_TO_TASK = 76
 ANNOTATED_TASKS = (70, 73, 74)
 NO_SSNV_TASK = 9501
+MAF_DOCUMENT = 9531
 
 
 def _render(radiant_mapping, params):
@@ -118,6 +120,30 @@ def shared_task_fixtures(postgres_clinical_seeds, postgres_instance):
     _cleanup(postgres_instance, [9521, 9522], [9521], [9520])
 
 
+@pytest.fixture
+def maf_document(postgres_clinical_seeds, postgres_instance):
+    """RAD-140: a somatic MAF, typed `ssnv` like the VCF, published by the seeded calling task 75.
+    Task 75 is a seed, so only the document and its link are removed afterwards."""
+    execute_clinical(
+        postgres_instance,
+        f"""
+        {_DOCUMENT_COLUMNS}
+        VALUES ({MAF_DOCUMENT}, 'mock-{MAF_DOCUMENT}.somatic.maf', 'genomic', 'ssnv', 'maf', 1,
+                's3://test-vcf/mock-{MAF_DOCUMENT}.somatic.maf', 'mock{MAF_DOCUMENT}', 'radiant');
+        INSERT INTO task_has_document (task_id, document_id, type)
+        VALUES ({PENDING_TN_TASK}, {MAF_DOCUMENT}, 'output');
+        """,
+    )
+    yield
+    execute_clinical(
+        postgres_instance,
+        f"""
+        DELETE FROM task_has_document WHERE document_id = {MAF_DOCUMENT};
+        DELETE FROM document WHERE id = {MAF_DOCUMENT};
+        """,
+    )
+
+
 def test_a_tumor_normal_and_a_tumor_only_calling_task_are_pending(
     postgres_clinical_seeds, starrocks_session, radiant_mapping
 ):
@@ -145,6 +171,23 @@ def test_only_the_ssnv_vcf_is_selected(postgres_clinical_seeds, starrocks_sessio
     assert [r["ssnv_url"].rsplit("/", 1)[-1] for r in rows] == ["TCRBOA6_SRX1166091-T.v2.snv.vcf.gz"]
     # Counted, the `scnv` VCF would make the task `ambiguous_ssnv`.
     assert rows[0]["exclusion_reason"] is None
+
+
+def test_a_maf_next_to_the_ssnv_vcf_is_never_selected(maf_document, starrocks_session, radiant_mapping):
+    """RAD-140: the MAF shares the VCF's `ssnv` data type, but only the `vcf` format is the trigger.
+    Counted, it would make task 75 `ambiguous_ssnv`: the nightly run would drop it without a word, and a
+    targeted run would fail on it. Both runs are checked."""
+    vcf_url = "s3://test-vcf/TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz"
+
+    nightly = [r for r in _discover(starrocks_session, radiant_mapping) if r["calling_task_id"] == PENDING_TN_TASK]
+    targeted = _discover(starrocks_session, radiant_mapping, task_ids=[PENDING_TN_TASK])
+
+    for rows in (nightly, targeted):
+        assert rows
+        assert {(r["ssnv_url"], r["exclusion_reason"]) for r in rows} == {(vcf_url, None)}
+    assert PENDING_TN_TASK in {t.task_id for t in select_tasks(nightly).tasks}
+    [task] = select_tasks(targeted, [PENDING_TN_TASK]).tasks
+    assert task.task_id == PENDING_TN_TASK
 
 
 def test_the_rows_resolve_into_calling_tasks(postgres_clinical_seeds, starrocks_session, radiant_mapping):

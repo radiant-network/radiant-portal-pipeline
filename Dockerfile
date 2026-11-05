@@ -1,5 +1,8 @@
 FROM --platform=$BUILDPLATFORM apache/airflow:3.3.1-python3.12
 
+USER root
+RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
+
 USER airflow
 
 RUN mkdir -p /home/airflow/.venv/radiant

@@ -445,7 +445,8 @@ VALUES ('cram', 'CRAM File'),
        ('csv', 'CSV File'),
        ('pdf', 'PDF File'),
        ('txt', 'Text File'),
-       ('zip', 'ZIP Archive File')
+       ('zip', 'ZIP Archive File'),
+       ('maf', 'MAF File')
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO "organization_category" ("code", "name_en")
