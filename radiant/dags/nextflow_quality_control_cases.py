@@ -1,4 +1,4 @@
-"""Find the germline cases waiting for a QC report, run the pipeline, register the result.
+"""Find the cases waiting for a QC report, run the pipeline, register the result.
 
 `radiant-nextflow-quality-control` runs the Ferlab quality-control-pipeline. This DAG closes the
 two manual ends around it, the way `nextflow_snv_postprocessing_cases` does for annotation: it
@@ -6,13 +6,15 @@ discovers which cases have been aligned but never QC'd, builds the samplesheet, 
 DAG, then registers what the run published back onto the cases as one `quality_control_metrics`
 task each, carrying the per-family MultiQC set as `aggqc` documents.
 
-    discover_scope -> select_cases -> resolve_cases -> generate_inputs -> run_pipeline
-                                                                               |
-                      register_tasks (one per tenant) <- collect_outputs <-----+
+    discover_germline -+
+                       +-> select_cases -> resolve_cases -> generate_inputs -> run_pipeline
+    discover_somatic --+                                                                  |
+                                     register_tasks (one per tenant) <- collect_outputs <-+
 
-The DRAGEN metrics come from the clinical model: each member's samplesheet row carries its
-alignment's `ssup`/`tgz` tarball in `dragenMetrics`, or its CRAM's directory when there is none.
-The pipeline handles each sample on its own, so every case of the run goes into one launcher run.
+Germline cases bring every family member; somatic cases their tumor alone. The DRAGEN metrics
+come from the clinical model: each member's samplesheet row carries its alignment's `ssup`/`tgz`
+tarball in `dragenMetrics`, or, for germline only, its CRAM's directory when there is none. The
+pipeline handles each sample on its own, so every case of the run goes into one launcher run.
 
 Full analysis: `design/SJRA-1879-nextflow-quality-control-automation.md`, and radiant-hub
 `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the `dragenMetrics` column.
@@ -38,6 +40,9 @@ INPUTS_ROOT_ENV = "NEXTFLOW_INPUTS_ROOT"
 OUTPUTS_ROOT_ENV = "NEXTFLOW_OUTPUTS_ROOT"
 DEFAULT_INPUTS_MOUNT = "/workspace/inputs"
 DEFAULT_OUTPUTS_MOUNT = "/workspace/outputs"
+# The file1 of every somatic row.
+PLACEHOLDER_VCF_ENV = "NEXTFLOW_QC_PLACEHOLDER_VCF"
+DEFAULT_PLACEHOLDER_VCF = "/workspace/reference/qc/placeholder.vcf.gz"
 
 OUTPUT_POLL_ATTEMPTS = max(1, int(os.getenv("NEXTFLOW_OUTPUT_POLL_ATTEMPTS", "10")))
 OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "30"))
@@ -56,9 +61,9 @@ dag_params = {
         items={"type": "integer"},
         title="Alignment task ids",
         description=(
-            "`alignment_germline_variant_calling` task ids, for a targeted rerun. Leave empty -- "
-            "as a scheduled run does -- to process every case that has been aligned but never "
-            "QC'd. A task shared by several cases runs all of them."
+            "`alignment_germline_variant_calling` or `alignment_somatic_variant_calling` task ids, "
+            "for a targeted rerun. Leave empty -- as a scheduled run does -- to process every case "
+            "that has been aligned but never QC'd. A task shared by several cases runs all of them."
         ),
     ),
     "excluded_tenants": Param(
@@ -94,6 +99,7 @@ def _workspace_env() -> dict[str, str]:
         "outputs_root": outputs_root,
         "inputs_mount": os.getenv("NEXTFLOW_INPUTS_MOUNT", DEFAULT_INPUTS_MOUNT),
         "outputs_mount": os.getenv("NEXTFLOW_OUTPUTS_MOUNT", DEFAULT_OUTPUTS_MOUNT),
+        "placeholder": os.getenv(PLACEHOLDER_VCF_ENV, DEFAULT_PLACEHOLDER_VCF),
     }
 
 
@@ -116,20 +122,32 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_quality_control_cases():
-    discover_scope = RadiantStarRocksOperator(
-        task_id="discover_scope",
-        task_display_name="[StarRocks] Discover cases pending quality control",
-        sql="./sql/clinical/pending_quality_control_select.sql",
-        parameters={
-            "task_ids": "{{ params.task_ids }}",
-            "excluded_tenants": "{{ params.excluded_tenants }}",
-        },
-        output_processor=rows_output_processor,
-        do_xcom_push=True,
+    def discover(task_id: str, display_name: str, sql: str) -> RadiantStarRocksOperator:
+        return RadiantStarRocksOperator(
+            task_id=task_id,
+            task_display_name=f"[StarRocks] {display_name}",
+            sql=sql,
+            parameters={
+                "task_ids": "{{ params.task_ids }}",
+                "excluded_tenants": "{{ params.excluded_tenants }}",
+            },
+            output_processor=rows_output_processor,
+            do_xcom_push=True,
+        )
+
+    discover_germline = discover(
+        "discover_germline",
+        "Discover germline cases pending quality control",
+        "./sql/clinical/pending_quality_control_select.sql",
+    )
+    discover_somatic = discover(
+        "discover_somatic",
+        "Discover somatic cases pending quality control",
+        "./sql/clinical/pending_quality_control_somatic_select.sql",
     )
 
     @task(task_id="select_cases", task_display_name="[PyOp] Select the cases that can run")
-    def select_cases(member_rows: Any) -> Any:
+    def select_cases(germline_rows: Any, somatic_rows: Any) -> Any:
         """Keep the cases that can run, report the ones that cannot."""
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
@@ -138,7 +156,7 @@ def nextflow_quality_control_cases():
 
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
-        selection = select(member_rows, requested, strict=bool(requested))
+        selection = select([*germline_rows, *somatic_rows], requested, strict=bool(requested))
 
         if not selection.case_ids:
             raise AirflowSkipException(
@@ -184,7 +202,7 @@ def nextflow_quality_control_cases():
             inputs_subdir=INPUTS_SUBDIR,
             outputs_subdir=OUTPUTS_SUBDIR,
         )
-        files = build_inputs([QcCase(**c) for c in cases], env["inputs_root"], env["inputs_mount"])
+        files = build_inputs([QcCase(**c) for c in cases], env["inputs_root"], env["inputs_mount"], env["placeholder"])
 
         bucket, prefix = split_s3_uri(paths["input_prefix_s3"])
         # Load-bearing: the next block deletes everything under `prefix` on a bucket shared
@@ -270,7 +288,7 @@ def nextflow_quality_control_cases():
         body = build_patch_body(parsed, collected)
         return register_case_batch(tenant, body, context["params"]["dry_run"])
 
-    cases = resolve_cases(select_cases(discover_scope.output))
+    cases = resolve_cases(select_cases(discover_germline.output, discover_somatic.output))
     paths = generate_inputs(cases)
 
     run_pipeline = TriggerDagRunOperator(

@@ -1,3 +1,6 @@
+import re
+from pathlib import Path
+
 import pytest
 
 from radiant.tasks.nextflow.qc.batch import QC_PIPELINE, QC_TASK_TYPE, build_patch_body
@@ -60,3 +63,39 @@ def test_outputs_are_the_multiqc_set_and_each_member_metrics_json(body):
 def test_a_singleton_registers_its_own_metrics_json(body):
     outputs = body["cases"][0]["tasks"][0]["output_documents"]
     assert [d["name"] for d in outputs if d["format_code"] == "json"] == ["HG00096.metrics.json"]
+
+
+@pytest.fixture
+def mixed_cases(trio_rows, singleton_rows, tumor_rows):
+    return resolve_cases([m.model_dump() for m in select_cases(trio_rows + singleton_rows + tumor_rows).members])
+
+
+def _collected(cases):
+    listing = {key: 1000 for case in cases for key, _ in expected_keys(case).values()}
+    return collect(cases, listing, OUTDIR)
+
+
+def test_a_tumor_task_is_bound_to_the_tumor_with_its_tarball_alone(mixed_cases):
+    """The pipeline never reads the tumor's CRAM, and the placeholder VCF of its samplesheet row is
+    in no clinical document: neither is an input."""
+    body = build_patch_body(mixed_cases, _collected(mixed_cases))
+    tumor = next(c for c in body["cases"] if c["submitter_case_id"] == "1:23")
+    task = tumor["tasks"][0]
+    assert task["type_code"] == "quality_control_metrics"
+    assert task["aliquots"] == ["TCRBOA6-T"]
+    assert [d["url"].rsplit("/", 1)[-1] for d in task["input_documents"]] == ["TCRBOA6-T.extra.tgz"]
+    assert [d["name"] for d in task["output_documents"] if d["format_code"] == "json"] == ["TCRBOA6-T.metrics.json"]
+
+
+def test_a_case_without_collected_outputs_is_an_error(mixed_cases):
+    """`register_tasks` passes only the cases `collect_outputs` kept; any other is a bug."""
+    collected = _collected(mixed_cases)
+    del collected["CA23"]
+    with pytest.raises(KeyError, match="CA23"):
+        build_patch_body(mixed_cases, collected)
+
+
+def test_the_pipeline_version_is_the_revision_the_launcher_image_pulls():
+    dockerfile = (Path(__file__).parents[4] / "Dockerfile.nextflow.launcher").read_text()
+    revision = re.search(r"^ARG QC_PIPELINE_REV=(\S+)$", dockerfile, re.MULTILINE).group(1)
+    assert revision.startswith(QC_PIPELINE[1])

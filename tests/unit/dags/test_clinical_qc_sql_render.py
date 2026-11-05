@@ -120,3 +120,7 @@ def test_only_germline_cases_and_never_revoked_ones():
     sql = _without_comments(_render(_TEMPLATE))
     assert "c.case_type_code = 'germline'" in sql
     assert "c.status_code NOT IN ('draft', 'revoked')" in sql
+
+
+def test_the_case_type_is_returned():
+    assert "'germline'                      AS case_type" in _without_comments(_render(_TEMPLATE))

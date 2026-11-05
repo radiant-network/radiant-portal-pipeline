@@ -12,7 +12,8 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
-        "discover_scope",
+        "discover_germline",
+        "discover_somatic",
         "select_cases",
         "resolve_cases",
         "generate_inputs",
@@ -28,17 +29,28 @@ def test_it_finds_its_own_work(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
     assert dag.schedule is None
-    assert dag.get_task("discover_scope").upstream_list == []
+    assert dag.get_task("discover_germline").upstream_list == []
+    assert dag.get_task("discover_somatic").upstream_list == []
     assert dag.params["task_ids"] == []
     assert dag.params["dry_run"] is False
 
 
-def test_discovery_uses_the_qc_query(dag_bag):
+def test_discovery_is_one_query_per_case_type(dag_bag):
     """Airflow resolves the `.sql` template into its text at parse time, so check the query
     itself: the anti-join must be on the QC task type, not the annotation one."""
-    sql = dag_bag.get_dag(DAG_ID).get_task("discover_scope").sql
-    assert "quality_control_metrics" in sql
-    assert "radiant_germline_annotation" not in sql
+    dag = dag_bag.get_dag(DAG_ID)
+    germline, somatic = dag.get_task("discover_germline"), dag.get_task("discover_somatic")
+    assert "case_type_code = 'germline'" in germline.sql
+    assert "case_type_code = 'somatic'" in somatic.sql
+    for query in (germline, somatic):
+        assert "quality_control_metrics" in query.sql
+        assert "radiant_germline_annotation" not in query.sql
+        assert set(query.parameters) == {"task_ids", "excluded_tenants"}
+
+
+def test_both_discoveries_feed_the_selection(dag_bag):
+    dag = dag_bag.get_dag(DAG_ID)
+    assert {t.task_id for t in dag.get_task("select_cases").upstream_list} == {"discover_germline", "discover_somatic"}
 
 
 def test_one_launcher_run_for_every_case(dag_bag):
@@ -76,6 +88,12 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     assert register.downstream_list == []
     assert {t.task_id for t in register.upstream_list} == {"list_tenants", "collect_outputs", "resolve_cases"}
     assert register.partial_kwargs.get("max_active_tis_per_dagrun") == 1
+
+
+def test_task_ids_accept_both_alignment_types(dag_bag):
+    description = dag_bag.get_dag(DAG_ID).params.get_param("task_ids").description
+    assert "alignment_germline_variant_calling" in description
+    assert "alignment_somatic_variant_calling" in description
 
 
 def test_only_one_run_at_a_time(dag_bag):
