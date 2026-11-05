@@ -30,7 +30,7 @@ def _ctx(conf, ti=None):
         (
             "SELECT * FROM table",
             SubmitTaskOptions(3600, 10, False, "auto"),
-            "submit /*+set_var(query_timeout=3600, enable_spill=False, spill_mode=auto)*/",
+            "submit /*+set_var(query_timeout=3600, insert_timeout=3600, enable_spill=False, spill_mode=auto)*/",
             "Radiant_Operator_Task_",
         ),
         (
@@ -70,8 +70,9 @@ def test_prepare_sql_with_extra_args():
         "",
         f"""
             submit /*+set_var(
-            query_timeout=42, 
-            enable_spill=False, 
+            query_timeout=42,
+            insert_timeout=42,
+            enable_spill=False,
             spill_mode=auto, 
             foo=bar
             )*/ task {_result[1]} as

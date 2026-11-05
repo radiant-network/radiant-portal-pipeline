@@ -26,14 +26,19 @@ class SubmitTaskOptions:
     Data class to hold options for submitting a task.
 
     Attributes:
-        max_query_timeout (int): StarRocks `query_timeout`, in seconds.
+        max_query_timeout (int): StarRocks statement deadline, in seconds. Set as both `query_timeout` and
+            `insert_timeout` on the submitted task: since StarRocks 3.4.0 `query_timeout` no longer applies to
+            INSERT (nor UPDATE/DELETE/CTAS), `insert_timeout` does, and its cluster default is 14400 s
+            (https://docs.starrocks.io/docs/3.4/sql-reference/System_variable/). Without `insert_timeout` an
+            INSERT task outlives `defer_timeout`, Airflow fails the task on its backstop while the load keeps
+            running to completion on the cluster.
         poll_interval (int): Interval in seconds to poll for task completion.
         enable_spill (bool): Flag to enable or disable spilling.
         spill_mode (str): Mode of spilling, e.g., 'auto'.
         defer_timeout (int): Deadline in seconds for the whole deferral, enforced by the scheduler rather
             than the triggerer, so a wedged triggerer fails the task instead of leaving it deferred forever.
-            Defaults to `max_query_timeout` plus `DEFER_TIMEOUT_MARGIN` — StarRocks aborts the query at
-            `query_timeout`, so the task cannot legitimately outlive that.
+            Defaults to `max_query_timeout` plus `DEFER_TIMEOUT_MARGIN` — StarRocks aborts the statement at
+            `max_query_timeout`, so the task cannot legitimately outlive that.
     """
 
     DEFER_TIMEOUT_MARGIN = 600
@@ -114,9 +119,12 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
 
         if submit_task_options:
             _task_name = STARROCKS_TASK_TEMPLATE.format(uid=str(uuid.uuid4())[-8:])
+            # Both timeouts, on purpose: `query_timeout` covers SELECT-only tasks, `insert_timeout` covers
+            # INSERT/UPDATE/DELETE/CTAS, which `query_timeout` stopped governing in StarRocks 3.4.0.
             _submit_config = f"""
-            query_timeout={submit_task_options.max_query_timeout}, 
-            enable_spill={submit_task_options.enable_spill}, 
+            query_timeout={submit_task_options.max_query_timeout},
+            insert_timeout={submit_task_options.max_query_timeout},
+            enable_spill={submit_task_options.enable_spill},
             spill_mode={submit_task_options.spill_mode}
             """
 

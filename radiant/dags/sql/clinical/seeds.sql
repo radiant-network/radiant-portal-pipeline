@@ -1002,7 +1002,7 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     -- therefore *not* pending CNV annotation, while case 16 (below) is the seeded pending trio.
     -- Its slivar VCF (document 281) is the proband's CNV set: the staging view leaves out the
     -- proband's alignment task 1, and keeps the parents' tasks 2 and 3 (RAD-169).
-    (72, 'radiant_germline_cnv_annotation', 'cnv-post-processing', 'cad99b4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
+    (72, 'radiant_germline_cnv_annotation', 'cnv-post-processing', 'c9e7768', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- The calling steps behind the annotation tasks 67 (tumor-normal) and 68 (tumor-only). Their raw
     -- `ssnv` VCFs are the inputs of those annotations, so neither is pending somatic annotation.
     (73, 'somatic_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
@@ -1399,9 +1399,11 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (281, 'NA12878_NA12878.metrics.json', 'genomic', 'aggqc', 'json', 5120, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/qc_json/NA12878_NA12878.metrics.json', '5d41402abc4b2a76b9719d911017c902', 'radiant'),
     (282, 'NA12892_NA12892.metrics.json', 'genomic', 'aggqc', 'json', 5120, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/qc_json/NA12892_NA12892.metrics.json', '5d41402abc4b2a76b9719d911017c903', 'radiant'),
     (283, 'NA12891_NA12891.metrics.json', 'genomic', 'aggqc', 'json', 5120, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/qc_json/NA12891_NA12891.metrics.json', '5d41402abc4b2a76b9719d911017c904', 'radiant'),
-    -- The slivar VCF of CNV annotation task 72 (case 1, RAD-169), samples renamed to the aliquots. No FORMAT/OID.
-    (284, 'CA1000019.reheader.cnv.slivar.vcf.gz', 'genomic', 'gcnv', 'vcf', 273788, '{{ params.vcf_bucket_prefix }}/CA1000019.reheader.cnv.slivar.vcf.gz', '3a083327e495851558b067cc2f29d7c2', 'radiant'),
-    (285, 'CA1000019.reheader.cnv.slivar.vcf.gz.tbi', 'genomic', 'gcnv', 'tbi', 17217, '{{ params.vcf_bucket_prefix }}/CA1000019.reheader.cnv.slivar.vcf.gz.tbi', '57bba5e9397eb80632eaafea7b5bbf9e', 'radiant');
+    -- The slivar VCF of CNV annotation task 72 (case 1, RAD-169): the cnv-post-processing c9e7768 output of the
+    -- CEPH trio, samples renamed to the aliquots in the header *and* in the slivar INFO tags (which list sample
+    -- names), FORMAT/OID kept. A column-only reheader leaves every parental origin and transmission mode NULL.
+    (284, 'CA1000019.reheader.cnv.slivar.vcf.gz', 'genomic', 'gcnv', 'vcf', 285358, '{{ params.vcf_bucket_prefix }}/CA1000019.reheader.cnv.slivar.vcf.gz', '47ee1820a6f51ab7c91fe3ddf5a3bf13', 'radiant'),
+    (285, 'CA1000019.reheader.cnv.slivar.vcf.gz.tbi', 'genomic', 'gcnv', 'tbi', 17264, '{{ params.vcf_bucket_prefix }}/CA1000019.reheader.cnv.slivar.vcf.gz.tbi', '2b88f4ea6432c92bfb0e58d9e5f36499', 'radiant');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
