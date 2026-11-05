@@ -50,10 +50,10 @@ def test_discovery_is_unscoped_by_default():
     assert "%(excluded_tenants)s" not in sql
 
 
-def test_named_tasks_narrow_candidacy_on_the_alignment_task():
+def test_named_tasks_narrow_the_rows_on_the_alignment_task():
     sql = _without_comments(_render(_TEMPLATE, {"task_ids": [1], "excluded_tenants": []}))
     assert sql.count("%(task_ids)s") == 1
-    assert "AND ca.task_id IN %(task_ids)s" in _cte(sql, "candidate")
+    assert "AND ca.task_id IN %(task_ids)s" in sql.split("WHERE qc.seq_id IS NULL")[1]
 
 
 def test_the_tenant_block_list_is_a_reason_not_a_filter():
@@ -136,13 +136,5 @@ def test_the_member_is_the_proband_and_the_family_row_only_gives_the_affected_st
 def test_a_tumor_without_a_tarball_is_no_metrics_and_reasons_come_most_specific_first():
     sql = _without_comments(_render(_TEMPLATE, {"task_ids": [], "excluded_tenants": ["radiant"]}))
     reasons = re.findall(r"THEN '(\w+)'", sql)
-    assert reasons == [
-        "pending_sequencing",
-        "pending_alignment",
-        "ambiguous_dragen_metrics",
-        "no_metrics",
-        "no_project_code",
-        "tenant_excluded",
-    ]
-    assert "LEFT JOIN current_experiment ce" in sql
+    assert reasons == ["ambiguous_dragen_metrics", "no_metrics", "no_project_code", "tenant_excluded"]
     assert "'somatic'                                   AS case_type" in sql

@@ -86,19 +86,6 @@ quality_controlled AS (
     JOIN {{ mapping.clinical_task_context }} tc ON tc.task_id = t.id
     WHERE t.task_type_code = 'quality_control_metrics'
       AND tc.case_id IS NOT NULL
-),
-candidate AS (
-    -- The tumor experiment has an alignment and no QC task for that pair.
-    SELECT DISTINCT ce.case_id AS case_id
-    FROM current_experiment ce
-    JOIN current_alignment ca       ON ca.seq_id = ce.seq_id
-    LEFT JOIN quality_controlled qc ON qc.case_id = ce.case_id
-                                   AND qc.seq_id  = ce.seq_id
-    WHERE qc.seq_id IS NULL
-    {% if params.task_ids %}
-      -- Targeted rerun: narrows candidacy, never membership.
-      AND ca.task_id IN %(task_ids)s
-    {% endif %}
 )
 SELECT sc.case_id                                  AS case_id,
        sc.submitter_case_id                        AS submitter_case_id,
@@ -121,10 +108,8 @@ SELECT sc.case_id                                  AS case_id,
        CAST(NULL AS VARCHAR)                       AS crai_url,
        dm.url                                      AS dragen_metrics_url,
        COALESCE(dm.matches, 0)                     AS dragen_metrics_matches,
-       -- Most specific first. The two `pending_*` reasons are transient, not errors.
+       -- Most specific first.
        CASE
-           WHEN ce.seq_id  IS NULL THEN 'pending_sequencing'
-           WHEN ca.task_id IS NULL THEN 'pending_alignment'
            WHEN dm.matches > 1     THEN 'ambiguous_dragen_metrics'
            -- No CRAM-directory fallback for a tumor: it would give a green run with an empty report.
            WHEN dm.matches IS NULL THEN 'no_metrics'
@@ -135,18 +120,21 @@ SELECT sc.case_id                                  AS case_id,
            ELSE NULL
        END                                         AS exclusion_reason
 FROM somatic_case sc
-JOIN candidate cd                             ON cd.case_id = sc.case_id
 JOIN {{ mapping.clinical_patient }} p         ON p.id = sc.proband_id
+JOIN current_experiment ce                    ON ce.case_id = sc.case_id
+JOIN current_alignment ca                     ON ca.seq_id = ce.seq_id
+LEFT JOIN dragen_metrics dm                   ON dm.seq_id = ce.seq_id
+LEFT JOIN quality_controlled qc               ON qc.case_id = sc.case_id
+                                             AND qc.seq_id  = ce.seq_id
 LEFT JOIN {{ mapping.clinical_family }} f     ON f.case_id = sc.case_id
                                              AND f.family_member_id = sc.proband_id
--- LEFT, all of them: a proband with no tumor experiment or alignment must come back carrying
--- its reason. Each CTE has at most one row per experiment, so the proband comes back once.
-LEFT JOIN current_experiment ce               ON ce.case_id = sc.case_id
-                                             AND ce.patient_id = p.id
-LEFT JOIN current_alignment ca                ON ca.seq_id = ce.seq_id
-LEFT JOIN dragen_metrics dm                   ON dm.seq_id = ce.seq_id
 -- On the primary key alone: `project.code` is globally unique and a project's tenant_code
 -- need not equal the case's.
 LEFT JOIN {{ mapping.clinical_project }} pr   ON pr.id = sc.project_id
+WHERE qc.seq_id IS NULL
+{% if params.task_ids %}
+  -- Targeted rerun.
+  AND ca.task_id IN %(task_ids)s
+{% endif %}
 ORDER BY sc.case_id,
          p.id
