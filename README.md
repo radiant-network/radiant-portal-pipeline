@@ -140,9 +140,10 @@ workflows, which push the semver images. Merging the release PR deploys nothing.
 Setup (once, by an admin):
 
 - The workflow uses a GitHub App token, because events created with the default `GITHUB_TOKEN` start no workflow: the
-  release PR would run no check and the tag would build no image. It uses the App of the Security Alerts workflow
-  (`DEPENDABOT_APP_CLIENT_ID` variable, `DEPENDABOT_APP_PRIVATE_KEY` secret), which needs `Contents`, `Issues` and
-  `Pull requests` set to read and write on this repo. With no write permission, the workflow fails: no release PR, no
+  release PR would run no check and the tag would build no image. It uses the org App `radiant-release-please`
+  (org variable `RELEASE_PLEASE_APP_CLIENT_ID`, org secret `RELEASE_PLEASE_APP_PRIVATE_KEY`; radiant-hub
+  `docs/ci/security-checks.md`), which must be installed on this repo with `Contents`, `Issues` and `Pull requests` set
+  to read and write. With no write permission, the workflow fails: no release PR, no
   tag.
 - Repo settings: squash merge only, with the PR title as the squash commit message.
 - Ruleset of `main`: `pr-title` and `release-gate` are required status checks.
