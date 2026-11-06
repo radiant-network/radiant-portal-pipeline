@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: gnomad_constraint
+        columns:
+          - name: transcript_id
+            tests:
+              # --- Should Be Unique ------------------------------------------
+              # snv_consequence_insert.sql and snv_consequence_reannotate.sql LEFT JOIN this table on
+              # transcript_id: a repeated transcript duplicates every consequence row of that transcript.
+              - unique:
+                  name: gnomad_constraint__should_be_unique__transcript_id
