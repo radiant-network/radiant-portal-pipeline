@@ -233,6 +233,7 @@ def test_queries_are_valid(
             "snv_consequence_filter",
             "snv_consequence_filter_partitioned",
             "staging_exomiser",
+            "staging_exomiser_cnv",
             "exomiser",
             "germline_snv_occurrence",
             "germline_snv_comphet",

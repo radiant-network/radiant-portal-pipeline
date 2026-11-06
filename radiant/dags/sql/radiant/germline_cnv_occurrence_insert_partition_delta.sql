@@ -76,6 +76,38 @@ WITH cytoband AS (SELECT o.name, o.seq_id, o.task_id, array_agg(c.cytoband) AS c
             ORDER BY o.af DESC, o.sf DESC
         ) AS rn
         FROM gnomad_overlaps o
+    ),
+    -- RAD-181: the CNV Exomiser report of the CNV annotation task, loaded for the proband by `load_exomiser_cnv_files`.
+    -- Tagged with the annotation task id, so the DRAGEN set of an alignment task never matches. Several rows for one
+    -- record (one per gene or mode of inheritance): the highest gene combined score wins, as the SNV
+    -- `variant_rank = 1` rule does. The report's `VCF_ID` depends on the VCF cnv-post-processing ran Exomiser on
+    -- (workflows/cnv_post_processing.nf, STAGE 8):
+    --   - the proband VCF (JOIN_PROBAND_CNV, the usual route): the proband's own call ID, that is `name` (FORMAT/OID);
+    --   - the family VCF (no proband VCF for the phenopacket's proband, e.g. a singleton): the slivar record's ID, that
+    --     is `vcf_id` (the call truvari kept, often a parent's).
+    -- So the occurrence takes the row matching its `name` (exomiser_by_name), else the row matching its `vcf_id`
+    -- (exomiser_by_vcf_id). Where `name` = `vcf_id` both are the same row. Both keys are DRAGEN call IDs, which carry
+    -- the call's type and interval (`DRAGEN:LOSS:chr1:10001-20000`): a wrong match needs the same call ID on two
+    -- records of one task.
+    exomiser_ranked AS (
+        SELECT
+            e.seq_id,
+            e.task_id,
+            e.vcf_id,
+            e.rank,
+            e.variant_score,
+            e.gene_combined_score,
+            e.moi,
+            e.acmg_classification,
+            e.acmg_evidence,
+            ROW_NUMBER() OVER (
+                PARTITION BY e.seq_id, e.task_id, e.vcf_id
+                ORDER BY e.gene_combined_score DESC, e.rank ASC, e.variant_score DESC, e.moi ASC
+            ) AS rn
+        FROM {{ mapping.starrocks_staging_exomiser_cnv }} e
+        WHERE e.part = {{ partition }}
+          AND e.task_id IN %(task_ids)s
+          AND e.tenant_code = %(tenant_code)s
     )
 SELECT o.part,
        o.seq_id,
@@ -125,7 +157,19 @@ SELECT o.part,
        o.father_bc,
        o.father_pe,
        o.father_sm,
-       o.father_name
+       o.father_name,
+       -- The CNV Exomiser columns (RAD-181), NULL on the DRAGEN set and on a record Exomiser did not rank. Last, as in
+       -- the table: the insert is positional.
+       IF(exomiser_by_name.vcf_id IS NOT NULL, exomiser_by_name.rank, exomiser_by_vcf_id.rank) AS exomiser_rank,
+       IF(exomiser_by_name.vcf_id IS NOT NULL, exomiser_by_name.variant_score, exomiser_by_vcf_id.variant_score)
+           AS exomiser_variant_score,
+       IF(exomiser_by_name.vcf_id IS NOT NULL, exomiser_by_name.gene_combined_score,
+          exomiser_by_vcf_id.gene_combined_score) AS exomiser_gene_combined_score,
+       IF(exomiser_by_name.vcf_id IS NOT NULL, exomiser_by_name.moi, exomiser_by_vcf_id.moi) AS exomiser_moi,
+       IF(exomiser_by_name.vcf_id IS NOT NULL, exomiser_by_name.acmg_classification,
+          exomiser_by_vcf_id.acmg_classification) AS exomiser_acmg_classification,
+       IF(exomiser_by_name.vcf_id IS NOT NULL, exomiser_by_name.acmg_evidence, exomiser_by_vcf_id.acmg_evidence)
+           AS exomiser_acmg_evidence
 FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
          -- Keyed on task_id too. Both sets of one sequencing (DRAGEN and slivar) can hold the same call name.
          LEFT JOIN cytoband ON cytoband.seq_id = o.seq_id AND cytoband.task_id = o.task_id AND o.name = cytoband.name
@@ -133,6 +177,11 @@ FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
          LEFT JOIN snv ON snv.seq_id = o.seq_id AND snv.task_id = o.task_id AND o.name = snv.name
          LEFT JOIN gnomad_ranked ON gnomad_ranked.seq_id = o.seq_id AND gnomad_ranked.task_id = o.task_id
               AND o.name = gnomad_ranked.name AND gnomad_ranked.rn = 1
+         LEFT JOIN exomiser_ranked exomiser_by_name ON exomiser_by_name.seq_id = o.seq_id
+              AND exomiser_by_name.task_id = o.task_id AND exomiser_by_name.vcf_id = o.name AND exomiser_by_name.rn = 1
+         LEFT JOIN exomiser_ranked exomiser_by_vcf_id ON exomiser_by_vcf_id.seq_id = o.seq_id
+              AND exomiser_by_vcf_id.task_id = o.task_id AND exomiser_by_vcf_id.vcf_id = o.vcf_id
+              AND exomiser_by_vcf_id.rn = 1
 WHERE o.seq_id IN %(seq_ids)s
   AND o.task_id IN %(task_ids)s
   AND o.tenant_code = %(tenant_code)s

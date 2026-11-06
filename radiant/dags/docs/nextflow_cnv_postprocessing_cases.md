@@ -104,8 +104,18 @@ One task per case, through `PATCH /{tenant}/cases/batch`:
 
 The Exomiser reports are typed `exomiser_cnv`, not `exomiser`: the SNV and CNV
 reports have the same file names, and the data type tells them apart in the portal. The
-variant ETL reads only the `exomiser` data type, on a `radiant_germline_annotation` task, so
-the CNV report stays out of the SNV Exomiser table.
+variant ETL reads the **exomiser** data type on a **radiant_germline_annotation** task only, and the
+**exomiser_cnv** data type on a **radiant_germline_cnv_annotation** task only, so the CNV report
+stays out of the SNV Exomiser table.
+
+The variant ETL loads the CNV **variants.tsv** (RAD-181): **radiant-import-part** broker-loads the
+contributing rows into **raw_exomiser_cnv**, tagged with the proband's sequencing and the task, and
+the germline CNV occurrence insert copies the best row of each record (highest gene combined score)
+onto the proband's slivar set: **exomiser_rank**, **exomiser_variant_score**,
+**exomiser_gene_combined_score**, **exomiser_moi**, **exomiser_acmg_classification** and
+**exomiser_acmg_evidence**. The report's **VCF_ID** is matched to the occurrence's **name** (the
+proband's own call, when Exomiser ran on the proband VCF), else to the slivar record's ID (when it
+ran on the family VCF). The DRAGEN set of the alignment tasks keeps these columns empty.
 
 The variant ETL loads the slivar VCF: the
 **staging_external_sequencing_experiment** view admits the **gcnv** / **vcf** document of a

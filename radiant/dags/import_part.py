@@ -364,6 +364,21 @@ def import_part():
         tasks=tasks,
     )
 
+    # RAD-181: the CNV Exomiser reports of the CNV annotation tasks, into their own shared staging table. Read by the
+    # germline CNV occurrence insert only, so no CNV row reaches the SNV `exomiser` table.
+    load_exomiser_cnv = RadiantLoadExomiserOperator(
+        task_id="load_exomiser_cnv_files",
+        task_display_name="[StarRocks] Load CNV Exomiser Files",
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/staging_exomiser_cnv_insert_partition_delta.sql",
+        ),
+        table="{{ mapping.starrocks_staging_exomiser_cnv }}",
+        parameters=task_ids,
+        tasks=tasks,
+        annotation_task_type=RADIANT_GERMLINE_CNV_ANNOTATION_TASK,
+    )
+
     @task.short_circuit(
         task_id="sanity_check_any_snv",
         task_display_name="[PyOp] Sanity Check Any SNVs",
@@ -721,6 +736,7 @@ def import_part():
     (
         checkpoint_imports
         >> load_exomiser
+        >> load_exomiser_cnv
         >> refresh_iceberg_tables
         >> insert_hashes
         >> overwrite_snv_tmp_variants

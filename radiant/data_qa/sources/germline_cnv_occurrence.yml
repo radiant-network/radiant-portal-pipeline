@@ -39,6 +39,15 @@ sources:
                 - father_pe
                 - father_sm
                 - father_name
+                # RAD-181: the CNV Exomiser result, filled on the slivar set only, and only for a case whose CNV
+                # post-processing ran Exomiser (a family with a phenopacket). The DRAGEN rows keep them NULL, guarded by
+                # germline_cnv_occurrence__validate_alignment_rows_have_no_exomiser (tests/).
+                - exomiser_rank
+                - exomiser_variant_score
+                - exomiser_gene_combined_score
+                - exomiser_moi
+                - exomiser_acmg_classification
+                - exomiser_acmg_evidence
 
           # --- Should Not Contain Same Value ---------------------------------
           - should_not_contain_same_value:
@@ -112,3 +121,13 @@ sources:
                   values: "{{ dict_parental_origin() }}"
                   config:
                     where: "parental_origin is not null"
+          - name: exomiser_acmg_classification
+            description: "VARCHAR(300). The CNV Exomiser ACMG classification, slivar set only (RAD-181)."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_exomiser_acmg_classification() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: germline_cnv_occurrence__accepted_values_exomiser_acmg_classification
+                  values: "{{ dict_exomiser_acmg_classification() }}"
+                  config:
+                    where: "exomiser_acmg_classification is not null"

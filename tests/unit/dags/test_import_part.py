@@ -198,6 +198,7 @@ def test_dag_contains_all_tasks(dag_bag):
         "import_snv_vcf",
         "checkpoint_after_vcf_imports",
         "load_exomiser_files",
+        "load_exomiser_cnv_files",
         "refresh_iceberg_tables",
         "germline_cnv_occurrence.sanity_check_cnvs",
         "germline_cnv_occurrence.insert_germline_cnv_occurrences",
@@ -234,6 +235,31 @@ def test_dag_contains_all_tasks(dag_bag):
         "update_sequencing_experiment",
     ]
     assert set(task_ids) == set(expected_tasks)
+
+
+def test_cnv_exomiser_reports_load_into_their_own_table(dag_bag):
+    """RAD-181: one load per report type, chained (one StarRocks write at a time), before the CNV occurrences."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-part")
+    snv_load = dag.get_task("load_exomiser_files")
+    cnv_load = dag.get_task("load_exomiser_cnv_files")
+
+    assert (snv_load.annotation_task_type, snv_load.table) == (
+        "radiant_germline_annotation",
+        "{{ mapping.starrocks_staging_exomiser }}",
+    )
+    assert (cnv_load.annotation_task_type, cnv_load.table) == (
+        "radiant_germline_cnv_annotation",
+        "{{ mapping.starrocks_staging_exomiser_cnv }}",
+    )
+    assert cnv_load.upstream_task_ids == {"load_exomiser_files", "extract_task_ids", "sanity_check_tasks"}
+    assert "refresh_iceberg_tables" in cnv_load.downstream_task_ids
+    upstream_of_cnv_insert = {
+        t.task_id
+        for t in dag.get_task("germline_cnv_occurrence.insert_germline_cnv_occurrences").get_flat_relatives(
+            upstream=True
+        )
+    }
+    assert "load_exomiser_cnv_files" in upstream_of_cnv_insert
 
 
 def test_dag_task_dependencies_are_valid(dag_bag):

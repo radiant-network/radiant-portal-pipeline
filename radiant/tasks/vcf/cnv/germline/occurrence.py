@@ -52,6 +52,11 @@ SCHEMA: Schema = Schema(
     NestedField(136, "father_pe", ListType(207, IntegerType(), element_required=False), required=False),
     NestedField(137, "father_sm", FloatType(), required=False),
     NestedField(138, "father_name", StringType(), required=False),
+    # The VCF record's `ID`. On the slivar set it can differ from `name` (the proband's `FORMAT/OID`): it is the call
+    # truvari kept for the cluster. When cnv-post-processing runs Exomiser on the family VCF (no proband VCF), the
+    # report's `VCF_ID` is this ID; on the proband VCF it is `name`. The germline CNV occurrence insert joins
+    # `raw_exomiser_cnv` on `name`, then on this column (RAD-181). Iceberg only: the StarRocks table does not carry it.
+    NestedField(139, "vcf_id", StringType(), required=False),
 )
 
 # Any parental origin, or none: `unknown_cn` is called before the rule table is read (cnv_moi step 3).
@@ -209,6 +214,7 @@ def process_occurrence(
         "type": cnv_type,
         "length": end - start,
         "name": record.ID,
+        "vcf_id": record.ID,
         "quality": int(record.QUAL) if record.QUAL is not None else None,
         "filter": record.FILTER or "PASS",
         "reflen": rlen,

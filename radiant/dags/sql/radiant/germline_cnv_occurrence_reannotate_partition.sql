@@ -9,6 +9,8 @@
 --      the tenant database, so the tenant is already implied by `mapping`.
 --   4. `cnv_id` is read back rather than recomputed. It is derived from columns this statement carries
 --      through untouched, so GET_CNV_ID would return the value already stored.
+--   5. The CNV Exomiser columns (RAD-181) are read back too: the StarRocks table does not carry the VCF record ID
+--      the ingest joins `raw_exomiser_cnv` on, and the Exomiser report does not change with the open data.
 --
 INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_germline_cnv_occurrence }}
 WITH cytoband AS (SELECT o.name, o.seq_id, o.task_id, array_agg(c.cytoband) AS cytoband
@@ -131,7 +133,13 @@ SELECT o.part,
        o.father_bc,
        o.father_pe,
        o.father_sm,
-       o.father_name
+       o.father_name,
+       o.exomiser_rank,
+       o.exomiser_variant_score,
+       o.exomiser_gene_combined_score,
+       o.exomiser_moi,
+       o.exomiser_acmg_classification,
+       o.exomiser_acmg_evidence
 FROM {{ mapping.starrocks_germline_cnv_occurrence }} o
          -- Keyed on task_id too. Both sets of one sequencing (DRAGEN and slivar) can hold the same call name.
          LEFT JOIN cytoband ON cytoband.seq_id = o.seq_id AND cytoband.task_id = o.task_id AND o.name = cytoband.name
