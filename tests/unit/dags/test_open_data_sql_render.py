@@ -136,6 +136,24 @@ def test_gnomad_reads_the_joint_callset_columns():
         assert not re.search(rf"\bt\.{column}\b", sql), f"gnomad_insert.sql still reads the v3 column t.{column}"
 
 
+def test_gnomad_constraint_reads_the_v4_columns_on_the_contract_and_the_v2_columns_held_back():
+    """`gnomad_constraint_v1` is built from gnomAD v4.1.2 (`lof.pLI` -> `lof_pLI`, `lof.oe_ci.upper` ->
+    `lof_oe_ci_upper`). The pre-contract table is v2.1.1, which names the same values `pLI` and `oe_lof_upper`."""
+    path = _OPEN_DATA_SQL / "gnomad_constraint_insert.sql"
+    sql = _statement(_render(path))
+    assert "gnomad_constraint_v1" in sql
+    assert "t.lof_pLI as pli" in sql
+    assert "t.lof_oe_ci_upper as loeuf" in sql
+    assert not re.search(r"\bt\.(pLI|oe_lof_upper)\b", sql)
+
+    held_back = get_radiant_mapping({**_CONF, "RADIANT_OPEN_DATA_USE_LEGACY_TABLES": "gnomad_constraint"})
+    sql = _statement(jinja2.Template(path.read_text()).render(mapping=held_back))
+    assert "gnomad_constraint_v_2_1_1" in sql
+    assert "t.pLI as pli" in sql
+    assert "t.oe_lof_upper as loeuf" in sql
+    assert not re.search(r"\bt\.lof_", sql)
+
+
 def test_hpo_gene_panel_reads_the_upstream_column_names():
     sql = _render(_OPEN_DATA_SQL / "hpo_gene_panel_insert.sql")
     assert "hpo_genes_v1" in sql
