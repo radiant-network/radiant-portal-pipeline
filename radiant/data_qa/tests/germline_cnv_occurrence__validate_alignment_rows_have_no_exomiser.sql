@@ -1,6 +1,6 @@
 {#
   RAD-181: the CNV Exomiser report is loaded for the CNV annotation task (the proband's slivar set) only. The
-  occurrence insert joins it on the task id, so a row of an `alignment_germline_variant_calling` task (the DRAGEN set)
+  occurrence insert joins `exomiser_cnv` on the task id, so a row of an `alignment_germline_variant_calling` task (the DRAGEN set)
   must keep the six Exomiser columns NULL. A filled one means a CNV report reached the wrong set.
 
   Gated on staging like germline_cnv_occurrence__validate_annotation_rows_are_proband.sql;

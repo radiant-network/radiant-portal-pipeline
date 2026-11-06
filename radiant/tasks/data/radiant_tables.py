@@ -144,6 +144,7 @@ STARROCKS_RADIANT_BASE_MAPPING = {
 
 STARROCKS_RADIANT_PER_TENANT_MAPPING = {
     "starrocks_exomiser": "exomiser",
+    "starrocks_exomiser_cnv": "exomiser_cnv",
     "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
     "starrocks_germline_cnv_variant_frequency": "germline__cnv__variant_frequency",
     "starrocks_germline_snv_comphet": "germline__snv__comphet",

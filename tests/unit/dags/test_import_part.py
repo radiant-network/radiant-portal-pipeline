@@ -201,6 +201,7 @@ def test_dag_contains_all_tasks(dag_bag):
         "load_exomiser_cnv_files",
         "refresh_iceberg_tables",
         "germline_cnv_occurrence.sanity_check_cnvs",
+        "germline_cnv_occurrence.insert_exomiser_cnv",
         "germline_cnv_occurrence.insert_germline_cnv_occurrences",
         "germline_cnv_occurrence.aggregate_germline_cnv_variant_freq",
         "somatic_cnv_occurrence.sanity_check_somatic_cnvs",
@@ -260,6 +261,17 @@ def test_cnv_exomiser_reports_load_into_their_own_table(dag_bag):
         )
     }
     assert "load_exomiser_cnv_files" in upstream_of_cnv_insert
+
+
+def test_cnv_exomiser_rows_go_to_the_tenant_table_before_the_occurrences(dag_bag):
+    """RAD-181: `exomiser_cnv`, the twin of `exomiser`, filled per tenant between the CNV checks and the CNV
+    occurrence insert, which copies its best row."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-part")
+    insert = dag.get_task("germline_cnv_occurrence.insert_exomiser_cnv")
+
+    assert insert.partial_kwargs["table"] == "{{ mapping.starrocks_exomiser_cnv }}"
+    assert insert.upstream_task_ids >= {"germline_cnv_occurrence.sanity_check_cnvs"}
+    assert insert.downstream_task_ids == {"germline_cnv_occurrence.insert_germline_cnv_occurrences"}
 
 
 def test_dag_task_dependencies_are_valid(dag_bag):

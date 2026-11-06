@@ -1,9 +1,10 @@
 """RAD-181 -- the CNV Exomiser result on the germline CNV occurrences.
 
 The CNV Exomiser report of a `radiant_germline_cnv_annotation` task is broker-loaded into `raw_exomiser_cnv`
-(`staging_exomiser_cnv_load.sql`, as `load_exomiser_cnv_files` runs it), then the germline CNV occurrence insert copies
-the best row of each record onto the task's occurrences. cnv-post-processing runs Exomiser on one of two VCFs, and the
-report's `VCF_ID` follows it:
+(`staging_exomiser_cnv_load.sql`, as `load_exomiser_cnv_files` runs it), matched to the task's occurrences into the
+tenant's `exomiser_cnv` (`exomiser_cnv_insert_partition_delta.sql`, as `insert_exomiser_cnv` runs it), then the
+germline CNV occurrence insert copies the best row (`variant_rank = 1`) of each occurrence. cnv-post-processing
+runs Exomiser on one of two VCFs, and the report's `VCF_ID` follows it:
 
 - the proband VCF (JOIN_PROBAND_CNV): the proband's own call ID, the occurrence's `name` (fixture
   `mock_cnv_proband.exomiser.variants.tsv`, task `_PROBAND_ROUTE_TASK`);
@@ -184,16 +185,23 @@ def loaded_reports(
     minio_instance,
     sample_cnv_exomiser_tsvs,
 ):
-    for table in ("germline_cnv_occurrence", "germline_snv_occurrence", "snv_variant", "staging_exomiser_cnv"):
+    for table in (
+        "germline_cnv_occurrence",
+        "germline_snv_occurrence",
+        "snv_variant",
+        "staging_exomiser_cnv",
+        "exomiser_cnv",
+    ):
         _create_table(starrocks_session, "radiant", table, radiant_mapping, truncate=False)
     for table in ("cytoband", "ensembl_gene"):
         _create_table(starrocks_session, "open_data", table, radiant_mapping, truncate=False)
     _create_cnv_id_udf(starrocks_session, radiant_mapping)
 
     raw = radiant_mapping["starrocks_staging_exomiser_cnv"]
+    tenant_rows = radiant_mapping["starrocks_exomiser_cnv"]
     target = radiant_mapping["starrocks_germline_cnv_occurrence"]
     with starrocks_session.cursor() as cursor:
-        for table in (raw, target):
+        for table in (raw, tenant_rows, target):
             cursor.execute(f"DELETE FROM {table} WHERE part = %(part)s", {"part": _PART})
         _broker_load(
             cursor,
@@ -223,17 +231,30 @@ def loaded_reports(
     # The Iceberg CNV table is shared with the VCF tests, which assert unfiltered row counts on it.
     iceberg_table.delete(In("task_id", _TASKS))
     with starrocks_session.cursor() as cursor:
-        for table in (raw, target):
+        for table in (raw, tenant_rows, target):
             cursor.execute(f"DELETE FROM {table} WHERE part = %(part)s", {"part": _PART})
 
 
+_PARAMS = {
+    "seq_ids": [_SEQ_ID, _OTHER_SEQ_ID],
+    "task_ids": _TASKS,
+    "deleted_task_ids": [-1],
+    "tenant_code": _TENANT,
+}
+
+
+def _insert_exomiser_cnv(cursor, mapping):
+    """The positional insert of `insert_exomiser_cnv`, one tenant: fails if the column order drifts."""
+    sql = _render("exomiser_cnv_insert_partition_delta.sql", mapping).rstrip().rstrip(";")
+    cursor.execute(f"INSERT INTO {mapping['starrocks_exomiser_cnv']} {sql}", _PARAMS)
+
+
 def _insert(cursor, mapping):
-    """The positional insert of `insert_germline_cnv_occurrences`, one tenant: fails if the column order drifts."""
+    """`insert_exomiser_cnv`, then the positional insert of `insert_germline_cnv_occurrences`, one tenant, as the
+    `germline_cnv_occurrence` task group runs them: fails if the column order drifts."""
+    _insert_exomiser_cnv(cursor, mapping)
     sql = _render("germline_cnv_occurrence_insert_partition_delta.sql", mapping).rstrip().rstrip(";")
-    cursor.execute(
-        f"INSERT INTO {mapping['starrocks_germline_cnv_occurrence']} {sql}",
-        {"seq_ids": [_SEQ_ID, _OTHER_SEQ_ID], "task_ids": _TASKS, "tenant_code": _TENANT},
-    )
+    cursor.execute(f"INSERT INTO {mapping['starrocks_germline_cnv_occurrence']} {sql}", _PARAMS)
 
 
 def _exomiser_by_task_and_name(cursor, mapping):
@@ -305,6 +326,29 @@ def test_load_keeps_the_contributing_rows_with_their_record_id(loaded_reports, s
         )
 
 
+def test_tenant_table_keeps_every_row_on_its_occurrence(loaded_reports, starrocks_session, radiant_mapping):
+    """`exomiser_cnv` keeps every contributing row (both genes of `_TWO_GENES`), on the occurrence's `name` and
+    `cnv_id`, ranked as for SNVs. The family-route row lands on the occurrence whose `vcf_id` the report names."""
+    mapping = radiant_mapping
+    with starrocks_session.cursor() as cursor:
+        _insert_exomiser_cnv(cursor, mapping)
+        cursor.execute(
+            f"SELECT e.task_id, e.name, e.vcf_id, e.symbol, e.rank, e.variant_rank, e.cnv_id = o.cnv_id "
+            f"FROM {mapping['starrocks_exomiser_cnv']} e "
+            f"JOIN (SELECT task_id, name, GET_CNV_ID(chromosome, start, length, type) AS cnv_id "
+            f"      FROM {mapping['iceberg_germline_cnv_occurrence']} WHERE task_id IN %(task_ids)s) o "
+            f"  ON o.task_id = e.task_id AND o.name = e.name "
+            f"WHERE e.part = %(part)s ORDER BY e.task_id, e.name, e.variant_rank",
+            {"part": _PART, "task_ids": _TASKS},
+        )
+        assert cursor.fetchall() == (
+            (_PROBAND_ROUTE_TASK, _TWO_GENES, _TWO_GENES, "MOCK_GENE_A", 1, 1, 1),
+            (_PROBAND_ROUTE_TASK, _TWO_GENES, _TWO_GENES, "MOCK_GENE_B", 3, 2, 1),
+            (_PROBAND_ROUTE_TASK, _KEPT_PARENT_CALL, _KEPT_PARENT_CALL, "MOCK_GENE_C", 2, 1, 1),
+            (_FAMILY_ROUTE_TASK, _FAMILY_NAME, _FAMILY_VCF_ID, "MOCK_GENE_E", 1, 1, 1),
+        )
+
+
 def test_ingest_copies_the_best_exomiser_row_of_each_record(loaded_reports, starrocks_session, radiant_mapping):
     """AC1 (values, best row), AC3 (empty values), and both Exomiser routes."""
     with starrocks_session.cursor() as cursor:
@@ -319,6 +363,18 @@ def test_reannotation_keeps_the_exomiser_values(loaded_reports, starrocks_sessio
         _insert(cursor, radiant_mapping)
         cursor.execute(sql, {"part": _PART})
         _assert_exomiser(_exomiser_by_task_and_name(cursor, radiant_mapping))
+
+
+def test_tenant_copy_step_keeps_the_rows_of_the_tasks_not_in_the_run(
+    loaded_reports, starrocks_session, radiant_mapping
+):
+    """A later run of the family-route task alone: the `exomiser_cnv` copy step keeps the proband-route task's rows."""
+    table = radiant_mapping["starrocks_exomiser_cnv"]
+    sql = _render("exomiser_cnv_copy_partition.sql", radiant_mapping, table=table)
+    with starrocks_session.cursor() as cursor:
+        _insert_exomiser_cnv(cursor, radiant_mapping)
+        cursor.execute(sql.rstrip().rstrip(";"), {"task_ids": [_FAMILY_ROUTE_TASK], "deleted_task_ids": [-1]})
+        assert {row[2] for row in cursor.fetchall()} == {_PROBAND_ROUTE_TASK}
 
 
 def test_copy_step_keeps_the_reports_of_the_tasks_not_in_the_run(loaded_reports, starrocks_session, radiant_mapping):

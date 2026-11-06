@@ -109,13 +109,16 @@ variant ETL reads the **exomiser** data type on a **radiant_germline_annotation*
 stays out of the SNV Exomiser table.
 
 The variant ETL loads the CNV **variants.tsv** (RAD-181): **radiant-import-part** broker-loads the
-contributing rows into **raw_exomiser_cnv**, tagged with the proband's sequencing and the task, and
-the germline CNV occurrence insert copies the best row of each record (highest gene combined score)
-onto the proband's slivar set: **exomiser_rank**, **exomiser_variant_score**,
-**exomiser_gene_combined_score**, **exomiser_moi**, **exomiser_acmg_classification** and
-**exomiser_acmg_evidence**. The report's **VCF_ID** is matched to the occurrence's **name** (the
-proband's own call, when Exomiser ran on the proband VCF), else to the slivar record's ID (when it
-ran on the family VCF). The DRAGEN set of the alignment tasks keeps these columns empty.
+contributing rows into **raw_exomiser_cnv**, tagged with the proband's sequencing and the task. Each
+tenant's **exomiser_cnv** table (the twin of **exomiser** for SNVs) then gets every row, matched to its
+occurrence (**cnv_id**, **name**) and ranked per occurrence (**variant_rank**, highest gene combined
+score first). The report's **VCF_ID** is matched to the occurrence's **name** (the proband's own call,
+when Exomiser ran on the proband VCF), else to the slivar record's ID (when it ran on the family VCF).
+
+The germline CNV occurrence insert copies the **variant_rank** 1 row onto the proband's slivar set:
+**exomiser_rank**, **exomiser_variant_score**, **exomiser_gene_combined_score**, **exomiser_moi**,
+**exomiser_acmg_classification** and **exomiser_acmg_evidence**. The DRAGEN set of the alignment
+tasks keeps these columns empty.
 
 The variant ETL loads the slivar VCF: the
 **staging_external_sequencing_experiment** view admits the **gcnv** / **vcf** document of a

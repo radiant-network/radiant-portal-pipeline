@@ -11,13 +11,20 @@
 -- `radiant_germline_cnv_annotation` task only, from the row of the report with the highest gene combined score for
 -- the record. The rows of an `alignment_germline_variant_calling` task (the DRAGEN set) keep them NULL.
 --
--- The occurrence insert joins the report's `VCF_ID` on `name`, else on the new Iceberg column `vcf_id` (the VCF
--- record ID). cnv-post-processing runs Exomiser on the proband VCF (record ID = the proband's own call, `name`) when
--- it has one, else on the family VCF (record ID = the call truvari kept, `vcf_id`, which on the slivar set can differ
--- from `name`). The StarRocks table does not carry `vcf_id`: the re-annotation reads the Exomiser columns back.
+-- Every contributing row of the report also goes to a new per-tenant table, `exomiser_cnv` (the twin of `exomiser`
+-- for SNVs): `insert_exomiser_cnv` matches the report's `VCF_ID` to the occurrence's `name`, else to the new Iceberg
+-- column `vcf_id` (the VCF record ID), and ranks the rows of each occurrence (`variant_rank`). cnv-post-processing runs
+-- Exomiser on the proband VCF (record ID = the proband's own call, `name`) when it has one, else on the family VCF
+-- (record ID = the call truvari kept, `vcf_id`, which on the slivar set can differ from `name`). The occurrence insert
+-- copies the `variant_rank = 1` row. The StarRocks occurrence table does not carry `vcf_id`: the re-annotation reads
+-- the Exomiser columns back.
 --
--- Design: radiant-hub docs/features/RAD-181-*.md. Deviation from the plan: the join falls back to `vcf_id`, a new
--- column of the Iceberg germline_cnv_occurrence table (step 2 below).
+-- `exomiser_cnv` needs no step here: `radiant-import` creates every per-tenant table of
+-- STARROCKS_RADIANT_PER_TENANT_MAPPING (`prepare_tenants_tables`, CREATE TABLE IF NOT EXISTS) before it triggers
+-- `radiant-import-part`, so step 5 creates it. Do not trigger `radiant-import-part` alone before that run.
+--
+-- Design: radiant-hub docs/features/RAD-181-*.md. Deviations from the plan: the join falls back to `vcf_id`, a new
+-- column of the Iceberg germline_cnv_occurrence table (step 2 below), and the per-tenant `exomiser_cnv` table.
 --
 -- WHEN. Once per environment, BEFORE the new DAGs run, with no import running. In this order:
 --
@@ -30,7 +37,7 @@
 --      fails and every CNV import breaks. Let the ALTER reach FINISHED before the next import runs there.
 --   2. The Iceberg `germline_cnv_occurrence` table recreated with the new schema (`vcf_id`): run ONLY the germline
 --      CNV occurrence task of the init-iceberg-tables DAG (the other tasks drop and recreate their own tables). Each
---      import overwrites this table, so nothing is lost. Otherwise the occurrence insert fails on `o.vcf_id`.
+--      import overwrites this table, so nothing is lost. Otherwise `insert_exomiser_cnv` fails on `o.vcf_id`.
 --   3. Base database: drop the two staging views, then run `radiant-init-starrocks-base-tables` with the
 --      `udf_release_version` in use. It creates `raw_exomiser_cnv` and the views with the new definition (both
 --      `IF NOT EXISTS`). Otherwise the CNV reports stay invisible and the load has no table:
@@ -168,3 +175,8 @@ WHERE staging_sequencing_experiment.task_id = marked.task_id;
 --                     WHERE task_type = 'alignment_germline_variant_calling')
 --     AND exomiser_acmg_classification IS NOT NULL;
 --       -- 0
+--
+--   SELECT count(*), count(DISTINCT task_id), sum(variant_rank = 1)
+--   FROM exomiser_cnv;
+--       -- every contributing row of the reports; one `variant_rank = 1` row per ranked occurrence, as many as the
+--       -- germline__cnv__occurrence rows with an exomiser_rank
