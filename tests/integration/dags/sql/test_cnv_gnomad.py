@@ -146,7 +146,8 @@ def test_ingest_stores_the_gnomad_sv_ac(seeded_iceberg, starrocks_session, radia
         # from the create statement.
         cursor.execute(
             f"INSERT INTO {target} {sql.rstrip().rstrip(';')}",
-            {"seq_ids": [_SEQ_ID], "tenant_code": _TENANT},
+            # `task_ids` as `import_part` passes it: the germline insert filters on the run's tasks (RAD-169).
+            {"seq_ids": [_SEQ_ID], "task_ids": [_TASK_ID], "tenant_code": _TENANT},
         )
 
     _assert_gnomad(_gnomad_by_name(starrocks_session, radiant_mapping, flavour))

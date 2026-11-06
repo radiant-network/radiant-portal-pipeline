@@ -227,7 +227,7 @@ def _seed(starrocks_session, iceberg_client, namespace, mapping, *, flavour):
     return iceberg_table
 
 
-def _run_cnv_insert(starrocks_session, mapping, flavour):
+def _run_cnv_insert(starrocks_session, mapping, flavour, task_ids=(_TASK_ID,)):
     """Run the delta insert the way `RadiantStarRocksPartitionSwapOperator` does: positional INSERT INTO."""
     sql_file = os.path.join(_SQL_DIR, "radiant", f"{flavour}_cnv_occurrence_insert_partition_delta.sql")
     with open(sql_file) as f_in:
@@ -237,7 +237,7 @@ def _run_cnv_insert(starrocks_session, mapping, flavour):
     with starrocks_session.cursor() as cursor:
         cursor.execute(
             f"INSERT INTO {target} {rendered_sql.rstrip().rstrip(';')}",
-            {"seq_ids": [_SEQ_ID, _OTHER_SEQ_ID], "tenant_code": _TENANT},
+            {"seq_ids": [_SEQ_ID, _OTHER_SEQ_ID], "task_ids": list(task_ids), "tenant_code": _TENANT},
         )
 
 
@@ -316,3 +316,117 @@ def test_nb_snv_counts_a_segment_spanning_several_bins(seeded_cnv, starrocks_ses
 
     nb_snv = _nb_snv_by_segment(starrocks_session, radiant_mapping, flavour)
     assert nb_snv[_SEGMENT_MULTI_BIN] == _EXPECTED_MULTI_BIN_NB_SNV
+
+
+# The proband's slivar set, a second germline CNV set of `_SEQ_ID`, under the CNV annotation task. The
+# pipeline keeps DRAGEN's call IDs, so it can name a call as the DRAGEN set does: same sample and name, other bounds.
+_SLIVAR_TASK_ID = 18112
+_SLIVAR_END = 1550  # covers `_AT_START` and `_INSIDE` only
+_EXPECTED_SLIVAR_NB_SNV = 2
+_SLIVAR_COLUMNS = {
+    "parental_origin": "MOTHER",
+    "transmission_mode": "inherited_maternal",
+    "mother_calls": [0, 1],
+    "mother_cn": 1,
+    "mother_bc": 9,
+    "mother_pe": [11, 12],
+    "mother_sm": 0.5,
+    "mother_name": "DRAGEN:LOSS:chr1:1001-1550",
+    "father_calls": [0, 0],
+    "father_cn": 2,
+    "father_bc": 8,
+    "father_pe": [0, 0],
+    "father_sm": 1.0,
+    "father_name": None,
+}
+
+
+@pytest.fixture
+def seeded_two_germline_sets(
+    starrocks_session, iceberg_client, setup_iceberg_namespace, open_data_iceberg_tables, radiant_mapping
+):
+    iceberg_table = _seed(
+        starrocks_session, iceberg_client, setup_iceberg_namespace, radiant_mapping, flavour="germline"
+    )
+    slivar_row = _cnv_row(name=_SEGMENT, seq_id=_SEQ_ID, chromosome="1", end=_SLIVAR_END) | {
+        "task_id": _SLIVAR_TASK_ID,
+        **_SLIVAR_COLUMNS,
+    }
+    iceberg_table.append(pa.Table.from_pylist([slivar_row], schema=iceberg_table.schema().as_arrow()))
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(f"REFRESH EXTERNAL TABLE {radiant_mapping['iceberg_germline_cnv_occurrence']}")
+    yield
+    iceberg_table.delete(EqualTo("task_id", _TASK_ID))
+    iceberg_table.delete(EqualTo("task_id", _SLIVAR_TASK_ID))
+
+
+def test_each_germline_set_of_a_sequencing_gets_its_own_annotations(
+    seeded_two_germline_sets, starrocks_session, radiant_mapping
+):
+    """The DRAGEN and slivar sets of one sequencing share a call name. Keyed on (seq_id, name) only,
+    each set's row would meet both sets' counts and be loaded twice."""
+    _run_cnv_insert(starrocks_session, radiant_mapping, "germline", task_ids=(_TASK_ID, _SLIVAR_TASK_ID))
+
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(
+            f"SELECT task_id, nb_snv FROM {radiant_mapping['starrocks_germline_cnv_occurrence']} WHERE name = %s",
+            (_SEGMENT,),
+        )
+        rows = sorted(cursor.fetchall())
+    assert rows == sorted([(_TASK_ID, _EXPECTED_NB_SNV), (_SLIVAR_TASK_ID, _EXPECTED_SLIVAR_NB_SNV)])
+
+
+def test_slivar_columns_land_in_their_own_columns(seeded_two_germline_sets, starrocks_session, radiant_mapping):
+    """The insert is positional: each new column must reach the StarRocks column of the same name, and the DRAGEN
+    set keeps them NULL."""
+    _run_cnv_insert(starrocks_session, radiant_mapping, "germline", task_ids=(_TASK_ID, _SLIVAR_TASK_ID))
+
+    columns = list(_SLIVAR_COLUMNS)
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(
+            f"SELECT task_id, {', '.join(columns)} FROM {radiant_mapping['starrocks_germline_cnv_occurrence']} "
+            "WHERE name = %s",
+            (_SEGMENT,),
+        )
+        rows = {row[0]: dict(zip(columns, row[1:], strict=True)) for row in cursor.fetchall()}
+
+    slivar = rows[_SLIVAR_TASK_ID]
+    for column, expected in _SLIVAR_COLUMNS.items():
+        value = slivar[column]
+        if isinstance(value, str) and value.startswith("["):
+            value = [int(v) for v in value.strip("[]").split(",")]
+        if isinstance(expected, float):
+            assert value == pytest.approx(expected), column
+        else:
+            assert value == expected, column
+    assert all(v is None for v in rows[_TASK_ID].values())
+
+
+def test_insert_skips_the_iceberg_rows_of_a_task_not_in_the_run(
+    seeded_two_germline_sets, starrocks_session, radiant_mapping
+):
+    _run_cnv_insert(starrocks_session, radiant_mapping, "germline", task_ids=(_SLIVAR_TASK_ID,))
+
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(f"SELECT DISTINCT task_id FROM {radiant_mapping['starrocks_germline_cnv_occurrence']}")
+        assert cursor.fetchall() == ((_SLIVAR_TASK_ID,),)
+
+
+def test_copy_step_keeps_the_other_set_of_a_sequencing(seeded_two_germline_sets, starrocks_session, radiant_mapping):
+    """A run with only the CNV annotation task keeps the sequencing's DRAGEN rows. Keyed on seq_id, the
+    copy step would drop them: the run's seq_ids are those of every member of its tasks."""
+    _run_cnv_insert(starrocks_session, radiant_mapping, "germline", task_ids=(_TASK_ID, _SLIVAR_TASK_ID))
+
+    with open(os.path.join(_SQL_DIR, "radiant", "germline_cnv_occurrence_copy_partition.sql")) as f_in:
+        copy_sql = jinja2.Template(f_in.read()).render(
+            {"table": radiant_mapping["starrocks_germline_cnv_occurrence"], "partition": _PART}
+        )
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(
+            copy_sql.rstrip().rstrip(";"),
+            {"seq_ids": [_SEQ_ID], "deleted_seq_ids": [-1], "task_ids": [_SLIVAR_TASK_ID], "deleted_task_ids": [-1]},
+        )
+        kept = cursor.fetchall()
+    kept_task_ids = {row[2] for row in kept}
+    assert kept_task_ids == {_TASK_ID}
+    assert len(kept) == len([r for r in _CNV_ROWS if r["task_id"] == _TASK_ID])

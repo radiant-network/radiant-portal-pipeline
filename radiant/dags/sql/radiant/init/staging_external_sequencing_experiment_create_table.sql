@@ -70,10 +70,12 @@ sequencing_experiments AS (
 	-- The data-type gate on the two *calling* steps is what keeps a raw, un-annotated VCF out of
 	-- `vcf_filepath`, which must only ever hold the annotated file from a `radiant_*_annotation` task.
 	-- The Exomiser report is an output of the germline SNV annotation task. The `exomiser` data-type
-	-- gate, and no branch for `radiant_germline_cnv_annotation`, keep the CNV report (`exomiser_cnv`) out.
+	-- gate keeps the CNV report (`exomiser_cnv`) out: `radiant_germline_cnv_annotation` has a `gcnv` VCF branch only.
+	-- That branch admits the family's slivar VCF, in `cnv_vcf_filepath` on every member's row.
 	WHERE (
 		(d.format_code = 'vcf' AND t.task_type_code IN ('radiant_germline_annotation', 'radiant_somatic_annotation'))
 		OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv' AND t.task_type_code = 'alignment_germline_variant_calling')
+		OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv' AND t.task_type_code = 'radiant_germline_cnv_annotation')
 		OR (d.format_code = 'vcf' AND d.data_type_code = 'scnv' AND t.task_type_code = 'tumor_only_variant_calling')
 		OR (d.url LIKE '%variants.tsv' AND d.data_type_code = 'exomiser' AND t.task_type_code = 'radiant_germline_annotation')
 	)
@@ -90,6 +92,19 @@ sequencing_experiments AS (
 		se.priority_code,
 		se.created_on,
 		updated_at
+),
+-- Proband source rule: the proband's alignment tasks of each case whose CNV annotation task has a slivar VCF.
+-- The task alone is not enough: an annotation task with no output does not hide the DRAGEN set.
+superseded_dragen AS (
+	SELECT dragen.case_id, dragen.task_id
+	FROM sequencing_experiments dragen
+	JOIN sequencing_experiments slivar ON slivar.case_id = dragen.case_id AND slivar.seq_id = dragen.seq_id
+	JOIN {{ mapping.clinical_sample }} sa ON sa.id = dragen.sample_id
+	LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = sa.patient_id AND f.case_id = dragen.case_id
+	WHERE dragen.task_type = 'alignment_germline_variant_calling'
+	  AND slivar.task_type = 'radiant_germline_cnv_annotation'
+	  AND slivar.cnv_vcf_filepath IS NOT NULL
+	  AND COALESCE(f.relationship_to_proband_code, "proband") = "proband"
 )
 SELECT
     s.case_id,
@@ -128,3 +143,9 @@ LEFT JOIN {{ mapping.clinical_sample }} sa ON sa.id = s.sample_id
 LEFT JOIN {{ mapping.clinical_patient }} p ON p.id = sa.patient_id
 -- A patient has one family row per case: without the case, a patient in two cases doubles every row.
 LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = p.id AND f.case_id = s.case_id
+-- Proband source rule: in a case with a slivar VCF, the proband's alignment task stays out, so the proband's
+-- CNVs come from the slivar set only. The parents' and the siblings' alignment tasks stay. A row left out never enters
+-- staging, so it is never loaded nor seen as pending; its `deleted` flag comes from the clinical tasks, not from this
+-- view, so nothing is deleted. The task and its files stay in the clinical model: the portal still shows them.
+LEFT JOIN superseded_dragen x ON x.case_id = s.case_id AND x.task_id = s.task_id
+WHERE x.task_id IS NULL

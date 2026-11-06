@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict
 
 RADIANT_GERMLINE_ANNOTATION_TASK = "radiant_germline_annotation"
 ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK = "alignment_germline_variant_calling"
+RADIANT_GERMLINE_CNV_ANNOTATION_TASK = "radiant_germline_cnv_annotation"
 RADIANT_SOMATIC_ANNOTATION_TASK = "radiant_somatic_annotation"
 TUMOR_ONLY_VARIANT_CALLING_TASK = "tumor_only_variant_calling"
 
@@ -70,6 +71,29 @@ class AlignmentGermlineVariantCallingTask(BaseTask):
         }
 
 
+class RadiantGermlineCnvAnnotationTask(BaseTask):
+    """The CNV post-processing of a case: one slivar VCF for the whole family, one row per member.
+
+    Only the proband's records are loaded, but the parents' rows are kept: their FORMAT values of the same record
+    fill the proband's `mother_*` and `father_*` columns, and their roles come with the rows.
+    """
+
+    task_type: str = RADIANT_GERMLINE_CNV_ANNOTATION_TASK
+    cnv_vcf_filepath: str
+
+    @staticmethod
+    def gather_additional_args(rows: list[dict]) -> dict:
+        if not any(r["family_role"] == "proband" for r in rows):
+            raise ValueError("No proband found in rows for `radiant_germline_cnv_annotation` task.")
+        filepaths = {r["cnv_vcf_filepath"] for r in rows}
+        if len(filepaths) != 1:
+            raise ValueError(
+                f"`radiant_germline_cnv_annotation` task [{rows[0].get('task_id')}] expects one slivar VCF, "
+                f"got: {sorted(str(f) for f in filepaths)}."
+            )
+        return {"cnv_vcf_filepath": filepaths.pop()}
+
+
 class RadiantSomaticAnnotationTask(BaseTask):
     task_type: str = RADIANT_SOMATIC_ANNOTATION_TASK
     vcf_filepath: str
@@ -111,6 +135,7 @@ class TumorOnlyVariantCallingTask(BaseTask):
 _TASK_TYPES = {
     RADIANT_GERMLINE_ANNOTATION_TASK: RadiantGermlineAnnotationTask,
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK: AlignmentGermlineVariantCallingTask,
+    RADIANT_GERMLINE_CNV_ANNOTATION_TASK: RadiantGermlineCnvAnnotationTask,
     RADIANT_SOMATIC_ANNOTATION_TASK: RadiantSomaticAnnotationTask,
     TUMOR_ONLY_VARIANT_CALLING_TASK: TumorOnlyVariantCallingTask,
 }
