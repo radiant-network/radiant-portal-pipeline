@@ -118,6 +118,41 @@ The `mwaa/` directory contains files and documentation specific to deploying the
 
 ## Release
 
+The ETL is released from its conventional commits by [release-please](https://github.com/googleapis/release-please)
+(`.github/workflows/release.yml`). On each push to `main`, it opens or updates one release PR,
+`chore(main): release <version>`: the version is computed from the commit types since the last `vX.Y.Z` tag, and the
+PR body is the changelog. Nothing is released until a person merges that PR.
+
+| Commit type (PR title) | Version bump |
+|---|---|
+| `feat!:`, `fix!:` … (any type with `!`), or a `BREAKING CHANGE:` footer | major |
+| `feat:` | minor |
+| `fix:`, `perf:`, `revert:` | patch |
+| `docs:`, `style:`, `chore:`, `refactor:`, `test:`, `build:`, `ci:` | none: alone, they open no release PR and are not in the changelog |
+
+PRs are squash-merged, so the PR title (checked by `pr-title.yml`) becomes the commit subject that release-please reads.
+
+**To release:** check that the `release-gate` check of the release PR passes (re-run it first, see below), then merge
+the release PR. The merge puts `CHANGELOG.md` and `.release-please-manifest.json` on `main`; release-please then tags
+that commit `vX.Y.Z` and creates the GitHub release with the changelog. The tag starts the three `build_and_push_*`
+workflows, which push the semver images. Merging the release PR deploys nothing.
+
+Setup (once, by an admin):
+
+- The workflow uses a GitHub App token, because events created with the default `GITHUB_TOKEN` start no workflow: the
+  release PR would run no check and the tag would build no image. It uses the App of the Security Alerts workflow
+  (`DEPENDABOT_APP_CLIENT_ID` variable, `DEPENDABOT_APP_PRIVATE_KEY` secret), which needs `Contents`, `Issues` and
+  `Pull requests` set to read and write on this repo. With no write permission, the workflow fails: no release PR, no
+  tag.
+- Repo settings: squash merge only, with the PR title as the squash commit message.
+- Ruleset of `main`: `pr-title` and `release-gate` are required status checks.
+
+Config: `release-please-config.json` (release type `simple`; there is no `version.txt`, so only the changelog and the
+manifest change; `pyproject.toml` keeps its static version) and `.release-please-manifest.json` (the last released
+version). The config bootstraps from the commit of `v1.1.32`, the last tag made by hand. Do not tag by hand any more: the
+tag still builds the images, but release-please looks only for the release of the version in the manifest, so it does
+not see the hand tag and can propose the same version again.
+
 ### Release gate
 
 A release goes to prod, so the release PR (opened by release-please from the branch `release-please--branches--main`)

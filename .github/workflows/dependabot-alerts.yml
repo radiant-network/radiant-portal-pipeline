@@ -31,7 +31,7 @@ jobs:
       # The GITHUB_TOKEN cannot read Dependabot alerts: use a GitHub App with "Dependabot alerts: read"
       - name: Get a token to read the Dependabot alerts
         id: app-token
-        uses: actions/create-github-app-token@v3
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           client-id: ${{ vars.DEPENDABOT_APP_CLIENT_ID }}
           private-key: ${{ secrets.DEPENDABOT_APP_PRIVATE_KEY }}
