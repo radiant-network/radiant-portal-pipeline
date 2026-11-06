@@ -14,7 +14,12 @@ from radiant.tasks.data.radiant_tables import get_radiant_mapping
 from radiant.tasks.starrocks.trigger import (
     StarRocksTaskCompleteTrigger,
 )
-from radiant.tasks.vcf.experiment import RADIANT_GERMLINE_ANNOTATION_TASK, RadiantGermlineAnnotationTask
+from radiant.tasks.vcf.experiment import (
+    RADIANT_GERMLINE_ANNOTATION_TASK,
+    RADIANT_GERMLINE_CNV_ANNOTATION_TASK,
+    RadiantGermlineAnnotationTask,
+    RadiantGermlineCnvAnnotationTask,
+)
 
 STARROCKS_INSERT_POOL = "starrocks_insert_pool"
 STARROCKS_TASK_TEMPLATE = "Radiant_Operator_Task_{uid}"
@@ -559,14 +564,39 @@ class RadiantStarrocksLoadOperator(RadiantStarrocksLoadBaseOperator):
         return self.load_label
 
 
+# The annotation tasks that carry an Exomiser report, each with its task model, its load and its load label prefix.
+# The SNV report goes to `raw_exomiser`, the CNV report (RAD-181) to `raw_exomiser_cnv`: one operator per task type,
+# so a report is only ever loaded into its own staging table.
+EXOMISER_LOADS = {
+    RADIANT_GERMLINE_ANNOTATION_TASK: (
+        RadiantGermlineAnnotationTask,
+        "sql/radiant/staging_exomiser_load.sql",
+        "load_exomiser",
+    ),
+    RADIANT_GERMLINE_CNV_ANNOTATION_TASK: (
+        RadiantGermlineCnvAnnotationTask,
+        "sql/radiant/staging_exomiser_cnv_load.sql",
+        "load_exomiser_cnv",
+    ),
+}
+
+
 class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
     template_fields = RadiantStarrocksLoadBaseOperator.template_fields + ("sql", "tasks")
     template_ext = (".sql", ".json")
     template_fields_renderers = {**RadiantStarrocksLoadBaseOperator.template_fields_renderers, "sql": "sql"}
 
-    def __init__(self, tasks: list[dict], *args, **kwargs):
+    def __init__(
+        self, tasks: list[dict], *args, annotation_task_type: str = RADIANT_GERMLINE_ANNOTATION_TASK, **kwargs
+    ):
+        # Not `task_type`: BaseOperator already has a `task_type` property (the operator's class name).
+        if annotation_task_type not in EXOMISER_LOADS:
+            raise ValueError(
+                f"No Exomiser load for task type [{annotation_task_type}], expected one of {sorted(EXOMISER_LOADS)}."
+            )
         self.tasks = tasks
-        self.sql = "sql/radiant/staging_exomiser_load.sql"
+        self.annotation_task_type = annotation_task_type
+        self.task_model, self.sql, self.label_prefix = EXOMISER_LOADS[annotation_task_type]
         super().__init__(*args, **kwargs)
 
     def render_template_fields(self, context, jinja_env=None):
@@ -582,13 +612,13 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
             # A deleted task's rows are dropped by the copy step and never read by the insert, and its file may be
             # gone from S3: loading it could only fail the part.
             if (
-                task.get("task_type") != RADIANT_GERMLINE_ANNOTATION_TASK
+                task.get("task_type") != self.annotation_task_type
                 or task.get("deleted")
                 or not task.get("exomiser_filepath")
             ):
                 continue
 
-            _task = RadiantGermlineAnnotationTask.model_validate(task)
+            _task = self.task_model.model_validate(task)
             # The annotation task holds every family member; the Exomiser report ranks the proband.
             _proband = next((e for e in _task.experiments if e.family_role == "proband"), None)
             if _proband is None:
@@ -601,7 +631,7 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
                     # Tag rows with the tenant in the shared staging table; insert_exomiser routes by it later.
                     "tenant_code": _proband.tenant_code,
                     "tsv_filepath": _task.exomiser_filepath,
-                    "load_label": f"load_exomiser_{_task.task_id}_{_proband.seq_id}_{str(uuid.uuid4().hex)}",
+                    "load_label": f"{self.label_prefix}_{_task.task_id}_{_proband.seq_id}_{str(uuid.uuid4().hex)}",
                 }
             )
 

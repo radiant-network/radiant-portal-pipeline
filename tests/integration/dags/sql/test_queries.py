@@ -113,6 +113,7 @@ def _explain_insert(starrocks_session, sql_dir):
                 or "snv_occurrence_insert_partition_delta" in sql_file.lower()
                 or "snv_occurrence_copy_partition" in sql_file.lower()
                 or "exomiser_copy_partition" in sql_file.lower()
+                or "exomiser_cnv_copy_partition" in sql_file.lower()
                 or "comphet_copy_partition" in sql_file.lower()
                 or "exomiser_insert_partition_delta" in sql_file.lower()
                 or "open_data_release_annotate" in sql_file.lower()
@@ -233,7 +234,9 @@ def test_queries_are_valid(
             "snv_consequence_filter",
             "snv_consequence_filter_partitioned",
             "staging_exomiser",
+            "staging_exomiser_cnv",
             "exomiser",
+            "exomiser_cnv",
             "germline_snv_occurrence",
             "germline_snv_comphet",
             "staging_sequencing_experiment",
@@ -268,6 +271,7 @@ def test_queries_are_valid(
             ("starrocks_somatic_cnv_occurrence", "somatic_cnv_occurrence_insert_partition_delta.sql"),
             ("starrocks_germline_snv_comphet", "germline_snv_comphet_insert_partition_delta.sql"),
             ("starrocks_exomiser", "exomiser_insert_partition_delta.sql"),
+            ("starrocks_exomiser_cnv", "exomiser_cnv_insert_partition_delta.sql"),
             ("starrocks_germline_snv_occurrence", "germline_snv_occurrence_insert_partition_delta.sql"),
         ],
     )

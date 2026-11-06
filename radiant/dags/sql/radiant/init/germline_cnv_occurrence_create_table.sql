@@ -48,7 +48,13 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_germline_cnv_occurrence }} (
      father_bc int(11) NULL COMMENT "",
      father_pe array<int(11)> NULL COMMENT "",
      father_sm FLOAT NULL COMMENT "",
-     father_name varchar(1048576) NULL COMMENT ""
+     father_name varchar(1048576) NULL COMMENT "",
+     exomiser_rank int(11) NULL COMMENT "",
+     exomiser_variant_score FLOAT NULL COMMENT "",
+     exomiser_gene_combined_score FLOAT NULL COMMENT "",
+     exomiser_moi varchar(10) NULL COMMENT "",
+     exomiser_acmg_classification varchar(300) NULL COMMENT "",
+     exomiser_acmg_evidence array<varchar(10)> NULL COMMENT ""
 ) ENGINE=OLAP
 DUPLICATE KEY(part, seq_id, task_id, cnv_id)
 PARTITION BY (part);

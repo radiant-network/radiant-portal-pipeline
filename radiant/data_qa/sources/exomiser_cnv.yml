@@ -1,0 +1,72 @@
+version: 2
+
+# RAD-181: the CNV Exomiser rows of the germline CNV occurrences, the twin of exomiser.yml. Filled only for the cases
+# whose CNV post-processing ran Exomiser (a family with a phenopacket): the emptiness checks are gated on the tenant
+# having such a report (macros/tenant_has_cnv_exomiser_report.sql).
+sources:
+  - name: tenant_db
+    schema: "{{ env_var('SR_TENANT_SCHEMA', env_var('SR_SCHEMA', 'radiant')) }}"
+    tables:
+      - name: exomiser_cnv
+        tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: exomiser_cnv__should_not_be_empty
+              expected_if: "{{ tenant_has_cnv_exomiser_report() }}"
+          # --- Should Not Contain Only Null ----------------------------------
+          - should_not_contain_only_null:
+              name: exomiser_cnv__should_not_contain_only_null
+              expected_if: "{{ tenant_has_cnv_exomiser_report() }}"
+              except:
+                # Already covered by exomiser_cnv__should_not_contain_null__*
+                - part
+                - seq_id
+                - task_id
+                - cnv_id
+                - id
+                - name
+
+          # No should_not_contain_same_value: a tenant has one CNV Exomiser report per case, often with one or two
+          # contributing rows, so a tenant with one such case legitimately has a single value in most columns
+          # (seq_id, task_id, variant_rank, moi, rank...). The load is guarded by an invariant that holds for any
+          # number of cases instead: tests/germline_cnv_occurrence__validate_exomiser_matches_best_row.sql.
+
+          # --- Should Be Within Range ----------------------------------------
+          # exomiser scores must be in [0,1]
+          - should_be_within_range:
+              name: exomiser_cnv__should_be_within_range_score
+              like: score
+        columns:
+          - name: part
+            tests:
+              - not_null:
+                  name: exomiser_cnv__should_not_contain_null__part
+          - name: seq_id
+            tests:
+              - not_null:
+                  name: exomiser_cnv__should_not_contain_null__seq_id
+          - name: task_id
+            tests:
+              - not_null:
+                  name: exomiser_cnv__should_not_contain_null__task_id
+          - name: cnv_id
+            tests:
+              - not_null:
+                  name: exomiser_cnv__should_not_contain_null__cnv_id
+          - name: id
+            tests:
+              - not_null:
+                  name: exomiser_cnv__should_not_contain_null__id
+          - name: name
+            tests:
+              - not_null:
+                  name: exomiser_cnv__should_not_contain_null__name
+          - name: acmg_classification
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_exomiser_acmg_classification() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: exomiser_cnv__accepted_values_acmg_classification
+                  values: "{{ dict_exomiser_acmg_classification() }}"
+                  config:
+                    where: "acmg_classification is not null"

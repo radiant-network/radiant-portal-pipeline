@@ -290,3 +290,111 @@ def test_exomiser_load_without_proband_raises():
 
     with pytest.raises(ValueError, match=r"No proband found in task \[11\]"):
         _run_exomiser_load([task])
+
+
+def _cnv_annotation_task(task_id, exomiser_filepath, experiments):
+    return {
+        "task_id": task_id,
+        "task_type": "radiant_germline_cnv_annotation",
+        "part": 5,
+        "analysis_type": "germline",
+        "experiments": experiments,
+        "deleted": False,
+        "cnv_vcf_filepath": f"s3://test/{task_id}.cnv.slivar.vcf.gz",
+        "exomiser_filepath": exomiser_filepath,
+    }
+
+
+def _run_cnv_exomiser_load(tasks):
+    op = RadiantLoadExomiserOperator(
+        task_id="t",
+        table="radiant.raw_exomiser_cnv",
+        swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+        parameters={"task_ids": [1], "deleted_task_ids": [-1]},
+        tasks=tasks,
+        annotation_task_type="radiant_germline_cnv_annotation",
+    )
+    hook = MagicMock()
+    cursor = hook.get_conn.return_value.cursor.return_value.__enter__.return_value
+    with (
+        patch.object(op, "get_db_hook", return_value=hook),
+        patch.object(op, "render_template", side_effect=lambda content, *_: content),
+        patch.object(op, "verify_load_status"),
+    ):
+        op.run_insert(context={}, partition_exists=False)
+    return op, [call.args for call in cursor.execute.call_args_list]
+
+
+def test_cnv_exomiser_load_reads_the_cnv_annotation_task_and_tags_the_proband():
+    """RAD-181: the CNV report of the CNV annotation task, tagged with the proband's seq_id and the task id, through
+    the CNV load (`raw_exomiser_cnv`)."""
+    op, loads = _run_cnv_exomiser_load(
+        [
+            _cnv_annotation_task(
+                21,
+                "s3://test/CA1.S1.exomiser.variants.tsv",
+                [_experiment(102, "mother"), _experiment(101, "proband"), _experiment(103, "father")],
+            )
+        ]
+    )
+
+    assert op.sql == "sql/radiant/staging_exomiser_cnv_load.sql"
+    assert len(loads) == 1
+    params = loads[0][1]
+    assert {k: params[k] for k in ("part", "seq_id", "task_id", "tenant_code", "tsv_filepath")} == {
+        "part": "5",
+        "seq_id": 101,
+        "task_id": 21,
+        "tenant_code": "test",
+        "tsv_filepath": "s3://test/CA1.S1.exomiser.variants.tsv",
+    }
+    assert params["load_label"].startswith("load_exomiser_cnv_21_101_")
+
+
+def test_cnv_exomiser_load_never_reads_an_snv_annotation_task():
+    _, loads = _run_cnv_exomiser_load(
+        [_annotation_task(11, "s3://test/CA1.exomiser.variants.tsv", [_experiment(101, "proband")])]
+    )
+
+    assert loads == []
+
+
+def test_snv_exomiser_load_never_reads_a_cnv_annotation_task():
+    loads = _run_exomiser_load(
+        [_cnv_annotation_task(21, "s3://test/CA1.S1.exomiser.variants.tsv", [_experiment(101, "proband")])]
+    )
+
+    assert loads == []
+
+
+def test_snv_exomiser_load_keeps_its_sql_and_label():
+    op = RadiantLoadExomiserOperator(
+        task_id="t",
+        table="radiant.raw_exomiser",
+        swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+        tasks=[],
+    )
+
+    assert (op.sql, op.label_prefix) == ("sql/radiant/staging_exomiser_load.sql", "load_exomiser")
+
+
+def test_cnv_exomiser_load_skips_deleted_tasks_and_tasks_without_report():
+    deleted = _cnv_annotation_task(21, "s3://test/CA1.S1.exomiser.variants.tsv", [_experiment(101, "proband")])
+    deleted["deleted"] = True
+
+    _, loads = _run_cnv_exomiser_load(
+        [deleted, _cnv_annotation_task(22, None, [_experiment(201, "proband")])],
+    )
+
+    assert loads == []
+
+
+def test_exomiser_load_rejects_a_task_type_without_exomiser_report():
+    with pytest.raises(ValueError, match=r"No Exomiser load for task type \[alignment_germline_variant_calling\]"):
+        RadiantLoadExomiserOperator(
+            task_id="t",
+            table="radiant.raw_exomiser",
+            swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+            tasks=[],
+            annotation_task_type="alignment_germline_variant_calling",
+        )
