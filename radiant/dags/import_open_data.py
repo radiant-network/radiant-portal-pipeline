@@ -212,6 +212,23 @@ with DAG(
             )
         )
 
+    # Built from two contract sources with no pre-contract table: nothing to read when either is held back,
+    # and rebuilt when either has a new snapshot.
+    data_tasks.append(
+        RadiantStarRocksOperator(
+            task_id="insert_gene_reference_transcript",
+            task_display_name="gene_reference_transcript Insert Data",
+            sql="./sql/open_data/gene_reference_transcript_insert.sql",
+            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+            trigger_rule="none_failed",
+            skip_if=(
+                "{{ (not mapping.get('iceberg_ensembl_transcript_is_contract'))"
+                " or (not mapping.get('iceberg_mane_is_contract'))"
+                f" or (({skip_unchanged('ensembl_transcript')}) and ({skip_unchanged('mane')})) }}}}"
+            ),
+        )
+    )
+
     @task.short_circuit(
         task_id="has_cytoband_filepath",
         task_display_name="[PyOp] Cytoband Filepath Provided?",

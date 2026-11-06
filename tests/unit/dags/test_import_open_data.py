@@ -28,8 +28,9 @@ def test_dag_has_correct_number_of_tasks(dag_bag):
     ]
     # start + the metadata-refresh pair + the snapshot gate + the ledger write's 3 + the RCV
     # group's 4 + cytoband's load + the COSMIC gene-set group's 2 + the COSMIC mutation-set
-    # group's 3 + cytoband's own short-circuit gate + the IGV tracks group's 2
-    assert len(dag.tasks) == 20 + len(gene_group_ids) + len(variant_group_ids) * 2
+    # group's 3 + cytoband's own short-circuit gate + the IGV tracks group's 2 + the reference
+    # transcript build
+    assert len(dag.tasks) == 21 + len(gene_group_ids) + len(variant_group_ids) * 2
 
 
 def test_metadata_cache_is_refreshed_before_any_source_is_read(dag_bag):
@@ -55,7 +56,7 @@ def test_file_driven_loads_are_gated_on_their_params(dag_bag):
     # Separate branches: cytoband is not downstream of the RCV chain any more.
     assert "load_cytoband" not in dag.get_task(f"{_RCV}.insert_summary").downstream_task_ids
     # Every file-driven branch hangs off the end of the source chain, independently of the others.
-    last_source = dag.get_task("insert_hpo_term")
+    last_source = dag.get_task("insert_gene_reference_transcript")
     for head in (
         f"{_RCV}.insert_raw_from_open_data",
         "has_cytoband_filepath",
@@ -192,12 +193,36 @@ def test_the_raw_rcv_table_is_loaded_from_opendatalake_when_the_source_is_not_he
     assert _render_skip_if(task.skip_if, gates={"iceberg_clinvar_rcv": True}) is False
 
 
+def test_the_reference_transcript_is_built_only_when_both_sources_are_read_from_opendatalake(dag_bag):
+    """Neither source has a pre-contract table: held back, either one leaves the build nothing to read."""
+    task = dag_bag.get_dag(f"{NAMESPACE}-import-open-data").get_task("insert_gene_reference_transcript")
+    both_moved = {"iceberg_ensembl_transcript": True, "iceberg_mane": True}
+
+    assert _render_skip_if(task.skip_if, held_back="ensembl_transcript", gates=both_moved) is True
+    assert _render_skip_if(task.skip_if, held_back="mane", gates=both_moved) is True
+    assert _render_skip_if(task.skip_if, held_back="*", gates=both_moved, force_import=True) is True
+
+
+@pytest.mark.parametrize(
+    ("gates", "force_import", "skipped"),
+    [
+        ({"iceberg_ensembl_transcript": False, "iceberg_mane": False}, False, True),
+        ({"iceberg_ensembl_transcript": True, "iceberg_mane": False}, False, False),
+        ({"iceberg_ensembl_transcript": False, "iceberg_mane": True}, False, False),
+        ({"iceberg_ensembl_transcript": False, "iceberg_mane": False}, True, False),
+    ],
+)
+def test_the_reference_transcript_is_rebuilt_when_either_source_moves(dag_bag, gates, force_import, skipped):
+    task = dag_bag.get_dag(f"{NAMESPACE}-import-open-data").get_task("insert_gene_reference_transcript")
+    assert _render_skip_if(task.skip_if, gates=gates, force_import=force_import) is skipped
+
+
 def test_the_rcv_group_is_one_serial_chain(dag_bag):
     dag = dag_bag.get_dag(f"{NAMESPACE}-import-open-data")
     chain = ["insert_raw_from_open_data", "has_raw_filepaths", "load_raw_from_files", "insert_summary"]
 
     # The group's root hangs off the tail of the source chain, then it is one line to the summary.
-    assert dag.get_task(f"{_RCV}.{chain[0]}").upstream_task_ids == {"insert_hpo_term"}
+    assert dag.get_task(f"{_RCV}.{chain[0]}").upstream_task_ids == {"insert_gene_reference_transcript"}
     for upstream, downstream in zip(chain, chain[1:], strict=False):
         assert dag.get_task(f"{_RCV}.{upstream}").downstream_task_ids == {f"{_RCV}.{downstream}"}
 
