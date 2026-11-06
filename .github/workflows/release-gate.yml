@@ -6,8 +6,9 @@
 #     from the PR and never pushed, minus the accepted findings of `.trivyignore.yaml`.
 #
 # The jobs run only on the release PR, found by its branch name: release-please names it
-# `release-please--branches--main`, with `--components--<name>` appended when the config
-# has a component (src/util/branch-name.ts), hence a prefix match and not an exact one.
+# `release-please--branches--main`, with `--components--<name>` or `--groups--<name>` appended
+# when the config has a component or a group (src/util/branch-name.ts), hence a prefix match
+# and not an exact one.
 # Not by its `autorelease: pending` label: release-please adds it after it creates the PR,
 # so the first run would miss it. On every other PR the jobs are skipped, and a skipped
 # job reports "Success", so the required check does not block them.
@@ -62,6 +63,7 @@ jobs:
             --jq '.[] | "- **\(.security_advisory.severity)** `\(.dependency.package.ecosystem)/\(.dependency.package.name)` in `\(.dependency.manifest_path)`: \(.security_advisory.summary) ([#\(.number)](\(.html_url)))"' \
             > alerts.md
           COUNT=$(grep -c '^- ' alerts.md || true)
+          echo "$COUNT open alert(s) of severity high or critical"
           cat alerts.md
           {
             echo "## Dependabot: $COUNT open alert(s) of severity high or critical"
@@ -116,11 +118,15 @@ jobs:
 
       # Same severities, `ignore-unfixed` and ignore file as trivy.yml, but the step fails on a
       # finding instead of uploading it. Trivy writes the table to the file before it exits 1.
+      # Vulnerabilities only: Trivy's default `vuln,secret` would also fail the gate on a secret
+      # in a layer, which `ignore-unfixed` and the ignore file's `vulnerabilities:` entries do
+      # not cover. trivy.yml keeps the secret scanner, so a secret still reaches the Security tab.
       - name: Scan the image
         id: scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ matrix.name }}:release-gate
+          scanners: vuln
           format: table
           output: trivy.txt
           severity: HIGH,CRITICAL
@@ -134,6 +140,11 @@ jobs:
         env:
           NAME: ${{ matrix.name }}
         run: |
+          # The scan step can fail before it writes the file (database download, rate limit)
+          if [ ! -f trivy.txt ]; then
+            echo "## Trivy: $NAME: no report, see the log of the scan step" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           cat trivy.txt
           {
             echo "## Trivy: $NAME"
