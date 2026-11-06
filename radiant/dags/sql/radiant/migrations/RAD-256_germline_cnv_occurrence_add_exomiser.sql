@@ -21,6 +21,11 @@
 --
 -- WHEN. Once per environment, BEFORE the new DAGs run, with no import running. In this order:
 --
+--   0. The radiant-operator image of this release deployed (the image `import_part` runs the VCF extraction in).
+--      The extraction builds its Arrow table from the Iceberg table's schema (radiant/tasks/vcf/cnv/germline/
+--      process.py) and drops, without an error, any key the schema does not have. An older image never writes
+--      `vcf_id`: against the new table the column stays NULL, and the records of a report run on the family VCF get
+--      no Exomiser value, with no failure. Check the image tag of the ECS task definition / K8s operator first.
 --   1. Every {tenant}_tenant database: the ALTER of section 1. Against an unmigrated table the positional insert
 --      fails and every CNV import breaks. Let the ALTER reach FINISHED before the next import runs there.
 --   2. The Iceberg `germline_cnv_occurrence` table recreated with the new schema (`vcf_id`): run ONLY the germline
@@ -33,8 +38,18 @@
 --        DROP VIEW staging_sequencing_experiment_delta;
 --        DROP VIEW staging_external_sequencing_experiment;
 --
---   4. Base database: section 2 (backfill), after step 3 (it reads the new view).
---   5. The next `radiant-import` re-imports the marked parts and loads the reports.
+--   4. Pause `radiant-case-scheduler` (see LAB EMAILS below). Then base database: section 2 (backfill), after
+--      step 3 (it reads the new view).
+--   5. Trigger `radiant-import` manually. It re-imports the marked parts and loads the reports. Wait until it and
+--      every `radiant-import-part` run it triggers succeed, check that the pending query of section 2 returns 0, then
+--      unpause `radiant-case-scheduler`.
+--
+-- LAB EMAILS. Section 2b makes every marked case pending for the import (import_pending_case_select.sql). If
+-- `radiant-case-scheduler` runs while they are pending, it counts them as cases with work, triggers the import, and
+-- then emails the laboratory of every one of them that is past `processing` (`in_progress`, `in_review`,
+-- `completed`...): `processed_case_ids` in radiant/tasks/nextflow/case_status.py. `radiant-import` has no schedule
+-- of its own, so without step 5 the case scheduler is the run that imports them. Keep it paused from 2b until the
+-- manual import has finished. Skip the pause only if the laboratories must get an email for these old cases.
 --
 -- WHERE. Section 1 runs in EVERY {tenant}_tenant database (germline__cnv__occurrence is per tenant,
 -- STARROCKS_RADIANT_PER_TENANT_MAPPING in radiant/tasks/data/radiant_tables.py). `USE` each database in turn. A
@@ -110,7 +125,9 @@ WHERE staging_sequencing_experiment.case_id = v.case_id
 
 -- 2b. Re-import marks: every staging row of these tasks, for every family member. A part builds each task only from
 --     the rows its select returns, and the slivar set needs the parents' rows for the `mother_*` / `father_*` columns.
---     `radiant-import` then picks them (`updated_at >= COALESCE(ingested_at, ...)`).
+--     `radiant-import` then picks them (`updated_at >= COALESCE(ingested_at, ...)`). Run it with
+--     `radiant-case-scheduler` paused, and trigger `radiant-import` manually right after (WHEN, steps 4 and 5; LAB
+--     EMAILS).
 
 UPDATE staging_sequencing_experiment
 SET ingested_at = NULL
@@ -128,6 +145,13 @@ WHERE staging_sequencing_experiment.task_id = marked.task_id;
 --   SELECT count(*) FROM staging_sequencing_experiment
 --   WHERE task_type = 'radiant_germline_cnv_annotation' AND family_role = 'proband' AND exomiser_filepath IS NOT NULL;
 --       -- the number of CNV annotation tasks with an Exomiser report
+--
+-- Pending query, before unpausing `radiant-case-scheduler` (WHEN, step 5):
+--
+--   SELECT count(*) FROM staging_sequencing_experiment
+--   WHERE task_type = 'radiant_germline_cnv_annotation'
+--     AND (updated_at >= COALESCE(ingested_at, '1970-01-01 00:00:00') OR deleted);
+--       -- 0 once the manual import has loaded every marked task
 --
 -- After the next import, in each {tenant}_tenant database:
 --

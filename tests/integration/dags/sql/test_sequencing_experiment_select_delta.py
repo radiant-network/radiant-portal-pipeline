@@ -124,6 +124,11 @@ def test_seeded_trio_takes_the_probands_cnvs_from_the_slivar_vcf(
     ]
     slivar = case_1.query("task_id == 72")
     assert set(slivar["cnv_vcf_filepath"]) == {"s3://test-vcf/CA1000019.reheader.cnv.slivar.vcf.gz"}
+    # RAD-181: the CNV Exomiser report, on the proband's row only; the HTML and JSON reports stay out.
+    assert slivar.query("family_role == 'proband'")["exomiser_filepath"].tolist() == [
+        "s3://test-vcf/CA1000019.NA12878.exomiser.variants.tsv"
+    ]
+    assert slivar.query("family_role != 'proband'")["exomiser_filepath"].isna().all()
 
 
 def test_sequencing_experiment_delta_carries_tumor_only_tasks(

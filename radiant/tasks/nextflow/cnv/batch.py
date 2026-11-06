@@ -6,8 +6,10 @@ pairs, when the run used them) as inputs, and the slivar VCF set and the Exomise
 outputs.
 
 The Exomiser reports are typed `exomiser_cnv`, not `exomiser`, so users can tell them from the
-SNV report. The ETL reads only the slivar VCF of this task, and its staging view admits
-only the `exomiser` data type: the CNV report stays out of the SNV Exomiser table.
+SNV report. The ETL reads the slivar VCF of this task and, since RAD-181, its `exomiser_cnv`
+report: the staging view admits `exomiser` on a `radiant_germline_annotation` task only and
+`exomiser_cnv` on a `radiant_germline_cnv_annotation` task only, and `import_part` loads the
+CNV report into `raw_exomiser_cnv`, so it stays out of the SNV Exomiser table.
 
 Same backend rules as `radiant.tasks.nextflow.batch`: inputs mandatory (TASK-003), resolvable
 in-tenant (TASK-005). PATCH appends: a re-run adds a second task alongside the first.
