@@ -1,0 +1,81 @@
+# Releases the ETL from its conventional commits, with release-please. On each push to main:
+#   - while user-facing commits wait since the last release, it opens or updates one release
+#     PR (`chore(main): release <version>`, branch `release-please--branches--main`). Its body
+#     is the changelog; the version follows the commit types: a breaking change (`!` or a
+#     `BREAKING CHANGE:` footer) is a major, `feat` a minor, `fix`, `perf` and `revert` a
+#     patch. The other types alone open no release PR.
+#   - when the release PR is merged, it tags the release commit `vX.Y.Z` and creates the
+#     GitHub release with the same changelog. The tag starts the three build_and_push
+#     workflows, which push the semver images.
+# Merging the release PR is the release decision. The Release Gate workflow (required check)
+# blocks that merge while a high or critical vulnerability is open.
+#
+# Config: release-please-config.json (type `simple`: with no version.txt in the repo, only
+# CHANGELOG.md and the manifest change) and .release-please-manifest.json (the last version).
+#
+# The token is a GitHub App installation token, not the GITHUB_TOKEN: an event created with
+# the GITHUB_TOKEN starts no workflow, so the release PR would run no check (and could not
+# pass the required ones) and the tag would build no image. The App needs `contents`,
+# `issues` and `pull-requests` write on this repo; the token is limited to them.
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+# One run at a time. A newer push replaces a run that still waits, which loses nothing: each
+# run rebuilds the release PR from all the commits since the last release.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# The GITHUB_TOKEN is not used
+permissions: {}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # For the steps that follow a release (upgrade guide): `release_created` and `tag_name`
+    # after the merge of the release PR, `pr` (JSON) while it is open.
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      pr: ${{ steps.release.outputs.pr }}
+
+    steps:
+      # The App of the Security Alerts workflow, given the three write permissions on this repo
+      # (README, "Release"). To use a second App, change the two names below.
+      - name: Get a token to open the release PR and tag the release
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.DEPENDABOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DEPENDABOT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+
+      - name: Open or update the release PR, or tag the release
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Write the result to the job summary
+        env:
+          RELEASE_CREATED: ${{ steps.release.outputs.release_created }}
+          TAG_NAME: ${{ steps.release.outputs.tag_name }}
+          PR: ${{ steps.release.outputs.pr }}
+        run: |
+          if [ "$RELEASE_CREATED" = true ]; then
+            echo "Released $TAG_NAME." >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$PR" ]; then
+            echo "Release PR: $(jq -r '"#\(.number) \(.title)"' <<< "$PR")." >> "$GITHUB_STEP_SUMMARY"
+          else
+            # No user-facing commit since the last release, or the release PR is already up to date
+            echo "No release PR opened or updated, no release (see the log of the previous step)." >> "$GITHUB_STEP_SUMMARY"
+          fi
