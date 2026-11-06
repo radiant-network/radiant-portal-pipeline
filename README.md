@@ -115,3 +115,39 @@ USE_DOCKER_FIXTURES=false make test-integration # For fast (non slow) integratio
 Running the Radiant ETL pipeline using AWS MWAA and ECS requires additional setup. 
 
 The `mwaa/` directory contains files and documentation specific to deploying the Radiant ETL pipeline on MWAA and ECS.
+
+## Release
+
+### Release gate
+
+A release goes to prod, so the release PR (opened by release-please from the branch `release-please--branches--main`)
+cannot merge while a known vulnerability is open. The `Release Gate` workflow (`.github/workflows/release-gate.yml`)
+runs on that PR only: on every other PR its jobs are skipped and the check passes. Make its `release-gate` job a required
+status check in the ruleset of `main`: it fails unless both checks pass:
+
+| Check | Fails when | Where to look |
+|---|---|---|
+| `dependabot` | An open Dependabot alert of severity high or critical exists, in any ecosystem. | The job summary lists the alerts; Security → Dependabot. |
+| `trivy`, one job per image (task operator, dbt, Nextflow launcher) | Trivy finds a HIGH or CRITICAL vulnerability that has a fix in the image built from the PR (`ignore-unfixed`), the entries of `.trivyignore.yaml` left out. Vulnerabilities only (`scanners: vuln`): the secret scanner stays with the Trivy workflow and the Security tab. | The job summary holds the Trivy table. |
+
+To unblock the release, fix the vulnerability in a normal PR (bump the dependency or the base image): its merge updates the
+release PR, and the gate runs again. To accept the risk instead:
+
+- **Dependabot alert:** dismiss it in Security → Dependabot, with a reason. A dismissed alert is no longer open, so the
+  gate no longer counts it. Then re-run the failed run of the gate (Actions → Release Gate → Re-run all jobs).
+- **Trivy finding:** add an entry to `.trivyignore.yaml`, in a reviewed PR: the vulnerability `id`, the `paths` of the one
+  file it applies to, a `statement` with the reason and the ticket, and an `expired_at` date that brings the finding back
+  for review. The Trivy workflow reads the same file, so the finding leaves the Security tab too.
+
+> **Trap:** "Dismiss alert" in Security → Code scanning does not unblock the gate. It closes the alert the Trivy
+> workflow uploaded: the next scan does not raise it again, and the code scanning check of a feature PR passes. The
+> gate reads no code scanning alert. It scans the image it builds and reads `.trivyignore.yaml`, nothing else, so the
+> finding fails it again. Accept a Trivy finding through the ignore file, never through the Security tab. A dismissed
+> Dependabot alert is different: both the gate and the Security tab read the same alert, so one dismissal is enough.
+
+The result goes stale while the release PR waits: an alert published after the last run does not fail it. The person who
+merges the release PR re-runs the workflow first. GitHub lets you re-run a workflow for 30 days after its first run: if the
+last run is older, close and reopen the release PR, which starts a new run.
+
+To test the gate without a release PR, open a temporary PR from a branch whose name starts with
+`release-please--branches--main`: the gate runs on it. Delete the branch afterwards.

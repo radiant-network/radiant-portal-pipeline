@@ -1,0 +1,183 @@
+# Blocks the merge of the release PR while a known vulnerability is open: a release goes
+# to prod. Two checks run in parallel, then `release-gate` fails unless both passed. Make
+# `release-gate` a required status check in the ruleset of main.
+#   - dependabot: no open Dependabot alert of severity high or critical, in any ecosystem;
+#   - trivy: no HIGH or CRITICAL vulnerability with a fix in each of the three images, built
+#     from the PR and never pushed, minus the accepted findings of `.trivyignore.yaml`.
+#
+# The jobs run only on the release PR, found by its branch name: release-please names it
+# `release-please--branches--main`, with `--components--<name>` or `--groups--<name>` appended
+# when the config has a component or a group (src/util/branch-name.ts), hence a prefix match
+# and not an exact one.
+# Not by its `autorelease: pending` label: release-please adds it after it creates the PR,
+# so the first run would miss it. On every other PR the jobs are skipped, and a skipped
+# job reports "Success", so the required check does not block them.
+#
+# An accepted risk is a dismissed Dependabot alert (with its reason) or an entry in
+# `.trivyignore.yaml` (one file, a reason, an expiry date) merged through a reviewed PR.
+# The result goes stale while the release PR waits: re-run the workflow before merging
+# (README, "Release gate").
+name: Release Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+
+# A new commit on the release PR cancels the run on the older one
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io/radiant-network
+
+jobs:
+  dependabot:
+    if: startsWith(github.head_ref, 'release-please--branches--main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # The GITHUB_TOKEN cannot read Dependabot alerts: use the GitHub App of the Security
+      # Alerts workflow ("Dependabot alerts: read"), with a token limited to that permission
+      - name: Get a token to read the Dependabot alerts
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.DEPENDABOT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.DEPENDABOT_APP_PRIVATE_KEY }}
+          permission-vulnerability-alerts: read
+
+      - name: Fail on an open high or critical alert
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # Every ecosystem, not only pip: a release goes to prod. An API error (for one,
+          # Dependabot alerts turned off on the repo) fails the step: no answer, no pass.
+          gh api --paginate "repos/$GH_REPO/dependabot/alerts?state=open&severity=high,critical&per_page=100" \
+            --jq '.[] | "- **\(.security_advisory.severity)** `\(.dependency.package.ecosystem)/\(.dependency.package.name)` in `\(.dependency.manifest_path)`: \(.security_advisory.summary) ([#\(.number)](\(.html_url)))"' \
+            > alerts.md
+          COUNT=$(grep -c '^- ' alerts.md || true)
+          echo "$COUNT open alert(s) of severity high or critical"
+          cat alerts.md
+          {
+            echo "## Dependabot: $COUNT open alert(s) of severity high or critical"
+            echo
+            if [ "$COUNT" -eq 0 ]; then
+              echo "None."
+            else
+              sort alerts.md
+              echo
+              echo "Fix each alert, or dismiss it with a reason in [Security → Dependabot]($GITHUB_SERVER_URL/$GH_REPO/security/dependabot), then re-run the workflow."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "::error::$COUNT open Dependabot alert(s) of severity high or critical, see the job summary"
+            exit 1
+          fi
+
+  trivy:
+    if: startsWith(github.head_ref, 'release-please--branches--main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      # Report every image, not only the first one that fails
+      fail-fast: false
+      matrix:
+        include:
+          - name: radiant-task-operator
+            file: Dockerfile.radiant.operator
+          - name: radiant-dbt
+            file: Dockerfile.radiant.dbt
+          - name: nextflow-launcher
+            file: Dockerfile.nextflow.launcher
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # Loaded into the runner's Docker, never pushed. Reads the layer cache the Trivy
+      # workflow writes for the same image (same scope) and writes none: one writer per scope.
+      - name: Build the image
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7.2.0
+        with:
+          context: .
+          file: ${{ matrix.file }}
+          load: true
+          push: false
+          tags: ${{ env.REGISTRY }}/${{ matrix.name }}:release-gate
+          cache-from: type=gha,scope=${{ matrix.name }}
+
+      # Same severities, `ignore-unfixed` and ignore file as trivy.yml, but the step fails on a
+      # finding instead of uploading it. Trivy writes the table to the file before it exits 1.
+      # Vulnerabilities only: Trivy's default `vuln,secret` would also fail the gate on a secret
+      # in a layer, which `ignore-unfixed` and the ignore file's `vulnerabilities:` entries do
+      # not cover. trivy.yml keeps the secret scanner, so a secret still reaches the Security tab.
+      - name: Scan the image
+        id: scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.name }}:release-gate
+          scanners: vuln
+          format: table
+          output: trivy.txt
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          # Accepted findings, each scoped to one file and with an expiry date
+          trivyignores: .trivyignore.yaml
+
+      - name: Write the findings to the job summary
+        if: ${{ !cancelled() && steps.scan.outcome != 'skipped' }}
+        env:
+          NAME: ${{ matrix.name }}
+        run: |
+          # The scan step can fail before it writes the file (database download, rate limit)
+          if [ ! -f trivy.txt ]; then
+            echo "## Trivy: $NAME: no report, see the log of the scan step" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cat trivy.txt
+          {
+            echo "## Trivy: $NAME"
+            echo
+            echo '```'
+            cat trivy.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The required status check. `always()` is load-bearing: with the default `success()`, a
+  # failed check would skip this job, and with `!cancelled()` a cancelled run would; a skipped
+  # job reports "Success" and the release PR could merge. So it runs on the release PR
+  # whatever happened and fails unless both results are `success` (a cancelled or timed-out
+  # check is not). On the run a newer commit cancels, its failure is on the old commit.
+  release-gate:
+    needs:
+      - dependabot
+      - trivy
+    if: ${{ always() && startsWith(github.head_ref, 'release-please--branches--main') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Fail unless both checks passed
+        env:
+          DEPENDABOT: ${{ needs.dependabot.result }}
+          TRIVY: ${{ needs.trivy.result }}
+        run: |
+          echo "dependabot: $DEPENDABOT"
+          echo "trivy: $TRIVY"
+          if [ "$DEPENDABOT" = success ] && [ "$TRIVY" = success ]; then
+            echo "Release gate: no open high or critical vulnerability." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "::error::Release gate: dependabot=$DEPENDABOT, trivy=$TRIVY. See the summary of the failed job, then re-run the workflow."
+          exit 1
