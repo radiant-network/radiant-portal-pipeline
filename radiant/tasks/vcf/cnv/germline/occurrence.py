@@ -64,7 +64,7 @@ ANY_ORIGIN = None
 
 # The CNV mode tags of cnv-post-processing (`--family-expr` in conf/modules.config, the list in docs/output.md), each
 # with the parental origins (`po_*` values, as PO_TAGS maps them) its TRIO_TABLE rows give the same child
-# (assets/cnv-slivar-functions.js @ cad99b4). One row gives a child both its mode call and its parent of origin, so
+# (assets/cnv-slivar-functions.js @ c9e7768). One row gives a child both its mode call and its parent of origin, so
 # they never disagree for that child. `None` in a set: the catch-all row, which has no origin. The X-linked names are
 # renamed `denovo` and `recessive` calls (X_LINKED_CALLS), and keep those rows' origins.
 #

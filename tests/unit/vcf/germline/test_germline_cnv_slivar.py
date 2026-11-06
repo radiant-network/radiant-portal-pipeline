@@ -296,7 +296,7 @@ def test_a_tag_that_does_not_pair_with_the_probands_origin_is_dropped(tag, origi
 
 
 def test_mode_origins_follow_the_rule_table():
-    """cnv-post-processing @ cad99b4, assets/cnv-slivar-functions.js: TRIO_TABLE columns 3 and 4, the X-linked
+    """cnv-post-processing @ c9e7768, assets/cnv-slivar-functions.js: TRIO_TABLE columns 3 and 4, the X-linked
     renames of `denovo` and `recessive`, the catch-all row (no origin), and `unknown_cn` before the table."""
     assert CNV_MODE_ORIGINS["recessive_lowconf"] == {"MOTHER", "FATHER"}
     assert CNV_MODE_ORIGINS["inheritance_unresolved"] == {"BOTH", "AMBIGUOUS", None}

@@ -19,9 +19,10 @@
 -- copies the `variant_rank = 1` row. The StarRocks occurrence table does not carry `vcf_id`: the re-annotation reads
 -- the Exomiser columns back.
 --
--- `exomiser_cnv` needs no step here: `radiant-import` creates every per-tenant table of
--- STARROCKS_RADIANT_PER_TENANT_MAPPING (`prepare_tenants_tables`, CREATE TABLE IF NOT EXISTS) before it triggers
--- `radiant-import-part`, so step 5 creates it. Do not trigger `radiant-import-part` alone before that run.
+-- `exomiser_cnv` is created by section 1, in every tenant database. `radiant-import` also creates the per-tenant
+-- tables (`prepare_tenants_tables`, CREATE TABLE IF NOT EXISTS), but only for the tenants of its own delta: a tenant
+-- with no new data would have no `exomiser_cnv` until its next import, and the data_qa tenant passes, which test
+-- every tenant, would fail on the missing table.
 --
 -- Design: radiant-hub docs/features/RAD-181-*.md. Deviations from the plan: the join falls back to `vcf_id`, a new
 -- column of the Iceberg germline_cnv_occurrence table (step 2 below), and the per-tenant `exomiser_cnv` table.
@@ -33,8 +34,9 @@
 --      process.py) and drops, without an error, any key the schema does not have. An older image never writes
 --      `vcf_id`: against the new table the column stays NULL, and the records of a report run on the family VCF get
 --      no Exomiser value, with no failure. Check the image tag of the ECS task definition / K8s operator first.
---   1. Every {tenant}_tenant database: the ALTER of section 1. Against an unmigrated table the positional insert
---      fails and every CNV import breaks. Let the ALTER reach FINISHED before the next import runs there.
+--   1. Every {tenant}_tenant database: section 1 (the ALTER, and the `exomiser_cnv` table). Against an unmigrated
+--      table the positional insert fails and every CNV import breaks. Let the ALTER reach FINISHED before the next
+--      import runs there.
 --   2. The Iceberg `germline_cnv_occurrence` table recreated with the new schema (`vcf_id`): run ONLY the germline
 --      CNV occurrence task of the init-iceberg-tables DAG (the other tasks drop and recreate their own tables). Each
 --      import overwrites this table, so nothing is lost. Otherwise `insert_exomiser_cnv` fails on `o.vcf_id`.
@@ -67,8 +69,9 @@
 -- column list, and germline_cnv_occurrence_copy_partition.sql copies `SELECT *`. The table must end up in exactly
 -- the order declared by init/germline_cnv_occurrence_create_table.sql.
 --
--- New deployments get the columns from init/germline_cnv_occurrence_create_table.sql and must NOT run section 1.
--- StarRocks has no `ADD COLUMN IF NOT EXISTS`, so re-running it fails on the ALTER.
+-- New deployments get the columns from init/germline_cnv_occurrence_create_table.sql and must NOT run the ALTER of
+-- section 1. StarRocks has no `ADD COLUMN IF NOT EXISTS`, so re-running it fails on the ALTER. The CREATE TABLE of
+-- section 1 is `IF NOT EXISTS`: safe to re-run.
 
 
 -- ---------------------------------------------------------------------------------------------------
@@ -90,6 +93,37 @@ ALTER TABLE germline__cnv__occurrence ADD COLUMN (
 --
 --   DESC germline__cnv__occurrence;
 --       -- the six columns must be the last ones, after father_name (RAD-206)
+--
+
+-- The tenant `exomiser_cnv` table. Same definition as init/exomiser_cnv_create_table.sql: keep the two in sync.
+
+CREATE TABLE IF NOT EXISTS exomiser_cnv
+(
+    part                 INT,
+    seq_id               INT,
+    task_id              INT NOT NULL,
+    cnv_id               BIGINT,
+    id                   VARCHAR(2000),
+    name                 VARCHAR(1048576),
+    vcf_id               VARCHAR(2000),
+    moi                  VARCHAR(10),
+    variant_score        FLOAT,
+    gene_combined_score  FLOAT,
+    variant_rank         INT,
+    rank                 INT,
+    symbol               VARCHAR(200),
+    acmg_classification  VARCHAR(300),
+    acmg_evidence        ARRAY<VARCHAR(10)>
+)
+ENGINE = OLAP
+DUPLICATE KEY(`part`, `seq_id`, `task_id`, `cnv_id`, `id`)
+PARTITION BY (`part`)
+DISTRIBUTED BY HASH(`seq_id`) BUCKETS 10;
+
+--
+--   DESC exomiser_cnv;
+--       -- variant_rank must be INT: a table created by an earlier revision of this branch has TINYINT. Drop it
+--       -- (it is empty until the first import of this release) and run the CREATE TABLE again.
 --
 
 

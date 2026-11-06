@@ -26,12 +26,10 @@ sources:
                 - id
                 - name
 
-          # --- Should Not Contain Same Value ---------------------------------
-          - should_not_contain_same_value:
-              name: exomiser_cnv__should_not_contain_same_value
-              except:
-                # Single partition QA dataset
-                - part
+          # No should_not_contain_same_value: a tenant has one CNV Exomiser report per case, often with one or two
+          # contributing rows, so a tenant with one such case legitimately has a single value in most columns
+          # (seq_id, task_id, variant_rank, moi, rank...). The load is guarded by an invariant that holds for any
+          # number of cases instead: tests/germline_cnv_occurrence__validate_exomiser_matches_best_row.sql.
 
           # --- Should Be Within Range ----------------------------------------
           # exomiser scores must be in [0,1]

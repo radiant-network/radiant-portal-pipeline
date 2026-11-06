@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_exomiser_cnv }}
     moi                  VARCHAR(10),
     variant_score        FLOAT,
     gene_combined_score  FLOAT,
-    variant_rank         TINYINT,
+    variant_rank         INT,
     rank                 INT,
     symbol               VARCHAR(200),
     acmg_classification  VARCHAR(300),

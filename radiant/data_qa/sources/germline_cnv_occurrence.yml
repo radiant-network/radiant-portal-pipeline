@@ -57,6 +57,31 @@ sources:
                 - part
                 - phased
                 - svtype
+                # Filled on the proband's slivar set only (one per case), and the Exomiser ones on its ranked records
+                # only: a tenant with one CNV annotation case can legitimately have a single value in any of them
+                # (e.g. one ranked record, or both parents at CN 2 on every call). Guarded instead by
+                # germline_cnv_occurrence__validate_annotation_tasks_have_parental_origin and
+                # germline_cnv_occurrence__validate_exomiser_matches_best_row (tests/).
+                - parental_origin
+                - transmission_mode
+                - mother_calls
+                - mother_cn
+                - mother_bc
+                - mother_pe
+                - mother_sm
+                - mother_name
+                - father_calls
+                - father_cn
+                - father_bc
+                - father_pe
+                - father_sm
+                - father_name
+                - exomiser_rank
+                - exomiser_variant_score
+                - exomiser_gene_combined_score
+                - exomiser_moi
+                - exomiser_acmg_classification
+                - exomiser_acmg_evidence
 
           # --- Should Be Within Range ----------------------------------------
           # gnomAD frequencies must be in [0,1] (defaults: 0..1)
