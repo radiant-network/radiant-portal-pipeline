@@ -250,6 +250,21 @@ def test_every_insert_is_gated(dag_bag):
     assert gated == inserts
 
 
+@pytest.mark.parametrize(
+    "task_id",
+    [
+        f"{_RCV}.has_raw_filepaths",
+        "has_cytoband_filepath",
+        "cosmic_gene_set.has_cosmic_gene_set_filepath",
+        "cosmic_mutation_set.has_cosmic_mutation_set_filepath",
+        "igv_tracks.should_import_igv_tracks",
+    ],
+)
+def test_a_file_driven_gate_still_runs_when_the_last_insert_is_skipped(dag_bag, task_id):
+    """Each gate hangs off the last insert of the source chain, which skips when its sources did not move."""
+    assert dag_bag.get_dag(f"{NAMESPACE}-import-open-data").get_task(task_id).trigger_rule == "none_failed"
+
+
 def test_a_skipped_group_does_not_cascade_down_the_chain(dag_bag):
     """`chain()` wires the inserts head to tail. Under the default ALL_SUCCESS one skipped group would
     skip every source after it."""

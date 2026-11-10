@@ -233,6 +233,7 @@ with DAG(
         task_id="has_cytoband_filepath",
         task_display_name="[PyOp] Cytoband Filepath Provided?",
         ignore_downstream_trigger_rules=False,
+        trigger_rule="none_failed",
     )
     def has_cytoband_filepath(params: dict | None = None) -> bool:
         return bool((params or {}).get("cytoband_filepath"))
@@ -297,6 +298,7 @@ with DAG(
             task_id="has_cosmic_gene_set_filepath",
             task_display_name="[PyOp] COSMIC Gene Set Filepath Provided?",
             ignore_downstream_trigger_rules=False,
+            trigger_rule="none_failed",
         )
         def has_cosmic_gene_set_filepath(params: dict | None = None) -> bool:
             return bool((params or {}).get("cosmic_gene_set_filepath"))
@@ -320,6 +322,7 @@ with DAG(
             task_id="has_cosmic_mutation_set_filepath",
             task_display_name="[PyOp] COSMIC Mutation Set Filepath Provided?",
             ignore_downstream_trigger_rules=False,
+            trigger_rule="none_failed",
         )
         def has_cosmic_mutation_set_filepath(params: dict | None = None) -> bool:
             return bool((params or {}).get("cosmic_mutation_set_filepath"))
@@ -351,6 +354,7 @@ with DAG(
             task_id="should_import_igv_tracks",
             task_display_name="[PyOp] Import IGV Tracks?",
             ignore_downstream_trigger_rules=False,
+            trigger_rule="none_failed",
         )
         def should_import_igv_tracks(params: dict | None = None) -> bool:
             return bool((params or {}).get("import_igv_tracks"))
