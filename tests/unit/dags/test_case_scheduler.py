@@ -153,14 +153,15 @@ def test_the_pipelines_run_in_parallel_even_if_setting_statuses_failed(dag_bag):
 
 
 def test_the_import_follows_post_processing_whatever_its_outcome(dag_bag):
-    """It loads the annotation tasks SNV post-processing and somatic annotation register. CNV
-    post-processing stays outside: the import does not read its outputs."""
+    """It loads the annotation tasks SNV post-processing, somatic annotation and CNV post-processing
+    (the slivar VCF, RAD-206) register."""
     dag = dag_bag.get_dag(DAG_ID)
     trigger = dag.get_task("trigger_import")
     assert trigger.trigger_dag_id == "radiant-import"
     assert trigger.trigger_rule == TriggerRule.ALL_DONE
     assert _upstream(dag, "trigger_import") == {
         "trigger_germline_snv_postprocessing",
+        "trigger_germline_cnv_postprocessing",
         "trigger_somatic_snv_annotation",
     }
 

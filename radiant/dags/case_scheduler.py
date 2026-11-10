@@ -343,13 +343,12 @@ def case_scheduler():
         QC_CASES_DAG_ID,
         EXCLUDED_TENANTS_CONF,
     )
-    # The import picks up the annotations SNV post-processing and somatic annotation registered, so
-    # it waits for both, success or not. CNV post-processing stays outside: the import does not
-    # read its outputs.
+    # The import picks up the annotations SNV post-processing, somatic annotation and CNV
+    # post-processing (the slivar VCF, RAD-206) registered, so it waits for the three, success or not.
     trigger_import = _trigger("trigger_import", "[DAG] Scheduled Import", IMPORT_DAG_ID)
 
     processing >> [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv, trigger_qc]
-    [trigger_germline_snv, trigger_somatic_snv] >> trigger_import
+    [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv] >> trigger_import
     # Asked again once the import, CNV post-processing and quality control have succeeded: a case
     # still pending somewhere has a pipeline left to run, and stays `processing`. If any of the
     # three failed, nothing is evaluated nor emailed; the next run picks the cases up.
