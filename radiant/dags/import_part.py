@@ -25,6 +25,7 @@ from radiant.tasks.starrocks.operator import (
 from radiant.tasks.vcf.experiment import (
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
     RADIANT_GERMLINE_ANNOTATION_TASK,
+    RADIANT_GERMLINE_CNV_ANNOTATION_TASK,
     RADIANT_SOMATIC_ANNOTATION_TASK,
     TUMOR_ONLY_VARIANT_CALLING_TASK,
     build_task_from_rows,
@@ -84,6 +85,8 @@ dag_params = {
 }
 
 std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=10)
+
+cnv_submit_task_opts = SubmitTaskOptions(max_query_timeout=14400, poll_interval=10)
 
 
 @dag(
@@ -256,7 +259,11 @@ def import_part():
             trigger_rule=TriggerRule.NONE_FAILED,
         )
         def sanity_check_cnvs(tasks: Any) -> Any:
-            has_cnv = any(t.get("task_type") == ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK for t in tasks)
+            # The proband's slivar set (CNV annotation task) loads next to the DRAGEN sets.
+            has_cnv = any(
+                t.get("task_type") in (ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK, RADIANT_GERMLINE_CNV_ANNOTATION_TASK)
+                for t in tasks
+            )
             return has_cnv
 
         # max_active_tis_per_dagrun=1: process tenants one at a time within a dagrun
@@ -269,7 +276,7 @@ def import_part():
                 partition="{{ params.part }}",
                 copy_partition_sql="./sql/radiant/germline_cnv_occurrence_copy_partition.sql",
             ),
-            submit_task_options=std_submit_task_opts,
+            submit_task_options=cnv_submit_task_opts,
             insert_partition_sql="./sql/radiant/germline_cnv_occurrence_insert_partition_delta.sql",
             max_active_tis_per_dagrun=1,
         ).expand_kwargs(tenant_params)
@@ -311,7 +318,7 @@ def import_part():
                 partition="{{ params.part }}",
                 copy_partition_sql="./sql/radiant/somatic_cnv_occurrence_copy_partition.sql",
             ),
-            submit_task_options=std_submit_task_opts,
+            submit_task_options=cnv_submit_task_opts,
             insert_partition_sql="./sql/radiant/somatic_cnv_occurrence_insert_partition_delta.sql",
             max_active_tis_per_dagrun=1,
         ).expand_kwargs(tenant_params)

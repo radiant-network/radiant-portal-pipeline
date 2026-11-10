@@ -26,11 +26,9 @@ EXOMISER_DIR = "exomiser"
 # The slivar VCF is the final artefact -- VEP CSQ plus the mode-of-inheritance INFO tags --
 # and is declared `gcnv`/`vcf`, the CNV analogue of the annotation DAG's `snv`/`vcf`.
 #
-# Invisible to the variant ETL, by design for now: `staging_external_sequencing_experiment`
-# admits a `gcnv`/`vcf` document only on an `alignment_germline_variant_calling` task, so a
-# `radiant_germline_cnv_annotation` output matches none of its predicates and never reaches
-# `germline_cnv_occurrence`. Making it visible is one WHERE line there plus a task model,
-# and is a separate design.
+# `staging_external_sequencing_experiment` admits it, on the
+# `radiant_germline_cnv_annotation` task, and `import_part` loads the proband's records into
+# `germline_cnv_occurrence` (`radiant/tasks/vcf/cnv/germline/process.py`).
 #
 # The index rides along, as for the SNV slivar VCF: the revision the launcher pins
 # (`CNV_PIPELINE_REV`) indexes the slivar VCF and publishes the `.tbi` next to it.

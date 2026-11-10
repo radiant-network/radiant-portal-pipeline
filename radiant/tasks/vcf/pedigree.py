@@ -1,4 +1,4 @@
-from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
+from radiant.tasks.vcf.experiment import BaseTask
 
 # The children of the case's father and mother, the same roles as `CHILD_ROLES` in the PED
 # (`radiant/tasks/nextflow/inputs.py`). A fetus is the proband's child, not a progeny.
@@ -28,7 +28,7 @@ class Pedigree:
             and identifying family roles.
     """
 
-    def __init__(self, task: RadiantGermlineAnnotationTask, vcf_samples: list[str]):
+    def __init__(self, task: BaseTask, vcf_samples: list[str]):
         self.experiments = []
         # We save the experiments in the order of the samples in the VCF file
         for vcf_sample in vcf_samples:

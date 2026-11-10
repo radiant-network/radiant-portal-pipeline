@@ -21,6 +21,24 @@ sources:
                 - svlen
                 - cipos
                 - ciend
+                # Filled on the proband's slivar set only, so NULL in a tenant with no CNV annotation task.
+                # mother_name and father_name also stay NULL for a slivar VCF made before FORMAT/OID (BIOINFO-214).
+                # parental_origin is guarded per annotation task instead, by
+                # germline_cnv_occurrence__validate_annotation_tasks_have_parental_origin (tests/).
+                - parental_origin
+                - transmission_mode
+                - mother_calls
+                - mother_cn
+                - mother_bc
+                - mother_pe
+                - mother_sm
+                - mother_name
+                - father_calls
+                - father_cn
+                - father_bc
+                - father_pe
+                - father_sm
+                - father_name
 
           # --- Should Not Contain Same Value ---------------------------------
           - should_not_contain_same_value:
@@ -74,3 +92,23 @@ sources:
                   values: "{{ dict_chromosome() }}"
                   config:
                     where: "chromosome is not null"
+          - name: transmission_mode
+            description: "VARCHAR(50). The CNV mode tag that lists the proband, slivar set only."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_cnv_transmission_mode() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: germline_cnv_occurrence__accepted_values_transmission_mode
+                  values: "{{ dict_cnv_transmission_mode() }}"
+                  config:
+                    where: "transmission_mode is not null"
+          - name: parental_origin
+            description: "VARCHAR(25). The proband's po_* tag, slivar set only."
+            tests:
+              # --- Accepted Values -------------------------------------------
+              # values: dict_parental_origin() — see macros/dictionaries.sql
+              - accepted_values:
+                  name: germline_cnv_occurrence__accepted_values_parental_origin
+                  values: "{{ dict_parental_origin() }}"
+                  config:
+                    where: "parental_origin is not null"
