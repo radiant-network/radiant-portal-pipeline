@@ -45,14 +45,15 @@ jobs:
       pr: ${{ steps.release.outputs.pr }}
 
     steps:
-      # The App of the Security Alerts workflow, given the three write permissions on this repo
-      # (README, "Release"). To use a second App, change the two names below.
+      # The org App `radiant-release-please` (org variable RELEASE_PLEASE_APP_CLIENT_ID, org
+      # secret RELEASE_PLEASE_APP_PRIVATE_KEY; radiant-hub docs/ci/security-checks.md). It must be
+      # installed on this repo with the three write permissions (README, "Release").
       - name: Get a token to open the release PR and tag the release
         id: app-token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
-          client-id: ${{ vars.DEPENDABOT_APP_CLIENT_ID }}
-          private-key: ${{ secrets.DEPENDABOT_APP_PRIVATE_KEY }}
+          client-id: ${{ vars.RELEASE_PLEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-issues: write
           permission-pull-requests: write
