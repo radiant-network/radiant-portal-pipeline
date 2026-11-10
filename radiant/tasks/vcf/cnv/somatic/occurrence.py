@@ -1,13 +1,10 @@
 import logging
-import math
-from collections.abc import Callable
-from typing import Any
 
 from cyvcf2 import Variant
 from pyiceberg.schema import NestedField, Schema
 from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, StringType
 
-from radiant.tasks.vcf.vcf_utils import calls_without_phased
+from radiant.tasks.vcf.vcf_utils import calls_without_phased, format_value, format_values
 
 logger = logging.getLogger("airflow.task")
 
@@ -28,7 +25,9 @@ SCHEMA: Schema = Schema(
     NestedField(613, "calls", ListType(700, IntegerType()), required=False),
     NestedField(614, "filter", StringType(), required=False),
     NestedField(615, "bc", IntegerType(), required=False),
-    NestedField(616, "pe", ListType(701, IntegerType()), required=False),
+    # Nullable elements: a `PE` vector can be partly missing (`.,12`), and the parquet writer rejects a NULL in a
+    # required element. The table has to be recreated for this to apply: the write uses the table's own schema.
+    NestedField(616, "pe", ListType(701, IntegerType(), element_required=False), required=False),
     NestedField(617, "sm", FloatType(), required=False),
     NestedField(618, "svtype", StringType(), required=False),
     NestedField(619, "svlen", IntegerType(), required=False),
@@ -80,9 +79,6 @@ _TYPE_BY_ALT = {
     (ALT_DEL,): LOSS,
 }
 _LOH_ALTS = ((ALT_LOH,), (ALT_DEL, ALT_DUP), (ALT_DUP, ALT_DEL))
-
-# htslib's "missing integer" bit pattern, which cyvcf2 surfaces verbatim.
-_INT32_MISSING = -(2**31)
 
 
 def resolve_cnv_type(record: Variant) -> str | None:
@@ -136,47 +132,6 @@ def resolve_cnv_type(record: Variant) -> str | None:
         )
 
     return _TYPE_BY_ALT[alts]
-
-
-def _format_value(record: Variant, key: str, cast: Callable[[Any], Any], sample_idx: int) -> Any:
-    """Reads one FORMAT value for a sample, tolerating both ways DRAGEN can leave it out.
-
-    `cyvcf2` distinguishes the two: a field declared in the header but absent from this record yields
-    `None`, while a field the header never declares raises `KeyError` (`Variant.format` resolves the
-    field's type through the header first). The ASCN fields hit both cases -- 3.10.8 declares none of
-    them, 4.2.4 declares them all and still omits `CN`/`MCN` from its LOH rows.
-
-    The cast is explicit so the value matches the Iceberg column even if a DRAGEN release declares the
-    field with a different type than we assume.
-    """
-    try:
-        values = record.format(key)
-    except KeyError:
-        return None
-    if values is None:
-        return None
-
-    value = values[sample_idx][0]
-    if value is None:
-        return None
-
-    # A third way to be empty: the field is in the record but written `.` for this sample. htslib
-    # hands that back as a sentinel rather than a null -- NaN for a float, INT32_MIN for an integer --
-    # which would otherwise be stored as a real measurement.
-    numeric = float(value)
-    if math.isnan(numeric) or numeric == _INT32_MISSING:
-        return None
-
-    return cast(value)
-
-
-def _format_list_value(record: Variant, key: str, sample_idx: int) -> list | None:
-    """Same tolerance as `_format_value`, for a FORMAT field with several values per sample."""
-    try:
-        values = record.format(key)
-    except KeyError:
-        return None
-    return None if values is None else values[sample_idx].tolist()
 
 
 def process_occurrence(
@@ -238,20 +193,20 @@ def process_occurrence(
         "svtype": record.INFO.get("SVTYPE", "CNV"),
         "ciend": record.INFO.get("CIEND", None),
         "cipos": record.INFO.get("CIPOS", None),
-        "bc": _format_value(record, "BC", int, sample_idx),
-        "pe": _format_list_value(record, "PE", sample_idx),
-        "sm": _format_value(record, "SM", float, sample_idx),
+        "bc": format_value(record, "BC", sample_idx, int),
+        "pe": format_values(record, "PE", sample_idx, int),
+        "sm": format_value(record, "SM", sample_idx, float),
         "calls": calls,
         "phased": record.gt_phases[sample_idx],
-        "cn": _format_value(record, "CN", int, sample_idx),
-        "cnf": _format_value(record, "CNF", float, sample_idx),
-        "cnq": _format_value(record, "CNQ", float, sample_idx),
-        "mcn": _format_value(record, "MCN", int, sample_idx),
-        "mcnf": _format_value(record, "MCNF", float, sample_idx),
-        "mcnq": _format_value(record, "MCNQ", float, sample_idx),
-        "maf": _format_value(record, "MAF", float, sample_idx),
-        "sd": _format_value(record, "SD", float, sample_idx),
-        "ascn_as": _format_value(record, "AS", int, sample_idx),
+        "cn": format_value(record, "CN", sample_idx, int),
+        "cnf": format_value(record, "CNF", sample_idx, float),
+        "cnq": format_value(record, "CNQ", sample_idx, float),
+        "mcn": format_value(record, "MCN", sample_idx, int),
+        "mcnf": format_value(record, "MCNF", sample_idx, float),
+        "mcnq": format_value(record, "MCNQ", sample_idx, float),
+        "maf": format_value(record, "MAF", sample_idx, float),
+        "sd": format_value(record, "SD", sample_idx, float),
+        "ascn_as": format_value(record, "AS", sample_idx, int),
     }
 
     return occurrence

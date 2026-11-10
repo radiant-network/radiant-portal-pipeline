@@ -18,7 +18,7 @@ from radiant.tasks.vcf.cnv.germline.occurrence import (
     is_carrier,
     process_slivar_occurrence,
     sample_format,
-    slivar_transmission_mode,
+    slivar_cnv_transmisssion_mode,
 )
 from radiant.tasks.vcf.experiment import (
     RADIANT_GERMLINE_CNV_ANNOTATION_TASK,
@@ -262,7 +262,7 @@ def test_task_without_proband_in_the_vcf_fails():
 )
 def test_each_mode_tag_is_stored_under_its_own_name(tag, origin):
     record = SimpleNamespace(INFO={tag: "S_KID"})
-    assert slivar_transmission_mode(record, "S_KID", origin) == tag
+    assert slivar_cnv_transmisssion_mode(record, "S_KID", origin) == tag
 
 
 # (mode tag, an origin its TRIO_TABLE row never gives): the tag must then come from another child.
@@ -282,7 +282,7 @@ def test_each_mode_tag_is_stored_under_its_own_name(tag, origin):
 )
 def test_a_tag_that_does_not_pair_with_the_probands_origin_is_dropped(tag, origin):
     record = SimpleNamespace(INFO={tag: "S_KID,S_SIB"})
-    assert slivar_transmission_mode(record, "S_KID", origin) is None
+    assert slivar_cnv_transmisssion_mode(record, "S_KID", origin) is None
 
 
 def test_mode_origins_follow_the_rule_table():
@@ -299,13 +299,13 @@ def test_two_tags_that_both_pair_with_the_origin_give_no_mode():
     """The sibling's `denovo` and the proband's `denovo_suspect` both come from `po_denovo` rows: no tag is guessed,
     and the proband is never shown a confirmed de novo that may be the sibling's."""
     record = SimpleNamespace(INFO={"denovo": "S_KID,S_SIB", "denovo_suspect": "S_KID,S_SIB"})
-    assert slivar_transmission_mode(record, "S_KID", "DENOVO") is None
+    assert slivar_cnv_transmisssion_mode(record, "S_KID", "DENOVO") is None
 
 
 def test_unknown_cn_from_a_sibling_hides_the_probands_mode():
     """`unknown_cn` pairs with any origin, so it can never be ruled out."""
     record = SimpleNamespace(INFO={"inherited_maternal": "S_KID,S_SIB", "unknown_cn": "S_KID,S_SIB"})
-    assert slivar_transmission_mode(record, "S_KID", "MOTHER") is None
+    assert slivar_cnv_transmisssion_mode(record, "S_KID", "MOTHER") is None
 
 
 def test_mode_tags_are_the_pipelines_fourteen():
@@ -338,14 +338,14 @@ def test_each_po_tag_maps_to_the_snv_value(tag, origin):
 def test_an_uncertain_tag_never_gives_a_confirmed_value(tag, origin):
     """The sibling's `denovo` lists the proband too, as slivar writes a family tag."""
     record = SimpleNamespace(INFO={tag: "S_KID,S_SIB", "denovo": "S_KID,S_SIB"})
-    assert slivar_transmission_mode(record, "S_KID", origin) == tag
+    assert slivar_cnv_transmisssion_mode(record, "S_KID", origin) == tag
 
 
 def test_unaffected_proband_gets_an_origin_and_no_mode():
     """Mode tags list the affected members only; the `po_*` tags list every child."""
     record = SimpleNamespace(INFO={"po_mother": "S_KID", "inherited_maternal": "S_MOM"})
     assert slivar_parental_origin(record, "S_KID") == "MOTHER"
-    assert slivar_transmission_mode(record, "S_KID", "MOTHER") is None
+    assert slivar_cnv_transmisssion_mode(record, "S_KID", "MOTHER") is None
 
 
 @pytest.mark.parametrize(
