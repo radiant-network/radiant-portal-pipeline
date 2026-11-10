@@ -113,7 +113,7 @@ def is_carrier(calls: list[int]) -> bool:
     return any(c > 0 for c in calls)
 
 
-def slivar_cnv_transmisssion_mode(record: Variant, aliquot: str, parental_origin: str | None) -> str | None:
+def slivar_cnv_transmission_mode(record: Variant, aliquot: str, parental_origin: str | None) -> str | None:
     """The proband's mode tag, or None when it cannot be told apart.
 
     slivar values a mode tag with the family's affected members, not with the child whose call gave it: with an
@@ -206,7 +206,7 @@ def process_slivar_occurrence(
     occurrence = process_occurrence(record, part, seq_id, tenant_code, task_id, aliquot, sample_idx)
     occurrence["name"] = original_id(record, sample_idx) or record.ID
     occurrence["parental_origin"] = slivar_parental_origin(record, aliquot)
-    occurrence["transmission_mode"] = slivar_cnv_transmisssion_mode(record, aliquot, occurrence["parental_origin"])
+    occurrence["transmission_mode"] = slivar_cnv_transmission_mode(record, aliquot, occurrence["parental_origin"])
     for role, idx in (("mother", mother_idx), ("father", father_idx)):
         parent = sample_format(record, idx) if idx is not None else {}
         for field in ("calls", "cn", "bc", "pe", "sm"):
