@@ -1,4 +1,3 @@
-import math
 from urllib.parse import unquote
 
 from cyvcf2 import Variant
@@ -6,7 +5,7 @@ from pyiceberg.schema import NestedField, Schema
 from pyiceberg.types import BooleanType, FloatType, IntegerType, ListType, StringType
 
 from radiant.tasks.vcf.snv.germline.inheritance import slivar_parental_origin
-from radiant.tasks.vcf.vcf_utils import calls_without_phased
+from radiant.tasks.vcf.vcf_utils import calls_without_phased, format_array, format_value, format_values
 
 SCHEMA: Schema = Schema(
     NestedField(100, "part", IntegerType(), required=True),
@@ -88,66 +87,26 @@ CNV_MODE_ORIGINS: dict[str, frozenset[str | None] | None] = {
 }
 CNV_MODE_TAGS = tuple(CNV_MODE_ORIGINS)
 
-# cyvcf2 returns htslib's raw Integer FORMAT values (htslib/vcf.h): `bcf_int32_missing` (INT32 min) for `.`, and
-# `bcf_int32_vector_end` (INT32 min + 1) for the padding after a vector shorter than the record's longest.
-_INT_MISSING = -(2**31)
-_INT_VECTOR_END = -(2**31) + 1
-
 # Each sample's DRAGEN record ID, written by cnv-post-processing before the truvari collapses (BIOINFO-214), with
 # `:` percent-encoded as `%3A`: FORMAT values are `:`-separated, and DRAGEN IDs contain it.
 ORIGINAL_ID_FORMAT = "OID"
-
-
-def _int(value) -> int | None:
-    value = int(value)
-    return None if value in (_INT_MISSING, _INT_VECTOR_END) else value
-
-
-def _float(value) -> float | None:
-    value = float(value)
-    return None if math.isnan(value) else value
-
-
-def _format_int(record: Variant, field: str, sample_idx: int) -> int | None:
-    values = record.format(field)
-    return _int(values[sample_idx][0]) if values is not None else None
-
-
-def _format_float(record: Variant, field: str, sample_idx: int) -> float | None:
-    values = record.format(field)
-    return _float(values[sample_idx][0]) if values is not None else None
-
-
-def _format_ints(record: Variant, field: str, sample_idx: int) -> list[int | None] | None:
-    values = record.format(field)
-    if values is None:
-        return None
-    raw = [int(v) for v in values[sample_idx]]
-    # The sample's vector stops at the padding; a `.` inside it stays a None element.
-    if _INT_VECTOR_END in raw:
-        raw = raw[: raw.index(_INT_VECTOR_END)]
-    ints = [None if v == _INT_MISSING else v for v in raw]
-    return None if all(v is None for v in ints) else ints
 
 
 def sample_format(record: Variant, sample_idx: int) -> dict:
     """The DRAGEN FORMAT fields of one sample: `GT`, `CN`, `BC`, `PE` and `SM`. A missing value is None."""
     return {
         "calls": calls_without_phased(record, sample_idx),
-        "cn": _format_int(record, "CN", sample_idx),
-        "bc": _format_int(record, "BC", sample_idx),
-        "pe": _format_ints(record, "PE", sample_idx),
-        "sm": _format_float(record, "SM", sample_idx),
+        "cn": format_value(record, "CN", sample_idx, int),
+        "bc": format_value(record, "BC", sample_idx, int),
+        "pe": format_values(record, "PE", sample_idx, int),
+        "sm": format_value(record, "SM", sample_idx, float),
     }
 
 
 def original_id(record: Variant, sample_idx: int) -> str | None:
-    """The sample's own DRAGEN record ID, from `FORMAT/OID`. None when the VCF predates it or the sample has none."""
-    try:
-        values = record.format(ORIGINAL_ID_FORMAT)
-    except KeyError:
-        # cyvcf2 raises on a FORMAT field the header does not declare: a VCF made before BIOINFO-214.
-        return None
+    """The sample's own DRAGEN record ID, from `FORMAT/OID`. None when the VCF predates it (BIOINFO-214, the header
+    does not declare it) or the sample has none."""
+    values = format_array(record, ORIGINAL_ID_FORMAT)
     if values is None:
         return None
     value = str(values[sample_idx])
@@ -159,7 +118,7 @@ def is_carrier(calls: list[int]) -> bool:
     return any(c > 0 for c in calls)
 
 
-def slivar_transmission_mode(record: Variant, aliquot: str, parental_origin: str | None) -> str | None:
+def slivar_cnv_transmission_mode(record: Variant, aliquot: str, parental_origin: str | None) -> str | None:
     """The proband's mode tag, or None when it cannot be told apart.
 
     slivar values a mode tag with the family's affected members, not with the child whose call gave it: with an
@@ -253,7 +212,7 @@ def process_slivar_occurrence(
     occurrence = process_occurrence(record, part, seq_id, tenant_code, task_id, aliquot, sample_idx)
     occurrence["name"] = original_id(record, sample_idx) or record.ID
     occurrence["parental_origin"] = slivar_parental_origin(record, aliquot)
-    occurrence["transmission_mode"] = slivar_transmission_mode(record, aliquot, occurrence["parental_origin"])
+    occurrence["transmission_mode"] = slivar_cnv_transmission_mode(record, aliquot, occurrence["parental_origin"])
     for role, idx in (("mother", mother_idx), ("father", father_idx)):
         parent = sample_format(record, idx) if idx is not None else {}
         for field in ("calls", "cn", "bc", "pe", "sm"):

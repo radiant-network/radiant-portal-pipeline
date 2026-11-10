@@ -101,8 +101,7 @@ sequencing_experiments AS (
 		updated_at
 ),
 -- Proband source rule: the proband's alignment tasks of each case whose CNV annotation task has a slivar VCF.
--- The task alone is not enough: an annotation task with no output does not hide the DRAGEN set.
-superseded_dragen AS (
+original_alignment AS (
 	SELECT dragen.case_id, dragen.task_id
 	FROM sequencing_experiments dragen
 	JOIN sequencing_experiments slivar ON slivar.case_id = dragen.case_id AND slivar.seq_id = dragen.seq_id
@@ -154,5 +153,5 @@ LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = p.id AND f.cas
 -- CNVs come from the slivar set only. The parents' and the siblings' alignment tasks stay. A row left out never enters
 -- staging, so it is never loaded nor seen as pending; its `deleted` flag comes from the clinical tasks, not from this
 -- view, so nothing is deleted. The task and its files stay in the clinical model: the portal still shows them.
-LEFT JOIN superseded_dragen x ON x.case_id = s.case_id AND x.task_id = s.task_id
+LEFT JOIN original_alignment x ON x.case_id = s.case_id AND x.task_id = s.task_id
 WHERE x.task_id IS NULL

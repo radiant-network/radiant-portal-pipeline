@@ -36,7 +36,12 @@
 --      and `father_pe` nullable (a partly missing `PE` vector): a table created from an earlier revision of this
 --      branch has to be recreated again, or the parquet writer rejects the first such vector and the whole part's
 --      germline CNV load fails;
---   3. the two staging views dropped (base database), then `radiant-init-starrocks-base-tables` run: the views are
+--   3. the Iceberg `somatic_cnv_occurrence` table recreated too: run ONLY the somatic CNV occurrence task of the
+--      init-iceberg-tables DAG. Its `pe` elements are nullable now (the FORMAT readers moved to
+--      radiant/tasks/vcf/vcf_utils.py read a `.` inside `PE` as NULL, where the somatic reader stored INT32 min).
+--      Each import overwrites this table too, so nothing is lost. Without it, the first partly missing `PE` vector
+--      fails the whole part's somatic CNV load;
+--   4. the two staging views dropped (base database), then `radiant-init-starrocks-base-tables` run: the views are
 --      created with `IF NOT EXISTS`. Otherwise the slivar VCFs stay invisible, and the proband source rule does not
 --      apply:
 --
