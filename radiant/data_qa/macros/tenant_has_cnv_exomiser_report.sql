@@ -1,7 +1,9 @@
 {#
-  SQL condition: the tenant of the current pass has a non-deleted `radiant_germline_cnv_annotation` task with a CNV
-  Exomiser report (RAD-181) in staging_sequencing_experiment, the rows `load_exomiser_cnv_files` loads. A CNV annotation
-  task alone is not enough: CNV post-processing runs Exomiser only for a family with a phenopacket.
+  SQL condition: the tenant of the current pass has loaded CNV Exomiser rows (RAD-181) in raw_exomiser_cnv, the shared
+  table `load_exomiser_cnv_files` fills and the tenant `exomiser_cnv` insert reads. The raw table holds only the
+  contributing rows of the reports `import_part` has loaded. A report in staging_sequencing_experiment is not enough:
+  it can wait for its import, or have no contributing row (a small CNV set), and the tenant table then stays empty
+  with no defect.
 
   Meant for the `expected_if` option of should_not_be_empty / should_not_contain_only_null on `exomiser_cnv`, as
   tenant_has_task_type is for the somatic tables.
@@ -14,11 +16,8 @@
   {%- if tenant_code -%}
     exists (
         select 1
-        from {{ adapter.quote(env_var('SR_SCHEMA', 'radiant')) }}.staging_sequencing_experiment
+        from {{ adapter.quote(env_var('SR_SCHEMA', 'radiant')) }}.raw_exomiser_cnv
         where tenant_code = '{{ tenant_code }}'
-          and task_type = 'radiant_germline_cnv_annotation'
-          and exomiser_filepath is not null
-          and not deleted
     )
   {%- else -%}
     true

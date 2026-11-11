@@ -110,7 +110,7 @@ A sequencing can hold two germline CNV sets, each under its own task:
 | Set | Task | Members | Extra columns |
 |:--|:--|:--|:--|
 | DRAGEN | **alignment_germline_variant_calling** | every member | none |
-| slivar | **radiant_germline_cnv_annotation** | the proband only | parental origin, transmission mode, the parents' calls |
+| slivar | **radiant_germline_cnv_annotation** | the proband only | parental origin, transmission mode, the parents' calls, the CNV Exomiser result |
 
 - The slivar set holds the proband's carrier records of the family's slivar VCF. A **0/0** or
   **./.** record of the proband gives no row.
@@ -130,6 +130,13 @@ A sequencing can hold two germline CNV sets, each under its own task:
 - Keyed on **task_id**, the copy step also keeps the rows of an older alignment task of the same
   sequencing: a re-alignment adds a DRAGEN set, it no longer replaces the old one. The old set goes
   when its task is deleted in the clinical model. The portal's task selector opens the newest task.
+- The CNV Exomiser report of the CNV annotation task (RAD-181) has its own path, apart from the SNV
+  one. **load_exomiser_cnv_files** loads its contributing rows into **raw_exomiser_cnv**, tagged with
+  the proband's sequencing and the task. Then, per tenant, **insert_exomiser_cnv** matches each row
+  to its occurrence (the report's VCF_ID on **name**, else on the record ID) and ranks the rows of
+  each occurrence into **exomiser_cnv**. **insert_germline_cnv_occurrences** copies the best row
+  (**variant_rank** 1) into six columns, **exomiser_rank** to **exomiser_acmg_evidence**. The DRAGEN
+  set keeps them empty.
 
 See radiant-hub docs/features/RAD-169-cnv-post-processing.md.
 

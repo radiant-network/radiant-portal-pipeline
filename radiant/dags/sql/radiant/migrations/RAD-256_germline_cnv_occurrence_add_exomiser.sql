@@ -37,9 +37,24 @@
 --   1. Every {tenant}_tenant database: section 1 (the ALTER, and the `exomiser_cnv` table). Against an unmigrated
 --      table the positional insert fails and every CNV import breaks. Let the ALTER reach FINISHED before the next
 --      import runs there.
---   2. The Iceberg `germline_cnv_occurrence` table recreated with the new schema (`vcf_id`): run ONLY the germline
---      CNV occurrence task of the init-iceberg-tables DAG (the other tasks drop and recreate their own tables). Each
---      import overwrites this table, so nothing is lost. Otherwise `insert_exomiser_cnv` fails on `o.vcf_id`.
+--   2. The Iceberg `germline_cnv_occurrence` table gets the new column `vcf_id`, in place. Otherwise
+--      `insert_exomiser_cnv` fails on `o.vcf_id`. Do NOT run the init-iceberg-tables DAG for this: its tasks are one
+--      serial chain, and the tasks before the CNV one drop `snv_variant`, `snv_consequence`, `germline_snv_occurrence`
+--      and `germline_snv_comphet`, which hold every part (radiant/tasks/iceberg/initialization.py). Run this Python
+--      once, in the radiant-operator image of step 0 with the environment of an import (the `default` PyIceberg
+--      catalog and RADIANT_ICEBERG_NAMESPACE). It is safe to re-run. `add_column` appends the column, and the
+--      extraction builds its Arrow table from the table's schema by name, so the field id it gets does not matter.
+--      The `refresh_iceberg_tables` task of the next `radiant-import-part` makes StarRocks see the column.
+--
+--        import os
+--        from pyiceberg.catalog import load_catalog
+--        from pyiceberg.types import StringType
+--
+--        table = load_catalog("default").load_table(f"{os.environ['RADIANT_ICEBERG_NAMESPACE']}.germline_cnv_occurrence")
+--        if "vcf_id" not in table.schema().column_names:
+--            with table.update_schema() as update:
+--                update.add_column("vcf_id", StringType())
+--        print(table.schema().find_field("vcf_id"))
 --   3. Base database: drop the two staging views, then run `radiant-init-starrocks-base-tables` with the
 --      `udf_release_version` in use. It creates `raw_exomiser_cnv` and the views with the new definition (both
 --      `IF NOT EXISTS`). Otherwise the CNV reports stay invisible and the load has no table:
