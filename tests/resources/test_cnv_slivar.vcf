@@ -1,0 +1,46 @@
+##fileformat=VCFv4.2
+##contig=<ID=chr1,length=248956422>
+##contig=<ID=chrX,length=156040895>
+##ALT=<ID=DEL,Description="Deletion relative to the reference">
+##ALT=<ID=DUP,Description="Region of elevated copy number relative to the reference">
+##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">
+##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">
+##INFO=<ID=REFLEN,Number=1,Type=Integer,Description="Number of REF positions included in this record">
+##INFO=<ID=denovo,Number=.,Type=String,Description="added by slivar with expression: denovo">
+##INFO=<ID=denovo_suspect,Number=.,Type=String,Description="added by slivar with expression: denovo_suspect">
+##INFO=<ID=inherited_maternal,Number=.,Type=String,Description="added by slivar with expression: inherited_maternal">
+##INFO=<ID=inherited_paternal,Number=.,Type=String,Description="added by slivar with expression: inherited_paternal">
+##INFO=<ID=recessive,Number=.,Type=String,Description="added by slivar with expression: recessive">
+##INFO=<ID=recessive_lowconf,Number=.,Type=String,Description="added by slivar with expression: recessive_lowconf">
+##INFO=<ID=possible_denovo,Number=.,Type=String,Description="added by slivar with expression: possible_denovo">
+##INFO=<ID=possible_inherited_maternal,Number=.,Type=String,Description="added by slivar with expression: possible_inherited_maternal">
+##INFO=<ID=possible_inherited_paternal,Number=.,Type=String,Description="added by slivar with expression: possible_inherited_paternal">
+##INFO=<ID=inheritance_unresolved,Number=.,Type=String,Description="added by slivar with expression: inheritance_unresolved">
+##INFO=<ID=mendelian_inconsistent,Number=.,Type=String,Description="added by slivar with expression: mendelian_inconsistent">
+##INFO=<ID=unknown_cn,Number=.,Type=String,Description="added by slivar with expression: unknown_cn">
+##INFO=<ID=x_linked_denovo,Number=.,Type=String,Description="added by slivar with expression: x_linked_denovo">
+##INFO=<ID=x_linked_recessive,Number=.,Type=String,Description="added by slivar with expression: x_linked_recessive">
+##INFO=<ID=po_mother,Number=.,Type=String,Description="added by slivar with expression: po_mother">
+##INFO=<ID=po_father,Number=.,Type=String,Description="added by slivar with expression: po_father">
+##INFO=<ID=po_both,Number=.,Type=String,Description="added by slivar with expression: po_both">
+##INFO=<ID=po_ambiguous,Number=.,Type=String,Description="added by slivar with expression: po_ambiguous">
+##INFO=<ID=po_denovo,Number=.,Type=String,Description="added by slivar with expression: po_denovo">
+##INFO=<ID=po_possible_denovo,Number=.,Type=String,Description="added by slivar with expression: po_possible_denovo">
+##INFO=<ID=po_possible_mother,Number=.,Type=String,Description="added by slivar with expression: po_possible_mother">
+##INFO=<ID=po_possible_father,Number=.,Type=String,Description="added by slivar with expression: po_possible_father">
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=SM,Number=1,Type=Float,Description="Linear copy ratio of the segment mean">
+##FORMAT=<ID=CN,Number=1,Type=Integer,Description="Estimated copy number">
+##FORMAT=<ID=BC,Number=1,Type=Integer,Description="Number of bins in the region">
+##FORMAT=<ID=PE,Number=2,Type=Integer,Description="Number of improperly paired end reads at start and stop breakpoints">
+##FORMAT=<ID=OID,Number=1,Type=String,Description="ID of this sample's own caller record, kept through the truvari collapses (':' percent-encoded as %3A)">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S_MOM	S_DAD	S_KID	S_SIB
+chr1	1000	DRAGEN:GAIN:chr1:1001-5000	N	<DUP>	50	PASS	SVTYPE=CNV;END=5000;REFLEN=4000;denovo=S_KID;po_denovo=S_KID	GT:SM:CN:BC:PE:OID	0/0:1.0:2:4:0,0:.	0/0:1.0:2:4:0,0:.	0/1:1.48:3:4:5,7:DRAGEN%3AGAIN%3Achr1%3A1001-5000	0/0:1.0:2:4:0,0:.
+chr1	10000	DRAGEN:LOSS:chr1:10001-20000	N	<DEL>	50	PASS	SVTYPE=CNV;END=20000;REFLEN=10000;inherited_maternal=S_MOM,S_KID;po_mother=S_KID	GT:SM:CN:BC:PE:OID	0/1:0.52:1:9:11,12:DRAGEN%3ALOSS%3Achr1%3A10001-20000	0/0:1.01:2:9:0,0:.	0/1:0.49:1:9:13,14:DRAGEN%3ALOSS%3Achr1%3A10101-19900	0/0:0.98:2:9:0,0:.
+chr1	30000	DRAGEN:LOSS:chr1:30001-40000	N	<DEL>	50	PASS	SVTYPE=CNV;END=40000;REFLEN=10000	GT:SM:CN:BC:PE:OID	0/1:0.5:1:9:1,2:DRAGEN%3ALOSS%3Achr1%3A30001-40000	0/0:1.0:2:9:0,0:.	0/0:1.0:2:9:0,0:.	0/0:1.0:2:9:0,0:.
+chr1	41000	DRAGEN:GAIN:chr1:41001-45000	N	<DUP>	50	PASS	SVTYPE=CNV;END=45000;REFLEN=4000	GT:SM:CN:BC:PE:OID	0/1:1.5:3:4:1,2:DRAGEN%3AGAIN%3Achr1%3A41001-45000	0/0:1.0:2:4:0,0:.	./.:.:.:.:.,.:.	0/0:1.0:2:4:0,0:.
+chr1	50000	DRAGEN:GAIN:chr1:50001-60000	N	<DUP>	50	PASS	SVTYPE=CNV;END=60000;REFLEN=10000;possible_denovo=S_KID;po_possible_denovo=S_KID	GT:SM:CN:BC:PE:OID	0/0:1.02:2:9:0,0:.	./.:.:.:.:.,.:.	0/1:1.51:3:9:3,4:DRAGEN%3AGAIN%3Achr1%3A50001-60000	0/0:1.0:2:9:0,0:.
+chr1	61000	DRAGEN:LOSS:chr1:61001-65000	N	<DEL>	50	PASS	SVTYPE=CNV;END=65000;REFLEN=4000	GT:SM:CN:BC:PE:OID	0/0:1.0:2:4:0,0:.	0/0:1.0:2:4:0,0:.	0/0:1.0:2:4:0,0:.	0/1:0.5:1:4:2,2:DRAGEN%3ALOSS%3Achr1%3A61001-65000
+chr1	70000	DRAGEN:GAIN:chr1:70001-80000	N	<DUP>	50	PASS	SVTYPE=CNV;END=80000;REFLEN=10000	GT:SM:CN:BC:PE:OID	0/0:1.0:2:9:0,0:.	0/0:1.0:2:9:0,0:.	0/1:1.5:3:9:6,6:DRAGEN%3AGAIN%3Achr1%3A70001-80000	0/0:1.0:2:9:0,0:.
+chr1	90000	DRAGEN:LOSS:chr1:90001-99000	N	<DEL>	50	PASS	SVTYPE=CNV;END=99000;REFLEN=9000;denovo=S_KID,S_SIB;possible_denovo=S_KID,S_SIB;po_denovo=S_SIB;po_possible_denovo=S_KID	GT:SM:CN:BC:PE:OID	0/0:1.0:2:9:0,0:.	./.:.:.:.:.,.:.	0/1:0.5:1:9:4,4:DRAGEN%3ALOSS%3Achr1%3A90001-99000	0/1:0.5:1:9:4,5:DRAGEN%3ALOSS%3Achr1%3A90011-99000
+chrX	100000	DRAGEN:LOSS:chrX:100001-120000	N	<DEL>	50	PASS	SVTYPE=CNV;END=120000;REFLEN=20000;x_linked_denovo=S_KID;po_denovo=S_KID	GT:SM:CN:BC:PE:OID	0/0:1.0:2:9:0,0:.	0:1.0:1:9:0,0:.	1:0.02:0:9:8,9:DRAGEN%3ALOSS%3AchrX%3A100001-120000	0/0:1.0:2:9:0,0:.

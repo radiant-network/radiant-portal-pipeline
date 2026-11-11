@@ -167,7 +167,10 @@ the variant ETL. Intended for this phase.
 
 ## 8. Out of scope
 
-- **Ingesting the post-processed CNV VCF.** Known work: a WHERE line in
+- **Ingesting the post-processed CNV VCF.** Done since (design: radiant-hub
+  `docs/features/RAD-169-cnv-post-processing.md`): the WHERE line and the task model below, the
+  proband's carrier records only, and the slivar `po_*` and mode tags; no VEP `CSQ` columns. Known work
+  at the time: a WHERE line in
   `staging_external_sequencing_experiment` for (`radiant_germline_cnv_annotation`, `gcnv`, `vcf`);
   a task model in `radiant/tasks/vcf/experiment.py` (the alignment one hard-fails on more than one
   row per task); per-sample genotype filtering in `radiant/tasks/vcf/cnv/germline/occurrence.py`

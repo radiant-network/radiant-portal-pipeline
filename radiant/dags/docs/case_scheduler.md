@@ -9,7 +9,7 @@ discover_{germline_snv,germline_cnv,somatic_snv,qc,qc_somatic,import}_cases, fet
     -> discover_cases -> set_processing (one per tenant)
     -> trigger_germline_snv_postprocessing ---+-> trigger_import --+
     -> trigger_somatic_snv_annotation --------+                    |
-    -> trigger_germline_cnv_postprocessing ------------------------+-> rediscover_{germline_snv,germline_cnv,
+    -> trigger_germline_cnv_postprocessing ---+--------------------+-> rediscover_{germline_snv,germline_cnv,
     -> trigger_quality_control ------------------------------------+   somatic_snv,qc,qc_somatic,
                                                                        import}_cases,
                                                                        refresh_case_statuses
@@ -20,10 +20,10 @@ Each key names the case type and the variant type: **germline_snv**, **germline_
 **somatic_snv**. Quality control has one query per case type: **qc** (germline) and **qc_somatic**
 (the tumor of the somatic cases). Their rows are counted together.
 
-The import waits for SNV post-processing and somatic annotation, success or not: it loads the
-annotation tasks they register. Without that order the import could run first, and the case's
-variants would only arrive with the next day's run. CNV post-processing stays outside: the import
-does not read its outputs.
+The import waits for SNV post-processing, somatic annotation and CNV post-processing, success or
+not: it loads the annotation tasks they register (for CNV post-processing, the proband's slivar VCF,
+RAD-206). Without that order the import could run first, and the case's variants would only arrive
+with the next day's run.
 
 The four "from Cases" DAGs have no schedule of their own: this DAG is their schedule. They can
 still be run by hand for a targeted rerun, which leaves the case statuses alone.
@@ -78,7 +78,7 @@ The pipelines and the import run with `trigger_rule=all_done`:
 - on a day with no `submitted` case `set_processing` is skipped, and the cases already in
   `processing` or later with new files must still be processed;
 - a portal outage fails `set_processing`, and the pipelines still run;
-- a failed SNV post-processing or somatic annotation still lets the import run.
+- a failed SNV post-processing, somatic annotation or CNV post-processing still lets the import run.
 
 ## A failed import, CNV post-processing or quality control stops the run
 
