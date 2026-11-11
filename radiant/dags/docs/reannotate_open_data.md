@@ -79,8 +79,8 @@ A watched source only moves a gate if it has an OpenDataLake contract. A source 
 RADIANT_OPEN_DATA_USE_LEGACY_TABLES is read straight off the legacy Radiant catalog, carries no ref
 and no snapshot, and cannot open a gate while it is held — so the gate gets narrower as an
 environment holds more back, never wrong. Cytoband cannot be watched at all: it is a broker load
-with no Iceberg source anywhere. clinvar_rcv has a contract but no re-annotation statement reads
-it, so it is deliberately absent.
+with no Iceberg source anywhere. **clinvar_rcv**, **ensembl_transcript** and **mane** have a contract
+but no re-annotation statement reads them, so they are deliberately absent.
 
 ### The signal is the Iceberg snapshot, not dataset_version
 
@@ -126,9 +126,11 @@ an unmigrated environment.
 ### P1 gates too, on the other column
 
 **import-open-data** carries the same kind of gate on its own inserts, so a source that has not
-published is not re-read into StarRocks either. Its override is **force_import** — set it after
-editing an insert statement, and after truncating or recreating a StarRocks open-data table,
-neither of which a snapshot comparison can see.
+published is not re-read into StarRocks either. **gene_reference_transcript** is the one insert built
+from two sources, **ensembl_transcript** and **mane**: it is rebuilt when either moves, and skipped when
+either is held back, since neither has a pre-contract table to fall back to. Its override is
+**force_import** — set it after editing an insert statement, and after truncating or recreating a
+StarRocks open-data table, neither of which a snapshot comparison can see.
 
 One table, **two snapshot columns**, because the two values drift apart:
 

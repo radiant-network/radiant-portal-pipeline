@@ -70,6 +70,9 @@ _OPEN_DATA_CONTRACT_TABLES = {
     # `alias` is an array upstream. One row carries a value so pyarrow infers list<string>, not list<null>.
     "ensembl_gene_v1": ["alias"],
     "ensembl_exon_by_gene_v1": ["transcript_ids"],
+    # Only the columns the gene_reference_transcript build reads, not the whole contracts.
+    "ensembl_transcript_v1": None,
+    "mane_v1": None,
     "hpo_genes_v1": None,
     "hpo_terms_v1": None,
     "mondo_v1": None,
