@@ -64,8 +64,12 @@ def format_value(record: Variant, field: str, sample_idx: int, cast: Callable[[A
 
 
 def format_values(record: Variant, field: str, sample_idx: int, cast: Callable[[Any], Any]) -> list | None:
-    """All the values of one numeric FORMAT field for one sample. The vector stops at the padding; a `.` inside it
-    is a None element. None when the field is absent (as `format_value`) or every value is `.`."""
+    """All the values of one numeric FORMAT field for one sample, or None. The vector stops at the padding.
+
+    None when the field is absent (as `format_value`) or every value is `.` (a sample with no call of its own).
+    Otherwise every value must be present: the CNV schemas declare the list elements required, and no VCF seen so
+    far has a partly missing vector (`.,12`). One raises a ValueError rather than being stored.
+    """
     values = format_array(record, field)
     if values is None:
         return None
@@ -74,7 +78,14 @@ def format_values(record: Variant, field: str, sample_idx: int, cast: Callable[[
         if float(value) == INT_VECTOR_END:
             break
         items.append(_value_or_none(value, cast))
-    return None if all(v is None for v in items) else items
+    if all(v is None for v in items):
+        return None
+    if any(v is None for v in items):
+        raise ValueError(
+            f"FORMAT/{field} of sample {sample_idx} is partly missing at {record.CHROM}:{record.POS} "
+            f"(ID {record.ID}): {items}. Expected every value or none."
+        )
+    return items
 
 
 # Spellings some callers or versions use for an INFO field, besides the name the ETL reads it under.
