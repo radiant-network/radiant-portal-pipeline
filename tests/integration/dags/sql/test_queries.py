@@ -213,6 +213,7 @@ def test_queries_are_valid(
             "hpo_term",
             "ensembl_gene",
             "ensembl_exon_by_gene",
+            "gene_reference_transcript",
             "cytoband",
             "orphanet_gene_panel",
             "ddd_gene_panel",

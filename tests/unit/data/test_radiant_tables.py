@@ -168,8 +168,10 @@ def test_named_sources_are_held_back_and_the_rest_still_come_from_opendatalake()
         "iceberg_ddd_gene_set",
         "iceberg_ensembl_exon_by_gene",
         "iceberg_ensembl_gene",
+        "iceberg_ensembl_transcript",
         "iceberg_hpo_gene_set",
         "iceberg_hpo_term",
+        "iceberg_mane",
     }
 
 
@@ -194,12 +196,13 @@ def test_held_back_sources_read_their_pre_contract_table():
     assert "VERSION AS OF" not in mapping["iceberg_dbnsfp"]
 
 
-def test_only_clinvar_rcv_has_no_pre_contract_name_to_fall_back_to():
+def test_only_sources_whose_reader_skips_when_held_back_have_no_pre_contract_name():
     """A contract table with no pre-contract name resolves to no relation at all when held back --
-    right for `clinvar_rcv` (broker-loaded, never in the Radiant catalog), a silent hole for any
+    right for `clinvar_rcv` (broker-loaded, never in the Radiant catalog) and for the two sources of
+    `gene_reference_transcript` (its build skips when either is held back), a silent hole for any
     other source, whose statement would then render against an empty string."""
     missing = set(ICEBERG_OPEN_DATA_CONTRACT_MAPPING) - set(ICEBERG_OPEN_DATA_PRE_CONTRACT_MAPPING)
-    assert missing == {"iceberg_clinvar_rcv"}
+    assert missing == {"iceberg_clinvar_rcv", "iceberg_ensembl_transcript", "iceberg_mane"}
 
 
 def test_a_held_back_clinvar_rcv_resolves_to_nothing_at_all():
