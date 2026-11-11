@@ -3,8 +3,10 @@ FROM --platform=linux/amd64 python:3.12-slim
 USER root
 
 # bcftools left-aligns the COSMIC Mutation Census variants (radiant/tasks/open_data/cosmic_mutation_set.py);
-# tabix brings bgzip and tabix, which compress and index the public IGV tracks (radiant/tasks/open_data/igv_tracks.py)
+# tabix brings bgzip and tabix, which compress and index the public IGV tracks (radiant/tasks/open_data/igv_tracks.py).
+# The upgrade takes the Debian security fixes that the python base image does not have yet
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends bcftools tabix \
     && rm -rf /var/lib/apt/lists/*
 
