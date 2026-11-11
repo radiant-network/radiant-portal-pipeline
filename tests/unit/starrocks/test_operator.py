@@ -285,6 +285,36 @@ def test_exomiser_load_skips_deleted_tasks():
     assert _run_exomiser_load([deleted]) == []
 
 
+def _run_exomiser_load_swap(tasks, *, partition_exists):
+    op = RadiantLoadExomiserOperator(
+        task_id="t",
+        table="radiant.raw_exomiser",
+        swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+        parameters={"task_ids": [11], "deleted_task_ids": [11]},
+        tasks=tasks,
+    )
+    with (
+        patch.object(op, "get_db_hook", return_value=MagicMock()),
+        patch.object(op, "render_template", side_effect=lambda content, *_: content),
+        patch.object(op, "verify_load_status"),
+        patch.object(op, "swap_partitions") as swap,
+    ):
+        op.run_insert(context={}, partition_exists=partition_exists)
+    return swap
+
+
+def test_exomiser_load_without_files_still_swaps_the_copied_partition():
+    """The copy step dropped the rows of this run's tasks: without the swap, a deleted task's rows would stay."""
+    deleted = _annotation_task(11, "s3://test/CA1.exomiser.variants.tsv", [_experiment(101, "proband")])
+    deleted["deleted"] = True
+
+    _run_exomiser_load_swap([deleted], partition_exists=True).assert_called_once()
+
+
+def test_exomiser_load_without_files_and_without_partition_does_not_swap():
+    _run_exomiser_load_swap([], partition_exists=False).assert_not_called()
+
+
 def test_exomiser_load_without_proband_raises():
     task = _annotation_task(11, "s3://test/CA1.exomiser.variants.tsv", [_experiment(102, "mother")])
 

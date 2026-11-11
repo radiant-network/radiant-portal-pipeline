@@ -637,6 +637,11 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
 
         if not _parameters:
             self.log.info("No Exomiser files to load, skipping...")
+            # The copy step has already filled the temporary partition with the rows to keep (the tasks not in this
+            # run). Swap it in all the same, or the rows of this run's tasks (deleted, or re-imported without a
+            # report) stay in the partition for good.
+            if partition_exists and self.is_swap:
+                self.swap_partitions()
             return
 
         hook = self.get_db_hook()
