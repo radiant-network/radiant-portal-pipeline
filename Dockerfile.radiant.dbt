@@ -1,5 +1,10 @@
 FROM --platform=linux/amd64 python:3.12-slim
 
+# Takes the Debian security fixes that the python base image does not have yet
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN useradd --create-home --uid 1000 dbt
 
 ENV DBT_PROFILES_DIR=/opt/dbt/data_qa \

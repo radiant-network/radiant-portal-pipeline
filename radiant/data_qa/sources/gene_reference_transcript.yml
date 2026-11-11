@@ -1,0 +1,27 @@
+version: 2
+
+sources:
+  - name: radiant
+    schema: "{{ env_var('SR_SCHEMA', 'radiant') }}"
+    tables:
+      - name: gene_reference_transcript
+        tests:
+          # --- Should Not Be Empty -------------------------------------------
+          - should_not_be_empty:
+              name: gene_reference_transcript__should_not_be_empty
+        columns:
+          - name: ensembl_gene_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: gene_reference_transcript__should_not_contain_null__ensembl_gene_id
+              # --- Should Be Unique ------------------------------------------
+              - unique:
+                  name: gene_reference_transcript__should_be_unique__ensembl_gene_id
+          - name: ensembl_transcript_id
+            tests:
+              # --- Should Not Contain Null -----------------------------------
+              - not_null:
+                  name: gene_reference_transcript__should_not_contain_null__ensembl_transcript_id
+          - name: refseq_transcript_id
+            description: "Versioned RefSeq id (NM_000607.4) of the MANE Select transcript; null when the gene has none."

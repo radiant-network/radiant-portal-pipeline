@@ -80,6 +80,7 @@ with DAG(
         "hpo_gene_panel",
         "ensembl_gene",
         "ensembl_exon_by_gene",
+        "gene_reference_transcript",
         "cytoband",
         "orphanet_gene_panel",
         "ddd_gene_panel",

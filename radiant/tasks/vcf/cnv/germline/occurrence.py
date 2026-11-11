@@ -25,9 +25,9 @@ SCHEMA: Schema = Schema(
     NestedField(114, "filter", StringType(), required=False),
     NestedField(115, "bc", IntegerType(), required=False),
     NestedField(116, "cn", IntegerType(), required=False),
-    # Nullable elements: a `PE` vector can be partly missing (`.,12`), and the parquet writer rejects a NULL in a
-    # required element. The table has to be recreated for this to apply: the write uses the table's own schema.
-    NestedField(117, "pe", ListType(201, IntegerType(), element_required=False), required=False),
+    # `pe`, `mother_pe`, `father_pe`: NULL (a sample with no call of its own, or no PE), or every value present.
+    # `format_values` rejects a partly missing vector.
+    NestedField(117, "pe", ListType(201, IntegerType()), required=False),
     NestedField(118, "sm", FloatType(), required=False),
     NestedField(119, "svtype", StringType(), required=False),
     NestedField(120, "svlen", IntegerType(), required=False),
@@ -42,13 +42,13 @@ SCHEMA: Schema = Schema(
     NestedField(127, "mother_calls", ListType(204, IntegerType()), required=False),
     NestedField(128, "mother_cn", IntegerType(), required=False),
     NestedField(129, "mother_bc", IntegerType(), required=False),
-    NestedField(130, "mother_pe", ListType(205, IntegerType(), element_required=False), required=False),
+    NestedField(130, "mother_pe", ListType(205, IntegerType()), required=False),
     NestedField(131, "mother_sm", FloatType(), required=False),
     NestedField(132, "mother_name", StringType(), required=False),
     NestedField(133, "father_calls", ListType(206, IntegerType()), required=False),
     NestedField(134, "father_cn", IntegerType(), required=False),
     NestedField(135, "father_bc", IntegerType(), required=False),
-    NestedField(136, "father_pe", ListType(207, IntegerType(), element_required=False), required=False),
+    NestedField(136, "father_pe", ListType(207, IntegerType()), required=False),
     NestedField(137, "father_sm", FloatType(), required=False),
     NestedField(138, "father_name", StringType(), required=False),
     # The VCF record's `ID`. On the slivar set it can differ from `name` (the proband's `FORMAT/OID`): it is the call

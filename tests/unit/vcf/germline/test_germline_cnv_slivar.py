@@ -365,7 +365,7 @@ def test_is_carrier(calls, carrier):
     assert is_carrier(calls) is carrier
 
 
-def test_integer_vector_stops_at_the_padding_and_keeps_missing_values(tmp_path):
+def _pe_record(tmp_path, mother_pe: str):
     vcf_path = tmp_path / "padding.vcf"
     vcf_path.write_text(
         "##fileformat=VCFv4.2\n"
@@ -376,23 +376,33 @@ def test_integer_vector_stops_at_the_padding_and_keeps_missing_values(tmp_path):
         '##FORMAT=<ID=PE,Number=.,Type=Integer,Description="Paired-end reads">\n'
         '##FORMAT=<ID=SM,Number=1,Type=Float,Description="Segment mean">\n'
         "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tA\tB\tC\tD\n"
-        "chr1\t1\tDRAGEN:LOSS:chr1:1-2\tN\t<DEL>\t.\tPASS\t.\tGT:CN:PE\t0/1:.:5,7,9\t0/1:2:3\t0/1:2:.,4\t0/1:2:.\n"
+        f"chr1\t1\tDRAGEN:LOSS:chr1:1-2\tN\t<DEL>\t.\tPASS\t.\tGT:CN:PE\t0/1:.:5,7,9\t0/1:2:3\t./.:.:{mother_pe}\t0/0:2:.\n"
     )
-    record = next(VCF(str(vcf_path)))
+    return next(VCF(str(vcf_path)))
 
-    assert [sample_format(record, idx)["pe"] for idx in range(4)] == [[5, 7, 9], [3], [None, 4], None]
+
+def test_pe_is_a_null_array_or_every_value(tmp_path):
+    """A parent with no call of its own has every PE value missing (`.,.` after the merge, `.` after depth
+    refinement): the column is NULL, never a list of NULLs."""
+    record = _pe_record(tmp_path, ".,.")
+
+    assert [sample_format(record, idx)["pe"] for idx in range(4)] == [[5, 7, 9], [3], None, None]
     assert sample_format(record, 0)["cn"] is None
 
-    # A partly missing vector must reach the Iceberg table: the parquet writer rejects a NULL element of a list
-    # whose elements are required, and one such vector fails the whole part's load.
     row = process_slivar_occurrence(record, 1, 11, "test", 9701, "A", 0, mother_idx=2, father_idx=3)
     table = pa.Table.from_pylist([row], schema=SCHEMA.as_arrow())
     pq.write_table(table, io.BytesIO())
     assert (table.to_pylist()[0]["pe"], table.to_pylist()[0]["mother_pe"], table.to_pylist()[0]["father_pe"]) == (
         [5, 7, 9],
-        [None, 4],
+        None,
         None,
     )
+
+
+def test_a_partly_missing_parent_pe_fails(tmp_path):
+    record = _pe_record(tmp_path, ".,4")
+    with pytest.raises(ValueError, match="FORMAT/PE of sample 2 is partly missing"):
+        process_slivar_occurrence(record, 1, 11, "test", 9701, "A", 0, mother_idx=2, father_idx=3)
 
 
 def _row(aliquot: str, filepath: str = "s3://test-vcf/mock-9701.cnv.slivar.vcf.gz") -> dict:

@@ -25,9 +25,8 @@ SCHEMA: Schema = Schema(
     NestedField(613, "calls", ListType(700, IntegerType()), required=False),
     NestedField(614, "filter", StringType(), required=False),
     NestedField(615, "bc", IntegerType(), required=False),
-    # Nullable elements: a `PE` vector can be partly missing (`.,12`), and the parquet writer rejects a NULL in a
-    # required element. The table has to be recreated for this to apply: the write uses the table's own schema.
-    NestedField(616, "pe", ListType(701, IntegerType(), element_required=False), required=False),
+    # NULL, or every value present: `format_values` rejects a partly missing vector.
+    NestedField(616, "pe", ListType(701, IntegerType()), required=False),
     NestedField(617, "sm", FloatType(), required=False),
     NestedField(618, "svtype", StringType(), required=False),
     NestedField(619, "svlen", IntegerType(), required=False),

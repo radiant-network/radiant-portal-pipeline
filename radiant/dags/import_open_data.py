@@ -212,10 +212,28 @@ with DAG(
             )
         )
 
+    # Built from two contract sources with no pre-contract table: nothing to read when either is held back,
+    # and rebuilt when either has a new snapshot.
+    data_tasks.append(
+        RadiantStarRocksOperator(
+            task_id="insert_gene_reference_transcript",
+            task_display_name="gene_reference_transcript Insert Data",
+            sql="./sql/open_data/gene_reference_transcript_insert.sql",
+            submit_task_options=SubmitTaskOptions(max_query_timeout=3600, poll_interval=30),
+            trigger_rule="none_failed",
+            skip_if=(
+                "{{ (not mapping.get('iceberg_ensembl_transcript_is_contract'))"
+                " or (not mapping.get('iceberg_mane_is_contract'))"
+                f" or (({skip_unchanged('ensembl_transcript')}) and ({skip_unchanged('mane')})) }}}}"
+            ),
+        )
+    )
+
     @task.short_circuit(
         task_id="has_cytoband_filepath",
         task_display_name="[PyOp] Cytoband Filepath Provided?",
         ignore_downstream_trigger_rules=False,
+        trigger_rule="none_failed",
     )
     def has_cytoband_filepath(params: dict | None = None) -> bool:
         return bool((params or {}).get("cytoband_filepath"))
@@ -280,6 +298,7 @@ with DAG(
             task_id="has_cosmic_gene_set_filepath",
             task_display_name="[PyOp] COSMIC Gene Set Filepath Provided?",
             ignore_downstream_trigger_rules=False,
+            trigger_rule="none_failed",
         )
         def has_cosmic_gene_set_filepath(params: dict | None = None) -> bool:
             return bool((params or {}).get("cosmic_gene_set_filepath"))
@@ -303,6 +322,7 @@ with DAG(
             task_id="has_cosmic_mutation_set_filepath",
             task_display_name="[PyOp] COSMIC Mutation Set Filepath Provided?",
             ignore_downstream_trigger_rules=False,
+            trigger_rule="none_failed",
         )
         def has_cosmic_mutation_set_filepath(params: dict | None = None) -> bool:
             return bool((params or {}).get("cosmic_mutation_set_filepath"))
@@ -334,6 +354,7 @@ with DAG(
             task_id="should_import_igv_tracks",
             task_display_name="[PyOp] Import IGV Tracks?",
             ignore_downstream_trigger_rules=False,
+            trigger_rule="none_failed",
         )
         def should_import_igv_tracks(params: dict | None = None) -> bool:
             return bool((params or {}).get("import_igv_tracks"))
