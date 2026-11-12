@@ -99,7 +99,10 @@ def test_the_cases_dags_are_given_the_run_s_block_list(dag_bag):
     DAG excluded would sit in `processing` with nothing running for it."""
     dag = dag_bag.get_dag(DAG_ID)
     for task_id, cases_dag_id in CASES_DAG_IDS.items():
-        assert dag.get_task(task_id).conf == {"excluded_tenants": "{{ params.excluded_tenants }}"}
+        assert dag.get_task(task_id).conf == {
+            "excluded_tenants": "{{ params.excluded_tenants }}",
+            "decision_run_id": "{{ sanitize_run_tag(run_id) }}",
+        }
         assert "excluded_tenants" in dag_bag.get_dag(cases_dag_id).params
     assert not dag.get_task("trigger_import").conf
 
@@ -287,9 +290,10 @@ def _run_select_ready_cases(dag, monkeypatch, cases_with_work):
             pulls.append((task_ids, key))
             return cases_with_work
 
-    context = {"ti": TaskInstance(), "params": {"excluded_tenants": []}}
+    context = _context(TaskInstance())
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
-    monkeypatch.setattr(case_scheduler, "_decide_and_log", lambda *_: set())
+    # No discovery row: nothing decided, nothing waiting. The decisions are not written anywhere.
+    _record_writes(monkeypatch)
     status_rows = [
         {"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True},
         {"case_id": 2, "tenant_code": "radiant", "status_code": "in_progress", "has_variants": True},
