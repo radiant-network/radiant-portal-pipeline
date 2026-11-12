@@ -9,6 +9,7 @@ This repository contains the different files and scripts used to run the Radiant
 - `make install`: Installs the Python dependencies using `pip` in your virtual environment.
 - `make test`: Runs the code static checks and tests using `ruff` and `pytest`.
 - `make format`: Formats the code using `ruff`
+- `make upgrade-guide FROM=<vA> TO=<vB>`: Prints the upgrade guide between two releases (see "Upgrade guide").
 
 ### Structure
 
@@ -132,8 +133,8 @@ PR body is the changelog. Nothing is released until a person merges that PR.
 
 PRs are squash-merged, so the PR title (checked by `pr-title.yml`) becomes the commit subject that release-please reads.
 
-**To release:** check that the `release-gate` check of the release PR passes (re-run it first, see below), then merge
-the release PR. The merge puts `CHANGELOG.md` and `.release-please-manifest.json` on `main`; release-please then tags
+**To release:** read the upgrade guide comment of the release PR (see "Upgrade guide"), check that the `release-gate`
+check of the release PR passes (re-run it first, see below), then merge the release PR. The merge puts `CHANGELOG.md` and `.release-please-manifest.json` on `main`; release-please then tags
 that commit `vX.Y.Z` and creates the GitHub release with the changelog. The tag starts the three `build_and_push_*`
 workflows, which push the semver images. Merging the release PR deploys nothing.
 
@@ -146,7 +147,7 @@ Setup (once, by an admin):
   to read and write. With no write permission, the workflow fails: no release PR, no
   tag.
 - Repo settings: squash merge only, with the PR title as the squash commit message.
-- Ruleset of `main`: `pr-title` and `release-gate` are required status checks.
+- Ruleset of `main`: `pr-title`, `release-gate` and `upgrade-note` are required status checks.
 
 Config: `release-please-config.json` (release type `simple`; there is no `version.txt`, so only the changelog and the
 manifest change; `pyproject.toml` keeps its static version) and `.release-please-manifest.json` (the last released
@@ -187,3 +188,72 @@ last run is older, close and reopen the release PR, which starts a new run.
 
 To test the gate without a release PR, open a temporary PR from a branch whose name starts with
 `release-please--branches--main`: the gate runs on it. Delete the branch afterwards.
+
+## Upgrade guide
+
+A PR whose deploy needs an operator action adds one **upgrade note** in `upgrade-notes/`: a YAML file named after the
+ticket (`RAD-171.yaml`, `RAD-171-2.yaml` for a second PR of the same ticket). The guide between two releases lists the
+actions of the notes of every release in between, so an environment that skips releases sees all of them.
+
+**When a PR needs a note:** a migration file (`radiant/dags/sql/**/migrations/`), a new environment variable, a new
+Airflow connection or variable, a DAG to run once, a re-import, a Nextflow pipeline revision, or any breaking change.
+Otherwise, write "No upgrade action" in the "Upgrade" section of the PR description.
+
+**Format** (validated by `scripts/upgrade_guide/notes.py`): a list of actions, each with `when` (`before` or `after`
+the deploy), `do`, optional `preconditions` and `refs` (the migration file or the DAG; the note does not copy the SQL,
+the migration file keeps its WHERE / WHEN header), and `check` (how to see that it worked):
+
+```yaml
+actions:
+  - when: after
+    do: Delete the somatic rows of the germline tasks in the staging table.
+    preconditions:
+      - No radiant-import or import_part run is active.
+    refs:
+      - radiant/dags/sql/radiant/migrations/RAD-266_germline_tasks_out_of_somatic_cases.sql
+    check: Query 0 of the migration file returns no row.
+```
+
+**The notes are public** (job summary, release PR, GitHub release): no IP address, no host outside the allowlist of
+`scripts/upgrade_guide/check.py`, no 12-digit account number, no real bucket name (`s3://<bucket>/...`,
+`arn:aws:s3:::<bucket>`), no patient data. Use the placeholders of the migration files (`<shared_db>`,
+`<tenant>_tenant`). The check finds the host of a URL (`https://...`, `jdbc:mysql://...`), not a host name written
+with no scheme (`db.example:9030`): the reviewer must catch that one.
+
+**Breaking changes:** put `!` after the type in the PR title (`feat!: ...`). The squash commit message is the PR title
+only, so a `BREAKING CHANGE:` footer in the PR description never reaches release-please. The check still reads it.
+
+**PR check** (`.github/workflows/upgrade-note.yml`, job `upgrade-note`, rules in `scripts/upgrade_guide/check.py`). The
+job runs the checker of the base branch, so a PR cannot relax the rules it is checked by: a change to the rules applies
+from the next PR. It fails when:
+
+- the PR adds or changes a migration file and adds or changes no note;
+- the PR title has `!`, or its description a `BREAKING CHANGE:` footer, and the PR adds no note;
+- a note does not match the format, or holds one of the public-data values above;
+- a file in `upgrade-notes/` is not a note (a subfolder, a `.YAML` extension): neither the check nor the guide would
+  read it;
+- the PR deletes a note (to correct a note, edit it: the guide always reads the text on `main`);
+- the PR adds a note and its type is not `feat`, `fix`, `perf` or `revert` (with no `!`): such a PR opens no release,
+  so its note would wait for the next one.
+
+The job summary of the check (Checks → `upgrade-note` → Summary) previews the notes the PR adds or changes, as the
+guide will show them: the reviewer reads the actions as the operator will, not only the YAML.
+
+**Release of a note:** the first `vX.Y.Z` tag that contains the commit that added the note file (the PR's squash
+commit). The actions of a release are in merge order, grouped "Before the deploy" and "After the deploy". A release
+with no note shows "No upgrade action".
+
+**The guide between two versions:**
+
+- From a clone with the tags (`git fetch --tags`), on `main`: `make upgrade-guide FROM=v1.2.0 TO=v1.4.1`. `TO` can be
+  `main` for the notes not released yet. The note text is read from the committed `HEAD`. It fails, naming the version,
+  when `FROM` is not older than `TO` or a version is not a tag. When `FROM` is older than the first release with the
+  `upgrade-notes/` folder, it warns that the actions of the earlier releases are not listed: read their changelog and
+  migration files.
+- Without a clone: Actions → Upgrade Guide → Run workflow on `main` (`.github/workflows/upgrade-guide.yml`), with
+  `from` and `to`. The guide is in the job summary.
+- The Release workflow keeps one comment on the open release PR with the guide from the last release to `main`.
+- The Upgrade Guide Release workflow (`.github/workflows/upgrade-guide-release.yml`) adds an "Upgrade guide" section
+  to each GitHub release when it is published. To add a missing section, or to refresh it after a note was corrected,
+  run it on `main` with the `tag` input. A tag with no GitHub release gets no section; the command still covers its
+  range.

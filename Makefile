@@ -27,10 +27,16 @@ test-integration-slow:
 	pytest -m slow tests/integration
 
 test-static:
-	ruff check radiant/
+	ruff check radiant/ scripts/upgrade_guide/
 
 test: test-static test-unit test-integration
 
 format:
-	ruff format radiant/ tests/ scripts/ecs/
-	ruff check --fix radiant/ tests/ scripts/ecs/
+	ruff format radiant/ tests/ scripts/ecs/ scripts/upgrade_guide/
+	ruff check --fix radiant/ tests/ scripts/ecs/ scripts/upgrade_guide/
+
+# The upgrade guide between two releases, from the notes in upgrade-notes/ (README, "Upgrade guide").
+# TO is a vX.Y.Z tag, or a branch (main) for the notes not released yet. Needs the tags: git fetch --tags
+upgrade-guide:
+	@test -n "$(FROM)" -a -n "$(TO)" || { echo "usage: make upgrade-guide FROM=<vA> TO=<vB>"; exit 2; }
+	@python -m scripts.upgrade_guide guide --from "$(FROM)" --to "$(TO)"

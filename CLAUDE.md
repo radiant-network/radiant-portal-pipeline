@@ -11,7 +11,7 @@ make install-dev        # pip install -r requirements.txt -r requirements-dev.tx
 
 # Testing
 make test               # static + unit + integration (non-slow); does NOT run docker tests
-make test-static        # ruff check radiant/
+make test-static        # ruff check radiant/ scripts/upgrade_guide/
 make test-unit          # unit tests only: pytest tests/unit/
 make test-integration   # fast integration: pytest -m "not slow" tests/integration
 make test-integration-slow  # pytest -m slow tests/integration
@@ -22,8 +22,11 @@ pytest tests/unit/path/to/test_file.py
 pytest tests/unit/path/to/test_file.py::test_function_name
 
 # Linting & formatting
-make test-static        # ruff check radiant/ only
-make format             # ruff format + ruff check --fix over radiant/ tests/ scripts/ecs/
+make test-static        # ruff check radiant/ scripts/upgrade_guide/ only
+make format             # ruff format + ruff check --fix over radiant/ tests/ scripts/ecs/ scripts/upgrade_guide/
+
+# Upgrade guide between two releases (needs the tags; TO may be main)
+make upgrade-guide FROM=<vA> TO=<vB>
 ```
 
 Integration tests select their fixtures via an env var (not a make flag):
@@ -32,6 +35,8 @@ USE_DOCKER_FIXTURES=true  make test-integration   # spins up local Docker (testc
 USE_DOCKER_FIXTURES=false make test-integration   # runs against the external radiant-portal-sandbox environment
 ```
 CI (`.github/workflows/test.yml`) runs on every PR with `USE_DOCKER_FIXTURES=true`: static → unit → integration → docker. Pushes to `main` and `v*` tags build/push the three images the deployments run: task operator, dbt, Nextflow launcher (`build_and_push_*.yml`). `main` pushes add `latest` and `<sha>-<timestamp>`, which QLIN QA follows with Flux image automation; releases deploy the `v*` tags. The root `Dockerfile` (`radiant-airflow`) is for the local docker compose only: MWAA (CHOP) and the QLIN Helm chart run the stock Airflow image, so it is neither published nor scanned. Security checks (radiant-hub `docs/ci/security-checks.md`): `dependency-review.yml` fails a PR that adds a high or critical vulnerable dependency, `trivy.yml` scans the three images and the Dockerfiles (PRs, main, daily on `latest`), `dependabot-alerts.yml` keeps a `dependabot-gate` issue and a Slack message up to date. Releases: `release.yml` runs release-please on each push to `main` (config `release-please-config.json`, type `simple`, last version in `.release-please-manifest.json`; token of the org GitHub App `radiant-release-please`, `RELEASE_PLEASE_APP_CLIENT_ID` variable + `RELEASE_PLEASE_APP_PRIVATE_KEY` secret, since `GITHUB_TOKEN` events start no workflow). It keeps one release PR, `chore(main): release <version>`, with the bump from the squash subjects since the last tag (`!`/`BREAKING CHANGE:` major, `feat` minor, `fix`/`perf`/`revert` patch, other types none); merging it commits `CHANGELOG.md` + manifest, tags `vX.Y.Z` and creates the GitHub release, and the tag builds the semver images. Do not tag by hand (README, "Release"). `release-gate.yml` runs only on the release PR (head branch prefix `release-please--branches--main`, skipped elsewhere) and blocks its merge while a high or critical Dependabot alert is open or Trivy finds a fixable high or critical vulnerability in one of the three images; a risk is accepted by dismissing the alert with a reason or by an entry in `.trivyignore.yaml` (README, "Release gate").
+
+**Upgrade notes (RAD-186, README "Upgrade guide").** A PR whose deploy needs an operator action (a migration, a new env var, Airflow connection or variable, a DAG to run once, a re-import, a Nextflow pipeline revision, a breaking change) adds one YAML file in `upgrade-notes/`, named after the ticket (`RAD-171.yaml`, `RAD-171-2.yaml`): `actions:` list, each with `when` (`before`/`after` the deploy), `do`, optional `preconditions` and `refs` (the migration file or DAG, never a copy of its SQL), and `check`. Model, guide and PR-check rules in `scripts/upgrade_guide/` (outside the `radiant` package, not in the images; `python -m scripts.upgrade_guide guide|release-section|check`; unit tests in `tests/unit/upgrade_guide/`). A note's release is the first `vX.Y.Z` tag that contains the commit that added the file; the text always comes from `HEAD` (`main`), so a correction is a PR that edits the note — never delete one. The `upgrade-note` check (`upgrade-note.yml`, required) fails a PR that changes a migration with no note, a breaking PR (`!` in the title, or a `BREAKING CHANGE:` footer in the description) that adds no note, a deleted or malformed note, a file in `upgrade-notes/` that is not a note (subfolder, `.YAML`), a note in a PR whose type opens no release (not `feat`/`fix`/`perf`/`revert`, no `!`), and a note with an IP, a URL host off the allowlist (a bare host name is not detected), a 12-digit account number or a non-`<placeholder>` S3 bucket (`s3://` or S3 ARN; the notes are public). The job runs the checker of the base branch (`git archive $BASE`), so rule changes apply from the next PR. Use `!` for breaking changes: the squash message is the title only, so the footer never reaches release-please. The check's job summary previews the PR's notes as the guide will render them (`preview` subcommand). `release.yml` keeps one comment (marker `<!-- upgrade-guide -->`) on the open release PR with the guide from the last tag to `main`; `upgrade-guide-release.yml` appends the "Upgrade guide" section to each GitHub release on `release: published` (or by hand, input `tag`, to fill or refresh it: a re-run of `release.yml` cannot, release-please does not create the release again); `upgrade-guide.yml` is the manual `workflow_dispatch` version (`from`, `to`) writing to the job summary.
 
 **Airflow 3.3.1 everywhere.** The venv, the tests (`requirements-dev.txt`), the Airflow image (`Dockerfile`, `requirements-airflow.txt`) and MWAA (`mwaa/airflow3/`, `airflow_v3_version` in `radiant-portal-deployment`) all pin `3.3.1`. Change them together (see `mwaa/README.md`).
 
@@ -120,4 +125,4 @@ Tables are **not** hard-coded in SQL. DAGs set `template_searchpath` to `radiant
 
 ## Linting conventions
 
-Ruff (`.ruff.toml`): line length 119, Python 3.12, double quotes, Google-style docstrings. Rules: E, F, UP, B, SIM, I. `make test-static` only checks `radiant/`; `make format` also fixes `tests/` and `scripts/ecs/`.
+Ruff (`.ruff.toml`): line length 119, Python 3.12, double quotes, Google-style docstrings. Rules: E, F, UP, B, SIM, I. `make test-static` only checks `radiant/` and `scripts/upgrade_guide/`; `make format` also fixes `tests/` and `scripts/ecs/`.
