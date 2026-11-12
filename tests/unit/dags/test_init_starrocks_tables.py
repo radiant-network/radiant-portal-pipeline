@@ -6,6 +6,10 @@ _BASE_TABLES = [
     "snv_consequence",
     "snv_consequence_filter",
     "snv_consequence_filter_partitioned",
+    "pipeline_case",
+    "current_experiment",
+    "current_alignment",
+    "case_member",
     "staging_external_sequencing_experiment",
     "staging_sequencing_experiment",
     "staging_sequencing_experiment_delta",
@@ -26,8 +30,8 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(_BASE_DAG_ID)
-    # 14 base radiant tables + 2 clinical tables + 25 open data tables + 2 UDFs
-    assert len(dag.tasks) == 43
+    # 18 base radiant tables and views + 2 clinical tables + 25 open data tables + 2 UDFs
+    assert len(dag.tasks) == 47
 
 
 def test_dag_has_all_base_tasks(dag_bag):

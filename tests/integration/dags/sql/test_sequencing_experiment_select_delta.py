@@ -58,7 +58,7 @@ def _run_radiant_sql(starrocks_session, radiant_mapping, sql_file):
 
 
 @pytest.fixture(scope="session")
-def sequencing_experiment_tables(starrocks_session, radiant_mapping):
+def sequencing_experiment_tables(starrocks_session, radiant_mapping, pipeline_views):
     """
     Fixture to create a temporary sequencing_experiment table for testing.
     """

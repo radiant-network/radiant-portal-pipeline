@@ -257,7 +257,15 @@ def test_queries_are_valid(
             "somatic_cnv_variant_frequency",
             "open_data_release",
         ],
-        views=["staging_external_sequencing_experiment", "staging_sequencing_experiment_delta"],
+        views=[
+            # RAD-287: read by the staging view, so created before it.
+            "pipeline_case",
+            "current_experiment",
+            "current_alignment",
+            "case_member",
+            "staging_external_sequencing_experiment",
+            "staging_sequencing_experiment_delta",
+        ],
         udfs=["variant_id", "cnv_id"],
     )
 

@@ -1,7 +1,7 @@
 CREATE VIEW IF NOT EXISTS {{ mapping.starrocks_staging_external_sequencing_experiment }} AS
 with sequencing_context AS (
 	SELECT
-	c.id as case_id,
+	pc.case_id as case_id,
     se.id,
     se.aliquot,
     se.sample_id,
@@ -9,10 +9,10 @@ with sequencing_context AS (
 	se.tenant_code as tenant_code,
     se.created_on,
     se.updated_on AS updated_on,
-    ANY_VALUE(c.case_type_code) as analysis_type,
+    ANY_VALUE(pc.case_type) as analysis_type,
     CASE
         MIN(
-                CASE priority_code
+                CASE pc.priority_code
                     WHEN 'stat' THEN 1
                     WHEN 'asap' THEN 2
                     WHEN 'urgent' THEN 3
@@ -26,10 +26,10 @@ with sequencing_context AS (
         END AS priority_code
 	FROM  {{ mapping.clinical_sequencing_experiment }} se
 	LEFT JOIN {{ mapping.clinical_case_has_sequencing_experiment }} chse ON chse.sequencing_experiment_id = se.id
-	JOIN {{ mapping.clinical_case }} c ON chse.case_id = c.id
-	WHERE c.status_code NOT IN ({{ mapping.pipeline_ignored_case_statuses }})
+	-- The cases the pipelines may look at (RAD-287): not draft or revoked.
+	JOIN {{ mapping.starrocks_pipeline_case }} pc ON chse.case_id = pc.case_id
 	GROUP BY
-	    c.id,
+	    pc.case_id,
 		se.id,
 	    se.aliquot,
 	    se.sample_id,
@@ -113,11 +113,11 @@ original_alignment AS (
 	FROM sequencing_experiments dragen
 	JOIN sequencing_experiments slivar ON slivar.case_id = dragen.case_id AND slivar.seq_id = dragen.seq_id
 	JOIN {{ mapping.clinical_sample }} sa ON sa.id = dragen.sample_id
-	LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = sa.patient_id AND f.case_id = dragen.case_id
+	LEFT JOIN {{ mapping.starrocks_case_member }} cm ON cm.patient_id = sa.patient_id AND cm.case_id = dragen.case_id
 	WHERE dragen.task_type = 'alignment_germline_variant_calling'
 	  AND slivar.task_type = 'radiant_germline_cnv_annotation'
 	  AND slivar.cnv_vcf_filepath IS NOT NULL
-	  AND COALESCE(f.relationship_to_proband_code, "proband") = "proband"
+	  AND COALESCE(cm.role, "proband") = "proband"
 )
 SELECT
     s.case_id,
@@ -135,17 +135,17 @@ SELECT
 	-- The annotation task (SNV or CNV) holds the aliquots of every family member, but Exomiser ranks the proband:
 	-- only the proband's row carries the file, so the load tags the rows with the proband's seq_id.
 	CASE
-	    WHEN s.analysis_type = 'germline' AND COALESCE(f.relationship_to_proband_code, "proband") <> "proband" THEN NULL
+	    WHEN s.analysis_type = 'germline' AND COALESCE(cm.role, "proband") <> "proband" THEN NULL
 	    ELSE s.exomiser_filepath
 	END AS exomiser_filepath,
 	p.sex_code AS sex,
-    f.id AS family_id,
+    cm.family_row_id AS family_id,
     CASE
-        WHEN s.analysis_type = 'germline' THEN COALESCE(f.relationship_to_proband_code, "proband")
+        WHEN s.analysis_type = 'germline' THEN COALESCE(cm.role, "proband")
         ELSE "proband"
     END AS family_role,
     CASE
-    	WHEN s.analysis_type = 'germline' THEN COALESCE(f.affected_status_code, "affected")
+    	WHEN s.analysis_type = 'germline' THEN COALESCE(cm.affected_status, "affected")
 		ELSE "affected"
 	END AS affected_status,
 	sa.histology_code AS histology_type,
@@ -154,8 +154,9 @@ SELECT
 FROM sequencing_experiments s
 LEFT JOIN {{ mapping.clinical_sample }} sa ON sa.id = s.sample_id
 LEFT JOIN {{ mapping.clinical_patient }} p ON p.id = sa.patient_id
--- A patient has one family row per case: without the case, a patient in two cases doubles every row.
-LEFT JOIN {{ mapping.clinical_family }} f ON f.family_member_id = p.id AND f.case_id = s.case_id
+-- A patient has one family row per case: without the case, a patient in two cases doubles every row. The patient
+-- itself is read directly: a somatic case can have no family row, and its rows still need the sex.
+LEFT JOIN {{ mapping.starrocks_case_member }} cm ON cm.patient_id = p.id AND cm.case_id = s.case_id
 -- Proband source rule: in a case with a slivar VCF, the proband's alignment task stays out, so the proband's
 -- CNVs come from the slivar set only. The parents' and the siblings' alignment tasks stay. A row left out never enters
 -- staging, so it is never loaded nor seen as pending; its `deleted` flag comes from the clinical tasks, not from this

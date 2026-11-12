@@ -590,3 +590,18 @@ def mapping_conf(
 @pytest.fixture(scope="session")
 def radiant_mapping(mapping_conf):
     return get_radiant_mapping(mapping_conf)
+
+
+# RAD-287: the case filter and the supersession policy that the pending queries and the staging view read. In
+# dependency order, as the Init StarRocks Base Tables DAG creates them.
+PIPELINE_VIEWS = ("pipeline_case", "current_experiment", "current_alignment", "case_member")
+
+
+@pytest.fixture(scope="session")
+def pipeline_views(starrocks_session, radiant_mapping):
+    init_dir = RADIANT_DIR / "dags" / "sql" / "radiant" / "init"
+    with starrocks_session.cursor() as cursor:
+        for view in PIPELINE_VIEWS:
+            sql = jinja2.Template((init_dir / f"{view}_create_table.sql").read_text()).render(mapping=radiant_mapping)
+            cursor.execute(sql)
+    yield
