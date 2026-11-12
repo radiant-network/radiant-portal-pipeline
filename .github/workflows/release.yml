@@ -29,6 +29,8 @@ on:
   push:
     branches:
       - main
+      # TEMP(RAD-186): test the release PR comment on the feature branch. Revert before the merge.
+      - feat/rad-186
 
 # One run at a time. A newer push replaces a run that still waits, which loses nothing: each
 # run rebuilds the release PR from all the commits since the last release.
@@ -66,6 +68,8 @@ jobs:
 
       - name: Open or update the release PR, or tag the release
         id: release
+        # TEMP(RAD-186): never run release-please from the feature branch (it acts on main). Revert before the merge.
+        if: github.ref == 'refs/heads/main'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -101,6 +105,16 @@ jobs:
         run: |
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head release-please--branches--main \
             --json number,title --jq '.[0] // empty')
+          # TEMP(RAD-186): on the feature branch, post on the branch's own PR, never on the release PR.
+          # Revert this block (keep the `if [ -z "$pr" ]` below) before the merge.
+          if [ "$GITHUB_REF_NAME" != main ]; then
+            # The version of the open release PR, if any, names the section as on main
+            next_title=""
+            if [ -n "$pr" ]; then next_title=$(jq -r .title <<< "$pr"); fi
+            pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$GITHUB_REF_NAME" \
+              --json number --jq '.[0] // empty')
+            if [ -n "$pr" ]; then pr=$(jq -c --arg t "$next_title" '. + {title: $t}' <<< "$pr"); fi
+          fi
           if [ -z "$pr" ]; then
             echo "No open release PR: no upgrade guide to post."
             exit 0
@@ -114,8 +128,10 @@ jobs:
             echo "$MARKER"
             python -m scripts.upgrade_guide guide --from "$from" --to HEAD --next-version "$next"
             echo
-            echo "_Upgrade notes on \`main\` at ${GITHUB_SHA:0:7}. Updated by the Release workflow on each push to \`main\`._"
+            echo "_Upgrade notes on \`$GITHUB_REF_NAME\` at ${GITHUB_SHA:0:7}. Updated by the Release workflow on each push to \`main\`._"
           } > comment.md
+          # The same guide in the job summary, to read it without the PR
+          cat comment.md >> "$GITHUB_STEP_SUMMARY"
           # A comment holds at most 65536 characters
           if [ "$(wc -c < comment.md)" -gt 65000 ]; then
             {
