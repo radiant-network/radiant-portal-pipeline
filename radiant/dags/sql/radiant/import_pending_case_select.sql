@@ -1,7 +1,7 @@
 -- The cases the scheduled import still has work for, with why: one row per case and reason.
 --
 -- Consumed by `radiant-case-scheduler` (`discover_import_cases`, `rediscover_import_cases`), which logs one
--- `run` decision per case (RAD-288). Two places, because a row leaves the first as soon as the import inserts
+-- `run` decision per case. Two places, because a row leaves the first as soon as the import inserts
 -- it into the second:
 --
 -- - the delta view (`new_or_changed`): sequencing experiments not yet in `staging_sequencing_experiment`, or

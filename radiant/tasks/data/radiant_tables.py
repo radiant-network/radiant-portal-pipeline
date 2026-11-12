@@ -55,7 +55,7 @@ CLINICAL_MAPPING = {
 }
 
 # --- Case statuses a pipeline never picks a case up in
-# Rendered into the `pipeline_case` view when it is created (RAD-287): changing this list means dropping that view and
+# Rendered into the `pipeline_case` view when it is created: changing this list means dropping that view and
 # re-running the Init StarRocks Base Tables DAG, in a migration.
 PIPELINE_IGNORED_CASE_STATUSES = ("draft", "revoked")
 PIPELINE_IGNORED_CASE_STATUSES_KEY = "pipeline_ignored_case_statuses"
@@ -128,12 +128,11 @@ ICEBERG_CATALOG_DATABASE = {
 }
 
 STARROCKS_RADIANT_BASE_MAPPING = {
-    # RAD-287: the case filter and the supersession policy, shared by the pending queries and the staging view.
+    # The case filter and the supersession policy, shared by the pending queries and the staging view.
     "starrocks_pipeline_case": "pipeline_case",
     "starrocks_current_experiment": "current_experiment",
     "starrocks_current_alignment": "current_alignment",
     "starrocks_case_member": "case_member",
-    # RAD-288: what each pipeline decided for each candidate case, and why.
     "starrocks_pipeline_decision_log": "pipeline_decision_log",
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",

@@ -1,6 +1,5 @@
--- RAD-288. What each pipeline decided for each candidate case, at each stage of a case scheduler run, and why.
--- Written by `radiant.tasks.nextflow.decision.write_decisions`; append-only. Design:
--- `design/RAD-288-pipeline-decision-log.md`.
+-- What each pipeline decided for each candidate case, at each stage of a case scheduler run, and why.
+-- Written by `radiant.tasks.nextflow.decision.write_decisions`; append-only.
 --
 -- No retention for now: a few hundred rows a day. The daily partitions keep one possible later, with a
 -- `partition_live_number` property or by dropping the old partitions.

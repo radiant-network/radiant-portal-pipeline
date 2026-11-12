@@ -158,7 +158,6 @@ def nextflow_quality_control_cases():
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
         selection = select([*germline_rows, *somatic_rows], requested, strict=bool(requested))
-        # RAD-288: only what the case scheduler decided, when it triggered this run; logged either way.
         selection = launch(QC, [*germline_rows, *somatic_rows], selection, context)
 
         if not selection.case_ids:

@@ -149,7 +149,6 @@ def nextflow_somatic_snv_annotation_cases():
         # Named tasks are an operator's request, so a task that cannot be resolved is an
         # error. A discovered scope is the job's own doing, so it is a line in a report.
         selection = select(rows, requested, strict=bool(requested))
-        # RAD-288: only what the case scheduler decided, when it triggered this run; logged either way.
         selection = launch(SOMATIC_SNV, rows, selection, context)
 
         if not selection.tasks:

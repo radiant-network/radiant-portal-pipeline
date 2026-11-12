@@ -1,7 +1,7 @@
 """Why a case, or a calling task, cannot run: one `Problem` per cause found.
 
 Shared by the four selections (`resolve.py`, `cnv/`, `qc/`, `somatic/`) and by the decision log
-(`decision.py`, RAD-288). Kept apart from both so neither imports the other.
+(`decision.py`). Kept apart from both so neither imports the other.
 """
 
 from pydantic import BaseModel

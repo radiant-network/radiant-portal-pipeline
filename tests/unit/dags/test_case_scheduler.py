@@ -265,7 +265,7 @@ def _record_writes(monkeypatch) -> list:
 
 
 def test_the_children_follow_this_run_s_decisions(dag_bag):
-    """RAD-288: each "from Cases" DAG gets the run whose decisions it launches, and the block list."""
+    """Each "from Cases" DAG gets the run whose decisions it launches, and the block list."""
     dag = dag_bag.get_dag(DAG_ID)
     for task_id in (
         "trigger_germline_snv_postprocessing",

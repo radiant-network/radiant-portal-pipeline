@@ -44,7 +44,6 @@ _MOCK_PARAMS = {
     "ingested_at": None,
     "tenants": ["chusj", "radiant"],
     "tenant_code": "chusj",
-    # RAD-288: `pipeline_decision_log_insert.sql` and `pipeline_decision_run_units_select.sql`.
     "run_id": "scheduled-2026-11-12T00-00-00-00-00",
     "stage": "discover",
     "pipeline": "germline_snv",
@@ -268,7 +267,7 @@ def test_queries_are_valid(
             "pipeline_decision_log",
         ],
         views=[
-            # RAD-287: read by the staging view, so created before it.
+            # Read by the staging view, so created before it.
             "pipeline_case",
             "current_experiment",
             "current_alignment",

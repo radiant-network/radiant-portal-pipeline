@@ -14,7 +14,7 @@ _BASE_TABLES = [
     "snv_consequence",
     "snv_consequence_filter",
     "snv_consequence_filter_partitioned",
-    # RAD-287: read by the staging view below, so created before it, in dependency order.
+    # Read by the staging view below, so created before it, in dependency order.
     "pipeline_case",
     "current_experiment",
     "current_alignment",

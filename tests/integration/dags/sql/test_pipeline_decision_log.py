@@ -1,4 +1,4 @@
-"""`pipeline_decision_log` over a real StarRocks + clinical Postgres (RAD-288).
+"""`pipeline_decision_log` over a real StarRocks + clinical Postgres.
 
 The decisions are the ones `decide` takes on the seeds, from the real pending queries; they are written with
 the insert `write_decisions` runs, then read back with the query a child uses and the "why case X" query of the

@@ -39,8 +39,8 @@ def cases_with_work(
     qc_rows: list[dict],
     import_rows: list[dict],
 ) -> set[int]:
-    """The cases at least one pipeline will run on: the cases of a `run` decision (RAD-288,
-    `decision.decide`), in any pipeline or the import.
+    """The cases at least one pipeline will run on: the cases of a `run` decision
+    (`decision.decide`), in any pipeline or the import.
 
     The Nextflow candidates go through the DAGs' own `select_cases`, lenient as on a scheduled
     run. A case they exclude (sequencing pending, no gVCF, tenant excluded...) is not counted:

@@ -1,4 +1,4 @@
-"""The decision log rows (RAD-288): what each selection decided, per unit and per member at fault."""
+"""The decision log rows: what each selection decided, per unit and per member at fault."""
 
 from types import SimpleNamespace
 

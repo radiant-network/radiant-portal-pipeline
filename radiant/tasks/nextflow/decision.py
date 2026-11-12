@@ -1,5 +1,4 @@
-"""What each pipeline decided for each candidate case, and why: the rows of `pipeline_decision_log`
-(RAD-288, `design/RAD-288-pipeline-decision-log.md`).
+"""What each pipeline decided for each candidate case, and why: the rows of `pipeline_decision_log`.
 
 The selections (`resolve.py`, `cnv/`, `qc/`, `somatic/`) keep deciding; this module only names
 their outcome. Per pipeline and candidate unit, one **case row** with the decision of the unit,

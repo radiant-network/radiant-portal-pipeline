@@ -58,7 +58,7 @@ CASES_WITH_WORK_KEY = "cases_with_work"
 # - the run's block list, so they leave out exactly the tenants discovery left out. A tenant that is
 #   not excluded but not granted to the service account gets a 403 from the portal instead, logged
 #   and skipped;
-# - the run whose decisions they follow (RAD-288): they launch only the units `discover_cases`
+# - the run whose decisions they follow: they launch only the units `discover_cases`
 #   decided `run`, and a unit that became runnable since waits for the next run.
 CHILD_CONF = {
     "excluded_tenants": "{{ params.excluded_tenants }}",
@@ -165,7 +165,7 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
 
 def _decide_and_log(stage: str, rows: list[Any], context: Any) -> set[int]:
     """Decide for every pipeline, write the decisions to `pipeline_decision_log` under this run, and
-    return the cases with work waiting (a `run` decision anywhere). RAD-288.
+    return the cases with work waiting (a `run` decision anywhere).
 
     `rows` are the six discovery outputs; the two QC queries are one selection, as in the QC DAG.
     """
