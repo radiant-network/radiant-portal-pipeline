@@ -1,0 +1,14 @@
+actions:
+  - when: after
+    do: >-
+      In the base database, delete the somatic rows of the germline tasks from staging_sequencing_experiment:
+      run check 0 of the migration file, read the germline_parts column, then run section 2. The fixed view no
+      longer emits these rows, but the delta does not remove the rows already there. Section 1 (the views) is the
+      view drop and init run of RAD-206: do not run it again.
+    preconditions:
+      - radiant-init-starrocks-base-tables has run after the view drop (RAD-206).
+      - No radiant-import or radiant-import-part run is active.
+      - A row of check 0 whose germline_parts is a different part, or empty, needs a look before the delete.
+    refs:
+      - radiant/dags/sql/radiant/migrations/RAD-266_germline_tasks_out_of_somatic_cases.sql
+    check: Check 0 of the migration file returns no row. The next radiant-import loads the parts that failed.

@@ -93,7 +93,8 @@ def test_unknown_ref(history):
 def test_warning_before_first_tag_with_notes(history):
     guide = build_guide(Git(history.path), "v1.0.0", "v1.2.0")
     assert len(guide.warnings) == 1
-    assert "before v1.1.0" in guide.warnings[0]
+    assert "The releases v1.0.1 have no upgrade notes" not in guide.warnings[0]
+    assert "v1.1.0 is the first release with the upgrade-notes/ folder" in guide.warnings[0]
     text = render_guide(guide)
     assert "> **Warning:**" in text
     assert "## v1.1.0\n\nNo upgrade action." in text
@@ -226,3 +227,18 @@ def test_cli_preview(repo, capsys):
     head = repo.commit("fix: RAD-9 x", {"upgrade-notes/RAD-9.yaml": note(do="Nine."), "b.txt": "b"})
     assert main(["--repo", str(repo.path), "preview", "--base", base, "--head", head, "--pr", "7"]) == 0
     assert "**RAD-9** (next release, PR #7): Nine." in capsys.readouterr().out
+
+
+def test_render_escapes_placeholders_and_lists_preconditions():
+    text = render_preview(
+        {
+            "upgrade-notes/RAD-9.yaml": (
+                "actions:\n  - when: after\n    do: Run it in every <tenant>_tenant database.\n"
+                "    preconditions: [One., Two.]\n    refs: [<shared_db>]\n    check: A & B.\n"
+            )
+        }
+    )
+    assert "every &lt;tenant&gt;_tenant database." in text
+    assert "  - Preconditions:\n    - One.\n    - Two." in text
+    assert "`<shared_db>`" in text  # Code spans keep the text as is
+    assert "Check: A &amp; B." in text

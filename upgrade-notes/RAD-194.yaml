@@ -1,0 +1,37 @@
+actions:
+  - when: before
+    do: >-
+      Pause radiant-case-scheduler and radiant-reannotate-open-data. Keep them paused until the actions after the
+      deploy say to unpause them (RAD-256, RAD-194). The release changes the germline CNV tables under the import.
+    preconditions:
+      - No radiant-import, radiant-import-part or radiant-reannotate-open-data run is active.
+    refs:
+      - radiant-case-scheduler
+      - radiant-reannotate-open-data
+    check: Both DAGs show as paused, and the check-lock command of radiant-toolbox reports the import lock free.
+  - when: before
+    do: >-
+      Add the gnomad_ac column to germline__cnv__occurrence and somatic__cnv__occurrence, in every <tenant>_tenant
+      database (the base database for a single-tenant deployment). Run each ALTER alone and let it reach FINISHED.
+      Against an unmigrated table, every import_part with CNVs fails. New deployments must not run it.
+    preconditions:
+      - radiant-case-scheduler and radiant-reannotate-open-data are paused, no import is running.
+    refs:
+      - radiant/dags/sql/radiant/migrations/RAD-194_cnv_occurrence_add_gnomad_ac.sql
+    check: >-
+      SHOW ALTER TABLE COLUMN gives State = FINISHED, and DESC on both tables lists gnomad_ac after gnomad_sc_het
+      (post-checks of the migration file).
+  - when: after
+    do: >-
+      Unpause radiant-reannotate-open-data and trigger it with force_reannotation = true, to fill gnomad_ac on the
+      CNV occurrences already loaded. Its gates watch the open-data sources, not the code, so a scheduled run does
+      not do it. It holds the import lock.
+    preconditions:
+      - The other actions after the deploy of this release are done, the manual radiant-import of RAD-256 included.
+      - No radiant-import or radiant-import-part run is active.
+    refs:
+      - radiant-reannotate-open-data
+      - radiant/dags/sql/radiant/migrations/RAD-194_cnv_occurrence_add_gnomad_ac.sql
+    check: >-
+      The run succeeds. The post-checks of the migration file after the re-annotation return 0 for should_be_zero
+      and a non-zero count for should_be_non_zero.

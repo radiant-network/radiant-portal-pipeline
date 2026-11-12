@@ -1,0 +1,13 @@
+actions:
+  - when: after
+    do: >-
+      Re-import gnomad_constraint with the new insert (gnomAD v4.1.2 columns when the source is the OpenDataLake
+      contract table). The force_import run of radiant-import-open-data of RAD-246 does it: no separate run.
+    preconditions:
+      - The radiant-import-open-data run of RAD-246 is done.
+    refs:
+      - radiant-import-open-data
+      - radiant/dags/sql/open_data/gnomad_constraint_insert.sql
+    check: >-
+      SELECT count(*) FROM gnomad_constraint WHERE pli IS NOT NULL returns more than 0, and the data_qa tests of
+      gnomad_constraint pass.

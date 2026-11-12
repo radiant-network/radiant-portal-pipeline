@@ -174,13 +174,20 @@ def build_guide(
                 f"{from_version} up to {in_range[-1]} are not listed. Read their changelog and migration files."
             )
     elif version_key(from_version) < version_key(first):
+        without = [t for t in in_range if version_key(t) < version_key(first)]
+        listed = f"The releases {', '.join(without)} have no upgrade notes and " if without else ""
         warnings.append(
-            f"The releases before {first} have no upgrade notes: the actions of the releases after {from_version} "
-            f"and before {first} are not listed. Read their changelog and migration files."
+            f"{listed}{first} is the first release with the upgrade-notes/ folder: a PR merged before the folder "
+            f"existed has no note. Read the changelog and the migration files of these releases."
         )
 
     ordered = [releases[t] for t in in_range] + ([unreleased] if unreleased else [])
     return Guide(from_version=from_version, to_version=next_version or to, releases=ordered, warnings=warnings)
+
+
+def _text(value: str) -> str:
+    """A note text as Markdown: GitHub drops ``<tenant>`` and the other placeholders as unknown HTML tags."""
+    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def render_actions(release: Release, heading: str) -> list[str]:
@@ -193,12 +200,15 @@ def render_actions(release: Release, heading: str) -> list[str]:
         lines += [f"{heading} {title}", ""]
         for note, action in items:
             pr = f", PR {note.pr}" if note.pr else f", commit {note.commit[:7]}" if note.commit else ""
-            lines.append(f"- [ ] **{note.ticket}** ({release.version}{pr}): {action.do}")
-            if action.preconditions:
-                lines.append(f"  - Preconditions: {'; '.join(action.preconditions)}")
+            lines.append(f"- [ ] **{note.ticket}** ({release.version}{pr}): {_text(action.do)}")
+            if len(action.preconditions) == 1:
+                lines.append(f"  - Preconditions: {_text(action.preconditions[0])}")
+            elif action.preconditions:
+                lines.append("  - Preconditions:")
+                lines += [f"    - {_text(p)}" for p in action.preconditions]
             if action.refs:
                 lines.append(f"  - Refs: {', '.join(f'`{r}`' for r in action.refs)}")
-            lines.append(f"  - Check: {action.check}")
+            lines.append(f"  - Check: {_text(action.check)}")
         lines.append("")
     if not lines:
         lines = [NO_ACTION, ""]
