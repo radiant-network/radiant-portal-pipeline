@@ -29,7 +29,20 @@ sources:
           # No should_not_contain_same_value: a tenant has one CNV Exomiser report per case, often with one or two
           # contributing rows, so a tenant with one such case legitimately has a single value in most columns
           # (seq_id, task_id, variant_rank, moi, rank...). The load is guarded by an invariant that holds for any
-          # number of cases instead: tests/germline_cnv_occurrence__validate_exomiser_matches_best_row.sql.
+          # number of cases instead: exomiser_cnv__should_be_unique__best_row_per_occurrence, below.
+
+          # --- Should Be Unique ----------------------------------------------
+          # One best row (`variant_rank = 1`) per occurrence: the row the germline CNV occurrence insert copies. A
+          # second one means the rows of a task were inserted twice (e.g. a retried insert into a new partition).
+          - dbt_utils.unique_combination_of_columns:
+              name: exomiser_cnv__should_be_unique__best_row_per_occurrence
+              combination_of_columns:
+                - part
+                - seq_id
+                - task_id
+                - name
+              config:
+                where: "variant_rank = 1"
 
           # --- Should Be Within Range ----------------------------------------
           # exomiser scores must be in [0,1]

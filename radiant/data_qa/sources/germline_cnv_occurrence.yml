@@ -60,8 +60,8 @@ sources:
                 # Filled on the proband's slivar set only (one per case), and the Exomiser ones on its ranked records
                 # only: a tenant with one CNV annotation case can legitimately have a single value in any of them
                 # (e.g. one ranked record, or both parents at CN 2 on every call). Guarded instead by
-                # germline_cnv_occurrence__validate_annotation_tasks_have_parental_origin and
-                # germline_cnv_occurrence__validate_exomiser_matches_best_row (tests/).
+                # germline_cnv_occurrence__validate_annotation_tasks_have_parental_origin (tests/) and
+                # exomiser_cnv__should_be_unique__best_row_per_occurrence (sources/exomiser_cnv.yml).
                 - parental_origin
                 - transmission_mode
                 - mother_calls
