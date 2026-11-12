@@ -105,16 +105,6 @@ jobs:
         run: |
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head release-please--branches--main \
             --json number,title --jq '.[0] // empty')
-          # TEMP(RAD-186): on the feature branch, post on the branch's own PR, never on the release PR.
-          # Revert this block (keep the `if [ -z "$pr" ]` below) before the merge.
-          if [ "$GITHUB_REF_NAME" != main ]; then
-            # The version of the open release PR, if any, names the section as on main
-            next_title=""
-            if [ -n "$pr" ]; then next_title=$(jq -r .title <<< "$pr"); fi
-            pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$GITHUB_REF_NAME" \
-              --json number --jq '.[0] // empty')
-            if [ -n "$pr" ]; then pr=$(jq -c --arg t "$next_title" '. + {title: $t}' <<< "$pr"); fi
-          fi
           if [ -z "$pr" ]; then
             echo "No open release PR: no upgrade guide to post."
             exit 0
