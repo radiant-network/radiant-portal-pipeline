@@ -7,7 +7,7 @@
 #   section after a note was corrected on main. A re-run of the Release workflow cannot do this, because
 #   release-please does not create the release again.
 #
-# The note text comes from `main`, as in the release PR comment. The marker makes a run replace the section
+# The note text comes from `main`, as in the release PR description. The marker makes a run replace the section
 # instead of adding a second one.
 name: Upgrade Guide Release
 

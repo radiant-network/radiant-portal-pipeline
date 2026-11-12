@@ -10,11 +10,11 @@
 # Merging the release PR is the release decision. The Release Gate workflow (required check)
 # blocks that merge while a high or critical vulnerability is open.
 #
-# Upgrade guide (README, "Upgrade guide"): after release-please, the job keeps one comment on
-# the open release PR with the actions of the upgrade notes (upgrade-notes/) since the last
-# release. The "Upgrade guide" section of a new GitHub release is added by the Upgrade Guide
-# Release workflow (upgrade-guide-release.yml), on the release event: a re-run of this job
-# would not create the release again, so it could not add a missing section.
+# Upgrade guide (README, "Upgrade guide"): after release-please, the job adds the steps of the
+# upgrade notes (upgrade-notes/) since the last release to the end of the release PR
+# description. The "Upgrade guide" section of a new GitHub release is added by the Upgrade
+# Guide Release workflow (upgrade-guide-release.yml), on the release event: a re-run of this
+# job would not create the release again, so it could not add a missing section.
 #
 # Config: release-please-config.json (type `simple`: with no version.txt in the repo, only
 # CHANGELOG.md and the manifest change) and .release-please-manifest.json (the last version).
@@ -93,51 +93,61 @@ jobs:
       - name: Install the upgrade guide's dependencies
         run: pip install -r scripts/upgrade_guide/requirements.txt
 
-      # One comment on the open release PR, found by its branch: the `pr` output is unset on a run
-      # that leaves the PR as it is, but a note text corrected on main must still reach the comment.
-      # The release-please PR body is not edited: each run rebuilds it. A hidden marker finds the
-      # comment of an earlier run.
-      - name: Post the upgrade guide on the release PR
+      # The guide goes at the end of the release PR description, after the release-please footer,
+      # between two markers. release-please rebuilds the description when the release changes, and
+      # this step adds the guide back right after it, in the same job. On the merge, release-please
+      # reads the release notes only between the first and the last `---` line
+      # (src/util/pull-request-body.ts, splitBody), so the guide never reaches the changelog; it
+      # must hold no `---` line. The release PR is found by its branch: the `pr` output is unset on
+      # a run that leaves the PR as it is, but a note corrected on main must still reach the guide.
+      - name: Add the upgrade guide to the release PR description
         if: steps.release.outputs.release_created != 'true'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          MARKER: '<!-- upgrade-guide -->'
+          START: '<!-- upgrade-guide:start -->'
+          END: '<!-- upgrade-guide:end -->'
         run: |
-          pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head release-please--branches--main \
-            --json number,title --jq '.[0] // empty')
-          if [ -z "$pr" ]; then
-            echo "No open release PR: no upgrade guide to post."
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open --head release-please--branches--main \
+            --json number,title,body --jq '.[0] // empty' > pr.json
+          if [ ! -s pr.json ]; then
+            echo "No open release PR: no upgrade guide to add."
             exit 0
           fi
-          number=$(jq -r .number <<< "$pr")
+          number=$(jq -r .number pr.json)
           # Title `chore(main): release 1.2.0`: the section of the next release is named after it
-          version=$(jq -r '.title | split(" ") | last' <<< "$pr")
+          version=$(jq -r '.title | split(" ") | last' pr.json)
           if [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then next="v$version"; else next="Next release"; fi
           from=$(git tag --merged HEAD --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
           {
-            echo "$MARKER"
+            echo "$START"
+            echo
             python -m scripts.upgrade_guide guide --from "$from" --to HEAD --next-version "$next"
             echo
-            echo "_Upgrade notes on \`$GITHUB_REF_NAME\` at ${GITHUB_SHA:0:7}. Updated by the Release workflow on each push to \`main\`._"
-          } > comment.md
+            echo "_Upgrade notes on \`$GITHUB_REF_NAME\` at ${GITHUB_SHA:0:7}, added by the Release workflow after release-please._"
+            echo
+            echo "$END"
+          } > guide.md
           # The same guide in the job summary, to read it without the PR
-          cat comment.md >> "$GITHUB_STEP_SUMMARY"
-          # A comment holds at most 65536 characters
-          if [ "$(wc -c < comment.md)" -gt 65000 ]; then
-            {
-              echo "$MARKER"
-              echo "The upgrade guide from $from is too long for a comment: run the Upgrade Guide workflow with \`from\` $from and \`to\` main."
-            } > comment.md
-          fi
-          id=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$number/comments" \
-            --jq ".[] | select(.user.type == \"Bot\" and (.body | startswith(\"$MARKER\"))) | .id" | head -1)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -F body=@comment.md > /dev/null
-            echo "Upgrade guide updated on the release PR #$number." >> "$GITHUB_STEP_SUMMARY"
-          else
-            gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$number/comments" -F body=@comment.md > /dev/null
-            echo "Upgrade guide posted on the release PR #$number." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          cat guide.md >> "$GITHUB_STEP_SUMMARY"
+          # The description: the one of release-please, without the guide of an earlier run, then the
+          # guide. A description holds at most 65536 characters.
+          python3 - <<'PY'
+          import json, os
+          start, end = os.environ["START"], os.environ["END"]
+          body = (json.load(open("pr.json"))["body"] or "").replace("\r\n", "\n")
+          i = body.find(start)
+          if i != -1:
+              j = body.find(end, i)
+              body = body[:i] + (body[j + len(end):] if j != -1 else "")
+          guide = open("guide.md").read()
+          if any(line.strip() == "---" for line in guide.splitlines()):
+              raise SystemExit("The guide holds a --- line: release-please would read it as release notes.")
+          if len(body) + len(guide) > 65000:
+              guide = f"{start}\n\nThe upgrade guide is too long for the description: run the Upgrade Guide workflow, `to` main.\n\n{end}\n"
+          open("body.md", "w").write(body.rstrip() + "\n\n" + guide)
+          PY
+          gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --body-file body.md
+          echo "Upgrade guide added to the description of the release PR #$number." >> "$GITHUB_STEP_SUMMARY"
 
       # Also after a failed upgrade guide step: the release itself is done
       - name: Write the result to the job summary

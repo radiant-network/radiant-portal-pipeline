@@ -15,7 +15,8 @@ PR that changes a migration file, or has a breaking change, with no note.
 ```yaml
 actions:
   - when: after                # before or after the deploy
-    do: Run the migration in each tenant database.
+    do: >-                     # the first sentence is the step title: keep it short
+      Delete the stale staging rows. Run check 0, then section 2 of the migration file, in the base database.
     preconditions:             # optional
       - No radiant-import or import_part run is active.
     refs:                      # optional: the migration file or the DAG; never a copy of the SQL
@@ -25,6 +26,8 @@ actions:
 
 Rules:
 
+- The first sentence of `do` is the title of the step in the guide. Make it a short order, and put the details, the
+  reasons and the warnings in the next sentences.
 - The notes are public. No IP address, no host outside the allowlist of `scripts/upgrade_guide/check.py`, no account
   number, no real bucket name (`s3://<bucket>/...`, `arn:aws:s3:::<bucket>`), no patient data. Use the placeholders of
   the migration files (`<shared_db>`, `<tenant>_tenant`). The check does not find a host name written with no scheme

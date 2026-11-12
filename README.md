@@ -133,7 +133,7 @@ PR body is the changelog. Nothing is released until a person merges that PR.
 
 PRs are squash-merged, so the PR title (checked by `pr-title.yml`) becomes the commit subject that release-please reads.
 
-**To release:** read the upgrade guide comment of the release PR (see "Upgrade guide"), check that the `release-gate`
+**To release:** read the upgrade guide at the end of the release PR description (see "Upgrade guide"), check that the `release-gate`
 check of the release PR passes (re-run it first, see below), then merge the release PR. The merge puts `CHANGELOG.md` and `.release-please-manifest.json` on `main`; release-please then tags
 that commit `vX.Y.Z` and creates the GitHub release with the changelog. The tag starts the three `build_and_push_*`
 workflows, which push the semver images. Merging the release PR deploys nothing.
@@ -201,7 +201,9 @@ Otherwise, write "No upgrade action" in the "Upgrade" section of the PR descript
 
 **Format** (validated by `scripts/upgrade_guide/notes.py`): a list of actions, each with `when` (`before` or `after`
 the deploy), `do`, optional `preconditions` and `refs` (the migration file or the DAG; the note does not copy the SQL,
-the migration file keeps its WHERE / WHEN header), and `check` (how to see that it worked):
+the migration file keeps its WHERE / WHEN header), and `check` (how to see that it worked). The first sentence of `do`
+is the title of the step in the guide: make it a short order ("Add the slivar columns to the germline CNV occurrence
+table."), and put the details in the next sentences.
 
 ```yaml
 actions:
@@ -252,7 +254,11 @@ with no note shows "No upgrade action".
   migration files.
 - Without a clone: Actions → Upgrade Guide → Run workflow on `main` (`.github/workflows/upgrade-guide.yml`), with
   `from` and `to`. The guide is in the job summary.
-- The Release workflow keeps one comment on the open release PR with the guide from the last release to `main`.
+- The Release workflow adds the guide from the last release to `main` at the end of the open release PR description,
+  after the release-please footer, between the markers `<!-- upgrade-guide:start -->` and `<!-- upgrade-guide:end -->`.
+  release-please rebuilds the description when the release changes, and the same job adds the guide back. On the
+  merge, release-please reads the release notes only between the first and the last `---` line, so the guide never
+  reaches the changelog.
 - The Upgrade Guide Release workflow (`.github/workflows/upgrade-guide-release.yml`) adds an "Upgrade guide" section
   to each GitHub release when it is published. To add a missing section, or to refresh it after a note was corrected,
   run it on `main` with the `tag` input. A tag with no GitHub release gets no section; the command still covers its

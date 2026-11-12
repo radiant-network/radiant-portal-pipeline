@@ -8,6 +8,7 @@ from scripts.upgrade_guide.guide import (
     render_guide,
     render_preview,
     render_release_section,
+    split_do,
 )
 from tests.unit.upgrade_guide.conftest import note
 
@@ -50,26 +51,28 @@ def guide_text(repo, frm, to, **kwargs):
 
 def test_release_order_grouping_version_and_pr(history):
     text = guide_text(history, "v1.1.0", "v1.3.0")
-    assert text.index("## v1.2.0") < text.index("## v1.3.0")
-    v12 = text[text.index("## v1.2.0") : text.index("## v1.3.0")]
-    assert v12.index("### Before the deploy") < v12.index("### After the deploy")
-    before = v12[v12.index("### Before") : v12.index("### After")]
-    after = v12[v12.index("### After") :]
-    assert "**RAD-2** (v1.2.0, PR #12): Pause." in before
-    assert "Preconditions: No import running." in before
+    assert text.startswith("## Upgrade guide: v1.1.0 → v1.3.0\n\n2 releases, 3 actions: 1 before the deploy, 2 after.")
+    assert text.index("### v1.2.0") < text.index("### v1.3.0")
+    v12 = text[text.index("### v1.2.0") : text.index("### v1.3.0")]
+    assert v12.index("#### Before the deploy") < v12.index("#### After the deploy")
+    before = v12[v12.index("#### Before") : v12.index("#### After")]
+    after = v12[v12.index("#### After") :]
+    assert "1. **Pause.** · RAD-2 · #12" in before
+    assert "   - **Before you start:** No import running." in before
     assert "RAD-1" not in before
-    # Merge order: RAD-1 merged before RAD-2
-    assert after.index("**RAD-1** (v1.2.0, PR #11): Do one.") < after.index("**RAD-2** (v1.2.0, PR #12): Migrate.")
-    assert "Refs: `radiant/dags/sql/radiant/migrations/RAD-2.sql`" in after
-    assert "Check: Done." in after
+    # Merge order: RAD-1 merged before RAD-2; the numbers run on from Before to After
+    assert after.index("2. **Do one.** · RAD-1 · #11") < after.index("3. **Migrate.** · RAD-2 · #12")
+    assert "   - **Refs:** `radiant/dags/sql/radiant/migrations/RAD-2.sql`" in after
+    assert "   - **Check:** Done." in after
     assert "RAD-4" not in text
-    assert "Warning" not in text
+    assert "WARNING" not in text
 
 
 def test_release_with_no_note(history):
     text = guide_text(history, "v1.2.0", "v1.3.0")
-    assert "## v1.3.0\n\nNo upgrade action." in text
-    assert "## v1.2.0" not in text
+    assert "### v1.3.0\n\nNo upgrade action." in text
+    assert "### v1.2.0" not in text
+    assert "1 release, no upgrade action." in text
 
 
 def test_from_must_be_older(history):
@@ -96,8 +99,8 @@ def test_warning_before_first_tag_with_notes(history):
     assert "The releases v1.0.1 have no upgrade notes" not in guide.warnings[0]
     assert "v1.1.0 is the first release with the upgrade-notes/ folder" in guide.warnings[0]
     text = render_guide(guide)
-    assert "> **Warning:**" in text
-    assert "## v1.1.0\n\nNo upgrade action." in text
+    assert "> [!WARNING]\n> v1.1.0 is the first release" in text
+    assert "### v1.1.0\n\nNo upgrade action." in text
 
 
 def test_warning_when_no_tag_has_notes(repo):
@@ -116,14 +119,14 @@ def test_no_warning_for_next_release_only(repo):
     repo.commit("fix: RAD-8 (#2)", {"upgrade-notes/RAD-8.yaml": note(do="Eight.")})
     guide = build_guide(Git(repo.path), "v1.0.0", "HEAD")
     assert guide.warnings == []
-    assert "**RAD-8** (Next release, PR #2): Eight." in render_guide(guide)
+    assert "1. **Eight.** · RAD-8 · #2" in render_guide(guide)
 
 
 def test_edited_note_shows_new_text(history):
     history.commit("docs: RAD-1 correct the note (#15)", {"upgrade-notes/RAD-1.yaml": note("after", "Do one, fixed.")})
     text = guide_text(history, "v1.1.0", "v1.2.0")
-    assert "**RAD-1** (v1.2.0, PR #11): Do one, fixed." in text
-    assert "Do one.\n" not in text
+    assert "**Do one, fixed.** · RAD-1 · #11" in text
+    assert "**Do one.**" not in text
 
 
 def test_notes_text_from_notes_ref(history):
@@ -136,17 +139,17 @@ def test_notes_text_from_notes_ref(history):
 
 def test_unreleased_notes_to_branch(history):
     text = guide_text(history, "v1.3.0", "main", next_version="v1.4.0")
-    assert text.startswith("# Upgrade guide from v1.3.0 to v1.4.0")
-    assert "## v1.4.0" in text
-    assert "**RAD-4** (v1.4.0, PR #14): Do four." in text
+    assert text.startswith("## Upgrade guide: v1.3.0 → v1.4.0")
+    assert "### v1.4.0" in text
+    assert "1. **Do four.** · RAD-4 · #14" in text
 
 
 def test_unreleased_includes_releases_between(history):
     text = guide_text(history, "v1.1.0", "HEAD")
-    assert [line for line in text.splitlines() if line.startswith("## ")] == [
-        "## v1.2.0",
-        "## v1.3.0",
-        "## Next release",
+    assert [line for line in text.splitlines() if line.startswith("### ")] == [
+        "### v1.2.0",
+        "### v1.3.0",
+        "### Next release",
     ]
 
 
@@ -155,7 +158,7 @@ def test_commit_without_pr_number(repo):
     repo.tag("v1.0.0")
     sha = repo.commit("fix: RAD-5 direct push", {"upgrade-notes/RAD-5.yaml": note()})
     repo.tag("v1.0.1")
-    assert f"(v1.0.1, commit {sha[:7]})" in guide_text(repo, "v1.0.0", "v1.0.1")
+    assert f"· RAD-5 · {sha[:7]}" in guide_text(repo, "v1.0.0", "v1.0.1")
 
 
 def test_semver_order_not_lexical(repo):
@@ -164,13 +167,13 @@ def test_semver_order_not_lexical(repo):
     repo.commit("fix: RAD-6 (#2)", {"upgrade-notes/RAD-6.yaml": note(do="Six.")})
     repo.tag("v1.0.10")
     text = guide_text(repo, "v1.0.9", "v1.0.10")
-    assert "**RAD-6** (v1.0.10, PR #2): Six." in text
+    assert "### v1.0.10\n\n#### After the deploy\n\n1. **Six.** · RAD-6 · #2" in text
 
 
 def test_release_section(history):
     text = render_release_section(Git(history.path), "v1.2.0")
     assert text.startswith("## Upgrade guide\n")
-    assert "**RAD-2** (v1.2.0, PR #12): Pause." in text
+    assert "1. **Pause.** · RAD-2 · #12" in text
     assert "RAD-4" not in text
     assert render_release_section(Git(history.path), "v1.3.0") == "## Upgrade guide\n\nNo upgrade action.\n"
 
@@ -184,7 +187,7 @@ def test_invalid_note_on_main_fails(history):
 def test_cli_guide(history, capsys):
     assert main(["--repo", str(history.path), "guide", "--from", "v1.0.0", "--to", "v1.2.0"]) == 0
     out, err = capsys.readouterr()
-    assert out.startswith("# Upgrade guide from v1.0.0 to v1.2.0")
+    assert out.startswith("## Upgrade guide: v1.0.0 → v1.2.0")
     assert "warning:" in err
 
 
@@ -208,8 +211,8 @@ def test_preview_renders_notes_of_the_pr():
     )
     assert text.startswith("## Upgrade guide preview\n")
     assert text.index("### Before the deploy") < text.index("### After the deploy")
-    assert "**RAD-9** (next release, PR #42): Pause." in text
-    assert "**RAD-8** (next release, PR #42): Migrate." in text
+    assert "1. **Pause.** · RAD-9 · #42" in text
+    assert "2. **Migrate.** · RAD-8 · #42" in text
 
 
 def test_preview_no_note():
@@ -219,14 +222,14 @@ def test_preview_no_note():
 def test_preview_lists_invalid_notes():
     text = render_preview({"upgrade-notes/RAD-9.yaml": "actions: []\n", "upgrade-notes/RAD-8.yaml": note()})
     assert "`upgrade-notes/RAD-9.yaml`: not valid" in text
-    assert "**RAD-8** (next release): Run the migration." in text
+    assert "1. **Run the migration.** · RAD-8\n" in text
 
 
 def test_cli_preview(repo, capsys):
     base = repo.commit("feat: base (#1)", {"a.txt": "a"})
     head = repo.commit("fix: RAD-9 x", {"upgrade-notes/RAD-9.yaml": note(do="Nine."), "b.txt": "b"})
     assert main(["--repo", str(repo.path), "preview", "--base", base, "--head", head, "--pr", "7"]) == 0
-    assert "**RAD-9** (next release, PR #7): Nine." in capsys.readouterr().out
+    assert "1. **Nine.** · RAD-9 · #7" in capsys.readouterr().out
 
 
 def test_render_escapes_placeholders_and_lists_preconditions():
@@ -239,6 +242,30 @@ def test_render_escapes_placeholders_and_lists_preconditions():
         }
     )
     assert "every &lt;tenant&gt;_tenant database." in text
-    assert "  - Preconditions:\n    - One.\n    - Two." in text
+    assert "   - **Before you start:**\n     - One.\n     - Two." in text
     assert "`<shared_db>`" in text  # Code spans keep the text as is
-    assert "Check: A &amp; B." in text
+    assert "**Check:** A &amp; B." in text
+
+
+@pytest.mark.parametrize(
+    "do, title, rest",
+    [
+        ("Pause the DAGs.", "Pause the DAGs.", ""),
+        ("Add the columns. Run each ALTER alone.", "Add the columns.", "Run each ALTER alone."),
+        (
+            "Run init_iceberg_table.py, e.g. on ECS. Then check.",
+            "Run init_iceberg_table.py, e.g. on ECS.",
+            "Then check.",
+        ),
+        ("Bump to v1.2.0. 3 runs follow.", "Bump to v1.2.0.", "3 runs follow."),
+    ],
+)
+def test_split_do(do, title, rest):
+    assert split_do(do) == (title, rest)
+
+
+def test_render_step_title_and_rest_and_escaped_star():
+    text = render_preview(
+        {"upgrade-notes/RAD-9.yaml": note(do="Add the mother_* columns. Run it once.", check="Done.")}, pr="1"
+    )
+    assert "1. **Add the mother_\\* columns.** · RAD-9 · #1\n   Run it once.\n   - **Check:** Done." in text
