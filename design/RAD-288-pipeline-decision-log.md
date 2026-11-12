@@ -116,6 +116,42 @@ Every import row is a `run`.
 
 ### Flow
 
+What one daily scheduler run `R` writes to and reads from the log:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant S as case scheduler (run R)
+    participant L as pipeline_decision_log
+    participant C as from Cases DAGs<br/>(SNV, CNV, somatic, QC)
+    participant I as import
+
+    Note over S: discover_* : the 5 pending queries
+    S->>S: decide: the selections, lenient
+    S->>L: write stage=discover<br/>case rows (run, wait, skipped, excluded)<br/>+ member rows at fault
+    S->>S: set_processing (the run cases + the cases with variants)
+    S->>C: trigger, conf.decision_run_id = R
+    C->>C: discover_scope + select_cases (its own query, now)
+    C->>L: read the units decided run at discover for R
+    L-->>C: (unit_id, case_id)
+    Note over C: launch selected ∩ decided<br/>selected but not decided: warning in the task log only,<br/>left for the next run
+    C-->>S: done (success or not)
+    S->>I: trigger, not narrowed
+    I-->>S: done
+    Note over S: rediscover_* : the same queries, after the pipelines
+    S->>L: write stage=after<br/>only the units still candidates
+    S->>S: evaluate_cases: processing → in_progress,<br/>email the labs
+```
+
+Reading a unit's rows for one run:
+
+- `run` at `discover`, absent at `after`: the pipeline ran it, it is no longer a candidate.
+- `run` at `discover`, `run` again at `after`: the pipeline failed on it, or the child did not launch it.
+- `wait`, `skipped` or `excluded` at `discover`: not launched; the member rows say who is at fault. The `after` row usually repeats it.
+- absent at `discover`, `run` at `after`: it became runnable during the run; the child left it for the next run (see its warning).
+- no `discover` row at all for `R`: `discover_cases` failed, and the children launched nothing.
+- no `after` row at all for `R`: the second discovery did not run (a failed import, CNV post-processing or QC), so an absence there means nothing.
+
 **1. `decide` (scheduler, stage `discover`).**
 - Replaces the selection inside `cases_with_work`.
 - Reads the five `discover_*` row lists, runs the four selections (lenient, as today) and the import adapter.
