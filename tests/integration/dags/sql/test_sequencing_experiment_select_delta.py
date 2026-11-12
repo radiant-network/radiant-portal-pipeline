@@ -848,3 +848,82 @@ def test_sequencing_experiment_with_recently_updated_task(
     # Should capture the updated experiment -- task 65 is back, so the full 18-row baseline again.
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
     assert len(result_df) == 18
+
+
+@pytest.fixture
+def normal_shared_with_somatic_case(postgres_clinical_seeds, postgres_instance):
+    """RAD-266, the Qlin QA shape: patient 9630's normal experiment 9630 is in germline case 9630 and in the
+    tumor-normal somatic case 9631, with the tumor experiment 9631. Task 9630 is the normal's alignment task (no case
+    in task_context), task 9631 the germline case's SNV annotation, task 9632 the somatic case's SNV annotation over
+    both experiments."""
+    execute_clinical(
+        postgres_instance,
+        """
+        INSERT INTO patient (id, submitter_patient_id, organization_code, sex_code, date_of_birth, life_status_code,
+                             tenant_code)
+        VALUES (9630, 'PT-9630', 'CQGC', 'female', '2015-01-01', 'alive', 'radiant');
+        INSERT INTO cases (id, proband_id, project_id, status_code, primary_condition, created_on, updated_on,
+                           case_type_code, submitter_case_id, tenant_code)
+        VALUES (9630, 9630, 1, 'in_progress', 'MONDO:0700092', now(), now(), 'germline', 'RAD266-G', 'radiant'),
+               (9631, 9630, 1, 'in_progress', 'MONDO:0700092', now(), now(), 'somatic',  'RAD266-S', 'radiant');
+        INSERT INTO family (id, case_id, family_member_id, relationship_to_proband_code, affected_status_code,
+                            tenant_code)
+        VALUES (9630, 9630, 9630, 'proband', 'affected', 'radiant');
+        INSERT INTO sample (id, type_code, histology_code, submitter_sample_id, patient_id, organization_code,
+                            tenant_code)
+        VALUES (9630, 'dna', 'normal',  'S9630', 9630, 'CQGC', 'radiant'),
+               (9631, 'dna', 'tumoral', 'S9631', 9630, 'CQGC', 'radiant');
+        INSERT INTO sequencing_experiment (id, sample_id, status_code, aliquot, created_on, updated_on,
+                                           experimental_strategy_code, platform_code, tenant_code)
+        VALUES (9630, 9630, 'completed', 'A9630', '2026-01-01', '2026-01-01', 'wgs', 'illumina', 'radiant'),
+               (9631, 9631, 'completed', 'A9631', '2026-01-01', '2026-01-01', 'wgs', 'illumina', 'radiant');
+        INSERT INTO case_has_sequencing_experiment (case_id, sequencing_experiment_id)
+        VALUES (9630, 9630), (9631, 9630), (9631, 9631);
+        INSERT INTO task (id, task_type_code, created_on, pipeline_name, pipeline_version, genome_build, tenant_code)
+        VALUES (9630, 'alignment_germline_variant_calling', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
+               (9631, 'radiant_germline_annotation', '2026-01-03', 'snv-post-processing', 'mock', 'GRch38', 'radiant'),
+               (9632, 'radiant_somatic_annotation', '2026-01-03', 'snv-post-processing', 'mock', 'GRch38', 'radiant');
+        INSERT INTO task_context (task_id, case_id, sequencing_experiment_id)
+        VALUES (9630, null, 9630), (9631, 9630, 9630), (9632, 9631, 9630), (9632, 9631, 9631);
+        INSERT INTO document (id, name, data_category_code, data_type_code, format_code, size, url, hash, tenant_code)
+        VALUES (9630, 'a9630.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1, 's3://test-vcf/a9630.cnv.vcf.gz', 'mock9630',
+                'radiant'),
+               (9631, 'a9630.snv.vep.vcf.gz', 'genomic', 'snv', 'vcf', 1, 's3://test-vcf/a9630.snv.vep.vcf.gz',
+                'mock9631', 'radiant'),
+               (9632, 'a9631.ssnv.vep.vcf.gz', 'genomic', 'ssnv', 'vcf', 1, 's3://test-vcf/a9631.ssnv.vep.vcf.gz',
+                'mock9632', 'radiant');
+        INSERT INTO task_has_document (task_id, document_id, type)
+        VALUES (9630, 9630, 'output'), (9631, 9631, 'output'), (9632, 9632, 'output');
+        """,
+    )
+    yield
+    execute_clinical(
+        postgres_instance,
+        """
+        DELETE FROM task_has_document WHERE task_id IN (9630, 9631, 9632);
+        DELETE FROM task_context WHERE task_id IN (9630, 9631, 9632);
+        DELETE FROM task WHERE id IN (9630, 9631, 9632);
+        DELETE FROM document WHERE id IN (9630, 9631, 9632);
+        DELETE FROM case_has_sequencing_experiment WHERE case_id IN (9630, 9631);
+        DELETE FROM sequencing_experiment WHERE id IN (9630, 9631);
+        DELETE FROM sample WHERE id IN (9630, 9631);
+        DELETE FROM family WHERE case_id IN (9630, 9631);
+        DELETE FROM cases WHERE id IN (9630, 9631);
+        DELETE FROM patient WHERE id = 9630;
+        """,
+    )
+
+
+def test_sequencing_experiment_delta_keeps_germline_tasks_out_of_somatic_cases(
+    normal_shared_with_somatic_case, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """RAD-266: the normal's alignment task and the germline annotation task stay in the germline case only, so the
+    import gets a single row for each. The somatic case keeps its somatic annotation task, normal included."""
+    delta = _delta(starrocks_session, sequencing_delta_columns).query("case_id in [9630, 9631]")
+
+    assert sorted((int(r.case_id), int(r.seq_id), int(r.task_id), r.analysis_type) for r in delta.itertuples()) == [
+        (9630, 9630, 9630, "germline"),
+        (9630, 9630, 9631, "germline"),
+        (9631, 9630, 9632, "somatic"),
+        (9631, 9631, 9632, "somatic"),
+    ]

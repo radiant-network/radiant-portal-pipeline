@@ -34,6 +34,11 @@ class BaseTask(BaseModel, ABC):
     deleted: bool
 
     @staticmethod
+    def experiment_rows(rows: list[dict]) -> list[dict]:
+        """The rows that give the task its experiments: all of them, unless a task type says otherwise."""
+        return rows
+
+    @staticmethod
     @abstractmethod
     def gather_additional_args(rows: list[dict]) -> dict:
         pass
@@ -63,11 +68,26 @@ class AlignmentGermlineVariantCallingTask(BaseTask):
     cnv_vcf_filepath: str
 
     @staticmethod
+    def experiment_rows(rows: list[dict]) -> list[dict]:
+        # The task has no case: an experiment in two germline cases gives one row per case, which may differ by
+        # `family_role` (RAD-266). The occurrences are written once per experiment, and the role plays no part.
+        first_by_seq_id: dict[int, dict] = {}
+        for r in rows:
+            first_by_seq_id.setdefault(r["seq_id"], r)
+        return list(first_by_seq_id.values())
+
+    @staticmethod
     def gather_additional_args(rows: list[dict]) -> dict:
-        if len(rows) > 1:
-            raise ValueError("`alignment_germline_variant_calling` task expects a single row per task.")
+        seq_ids = {r["seq_id"] for r in rows}
+        filepaths = {r["cnv_vcf_filepath"] for r in rows}
+        if len(seq_ids) != 1 or len(filepaths) != 1:
+            raise ValueError(
+                f"`alignment_germline_variant_calling` task [{rows[0].get('task_id')}] expects a single experiment "
+                f"and a single CNV VCF, got seq_ids: {sorted(seq_ids)}, "
+                f"files: {sorted(str(f) for f in filepaths)}."
+            )
         return {
-            "cnv_vcf_filepath": rows[0]["cnv_vcf_filepath"],
+            "cnv_vcf_filepath": filepaths.pop(),
         }
 
 
@@ -180,7 +200,7 @@ def build_task_from_rows(rows: list[dict]) -> BaseTask:
         raise ValueError("No rows provided")
 
     task_cls = _get_task_type(rows)
-    experiments = _build_experiments(rows)
+    experiments = _build_experiments(task_cls.experiment_rows(rows))
     base_args = {
         "task_id": rows[0]["task_id"],
         "part": rows[0]["part"],

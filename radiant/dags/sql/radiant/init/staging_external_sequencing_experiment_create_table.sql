@@ -86,6 +86,13 @@ sequencing_experiments AS (
 		OR (d.url LIKE '%variants.tsv' AND d.data_type_code = 'exomiser' AND t.task_type_code = 'radiant_germline_annotation')
 		OR (d.url LIKE '%variants.tsv' AND d.data_type_code = 'exomiser_cnv' AND t.task_type_code = 'radiant_germline_cnv_annotation')
 	)
+	-- A germline task belongs to the germline cases of its experiment only (RAD-266). The normal of a tumor-normal
+	-- case is often in a germline case too: without this guard, its alignment task (no case in task_context) gets a
+	-- `somatic` row next to its `germline` one, and the import builds the task from two rows.
+	AND NOT (
+		se.analysis_type = 'somatic'
+		AND t.task_type_code IN ('alignment_germline_variant_calling', 'radiant_germline_annotation', 'radiant_germline_cnv_annotation')
+	)
 	GROUP BY
 	    se.case_id,
 	    t.id,
