@@ -10,6 +10,7 @@ _BASE_TABLES = [
     "current_experiment",
     "current_alignment",
     "case_member",
+    "pipeline_decision_log",
     "staging_external_sequencing_experiment",
     "staging_sequencing_experiment",
     "staging_sequencing_experiment_delta",
@@ -30,8 +31,8 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(_BASE_DAG_ID)
-    # 18 base radiant tables and views + 2 clinical tables + 25 open data tables + 2 UDFs
-    assert len(dag.tasks) == 47
+    # 19 base radiant tables and views + 2 clinical tables + 25 open data tables + 2 UDFs
+    assert len(dag.tasks) == 48
 
 
 def test_dag_has_all_base_tasks(dag_bag):

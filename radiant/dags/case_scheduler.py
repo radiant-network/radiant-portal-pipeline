@@ -54,10 +54,16 @@ CASE_GROUP_PREFIX = "results"
 # costs those emails only, not the status changes.
 CASES_WITH_WORK_KEY = "cases_with_work"
 
-# The run's block list, passed to the four "from Cases" DAGs so they leave out exactly the tenants
-# discovery left out. A tenant that is not excluded but not granted to the service account gets a
-# 403 from the portal instead, logged and skipped.
-EXCLUDED_TENANTS_CONF = {"excluded_tenants": "{{ params.excluded_tenants }}"}
+# Passed to the four "from Cases" DAGs:
+# - the run's block list, so they leave out exactly the tenants discovery left out. A tenant that is
+#   not excluded but not granted to the service account gets a 403 from the portal instead, logged
+#   and skipped;
+# - the run whose decisions they follow (RAD-288): they launch only the units `discover_cases`
+#   decided `run`, and a unit that became runnable since waits for the next run.
+CHILD_CONF = {
+    "excluded_tenants": "{{ params.excluded_tenants }}",
+    "decision_run_id": "{{ sanitize_run_tag(run_id) }}",
+}
 
 # The status PATCH is guarded by the expected status, so a retry can only report
 # `updated: false` for what the first attempt already changed.
@@ -124,7 +130,7 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
             trigger_rule=trigger_rule,
             # `task_ids` empty, as on a discovery run; `excluded_tenants` is the DAG's param.
             params={"task_ids": []},
-            parameters=EXCLUDED_TENANTS_CONF,
+            parameters={"excluded_tenants": "{{ params.excluded_tenants }}"},
         )
 
     return [
@@ -157,12 +163,20 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
     ]
 
 
-def _cases_with_work(
-    germline_snv_rows: Any, germline_cnv_rows: Any, somatic_snv_rows: Any, qc_rows: Any, import_rows: Any
-) -> set[int]:
-    from radiant.tasks.nextflow.case_status import cases_with_work
+def _decide_and_log(stage: str, rows: list[Any], context: Any) -> set[int]:
+    """Decide for every pipeline, write the decisions to `pipeline_decision_log` under this run, and
+    return the cases with work waiting (a `run` decision anywhere). RAD-288.
 
-    return cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
+    `rows` are the six discovery outputs; the two QC queries are one selection, as in the QC DAG.
+    """
+    from radiant.tasks.nextflow.decision import decide, run_case_ids, write_decisions
+
+    germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, qc_somatic_rows, import_rows = rows
+    decisions = decide(
+        germline_snv_rows, germline_cnv_rows, somatic_snv_rows, [*qc_rows, *qc_somatic_rows], import_rows
+    )
+    write_decisions(decisions, sanitize_run_tag(context["run_id"]), stage, context["dag_run"].conf)
+    return run_case_ids(decisions)
 
 
 @dag(
@@ -205,10 +219,11 @@ def case_scheduler():
         from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.case_status import plan_processing
+        from radiant.tasks.nextflow.decision import DISCOVER
 
         context = get_current_context()
-        qc_rows = [*qc_rows, *qc_somatic_rows]
-        waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
+        rows = [germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, qc_somatic_rows, import_rows]
+        waiting = _decide_and_log(DISCOVER, rows, context)
         context["ti"].xcom_push(key=CASES_WITH_WORK_KEY, value=sorted(waiting))
         return plan_processing(status_rows, waiting, context["params"]["excluded_tenants"])
 
@@ -248,13 +263,14 @@ def case_scheduler():
         from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.case_status import plan_in_progress
+        from radiant.tasks.nextflow.decision import AFTER
 
         context = get_current_context()
         processed = context["ti"].xcom_pull(task_ids="discover_cases", key=CASES_WITH_WORK_KEY)
         if processed is None:
             LOGGER.warning("discover_cases did not run: only the cases moved to in_progress are notified")
-        qc_rows = [*qc_rows, *qc_somatic_rows]
-        still_waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
+        rows = [germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, qc_somatic_rows, import_rows]
+        still_waiting = _decide_and_log(AFTER, rows, context)
         return plan_in_progress(
             status_rows, set(processed or []), still_waiting, context["params"]["excluded_tenants"]
         )
@@ -323,25 +339,25 @@ def case_scheduler():
         "trigger_germline_snv_postprocessing",
         "[DAG] Nextflow SNV Post-processing (from Cases)",
         GERMLINE_SNV_CASES_DAG_ID,
-        EXCLUDED_TENANTS_CONF,
+        CHILD_CONF,
     )
     trigger_germline_cnv = _trigger(
         "trigger_germline_cnv_postprocessing",
         "[DAG] Nextflow CNV Post-processing (from Cases)",
         GERMLINE_CNV_CASES_DAG_ID,
-        EXCLUDED_TENANTS_CONF,
+        CHILD_CONF,
     )
     trigger_somatic_snv = _trigger(
         "trigger_somatic_snv_annotation",
         "[DAG] Nextflow Somatic SNV Annotation (from Cases)",
         SOMATIC_SNV_CASES_DAG_ID,
-        EXCLUDED_TENANTS_CONF,
+        CHILD_CONF,
     )
     trigger_qc = _trigger(
         "trigger_quality_control",
         "[DAG] Nextflow Quality Control (from Cases)",
         QC_CASES_DAG_ID,
-        EXCLUDED_TENANTS_CONF,
+        CHILD_CONF,
     )
     # The import picks up the annotations SNV post-processing, somatic annotation and CNV
     # post-processing (the slivar VCF, RAD-206) registered, so it waits for the three, success or not.

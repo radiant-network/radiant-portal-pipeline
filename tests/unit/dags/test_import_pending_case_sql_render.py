@@ -40,3 +40,10 @@ def test_ingested_at_is_set_in_utc_like_updated_at():
     sql = "\n".join(line for line in update.splitlines() if not line.lstrip().startswith("--"))
     assert "SET ingested_at = UTC_TIMESTAMP()" in sql
     assert "NOW()" not in sql.upper()
+
+
+def test_every_case_comes_with_its_tenant_and_why():
+    """The case scheduler logs one `run` decision per case (RAD-288), with the first reason found."""
+    delta, staging = _render().split("UNION")
+    assert "SELECT case_id, tenant_code, 'new_or_changed' AS reason" in delta
+    assert "IF(se.deleted, 'deleted', 'not_loaded') AS reason" in staging

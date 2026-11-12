@@ -13,6 +13,7 @@ import logging
 
 from pydantic import BaseModel
 
+from radiant.tasks.nextflow.problem import Problem, case_problem, member_problem
 from radiant.tasks.nextflow.qc.model import QcCase, QcMember, family_id
 from radiant.tasks.nextflow.resolve import REL_ORDER, CaseResolutionError, ExcludedCase
 
@@ -95,9 +96,11 @@ def select_cases(
         case_members = by_case[case_id]
         case_problems = _validate(case_id, case_members)
         if case_problems:
-            reason, detail = case_problems[0]
-            selection.excluded.append(ExcludedCase(case_id=case_id, reason=reason, detail=detail))
-            problems += [detail for _, detail in case_problems]
+            first = case_problems[0]
+            selection.excluded.append(
+                ExcludedCase(case_id=case_id, reason=first.reason, detail=first.detail, problems=case_problems)
+            )
+            problems += [problem.detail for problem in case_problems]
             continue
         selection.members += case_members
         selection.case_ids.append(case_id)
@@ -137,20 +140,22 @@ def _group_by_case(members: list[QcMember]) -> dict[int, list[QcMember]]:
     return by_case
 
 
-def _validate(case_id: int, members: list[QcMember]) -> list[tuple[str, str]]:
+def _validate(case_id: int, members: list[QcMember]) -> list[Problem]:
     """`(reason, detail)` pairs. Exclusion is at case granularity: the report is per family,
     and a family short one member is a different report, not a smaller one."""
-    problems: list[tuple[str, str]] = []
+    problems: list[Problem] = []
 
     for member in members:
         if member.exclusion_reason:
             text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
-            problems.append((member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}"))
+            problems.append(
+                member_problem(member, member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}")
+            )
 
     probands = [m for m in members if m.role == "proband"]
     if len(probands) != 1:
         problems.append(
-            (
+            case_problem(
                 "proband_count",
                 f"case {case_id}: expected exactly 1 proband, found {len(probands)} -- the pedigree "
                 f"the pipeline derives needs exactly one",
@@ -159,7 +164,9 @@ def _validate(case_id: int, members: list[QcMember]) -> list[tuple[str, str]]:
 
     unknown = sorted({m.strategy for m in members if m.strategy and m.strategy.lower() not in STRATEGIES})
     if unknown:
-        problems.append(("unsupported_strategy", f"case {case_id}: unsupported experimental strategy {unknown}"))
+        problems.append(
+            case_problem("unsupported_strategy", f"case {case_id}: unsupported experimental strategy {unknown}")
+        )
 
     return problems
 

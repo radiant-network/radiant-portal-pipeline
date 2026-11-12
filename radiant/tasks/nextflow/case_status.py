@@ -16,10 +16,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel
 
-from radiant.tasks.nextflow.cnv.resolve import select_cases as select_cnv_cases
-from radiant.tasks.nextflow.qc.resolve import select_cases as select_qc_cases
-from radiant.tasks.nextflow.resolve import select_cases as select_snv_cases
-from radiant.tasks.nextflow.somatic.resolve import select_tasks as select_somatic_tasks
+from radiant.tasks.nextflow.decision import decide, run_case_ids
 
 LOGGER = logging.getLogger(__name__)
 
@@ -42,23 +39,15 @@ def cases_with_work(
     qc_rows: list[dict],
     import_rows: list[dict],
 ) -> set[int]:
-    """The cases at least one pipeline will run on: the union of what each "from Cases" DAG
-    would select, and of the cases in the import delta.
+    """The cases at least one pipeline will run on: the cases of a `run` decision (RAD-288,
+    `decision.decide`), in any pipeline or the import.
 
     The Nextflow candidates go through the DAGs' own `select_cases`, lenient as on a scheduled
     run. A case they exclude (sequencing pending, no gVCF, tenant excluded...) is not counted:
     it would sit in `processing` with nothing running for it, and never reach `in_progress`.
+    The scheduler calls `decide` itself, to write the decisions; this is the same answer.
     """
-    selected = {
-        "germline snv post-processing": select_snv_cases(germline_snv_rows, strict=False).case_ids,
-        "germline cnv post-processing": select_cnv_cases(germline_cnv_rows, strict=False).case_ids,
-        "somatic snv annotation": select_somatic_tasks(somatic_snv_rows, strict=False).case_ids,
-        "quality control": select_qc_cases(qc_rows, strict=False).case_ids,
-        "import": sorted({row["case_id"] for row in import_rows}),
-    }
-    for pipeline, case_ids in selected.items():
-        LOGGER.info("%s: %d case(s) with work waiting %s", pipeline, len(case_ids), case_ids)
-    return {case_id for case_ids in selected.values() for case_id in case_ids}
+    return run_case_ids(decide(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows))
 
 
 def plan_processing(status_rows: list[dict], waiting: set[int], excluded_tenants: list[str]) -> list[dict]:

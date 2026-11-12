@@ -59,6 +59,33 @@ The question is asked twice with the same queries: before the pipelines (`discov
 the cases to move to `processing`, and after them (`rediscover_*`), to hold back the cases a
 pipeline still has work for.
 
+## The decision log
+
+Both passes write every decision to `pipeline_decision_log` (RAD-288, `radiant/tasks/nextflow/decision.py`,
+design `design/RAD-288-pipeline-decision-log.md`), under this run's tag, with the stage `discover` or `after`.
+Per pipeline (`germline_snv`, `germline_cnv`, `somatic_snv`, `qc`, `import`) and candidate unit (the case;
+the calling task and case for somatic), one `case` row with the decision, plus one `member` row per member
+at fault (patient, experiment, alignment task):
+
+- `run`: nothing stops it;
+- `wait`: the data will come by itself (`pending_sequencing`, `pending_alignment`);
+- `skipped`: left out by configuration (`tenant_excluded`);
+- `excluded`: something needs fixing (a document, the case in the portal, an unsupported upstream pipeline).
+
+Only `run` counts as work waiting. Why was case X not processed:
+
+```sql
+SELECT run_id, stage, pipeline, scope, patient_id, seq_id, task_id, decision, reason, detail
+FROM pipeline_decision_log
+WHERE case_id = 1234
+ORDER BY decided_at DESC, pipeline;
+```
+
+The four "from Cases" DAGs follow these decisions: their trigger `conf` carries `decision_run_id`, and they
+launch only the units decided `run` at `discover`. A unit that became runnable after the decision is logged
+`wait` / `not_decided` at stage `launch` and decided by the next run. The import is not narrowed: it loads
+what the other DAGs register during the same run.
+
 The `submitted` cases that already have variant data are moved to `processing` too: work done
 before this DAG saw the case (a manual rerun, data imported before the statuses existed) would
 otherwise leave it `submitted` for ever. The same run's `evaluate_cases` moves them on once
@@ -169,7 +196,8 @@ status, and is emailed again with its whole manifest.
 ## Child runs
 
 The five child run ids are pinned to this run (`sanitize_run_tag(run_id)`), so a retry resets the
-same child run and Nextflow's `-resume` still finds its launch directory. The tag drops the `__`
+same child run and Nextflow's `-resume` still finds its launch directory. The same tag is the `run_id` of
+this run's rows in `pipeline_decision_log`. The tag drops the `__`
 after the run type: Airflow 3.2 refuses a triggered run whose id starts with `scheduled__`.
 
 ## Portal connection

@@ -23,6 +23,7 @@ import logging
 from pydantic import BaseModel
 
 from radiant.tasks.nextflow.model import CaseMember, Family, Phenotype, family_id
+from radiant.tasks.nextflow.problem import Problem, case_problem, member_problem
 
 LOGGER = logging.getLogger(__name__)
 
@@ -63,11 +64,14 @@ class CaseResolutionError(Exception):
 
 
 class ExcludedCase(BaseModel):
-    """A candidate case that will not be run, and why."""
+    """A candidate case that will not be run, and why. `reason` and `detail` are the first
+    problem found, as the warnings and the strict-mode error report it; `problems` is every one,
+    with the member it is about, for the decision log."""
 
     case_id: int
     reason: str
     detail: str
+    problems: list[Problem] = []
 
 
 class Selection(BaseModel):
@@ -121,9 +125,11 @@ def select_cases(
         case_members = by_case[case_id]
         case_problems = _validate(case_id, case_members)
         if case_problems:
-            reason, detail = case_problems[0]
-            selection.excluded.append(ExcludedCase(case_id=case_id, reason=reason, detail=detail))
-            problems += [detail for _, detail in case_problems]
+            first = case_problems[0]
+            selection.excluded.append(
+                ExcludedCase(case_id=case_id, reason=first.reason, detail=first.detail, problems=case_problems)
+            )
+            problems += [problem.detail for problem in case_problems]
             continue
         selection.members += case_members
         selection.case_ids.append(case_id)
@@ -168,17 +174,19 @@ def _group_by_case(members: list[CaseMember]) -> dict[int, list[CaseMember]]:
     return by_case
 
 
-def _validate(case_id: int, members: list[CaseMember]) -> list[tuple[str, str]]:
+def _validate(case_id: int, members: list[CaseMember]) -> list[Problem]:
     """`(reason, detail)` pairs. Exclusion is at case granularity: the pipeline joint-calls
     whole families, so a family missing a member is not a smaller job, it is a different one.
     """
-    problems: list[tuple[str, str]] = []
+    problems: list[Problem] = []
 
     # Reasons the query already worked out. It sees the supersession rules; this does not.
     for member in members:
         if member.exclusion_reason:
             text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
-            problems.append((member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}"))
+            problems.append(
+                member_problem(member, member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}")
+            )
 
     # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket) because it is
     # the gVCF sample name. The query only leaves it null on a member it has already excluded
@@ -186,14 +194,14 @@ def _validate(case_id: int, members: list[CaseMember]) -> list[tuple[str, str]]:
     for member in members:
         if not member.exclusion_reason and not member.aliquot:
             detail = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
-            problems.append(("missing_aliquot", detail))
+            problems.append(member_problem(member, "missing_aliquot", detail))
 
     probands = [m for m in members if m.role == "proband"]
     if len(probands) != 1:
         # Now means what it says. Before one experiment per member was selected, a
         # re-sequenced proband produced two rows and tripped this on a cause it never named.
         problems.append(
-            (
+            case_problem(
                 "proband_count",
                 f"case {case_id}: expected exactly 1 proband, found {len(probands)} -- two "
                 f"different patients are marked proband on this case",
@@ -204,11 +212,15 @@ def _validate(case_id: int, members: list[CaseMember]) -> list[tuple[str, str]]:
     unknown = {s for s in strategies if s.lower() not in SEQUENCING_TYPES}
     if unknown:
         problems.append(
-            ("unsupported_strategy", f"case {case_id}: unsupported experimental strategy {sorted(unknown)}")
+            case_problem(
+                "unsupported_strategy", f"case {case_id}: unsupported experimental strategy {sorted(unknown)}"
+            )
         )
     elif len(strategies) > 1:
         problems.append(
-            ("unsupported_strategy", f"case {case_id}: members span several strategies {sorted(strategies)}")
+            case_problem(
+                "unsupported_strategy", f"case {case_id}: members span several strategies {sorted(strategies)}"
+            )
         )
 
     return problems

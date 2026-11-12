@@ -141,6 +141,7 @@ def nextflow_somatic_snv_annotation_cases():
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
+        from radiant.tasks.nextflow.decision import SOMATIC_SNV, launch
         from radiant.tasks.nextflow.somatic.resolve import select_tasks as select
 
         context = get_current_context()
@@ -148,10 +149,13 @@ def nextflow_somatic_snv_annotation_cases():
         # Named tasks are an operator's request, so a task that cannot be resolved is an
         # error. A discovered scope is the job's own doing, so it is a line in a report.
         selection = select(rows, requested, strict=bool(requested))
+        # RAD-288: only what the case scheduler decided, when it triggered this run; logged either way.
+        selection = launch(SOMATIC_SNV, rows, selection, context)
 
         if not selection.tasks:
             raise AirflowSkipException(
-                f"nothing to run: {len(selection.excluded)} candidate(s) discovered, all excluded"
+                f"nothing to run: {len(selection.excluded)} candidate(s) discovered, none runnable and decided "
+                "-- see pipeline_decision_log"
             )
 
         LOGGER.info(

@@ -19,6 +19,7 @@ _BASE_TABLES = [
     "current_experiment",
     "current_alignment",
     "case_member",
+    "pipeline_decision_log",
     "staging_external_sequencing_experiment",
     "staging_sequencing_experiment",
     "staging_sequencing_experiment_delta",

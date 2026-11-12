@@ -152,15 +152,19 @@ def nextflow_quality_control_cases():
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
+        from radiant.tasks.nextflow.decision import QC, launch
         from radiant.tasks.nextflow.qc.resolve import select_cases as select
 
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
         selection = select([*germline_rows, *somatic_rows], requested, strict=bool(requested))
+        # RAD-288: only what the case scheduler decided, when it triggered this run; logged either way.
+        selection = launch(QC, [*germline_rows, *somatic_rows], selection, context)
 
         if not selection.case_ids:
             raise AirflowSkipException(
-                f"nothing to run: {len(selection.excluded)} candidate case(s) discovered, all excluded"
+                f"nothing to run: {len(selection.excluded)} candidate case(s) discovered, none runnable and decided "
+                "-- see pipeline_decision_log"
             )
 
         LOGGER.info(

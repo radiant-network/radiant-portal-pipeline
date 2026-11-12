@@ -236,6 +236,46 @@ def test_params(dag_bag):
     assert set(dag_bag.get_dag(DAG_ID).params) == {"excluded_tenants", "notify"}
 
 
+RUN_ID = "scheduled__2026-11-12T00:00:00+00:00"
+RUN_TAG = "scheduled-2026-11-12T00-00-00-00-00"
+
+
+def _context(task_instance) -> dict:
+    from types import SimpleNamespace
+
+    return {
+        "ti": task_instance,
+        "params": {"excluded_tenants": []},
+        "run_id": RUN_ID,
+        "dag_run": SimpleNamespace(conf={}),
+    }
+
+
+def _record_writes(monkeypatch) -> list:
+    """`write_decisions` without StarRocks: the `(run_id, stage, decisions)` of each call."""
+    written = []
+    monkeypatch.setattr(
+        "radiant.tasks.nextflow.decision.write_decisions",
+        lambda decisions, run_id, stage, conf=None: written.append((run_id, stage, decisions)),
+    )
+    return written
+
+
+def test_the_children_follow_this_run_s_decisions(dag_bag):
+    """RAD-288: each "from Cases" DAG gets the run whose decisions it launches, and the block list."""
+    dag = dag_bag.get_dag(DAG_ID)
+    for task_id in (
+        "trigger_germline_snv_postprocessing",
+        "trigger_germline_cnv_postprocessing",
+        "trigger_somatic_snv_annotation",
+        "trigger_quality_control",
+    ):
+        conf = dag.get_task(task_id).conf
+        assert conf["decision_run_id"] == "{{ sanitize_run_tag(run_id) }}"
+        assert conf["excluded_tenants"] == "{{ params.excluded_tenants }}"
+    assert not dag.get_task("trigger_import").conf
+
+
 def _run_select_ready_cases(dag, monkeypatch, cases_with_work):
     """`select_ready_cases` with no work left anywhere, reading `cases_with_work` from discovery."""
     from radiant.dags import case_scheduler
@@ -249,7 +289,7 @@ def _run_select_ready_cases(dag, monkeypatch, cases_with_work):
 
     context = {"ti": TaskInstance(), "params": {"excluded_tenants": []}}
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
-    monkeypatch.setattr(case_scheduler, "_cases_with_work", lambda *_: set())
+    monkeypatch.setattr(case_scheduler, "_decide_and_log", lambda *_: set())
     status_rows = [
         {"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True},
         {"case_id": 2, "tenant_code": "radiant", "status_code": "in_progress", "has_variants": True},
@@ -293,8 +333,9 @@ def test_somatic_candidates_count_as_work_in_both_passes(dag_bag, monkeypatch):
         def xcom_pull(self, task_ids, key):
             return pushed.get(key)
 
-    context = {"ti": TaskInstance(), "params": {"excluded_tenants": []}}
+    context = _context(TaskInstance())
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
+    written = _record_writes(monkeypatch)
     dag = dag_bag.get_dag(DAG_ID)
     inputs = {
         "germline_snv_rows": [],
@@ -312,6 +353,13 @@ def test_somatic_candidates_count_as_work_in_both_passes(dag_bag, monkeypatch):
     processing = [{"case_id": 23, "tenant_code": "radiant", "status_code": "processing", "has_variants": True}]
     assert dag.get_task("select_ready_cases").python_callable(**inputs, status_rows=processing) == []
 
+    # Both passes are logged under the run, the calling task as the unit.
+    assert [(run_id, stage) for run_id, stage, _ in written] == [(RUN_TAG, "discover"), (RUN_TAG, "after")]
+    for _, _, decisions in written:
+        assert [(d.pipeline, d.unit_id, d.case_id, d.decision) for d in decisions if d.scope == "case"] == [
+            ("somatic_snv", 70, 23, "run")
+        ]
+
 
 def test_germline_and_somatic_quality_control_rows_both_count_as_work(dag_bag, monkeypatch):
     """The two QC discoveries reach `_cases_with_work` together: either one makes its case work waiting."""
@@ -321,8 +369,9 @@ def test_germline_and_somatic_quality_control_rows_both_count_as_work(dag_bag, m
         def xcom_push(self, key, value):
             pass
 
-    context = {"ti": TaskInstance(), "params": {"excluded_tenants": []}}
+    context = _context(TaskInstance())
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
+    _record_writes(monkeypatch)
     submitted = [
         {"case_id": case_id, "tenant_code": "radiant", "status_code": "submitted", "has_variants": False}
         for case_id in (3, 23)

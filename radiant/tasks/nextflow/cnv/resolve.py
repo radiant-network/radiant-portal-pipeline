@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from radiant.tasks.nextflow.cnv.model import CnvFamily, CnvMember, family_id
 from radiant.tasks.nextflow.model import Phenotype
+from radiant.tasks.nextflow.problem import Problem, case_problem, member_problem
 from radiant.tasks.nextflow.resolve import REL_ORDER, SEQUENCING_TYPES, CaseResolutionError, ExcludedCase
 
 LOGGER = logging.getLogger(__name__)
@@ -96,9 +97,11 @@ def select_cases(
         case_members = by_case[case_id]
         case_problems = _validate(case_id, case_members)
         if case_problems:
-            reason, detail = case_problems[0]
-            selection.excluded.append(ExcludedCase(case_id=case_id, reason=reason, detail=detail))
-            problems += [detail for _, detail in case_problems]
+            first = case_problems[0]
+            selection.excluded.append(
+                ExcludedCase(case_id=case_id, reason=first.reason, detail=first.detail, problems=case_problems)
+            )
+            problems += [problem.detail for problem in case_problems]
             continue
         selection.members += case_members
         selection.case_ids.append(case_id)
@@ -135,15 +138,17 @@ def _group_by_case(members: list[CnvMember]) -> dict[int, list[CnvMember]]:
     return by_case
 
 
-def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[str, str]]:
+def _validate(case_id: int, members: list[CnvMember]) -> list[Problem]:
     """`(reason, detail)` pairs. Exclusion is at case granularity: the pipeline merges and
     classifies whole families, so a family short one member is a different job."""
-    problems: list[tuple[str, str]] = []
+    problems: list[Problem] = []
 
     for member in members:
         if member.exclusion_reason:
             text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
-            problems.append((member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}"))
+            problems.append(
+                member_problem(member, member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}")
+            )
 
     # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket), and the
     # `<proband>` segment of the Exomiser report names `collect_outputs` expects. The query
@@ -151,7 +156,7 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[str, str]]:
     for member in members:
         if not member.exclusion_reason and not member.aliquot:
             detail = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
-            problems.append(("missing_aliquot", detail))
+            problems.append(member_problem(member, "missing_aliquot", detail))
 
     # Fails closed: the samplesheet states `caller=DRAGEN` as a fact, and `task.pipeline_name`
     # is nullable. An alignment that does not say what produced it is excluded and reported
@@ -162,11 +167,16 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[str, str]]:
         pipeline = (member.alignment_pipeline or "").strip().lower()
         if not pipeline:
             problems.append(
-                ("unknown_caller", f"case {case_id}, patient {member.patient_id}: {REASON_TEXT['unknown_caller']}")
+                member_problem(
+                    member,
+                    "unknown_caller",
+                    f"case {case_id}, patient {member.patient_id}: {REASON_TEXT['unknown_caller']}",
+                )
             )
         elif not pipeline.startswith(SUPPORTED_CALLER_PREFIX):
             problems.append(
-                (
+                member_problem(
+                    member,
                     "unsupported_caller",
                     f"case {case_id}, patient {member.patient_id}: {REASON_TEXT['unsupported_caller']} "
                     f"(alignment pipeline: {member.alignment_pipeline!r})",
@@ -176,7 +186,7 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[str, str]]:
     probands = [m for m in members if m.role == "proband"]
     if len(probands) != 1:
         problems.append(
-            (
+            case_problem(
                 "proband_count",
                 f"case {case_id}: expected exactly 1 proband, found {len(probands)} -- two "
                 f"different patients are marked proband on this case",
@@ -187,13 +197,17 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[str, str]]:
     unknown = {s for s in strategies if s.lower() not in SEQUENCING_TYPES}
     if unknown:
         problems.append(
-            ("unsupported_strategy", f"case {case_id}: unsupported experimental strategy {sorted(unknown)}")
+            case_problem(
+                "unsupported_strategy", f"case {case_id}: unsupported experimental strategy {sorted(unknown)}"
+            )
         )
     elif len(strategies) > 1:
         # The samplesheet carries `sequencingType` per row, but Exomiser's analysis file is
         # chosen per family from it, so mixed strategies would be silently mis-analysed.
         problems.append(
-            ("unsupported_strategy", f"case {case_id}: members span several strategies {sorted(strategies)}")
+            case_problem(
+                "unsupported_strategy", f"case {case_id}: members span several strategies {sorted(strategies)}"
+            )
         )
 
     return problems

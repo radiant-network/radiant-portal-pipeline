@@ -161,6 +161,7 @@ def nextflow_snv_postprocessing_cases():
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
+        from radiant.tasks.nextflow.decision import GERMLINE_SNV, launch
         from radiant.tasks.nextflow.resolve import select_cases as select
 
         context = get_current_context()
@@ -168,10 +169,13 @@ def nextflow_snv_postprocessing_cases():
         # Named tasks are an operator's request, so a case that cannot be resolved is an
         # error. A discovered scope is the job's own doing, so it is a line in a report.
         selection = select(member_rows, requested, strict=bool(requested))
+        # RAD-288: only what the case scheduler decided, when it triggered this run; logged either way.
+        selection = launch(GERMLINE_SNV, member_rows, selection, context)
 
         if not selection.case_ids:
             raise AirflowSkipException(
-                f"nothing to run: {len(selection.excluded)} candidate case(s) discovered, all excluded"
+                f"nothing to run: {len(selection.excluded)} candidate case(s) discovered, none runnable and decided "
+                "-- see pipeline_decision_log"
             )
 
         LOGGER.info(
