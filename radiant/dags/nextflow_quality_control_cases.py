@@ -158,7 +158,7 @@ def nextflow_quality_control_cases():
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
         selection = select([*germline_rows, *somatic_rows], requested, strict=bool(requested))
-        selection = launch(QC, [*germline_rows, *somatic_rows], selection, context)
+        selection = launch(QC, selection, context)
 
         if not selection.case_ids:
             raise AirflowSkipException(

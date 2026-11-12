@@ -105,7 +105,7 @@ Every import row is a `run`.
 
 **Columns:**
 - `run_id` VARCHAR: the scheduler run, sanitized like the child run ids;
-- `stage` VARCHAR: `discover` | `launch` | `after` (see Flow);
+- `stage` VARCHAR: `discover` | `after` (see Flow);
 - `pipeline`, `scope`, `case_id`, `tenant_code`, `patient_id`, `seq_id`, `task_id`, `unit_id`;
 - `decision`, `reason`, `detail`;
 - `decided_at` DATETIME.
@@ -122,17 +122,15 @@ Every import row is a `run`.
 - Writes every decision, then returns the `run` case ids per pipeline (the somatic `run` task ids too).
 - `plan_processing` uses the union, as today.
 
-**2. Children triggered by the scheduler (stage `launch`).**
+**2. Children triggered by the scheduler.**
 - Their `conf` gains `decision_run_id`.
 - Their discover query and their selection run as today: the child needs the members' rows and URLs anyway.
 - Then they keep only the units decided `run` at `discover` for that run, read from the log: the case for the germline pipelines and QC, the (calling task, case) pair for somatic. A case only filter would not do for somatic: a case can have two calling tasks (tumor-normal and tumor-only), and a task that arrived after `decide` would run without having been decided.
-- A unit the child could run but that was not decided is dropped, written as `wait` / `not_decided`, and decided by the next run. A unit decided `run` that the child now excludes (data changed since `decide`) is written with its reason.
-- At stage `launch` the child writes only where it differs from the decision: the `not_decided` units, and the units decided `run` it no longer runs. No `launch` row means it ran exactly what was decided, and a retry writes at most these few rows again. No SQL query changes.
+- A unit the child could run but that was not decided is dropped with a warning, and decided by the next run. A unit decided `run` that the child now excludes (data changed since `decide`) does not run; the `after` pass logs its new state.
+- The children read the log, they do not write it: the `after` pass already shows what a child did not run, and a write in each child would be one more way for a launch to fail. No SQL query changes.
 
 **3. Manual runs.**
-- A child run by hand with `task_ids` keeps its strict path.
-- It writes every decision under its own run id, stage `launch`: there is no scheduler decision to compare with.
-- A child run by hand with neither `task_ids` nor `decision_run_id` discovers as today, and logs what it decides.
+- A child run by hand (no `decision_run_id`) launches its whole selection, as today; with `task_ids` it keeps its strict path. It writes nothing to the log.
 
 **4. Import.** Not narrowed. It loads the annotations the other children register during the same run, so `decide` cannot know its full work. It keeps its own delta logic. Its decisions are logged at `discover` and `after`.
 
@@ -187,7 +185,6 @@ ORDER BY cases DESC;
 
 **The four "from Cases" DAGs:**
 - their select task keeps the units decided `run` when `decision_run_id` is set;
-- it writes stage-`launch` rows: only the deviations when triggered by the scheduler, every decision when run by hand.
 
 **The pending queries:** unchanged.
 
@@ -204,7 +201,7 @@ ORDER BY cases DESC;
 - the decisions are written;
 - the reason shown for a case: today the first problem found wins (proband first). The case row now takes the most severe decision among its members (`excluded` before `skipped` before `wait`). A case with a father `pending_alignment` and a mother `ambiguous_gvcf` is `excluded (ambiguous_gvcf)`, where today's warning says `pending_alignment`. Either way the case does not run;
 - the children run on the cases the scheduler decided, rather than on their own discovery a few minutes later. A case that becomes runnable between `decide` and the child's discover now waits for the next run (one day) instead of running in the same one.
-- When the data changes between the two in the other direction, the child's `launch` rows say so.
+- When the data changes between the two in the other direction, the `after` rows show the new state.
 
 **Made visible, not changed:**
 - the children process every discovered case, not only the ones moved to `processing` (cases already `in_progress` or later included);
@@ -226,7 +223,7 @@ Both stay as they are. The log shows them; changing them is a separate decision.
 - the case decision from its members, every combination of `excluded`, `skipped` and `wait`;
 - `plan_processing` / `plan_in_progress` fed from decisions give the same batches as today on the existing fixtures;
 - DAG tests: the triggers carry `decision_run_id`;
-- the child filtering: germline by case, somatic by (calling task, case), a unit not decided becomes `wait` / `not_decided`.
+- the child filtering: germline by case, somatic by (calling task, case), a unit not decided is not launched; a child run by hand launches its whole selection.
 
 **Integration:**
 - `decide` on the seeds writes the expected rows;

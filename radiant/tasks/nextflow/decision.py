@@ -44,7 +44,6 @@ SKIPPED = "skipped"
 EXCLUDED = "excluded"
 
 DISCOVER = "discover"
-LAUNCH = "launch"
 AFTER = "after"
 
 # Transient: the data will come without anyone doing anything.
@@ -54,8 +53,6 @@ SKIP_REASONS = frozenset({"tenant_excluded"})
 # About the case (or the calling task) as a whole. The queries repeat the case-level ones on every
 # member row; they are reported once, on no member.
 CASE_LEVEL_REASONS = frozenset({"no_project_code", "tenant_excluded", "proband_count", "unsupported_strategy"})
-# A unit the child could run but that the scheduler did not decide: it is decided by the next run.
-NOT_DECIDED = "not_decided"
 
 # The most severe decision wins for the case: something to fix before a deliberate exclusion,
 # before something that will come.
@@ -233,45 +230,6 @@ def run_units(decisions: list[Decision], pipeline: str) -> set[tuple[int | None,
     }
 
 
-def keep_decided(
-    decisions: list[Decision], decided: set[tuple[int | None, int]]
-) -> tuple[set[tuple[int | None, int]], list[Decision]]:
-    """What a child launches when the scheduler decided for it: the units it would run *and* that
-    were decided `run`. A unit it would run but that was not decided (its data arrived after the
-    decision) becomes `wait` / `not_decided`, and the next run decides it. Returns the kept units and
-    the child's decisions, rewritten accordingly."""
-    kept: set[tuple[int | None, int]] = set()
-    rewritten: list[Decision] = []
-    for d in decisions:
-        if d.scope == "case" and d.decision == RUN:
-            unit = (d.unit_id, d.case_id)
-            if unit in decided:
-                kept.add(unit)
-            else:
-                d = d.model_copy(
-                    update={
-                        "decision": WAIT,
-                        "reason": NOT_DECIDED,
-                        "detail": "runnable now, but not decided by this run's case scheduler: the next run decides",
-                    }
-                )
-        rewritten.append(d)
-    return kept, rewritten
-
-
-def deviations(decisions: list[Decision], decided: set[tuple[int | None, int]]) -> list[Decision]:
-    """The child's decisions that differ from the scheduler's: a unit decided `run` the child does
-    not run, or a unit the child sees as runnable that was not decided. Case and member rows."""
-    no_longer_run = {
-        (d.unit_id, d.case_id)
-        for d in decisions
-        if d.scope == "case" and d.decision != RUN and (d.unit_id, d.case_id) in decided
-    }
-    not_decided = {(d.unit_id, d.case_id) for d in decisions if d.reason == NOT_DECIDED}
-    differing = no_longer_run | not_decided
-    return [d for d in decisions if (d.unit_id, d.case_id) in differing]
-
-
 def narrow(selection, kept: set[tuple[int | None, int]]):
     """The selection restricted to the kept units: cases for a germline or QC selection, (calling
     task, case) pairs for the somatic one. The excluded list is left as is."""
@@ -291,37 +249,32 @@ def narrow(selection, kept: set[tuple[int | None, int]]):
     )
 
 
-def launch(pipeline: str, rows: list[dict], selection, context) -> object:
-    """What a "from Cases" DAG launches, and its decisions written at stage `launch`.
+def selected_units(selection) -> set[tuple[int | None, int]]:
+    """The `(unit_id, case_id)` a selection would run: cases, or (calling task, case) for somatic."""
+    if hasattr(selection, "tasks"):
+        return {(task.task_id, case.case_id) for task in selection.tasks for case in task.cases}
+    return {(None, case_id) for case_id in selection.case_ids}
 
-    Triggered by the case scheduler (`decision_run_id` in the run's conf), it keeps only the units
-    that run decided `run`, and logs only where it differs from it. Run by hand, it launches its
-    whole selection and logs every decision.
-    """
-    from radiant.tasks.nextflow.paths import sanitize_run_tag
 
+def launch(pipeline: str, selection, context):
+    """What a "from Cases" DAG launches. Triggered by the case scheduler (`decision_run_id` in its
+    conf), only the units that run decided `run`: one that became runnable since waits for the next
+    run. Run by hand, its whole selection. The children read the log, they do not write it."""
     conf = context["dag_run"].conf or {}
-    decisions = (
-        somatic_decisions(rows, selection)
-        if pipeline == SOMATIC_SNV
-        else germline_decisions(pipeline, rows, selection)
-    )
     decision_run_id = conf.get("decision_run_id")
-    if decision_run_id:
-        decided = read_run_units(decision_run_id, pipeline, conf)
-        kept, decisions = keep_decided(decisions, decided)
-        not_decided = sorted({d.case_id for d in decisions if d.reason == NOT_DECIDED})
-        if not_decided:
-            LOGGER.warning(
-                "%d case(s) runnable now but not decided by %s, left for the next run: %s",
-                len(not_decided),
-                decision_run_id,
-                not_decided,
-            )
-        selection = narrow(selection, kept)
-        decisions = deviations(decisions, decided)
-    write_decisions(decisions, sanitize_run_tag(context["run_id"]), LAUNCH, conf)
-    return selection
+    if not decision_run_id:
+        return selection
+    selected = selected_units(selection)
+    decided = read_run_units(decision_run_id, pipeline, conf)
+    not_decided = sorted(case_id for _, case_id in selected - decided)
+    if not_decided:
+        LOGGER.warning(
+            "%d case(s) runnable now but not decided by %s, left for the next run: %s",
+            len(not_decided),
+            decision_run_id,
+            not_decided,
+        )
+    return narrow(selection, selected & decided)
 
 
 def _order(d: Decision) -> tuple:

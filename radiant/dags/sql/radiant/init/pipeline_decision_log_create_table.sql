@@ -4,8 +4,8 @@
 -- No retention for now: a few hundred rows a day. The daily partitions keep one possible later, with a
 -- `partition_live_number` property or by dropping the old partitions.
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_pipeline_decision_log }} (
-    run_id      VARCHAR(250) NOT NULL COMMENT "The case scheduler run, sanitized as the child run ids (`sanitize_run_tag`); a child run by hand logs under its own",
-    stage       VARCHAR(16)  NOT NULL COMMENT "discover (the scheduler, before the pipelines), launch (a child, what it ran), after (the scheduler, after the pipelines)",
+    run_id      VARCHAR(250) NOT NULL COMMENT "The case scheduler run, sanitized as the child run ids (`sanitize_run_tag`)",
+    stage       VARCHAR(16)  NOT NULL COMMENT "discover (before the pipelines) or after (after them)",
     pipeline    VARCHAR(32)  NOT NULL COMMENT "germline_snv, germline_cnv, somatic_snv, qc, import",
     case_id     INT          NOT NULL,
     scope       VARCHAR(8)   NOT NULL COMMENT "case: the decision of the unit; member: one member at fault, with its own reason",

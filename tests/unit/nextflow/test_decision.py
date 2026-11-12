@@ -9,7 +9,6 @@ from radiant.tasks.nextflow.cnv.resolve import REASON_TEXT as CNV_REASONS
 from radiant.tasks.nextflow.decision import (
     EXCLUDED,
     GERMLINE_SNV,
-    NOT_DECIDED,
     RUN,
     SKIPPED,
     SOMATIC_SNV,
@@ -19,8 +18,6 @@ from radiant.tasks.nextflow.decision import (
     decision_of,
     germline_decisions,
     import_decisions,
-    keep_decided,
-    narrow,
     run_case_ids,
     run_units,
     somatic_decisions,
@@ -210,81 +207,32 @@ def test_the_cases_with_work_are_the_run_decisions_of_any_pipeline():
     assert run_units(decisions, GERMLINE_SNV) == {(None, 1072)}
 
 
-def test_a_child_keeps_only_the_decided_units_and_waits_the_others():
+def _launch(monkeypatch, selection, decided, conf=None):
+    monkeypatch.setattr(decision, "read_run_units", lambda run_id, pipeline, conf=None: decided)
+    monkeypatch.setattr(decision, "write_decisions", lambda *_a, **_k: pytest.fail("a child does not write the log"))
+    context = {"dag_run": SimpleNamespace(conf={"decision_run_id": "scheduled-x"} if conf is None else conf)}
+    pipeline = SOMATIC_SNV if hasattr(selection, "tasks") else GERMLINE_SNV
+    return decision.launch(pipeline, selection, context)
+
+
+def test_a_child_launches_only_the_decided_cases(monkeypatch, caplog):
     """Germline: the unit is the case. A case runnable now but not decided waits for the next run."""
     rows = [*trio(), *[{**r, "case_id": 2000} for r in trio()]]
-    selection = select_snv(rows, strict=False)
-    kept, decisions = keep_decided(snv(rows), {(None, 1072)})
-    assert kept == {(None, 1072)}
-    assert [(d.case_id, d.decision, d.reason) for d in decisions] == [(1072, RUN, None), (2000, WAIT, NOT_DECIDED)]
-    narrowed = narrow(selection, kept)
+    narrowed = _launch(monkeypatch, select_snv(rows, strict=False), {(None, 1072)})
     assert narrowed.case_ids == [1072]
     assert {m.case_id for m in narrowed.members} == {1072}
+    assert "not decided by scheduled-x, left for the next run: [2000]" in caplog.text
 
 
-def test_a_somatic_child_keeps_the_decided_task_not_the_whole_case():
+def test_a_somatic_child_launches_the_decided_task_not_the_whole_case(monkeypatch):
     """A task that reached a decided case after the decision does not ride on it."""
     rows = [*calling_task_rows(task_id=70, case_id=22), *calling_task_rows(task_id=72, case_id=22)]
-    selection = select_somatic(rows, strict=False)
-    kept, decisions = keep_decided(somatic_decisions(rows, selection), {(70, 22)})
-    assert [(d.unit_id, d.decision, d.reason) for d in decisions] == [(70, RUN, None), (72, WAIT, NOT_DECIDED)]
-    assert [(t.task_id, [c.case_id for c in t.cases]) for t in narrow(selection, kept).tasks] == [(70, [22])]
+    narrowed = _launch(monkeypatch, select_somatic(rows, strict=False), {(70, 22)})
+    assert [(t.task_id, [c.case_id for c in t.cases]) for t in narrowed.tasks] == [(70, [22])]
 
 
-def _launch_context(conf):
-    return {"dag_run": SimpleNamespace(conf=conf), "run_id": "scheduled-2026-11-12T00-00-00-00-00"}
-
-
-def _record(monkeypatch, decided=None):
-    written = []
-    if decided is None:
-        monkeypatch.setattr(decision, "read_run_units", lambda *_: pytest.fail("no scheduler run to follow"))
-    else:
-        monkeypatch.setattr(decision, "read_run_units", lambda run_id, pipeline, conf=None: decided)
-    monkeypatch.setattr(
-        decision,
-        "write_decisions",
-        lambda decisions, run_id, stage, conf=None: written.append((run_id, stage, summary(decisions))),
-    )
-    return written
-
-
-def test_launch_follows_the_scheduler_run_and_logs_only_where_it_differs(monkeypatch):
-    """Decided: 1072 and 3000. Now: 1072 runs as decided (no row), 2000 became runnable since
-    (`not_decided`), 3000 lost its father's alignment (`wait`, with its member row)."""
-    written = _record(monkeypatch, decided={(None, 1072), (None, 3000)})
-    rows = [
-        *trio(),
-        *[{**r, "case_id": 2000} for r in trio()],
-        *[{**r, "case_id": 3000} for r in trio(father={"exclusion_reason": "pending_alignment"})],
-    ]
-    selection = decision.launch(
-        GERMLINE_SNV, rows, select_snv(rows, strict=False), _launch_context({"decision_run_id": "scheduled-x"})
-    )
-    assert selection.case_ids == [1072]
-    assert written == [
-        (
-            "scheduled-2026-11-12T00-00-00-00-00",
-            "launch",
-            [
-                ("case", 2000, None, None, None, WAIT, NOT_DECIDED),
-                ("case", 3000, None, None, None, WAIT, "pending_alignment"),
-                ("member", 3000, 101, 501, 901, WAIT, "pending_alignment"),
-            ],
-        )
-    ]
-
-
-def test_launch_exactly_as_decided_logs_nothing(monkeypatch):
-    written = _record(monkeypatch, decided={(None, 1072)})
-    rows = trio()
-    decision.launch(GERMLINE_SNV, rows, select_snv(rows, strict=False), _launch_context({"decision_run_id": "x"}))
-    assert written == [("scheduled-2026-11-12T00-00-00-00-00", "launch", [])]
-
-
-def test_launch_by_hand_runs_the_whole_selection_and_logs_every_decision(monkeypatch):
-    written = _record(monkeypatch)
+def test_a_child_run_by_hand_launches_its_whole_selection(monkeypatch):
+    monkeypatch.setattr(decision, "read_run_units", lambda *_: pytest.fail("no scheduler run to follow"))
     rows = [*trio(), *[{**r, "case_id": 2000} for r in trio()]]
-    selection = decision.launch(GERMLINE_SNV, rows, select_snv(rows, strict=False), _launch_context({}))
+    selection = decision.launch(GERMLINE_SNV, select_snv(rows, strict=False), {"dag_run": SimpleNamespace(conf={})})
     assert selection.case_ids == [1072, 2000]
-    assert [row[1] for row in written[0][2]] == [1072, 2000]

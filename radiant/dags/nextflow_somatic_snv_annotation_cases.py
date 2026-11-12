@@ -149,7 +149,7 @@ def nextflow_somatic_snv_annotation_cases():
         # Named tasks are an operator's request, so a task that cannot be resolved is an
         # error. A discovered scope is the job's own doing, so it is a line in a report.
         selection = select(rows, requested, strict=bool(requested))
-        selection = launch(SOMATIC_SNV, rows, selection, context)
+        selection = launch(SOMATIC_SNV, selection, context)
 
         if not selection.tasks:
             raise AirflowSkipException(

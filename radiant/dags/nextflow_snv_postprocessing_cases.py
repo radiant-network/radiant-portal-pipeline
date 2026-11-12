@@ -169,7 +169,7 @@ def nextflow_snv_postprocessing_cases():
         # Named tasks are an operator's request, so a case that cannot be resolved is an
         # error. A discovered scope is the job's own doing, so it is a line in a report.
         selection = select(member_rows, requested, strict=bool(requested))
-        selection = launch(GERMLINE_SNV, member_rows, selection, context)
+        selection = launch(GERMLINE_SNV, selection, context)
 
         if not selection.case_ids:
             raise AirflowSkipException(
