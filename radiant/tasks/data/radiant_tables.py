@@ -55,6 +55,8 @@ CLINICAL_MAPPING = {
 }
 
 # --- Case statuses a pipeline never picks a case up in
+# Rendered into the `pipeline_case` view when it is created (RAD-287): changing this list means dropping that view and
+# re-running the Init StarRocks Base Tables DAG, in a migration.
 PIPELINE_IGNORED_CASE_STATUSES = ("draft", "revoked")
 PIPELINE_IGNORED_CASE_STATUSES_KEY = "pipeline_ignored_case_statuses"
 

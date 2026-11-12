@@ -27,6 +27,8 @@ TUMOR_NORMAL_PROBAND_ID = 3
 SEEDED_TUMOR_EXPERIMENT = 62
 SEEDED_NORMAL_EXPERIMENT = 63
 NEW_TUMOR = 9801
+UNFINISHED = 9802
+TRIO_FATHER_ID = 45
 
 
 def _rows(starrocks_session, sql, parameters=None):
@@ -88,6 +90,37 @@ def resequenced_tumor(postgres_clinical_seeds, postgres_instance):
     )
 
 
+@pytest.fixture
+def unfinished_resequencing(postgres_clinical_seeds, postgres_instance):
+    """Case 16's father gets a newer experiment that is only `submitted`."""
+    execute_clinical(
+        postgres_instance,
+        f"""
+        INSERT INTO sample (id, type_code, parent_sample_id, tissue_site, histology_code, submitter_sample_id,
+                            patient_id, organization_code, tenant_code)
+        VALUES ({UNFINISHED}, 'blood', NULL, NULL, 'normal', 'B-9802', {TRIO_FATHER_ID}, 'CQGC', 'radiant');
+        INSERT INTO sequencing_experiment (id, sample_id, status_code, aliquot, sequencing_lab_code, run_name,
+                                           run_alias, run_date, capture_kit, created_on, updated_on,
+                                           experimental_strategy_code, sequencing_read_technology_code,
+                                           platform_code, tenant_code)
+        VALUES ({UNFINISHED}, {UNFINISHED}, 'submitted', 'ALIQUOT-9802', 'CQGC', 1677, 'RUN-9802',
+                '2022-01-01', NULL, '2022-01-01 00:00:00', '2022-01-01 00:00:00', 'wgs', 'short_read',
+                'illumina', 'radiant');
+        INSERT INTO case_has_sequencing_experiment (case_id, sequencing_experiment_id)
+        VALUES ({TRIO_CASE_ID}, {UNFINISHED});
+        """,
+    )
+    yield
+    execute_clinical(
+        postgres_instance,
+        f"""
+        DELETE FROM case_has_sequencing_experiment WHERE sequencing_experiment_id = {UNFINISHED};
+        DELETE FROM sequencing_experiment WHERE id = {UNFINISHED};
+        DELETE FROM sample WHERE id = {UNFINISHED};
+        """,
+    )
+
+
 def test_pipeline_case_leaves_out_a_revoked_case(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     assert _view(starrocks_session, radiant_mapping, "pipeline_case", REVOKED_CASE_ID) == []
     (trio,) = _view(starrocks_session, radiant_mapping, "pipeline_case", TRIO_CASE_ID)
@@ -106,6 +139,15 @@ def test_current_experiment_has_one_row_per_member_of_a_germline_case(
 ):
     rows = _view(starrocks_session, radiant_mapping, "current_experiment", TRIO_CASE_ID)
     assert sorted(r["patient_id"] for r in rows) == sorted(TRIO_MEMBERS)
+
+
+def test_an_unfinished_experiment_never_supersedes_a_completed_one(
+    unfinished_resequencing, starrocks_session, radiant_mapping
+):
+    """`completed` is a whitelist: newer sequencing that is not finished is not a candidate."""
+    rows = _view(starrocks_session, radiant_mapping, "current_experiment", TRIO_CASE_ID)
+    (father,) = [r for r in rows if r["patient_id"] == TRIO_FATHER_ID]
+    assert father["seq_id"] != UNFINISHED
 
 
 def test_current_alignment_has_one_row_per_experiment_and_type(

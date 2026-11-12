@@ -1,5 +1,6 @@
--- One row per case the pipeline may move or notify: every case it does not ignore (`draft`,
--- `revoked`), its status, its tenant, and whether it has variant data.
+-- One row per case the pipeline may move or notify: every case of `pipeline_case` (RAD-287: not
+-- `draft` or `revoked`, the same cases the pending queries look at), its status, its tenant, and
+-- whether it has variant data.
 --
 -- Consumed by `radiant-case-scheduler` twice: at the start (`fetch_case_statuses`, for
 -- `submitted` -> `processing`) and after the pipelines (`refresh_case_statuses`, for
@@ -18,11 +19,10 @@ WITH imported AS (
       AND NOT se.deleted
       AND (se.vcf_filepath IS NOT NULL OR se.cnv_vcf_filepath IS NOT NULL)
 )
-SELECT c.id                  AS case_id,
-       c.tenant_code         AS tenant_code,
-       c.status_code         AS status_code,
+SELECT pc.case_id            AS case_id,
+       pc.tenant_code        AS tenant_code,
+       pc.status_code        AS status_code,
        i.case_id IS NOT NULL AS has_variants
-FROM {{ mapping.clinical_case }} c
-LEFT JOIN imported i ON i.case_id = c.id
-WHERE c.status_code NOT IN ({{ mapping.pipeline_ignored_case_statuses }})
-ORDER BY c.id
+FROM {{ mapping.starrocks_pipeline_case }} pc
+LEFT JOIN imported i ON i.case_id = pc.case_id
+ORDER BY pc.case_id

@@ -41,7 +41,7 @@ def test_discovery_uses_the_cnv_query(dag_bag):
     assert "radiant_germline_cnv_annotation" in sql
     assert "'gcnv'" in sql
     assert "'gvcf'" not in sql
-    assert "{{ mapping.clinical_case }}" in sql
+    assert "{{ mapping.starrocks_pipeline_case }}" in sql
 
 
 def test_the_pipeline_run_is_pinned_to_the_generated_inputs(dag_bag):

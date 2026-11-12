@@ -7,7 +7,7 @@ Story [RAD-286](https://ferlab-crsj.atlassian.net/browse/RAD-286), Task 1 of 6. 
 ## 1. Why
 
 - The supersession policy (SJRA-1698 §5) is copied in four files: "one `completed` experiment per (case, member), newest wins" and "one alignment task per experiment, newest wins". The files ask by comment to keep the copies identical, and nothing checks it.
-- The case filter (`status_code NOT IN pipeline_ignored_case_statuses`, by case type) is copied in all six.
+- The case filter (`status_code NOT IN pipeline_ignored_case_statuses`, by case type) is copied in all six, and in a seventh query: `clinical/case_status_select.sql`, read by the case scheduler to move case statuses.
 - To debug "why is this case not picked up?", one has to run a 150 to 200 line query by hand. With views, `SELECT * FROM current_experiment WHERE case_id = …` answers part of it.
 - RAD-288 (decision log) and RAD-290 (decisions in Python) build on these views. RAD-289 (rule table) rewrites the staging view on top of them.
 
@@ -229,7 +229,14 @@ What changes:
 
 No change intended. Each of the six queries must return the same rows before and after, checked as in §8.
 
-The only side effect is when the case filter is evaluated: `pipeline_ignored_case_statuses` is rendered when the view is created, not on each query run. The list is a constant in `radiant_tables.py`, so changing it already needs a deploy; it will also need the views re-created, which the migration of that change must say.
+`case_status_select.sql` reads `pipeline_case` too, so the scheduler moves the statuses of exactly the cases the pending queries look at. The status filter now exists in one place.
+
+Two values are now fixed when the views are created, not on each query run:
+
+- `pipeline_ignored_case_statuses`. The list is a constant in `radiant_tables.py`, so changing it already needs a deploy; it will also need `pipeline_case` re-created, which the migration of that change must say. A comment next to the constant says so.
+- The clinical catalog and database (`RADIANT_CLINICAL_CATALOG`, `RADIANT_CLINICAL_DATABASE`). The pending queries used to resolve them on each run; nothing overrides them per DAG run today (they come from the environment), and the staging view already worked this way.
+
+Performance: the views are inlined, so a query no longer shares one CTE between its uses, and the `case_type` filter is applied above the window of `current_experiment` rather than pushed into the clinical scan. The clinical tables are small; the `EXPLAIN` of §8 checks it on QA.
 
 ## 7. Deployment
 

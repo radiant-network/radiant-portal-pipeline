@@ -9,12 +9,14 @@
 --   <shared_db>          the base database, that holds staging_sequencing_experiment
 --
 -- WHEN. After the ETL deploy, with no radiant-case-scheduler, radiant-import or import_part running: the pending
--- queries fail until step 2 has created the views.
+-- queries and case_status_select fail until step 2 has created the views.
 
 
 -- ---------------------------------------------------------------------------------------------------
 -- 1. `CREATE VIEW IF NOT EXISTS` keeps the old staging definition: drop it (the delta reads the external view, so the
---    delta goes first).
+--    delta goes first). The old definition returns the same rows, so skipping this step breaks nothing, but the
+--    deployed staging view would then not read pipeline_case and would drift from the next change to it. What must not
+--    be skipped is step 2: the pending queries and case_status_select read the new views.
 -- ---------------------------------------------------------------------------------------------------
 
 DROP VIEW IF EXISTS staging_sequencing_experiment_delta;
