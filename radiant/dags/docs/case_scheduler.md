@@ -82,8 +82,9 @@ ORDER BY decided_at DESC, pipeline;
 ```
 
 The four "from Cases" DAGs follow these decisions: their trigger `conf` carries `decision_run_id`, and they
-launch only the units decided `run` at `discover`. A unit that became runnable after the decision is logged
-`wait` / `not_decided` at stage `launch` and decided by the next run. The import is not narrowed: it loads
+launch only the units decided `run` at `discover`. At stage `launch` they log only where they differ: a unit
+that became runnable after the decision (`wait` / `not_decided`, decided by the next run), or a unit decided
+`run` they no longer run (its data changed). No `launch` row means the child ran exactly what was decided. The import is not narrowed: it loads
 what the other DAGs register during the same run.
 
 The `submitted` cases that already have variant data are moved to `processing` too: work done

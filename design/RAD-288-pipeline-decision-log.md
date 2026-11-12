@@ -127,11 +127,11 @@ Every import row is a `run`.
 - Their discover query and their selection run as today: the child needs the members' rows and URLs anyway.
 - Then they keep only the units decided `run` at `discover` for that run, read from the log: the case for the germline pipelines and QC, the (calling task, case) pair for somatic. A case only filter would not do for somatic: a case can have two calling tasks (tumor-normal and tumor-only), and a task that arrived after `decide` would run without having been decided.
 - A unit the child could run but that was not decided is dropped, written as `wait` / `not_decided`, and decided by the next run. A unit decided `run` that the child now excludes (data changed since `decide`) is written with its reason.
-- Every decision of the child is written with stage `launch`. No SQL query changes.
+- At stage `launch` the child writes only where it differs from the decision: the `not_decided` units, and the units decided `run` it no longer runs. No `launch` row means it ran exactly what was decided, and a retry writes at most these few rows again. No SQL query changes.
 
 **3. Manual runs.**
 - A child run by hand with `task_ids` keeps its strict path.
-- It writes its decisions under its own run id, stage `launch`.
+- It writes every decision under its own run id, stage `launch`: there is no scheduler decision to compare with.
 - A child run by hand with neither `task_ids` nor `decision_run_id` discovers as today, and logs what it decides.
 
 **4. Import.** Not narrowed. It loads the annotations the other children register during the same run, so `decide` cannot know its full work. It keeps its own delta logic. Its decisions are logged at `discover` and `after`.
@@ -187,7 +187,7 @@ ORDER BY cases DESC;
 
 **The four "from Cases" DAGs:**
 - their select task keeps the units decided `run` when `decision_run_id` is set;
-- it writes stage-`launch` rows.
+- it writes stage-`launch` rows: only the deviations when triggered by the scheduler, every decision when run by hand.
 
 **The pending queries:** unchanged.
 

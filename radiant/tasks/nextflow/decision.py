@@ -259,6 +259,19 @@ def keep_decided(
     return kept, rewritten
 
 
+def deviations(decisions: list[Decision], decided: set[tuple[int | None, int]]) -> list[Decision]:
+    """The child's decisions that differ from the scheduler's: a unit decided `run` the child does
+    not run, or a unit the child sees as runnable that was not decided. Case and member rows."""
+    no_longer_run = {
+        (d.unit_id, d.case_id)
+        for d in decisions
+        if d.scope == "case" and d.decision != RUN and (d.unit_id, d.case_id) in decided
+    }
+    not_decided = {(d.unit_id, d.case_id) for d in decisions if d.reason == NOT_DECIDED}
+    differing = no_longer_run | not_decided
+    return [d for d in decisions if (d.unit_id, d.case_id) in differing]
+
+
 def narrow(selection, kept: set[tuple[int | None, int]]):
     """The selection restricted to the kept units: cases for a germline or QC selection, (calling
     task, case) pairs for the somatic one. The excluded list is left as is."""
@@ -282,8 +295,8 @@ def launch(pipeline: str, rows: list[dict], selection, context) -> object:
     """What a "from Cases" DAG launches, and its decisions written at stage `launch`.
 
     Triggered by the case scheduler (`decision_run_id` in the run's conf), it keeps only the units
-    that run decided `run`; otherwise (a run by hand) it launches its whole selection. Either way
-    every decision it took is logged under its own run id.
+    that run decided `run`, and logs only where it differs from it. Run by hand, it launches its
+    whole selection and logs every decision.
     """
     from radiant.tasks.nextflow.paths import sanitize_run_tag
 
@@ -295,7 +308,8 @@ def launch(pipeline: str, rows: list[dict], selection, context) -> object:
     )
     decision_run_id = conf.get("decision_run_id")
     if decision_run_id:
-        kept, decisions = keep_decided(decisions, read_run_units(decision_run_id, pipeline, conf))
+        decided = read_run_units(decision_run_id, pipeline, conf)
+        kept, decisions = keep_decided(decisions, decided)
         not_decided = sorted({d.case_id for d in decisions if d.reason == NOT_DECIDED})
         if not_decided:
             LOGGER.warning(
@@ -305,6 +319,7 @@ def launch(pipeline: str, rows: list[dict], selection, context) -> object:
                 not_decided,
             )
         selection = narrow(selection, kept)
+        decisions = deviations(decisions, decided)
     write_decisions(decisions, sanitize_run_tag(context["run_id"]), LAUNCH, conf)
     return selection
 

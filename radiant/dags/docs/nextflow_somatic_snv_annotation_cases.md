@@ -30,8 +30,8 @@ success or not. Run it by hand only for a targeted rerun.
 
 Triggered by `radiant-case-scheduler`, this DAG launches only the units the scheduler run decided `run` (the (calling task, case) pair),
 read from `pipeline_decision_log` with the `decision_run_id` of its `conf`; one that became runnable since is
-left for the next run (`wait` / `not_decided`). Run by hand, it launches its whole selection. Either way it logs
-its decisions at stage `launch` under its own run id (RAD-288, see the case scheduler's doc).
+left for the next run (`wait` / `not_decided`). At stage `launch` it logs only where it differs
+from that decision. Run by hand, it launches its whole selection and logs every decision (see the case scheduler's doc).
 
 ## Parameters
 

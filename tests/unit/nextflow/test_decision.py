@@ -235,23 +235,56 @@ def _launch_context(conf):
     return {"dag_run": SimpleNamespace(conf=conf), "run_id": "scheduled-2026-11-12T00-00-00-00-00"}
 
 
-def test_launch_follows_the_scheduler_run_and_logs_what_it_did(monkeypatch):
+def _record(monkeypatch, decided=None):
     written = []
-    monkeypatch.setattr(decision, "read_run_units", lambda run_id, pipeline, conf=None: {(None, 1072)})
+    if decided is None:
+        monkeypatch.setattr(decision, "read_run_units", lambda *_: pytest.fail("no scheduler run to follow"))
+    else:
+        monkeypatch.setattr(decision, "read_run_units", lambda run_id, pipeline, conf=None: decided)
     monkeypatch.setattr(
-        decision, "write_decisions", lambda decisions, run_id, stage, conf=None: written.append((run_id, stage))
+        decision,
+        "write_decisions",
+        lambda decisions, run_id, stage, conf=None: written.append((run_id, stage, summary(decisions))),
     )
-    rows = [*trio(), *[{**r, "case_id": 2000} for r in trio()]]
+    return written
+
+
+def test_launch_follows_the_scheduler_run_and_logs_only_where_it_differs(monkeypatch):
+    """Decided: 1072 and 3000. Now: 1072 runs as decided (no row), 2000 became runnable since
+    (`not_decided`), 3000 lost its father's alignment (`wait`, with its member row)."""
+    written = _record(monkeypatch, decided={(None, 1072), (None, 3000)})
+    rows = [
+        *trio(),
+        *[{**r, "case_id": 2000} for r in trio()],
+        *[{**r, "case_id": 3000} for r in trio(father={"exclusion_reason": "pending_alignment"})],
+    ]
     selection = decision.launch(
         GERMLINE_SNV, rows, select_snv(rows, strict=False), _launch_context({"decision_run_id": "scheduled-x"})
     )
     assert selection.case_ids == [1072]
-    assert written == [("scheduled-2026-11-12T00-00-00-00-00", "launch")]
+    assert written == [
+        (
+            "scheduled-2026-11-12T00-00-00-00-00",
+            "launch",
+            [
+                ("case", 2000, None, None, None, WAIT, NOT_DECIDED),
+                ("case", 3000, None, None, None, WAIT, "pending_alignment"),
+                ("member", 3000, 101, 501, 901, WAIT, "pending_alignment"),
+            ],
+        )
+    ]
 
 
-def test_launch_by_hand_runs_the_whole_selection(monkeypatch):
-    monkeypatch.setattr(decision, "read_run_units", lambda *_: pytest.fail("no scheduler run to follow"))
-    monkeypatch.setattr(decision, "write_decisions", lambda *_args, **_kwargs: None)
+def test_launch_exactly_as_decided_logs_nothing(monkeypatch):
+    written = _record(monkeypatch, decided={(None, 1072)})
+    rows = trio()
+    decision.launch(GERMLINE_SNV, rows, select_snv(rows, strict=False), _launch_context({"decision_run_id": "x"}))
+    assert written == [("scheduled-2026-11-12T00-00-00-00-00", "launch", [])]
+
+
+def test_launch_by_hand_runs_the_whole_selection_and_logs_every_decision(monkeypatch):
+    written = _record(monkeypatch)
     rows = [*trio(), *[{**r, "case_id": 2000} for r in trio()]]
     selection = decision.launch(GERMLINE_SNV, rows, select_snv(rows, strict=False), _launch_context({}))
     assert selection.case_ids == [1072, 2000]
+    assert [row[1] for row in written[0][2]] == [1072, 2000]
