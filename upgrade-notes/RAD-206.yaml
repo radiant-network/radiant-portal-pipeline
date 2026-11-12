@@ -1,53 +1,51 @@
 actions:
   - when: before
     do: >-
-      Add the fourteen slivar columns (parental_origin, transmission_mode, mother_*, father_*) to
-      germline__cnv__occurrence, in every <tenant>_tenant database (the base database for a single-tenant
-      deployment). Let the ALTER reach FINISHED. Against an unmigrated table, every CNV import fails. New deployments
-      must not run it. The order with the RAD-194 ALTER does not matter.
+      Add the slivar columns to the germline CNV occurrence table. Run the ALTER of the migration file in every
+      <tenant>_tenant database (the base database for a single-tenant deployment), until FINISHED. It adds
+      parental_origin, transmission_mode and the mother and father columns. Against an unmigrated table, every CNV
+      import fails. New deployments must not run it. The order with the RAD-194 ALTER does not matter.
     preconditions:
-      - radiant-case-scheduler and radiant-reannotate-open-data are paused, no import is running (RAD-194).
+      - radiant-case-scheduler and radiant-reannotate-open-data are paused, and no import is running.
     refs:
       - radiant/dags/sql/radiant/migrations/RAD-206_germline_cnv_occurrence_add_inheritance.sql
-    check: SHOW ALTER TABLE COLUMN gives State = FINISHED, and DESC lists the fourteen columns last, after gnomad_ac.
+    check: SHOW ALTER TABLE COLUMN gives State = FINISHED, and DESC lists the fourteen new columns last.
   - when: after
     do: >-
-      Recreate the Iceberg germline_cnv_occurrence table with the schema of this release: in the radiant-operator
-      image of this release, with the environment of an import, run python /opt/radiant/init_iceberg_table.py
-      --table_name germline_cnv_occurrence. Each import overwrites this table, so nothing is lost. It also adds the
-      vcf_id column of RAD-256. Do not run the radiant-init-iceberg-tables DAG: its tasks are one serial chain, and
-      the tasks before the CNV one drop snv_variant, snv_consequence, germline_snv_occurrence and
-      germline_snv_comphet. Do not recreate somatic_cnv_occurrence (step 3 of the migration file is out of date: the
-      PE parsing fix #348 kept its schema).
+      Recreate the Iceberg germline_cnv_occurrence table. In the radiant-operator image of this release, with the
+      environment of an import, run python /opt/radiant/init_iceberg_table.py --table_name germline_cnv_occurrence.
+      Each import overwrites this table, so nothing is lost. It also adds the vcf_id column of RAD-256. Do not run
+      the radiant-init-iceberg-tables DAG: its tasks are one serial chain, and the tasks before the CNV one drop the
+      SNV tables. Do not recreate somatic_cnv_occurrence: step 3 of the migration file is out of date, its schema
+      did not change (#348).
     preconditions:
-      - The radiant-operator image of this release is the one the ECS task definition or the K8s operator runs.
+      - The ECS task definition or the K8s operator runs the radiant-operator image of this release.
       - No import is running.
     refs:
       - scripts/ecs/init_iceberg_table.py
       - radiant/tasks/iceberg/initialization.py
     check: >-
-      The schema of the table lists parental_origin, transmission_mode, mother_name, father_name and vcf_id
+      The table schema lists parental_origin, transmission_mode, mother_name, father_name and vcf_id
       (table.schema() in PyIceberg).
   - when: after
     do: >-
-      In the base database, drop the views staging_sequencing_experiment_delta and
-      staging_external_sequencing_experiment, then run radiant-init-starrocks-base-tables with the
+      Drop the two staging views, then run radiant-init-starrocks-base-tables. In the base database, drop
+      staging_sequencing_experiment_delta and staging_external_sequencing_experiment, then run the DAG with the
       udf_release_version in use. The views are created with IF NOT EXISTS, so without the drop the slivar VCFs stay
-      invisible. The same run creates the tables of RAD-246 (gene_reference_transcript) and RAD-256
-      (raw_exomiser_cnv), and the view fix of RAD-266: do it one time for the four tickets.
+      invisible. This one run also creates the tables of RAD-246 and RAD-256 and applies the view fix of RAD-266.
     preconditions:
       - No import is running.
     refs:
       - radiant-init-starrocks-base-tables
       - radiant/dags/sql/radiant/migrations/RAD-206_germline_cnv_occurrence_add_inheritance.sql
-      - radiant/dags/sql/radiant/migrations/RAD-266_germline_tasks_out_of_somatic_cases.sql
     check: >-
       The DAG run succeeds. SHOW CREATE VIEW staging_external_sequencing_experiment has the RAD-266 predicate on
       analysis_type = 'somatic', and SHOW TABLES lists raw_exomiser_cnv and gene_reference_transcript.
   - when: after
     do: >-
-      Deploy the portal backend release that reads the slivar CNV columns (RAD-169 task 3) and the CNV Exomiser
-      columns (RAD-181 task 2), before the next radiant-import. Before it, a portal query on the new columns fails.
+      Deploy the portal backend that reads the new CNV columns. It is the release with RAD-169 task 3 (slivar set)
+      and RAD-181 task 2 (CNV Exomiser). Deploy it before the next radiant-import: before it, a portal query on the
+      new columns fails.
     preconditions:
       - The ALTERs of RAD-194, RAD-206 and RAD-256 are FINISHED in every tenant database.
     refs:

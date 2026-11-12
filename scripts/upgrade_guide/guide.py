@@ -186,33 +186,71 @@ def build_guide(
 
 
 def _text(value: str) -> str:
-    """A note text as Markdown: GitHub drops ``<tenant>`` and the other placeholders as unknown HTML tags."""
-    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    """A note text as Markdown.
+
+    GitHub drops ``<tenant>`` and the other placeholders as unknown HTML tags, and reads ``mother_*, father_*`` as
+    emphasis.
+    """
+    return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("*", "\\*")
+
+
+# The end of a sentence: a period, then a capital or a digit. "e.g. the" and "init_iceberg_table.py" do not split.
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
+
+
+def split_do(do: str) -> tuple[str, str]:
+    """The step title (the first sentence of ``do``) and the rest of the text."""
+    parts = SENTENCE_END.split(do.strip(), maxsplit=1)
+    return parts[0], parts[1] if len(parts) > 1 else ""
 
 
 def render_actions(release: Release, heading: str) -> list[str]:
-    """The actions of one release, grouped by ``when``, in merge order. ``heading`` prefixes the group titles."""
+    """The actions of one release as numbered steps, grouped by ``when``, in merge order.
+
+    Each step: the first sentence of ``do`` in bold, the ticket and the PR, the rest of ``do``, then the
+    preconditions, the check and the refs. The numbers run on from "Before" to "After", so a step has one number in
+    the release. ``heading`` prefixes the group titles.
+    """
     lines = []
+    number = 0
     for when, title in WHEN_HEADINGS:
         items = [(note, action) for note in release.notes for action in note.actions if action.when == when]
         if not items:
             continue
         lines += [f"{heading} {title}", ""]
         for note, action in items:
-            pr = f", PR {note.pr}" if note.pr else f", commit {note.commit[:7]}" if note.commit else ""
-            lines.append(f"- [ ] **{note.ticket}** ({release.version}{pr}): {_text(action.do)}")
+            number += 1
+            source = [note.ticket]
+            if note.pr:
+                source.append(note.pr)
+            elif note.commit:
+                source.append(note.commit[:7])
+            step_title, rest = split_do(action.do)
+            lines.append(f"{number}. **{_text(step_title)}** · {' · '.join(source)}")
+            if rest:
+                lines.append(f"   {_text(rest)}")
             if len(action.preconditions) == 1:
-                lines.append(f"  - Preconditions: {_text(action.preconditions[0])}")
+                lines.append(f"   - **Before you start:** {_text(action.preconditions[0])}")
             elif action.preconditions:
-                lines.append("  - Preconditions:")
-                lines += [f"    - {_text(p)}" for p in action.preconditions]
+                lines.append("   - **Before you start:**")
+                lines += [f"     - {_text(p)}" for p in action.preconditions]
+            lines.append(f"   - **Check:** {_text(action.check)}")
             if action.refs:
-                lines.append(f"  - Refs: {', '.join(f'`{r}`' for r in action.refs)}")
-            lines.append(f"  - Check: {_text(action.check)}")
-        lines.append("")
+                lines.append(f"   - **Refs:** {', '.join(f'`{r}`' for r in action.refs)}")
+            lines.append("")
     if not lines:
         lines = [NO_ACTION, ""]
     return lines
+
+
+def _count(releases: list[Release]) -> str:
+    """ "15 actions: 6 before the deploy, 9 after" over the releases of a guide."""
+    actions = [a for r in releases for n in r.notes for a in n.actions]
+    if not actions:
+        return "no upgrade action"
+    before = sum(a.when == "before" for a in actions)
+    plural = "s" if len(actions) > 1 else ""
+    return f"{len(actions)} action{plural}: {before} before the deploy, {len(actions) - before} after"
 
 
 def render_preview(notes: dict[str, str], pr: str | None = None) -> str:
@@ -244,7 +282,7 @@ def render_preview(notes: dict[str, str], pr: str | None = None) -> str:
             )
         )
     lines += [
-        "The actions of this PR's notes, as the release PR comment and the guide will show them once merged.",
+        "The steps of this PR's notes, as the release PR and the guide will show them once merged.",
         "",
     ]
     if records:
@@ -255,14 +293,21 @@ def render_preview(notes: dict[str, str], pr: str | None = None) -> str:
 
 
 def render_guide(guide: Guide) -> str:
-    lines = [f"# Upgrade guide from {guide.from_version} to {guide.to_version}", ""]
+    """The guide, in one ``##`` section: it goes into a PR description, a job summary or a terminal."""
+    lines = [f"## Upgrade guide: {guide.from_version} → {guide.to_version}", ""]
+    if guide.releases:
+        lines += [
+            f"{len(guide.releases)} release{'s' if len(guide.releases) > 1 else ''}, {_count(guide.releases)}. "
+            f"Do the steps in order, release by release.",
+            "",
+        ]
     for warning in guide.warnings:
-        lines += [f"> **Warning:** {warning}", ""]
+        lines += ["> [!WARNING]", f"> {_text(warning)}", ""]
     if not guide.releases:
         lines += ["No release in this range.", ""]
     for release in guide.releases:
-        lines += [f"## {release.version}", ""]
-        lines += render_actions(release, "###")
+        lines += [f"### {release.version}", ""]
+        lines += render_actions(release, "####")
     return "\n".join(lines).rstrip() + "\n"
 
 

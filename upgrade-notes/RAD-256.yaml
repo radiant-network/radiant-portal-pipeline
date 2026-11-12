@@ -1,12 +1,11 @@
 actions:
   - when: before
     do: >-
-      Run section 1 of the migration in every <tenant>_tenant database (the base database for a single-tenant
-      deployment): the ALTER that adds the six exomiser_* columns to germline__cnv__occurrence, and the exomiser_cnv
-      table. Let the ALTER reach FINISHED. Against an unmigrated table, every CNV import fails. New deployments must
-      not run the ALTER.
+      Add the CNV Exomiser columns and the exomiser_cnv table. Run section 1 of the migration file in every
+      <tenant>_tenant database (the base database for a single-tenant deployment), until the ALTER is FINISHED.
+      Against an unmigrated table, every CNV import fails. New deployments must not run the ALTER.
     preconditions:
-      - radiant-case-scheduler and radiant-reannotate-open-data are paused, no import is running (RAD-194).
+      - radiant-case-scheduler and radiant-reannotate-open-data are paused, and no import is running.
     refs:
       - radiant/dags/sql/radiant/migrations/RAD-256_germline_cnv_occurrence_add_exomiser.sql
     check: >-
@@ -14,8 +13,8 @@ actions:
       columns last, and SHOW TABLES lists exomiser_cnv.
   - when: after
     do: >-
-      Check that the Iceberg germline_cnv_occurrence table has the vcf_id column. The recreate of RAD-206 adds it.
-      If it is missing, run step 2 of the migration file (add_column in place). Without it, insert_exomiser_cnv fails.
+      Check that the Iceberg germline_cnv_occurrence table has vcf_id. The recreate of RAD-206 adds it. If it is
+      missing, run step 2 of the migration file (add_column in place). Without it, insert_exomiser_cnv fails.
     preconditions:
       - The Iceberg table is recreated (RAD-206).
     refs:
@@ -23,27 +22,13 @@ actions:
     check: The PyIceberg snippet of step 2 prints the vcf_id field.
   - when: after
     do: >-
-      Run section 2 of the migration (backfill) in the base database: it gives the CNV annotation rows their
-      Exomiser report and marks their parts for re-import.
+      Run the CNV Exomiser backfill. In the base database, run section 2 of the migration file: it gives the CNV
+      annotation rows their Exomiser report and marks their parts for re-import. The manual radiant-import at the
+      end of this release loads them.
     preconditions:
       - radiant-init-starrocks-base-tables has run after the view drop (RAD-206). Section 2 reads the new view.
-      - radiant-case-scheduler is still paused. Section 2 makes the marked cases pending; a scheduler run would
+      - radiant-case-scheduler is still paused. Section 2 makes the marked cases pending, and a scheduler run would
         email the laboratory of every one of them. Skip the pause only if the laboratories must get these emails.
     refs:
       - radiant/dags/sql/radiant/migrations/RAD-256_germline_cnv_occurrence_add_exomiser.sql
     check: Check 2.0 of the migration file returns nothing before 2a.
-  - when: after
-    do: >-
-      Trigger radiant-import manually. It re-imports the marked parts, loads the CNV Exomiser reports and the slivar
-      VCFs of RAD-206. Wait until it and every radiant-import-part run it triggers succeed, then unpause
-      radiant-case-scheduler.
-    preconditions:
-      - Section 2 of the migration is done.
-      - The portal backend of RAD-206 is deployed.
-      - The RAD-266 delete is done, or a part with a germline task in a somatic case fails again.
-    refs:
-      - radiant-import
-      - radiant/dags/sql/radiant/migrations/RAD-256_germline_cnv_occurrence_add_exomiser.sql
-    check: >-
-      The pending query of the migration file (before unpausing radiant-case-scheduler) returns 0, and
-      SELECT count(*) FROM exomiser_cnv returns more than 0 in a tenant database with CNV annotation tasks.

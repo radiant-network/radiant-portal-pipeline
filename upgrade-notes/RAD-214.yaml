@@ -1,9 +1,9 @@
 actions:
   - when: before
     do: >-
-      Put an empty placeholder VCF on the reference mount of the Nextflow pipelines, at the pod path of
-      NEXTFLOW_QC_PLACEHOLDER_VCF (default /workspace/reference/qc/placeholder.vcf.gz). Every somatic tumor row of
-      the QC samplesheet points at it. Without it, the launch check fails the whole QC run, germline cases included.
+      Put the empty QC placeholder VCF on the reference mount. Its pod path is NEXTFLOW_QC_PLACEHOLDER_VCF (default
+      /workspace/reference/qc/placeholder.vcf.gz). Every somatic tumor row of the QC samplesheet points at it.
+      Without it, the launch check fails the whole QC run, germline cases included.
     refs:
       - radiant/dags/nextflow_quality_control_cases.py
       - radiant/dags/docs/nextflow_quality_control_cases.md

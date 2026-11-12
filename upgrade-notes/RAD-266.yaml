@@ -1,14 +1,42 @@
 actions:
   - when: after
     do: >-
-      In the base database, delete the somatic rows of the germline tasks from staging_sequencing_experiment:
-      run check 0 of the migration file, read the germline_parts column, then run section 2. The fixed view no
-      longer emits these rows, but the delta does not remove the rows already there. Section 1 (the views) is the
-      view drop and init run of RAD-206: do not run it again.
+      Delete the somatic rows of the germline tasks from the staging table. In the base database, run check 0 of the
+      migration file, read its germline_parts column, then run section 2. The fixed view no longer emits these rows,
+      but the delta does not remove the rows already there. Section 1 of the file (the views) is the view drop and
+      init run of RAD-206: do not run it again.
     preconditions:
       - radiant-init-starrocks-base-tables has run after the view drop (RAD-206).
       - No radiant-import or radiant-import-part run is active.
       - A row of check 0 whose germline_parts is a different part, or empty, needs a look before the delete.
     refs:
       - radiant/dags/sql/radiant/migrations/RAD-266_germline_tasks_out_of_somatic_cases.sql
-    check: Check 0 of the migration file returns no row. The next radiant-import loads the parts that failed.
+    check: Check 0 of the migration file returns no row.
+  # The two closing steps of the release are here, the last note file: the guide sorts the notes of one commit by
+  # file name, and both steps must run after every other step.
+  - when: after
+    do: >-
+      Run radiant-import manually, then unpause radiant-case-scheduler. The run re-imports the parts marked by
+      RAD-256, the parts that failed before this delete, and the slivar VCFs of RAD-206. Wait until it and every
+      radiant-import-part run it triggers succeed before the unpause.
+    preconditions:
+      - The steps above are done, the RAD-256 backfill and the portal backend of RAD-206 included.
+    refs:
+      - radiant-import
+      - radiant/dags/sql/radiant/migrations/RAD-256_germline_cnv_occurrence_add_exomiser.sql
+    check: >-
+      The pending query of the RAD-256 migration file returns 0, and SELECT count(*) FROM exomiser_cnv returns more
+      than 0 in a tenant database with CNV annotation tasks.
+  - when: after
+    do: >-
+      Unpause radiant-reannotate-open-data and run it with force_reannotation = true. It fills gnomad_ac (RAD-194)
+      on the CNV occurrences already loaded. Its gates watch the open-data sources, not the code, so a scheduled run
+      does not do it. It holds the import lock.
+    preconditions:
+      - The manual radiant-import above and its radiant-import-part runs are done.
+    refs:
+      - radiant-reannotate-open-data
+      - radiant/dags/sql/radiant/migrations/RAD-194_cnv_occurrence_add_gnomad_ac.sql
+    check: >-
+      The run succeeds. The post-checks of the RAD-194 migration file return 0 for should_be_zero and a non-zero
+      count for should_be_non_zero.

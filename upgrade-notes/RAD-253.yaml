@@ -1,8 +1,8 @@
 actions:
   - when: after
     do: >-
-      Re-import gnomad_constraint with the new insert (gnomAD v4.1.2 columns when the source is the OpenDataLake
-      contract table). The force_import run of radiant-import-open-data of RAD-246 does it: no separate run.
+      Check that gnomad_constraint has the gnomAD v4.1.2 values. The force_import run of RAD-246 re-imports it with
+      the new insert: no separate run.
     preconditions:
       - The radiant-import-open-data run of RAD-246 is done.
     refs:
