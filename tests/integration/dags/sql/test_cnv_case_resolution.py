@@ -13,11 +13,15 @@ seeded case with a `gcnv` VCF and no CNV annotation, and comes back too.
 import os
 
 import jinja2
+import pytest
 
 from radiant.dags import DAGS_DIR
 from radiant.tasks.nextflow.cnv.resolve import resolve_families, select_cases
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
+
+# The queries read the RAD-287 views: create them once for the session.
+pytestmark = pytest.mark.usefixtures("pipeline_views")
 DISCOVERY = "pending_cnv_annotation_select.sql"
 
 TRIO_CASE_ID = 16

@@ -10,7 +10,6 @@ from radiant.tasks.data.radiant_tables import get_radiant_mapping
 _CLINICAL_SQL = DAGS_DIR / "sql" / "clinical"
 _CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
 _TEMPLATE = "pending_cnv_annotation_select.sql"
-_ANNOTATION_TEMPLATE = "pending_annotation_select.sql"
 _NO_PARAMS = {"task_ids": [], "excluded_tenants": []}
 
 
@@ -59,14 +58,15 @@ def test_no_stray_percent_survives_parameter_binding():
     assert "%" not in re.sub(r"%\(\w+\)s", "", sql).replace("%%", "")
 
 
-def test_the_supersession_ctes_are_identical_to_the_annotation_query():
-    """One policy, three templates: the newest completed experiment per member and the newest
-    alignment per experiment must be selected the same way, or the DAGs disagree on which
-    experiment a case is 'about'."""
-    cnv = _without_comments(_render(_TEMPLATE))
-    annotation = _without_comments(_render(_ANNOTATION_TEMPLATE))
-    for cte in ("current_experiment", "current_alignment"):
-        assert _cte(cnv, cte) == _cte(annotation, cte), cte
+def test_the_supersession_policy_is_read_from_the_shared_views():
+    """One policy, every pending query: the newest completed experiment per member and the
+    newest alignment per experiment come from the `current_experiment` and `current_alignment`
+    views (RAD-287), so the DAGs cannot disagree on which experiment a case is 'about'."""
+    sql = _without_comments(_render(_TEMPLATE))
+    assert "FROM radiant.current_experiment ce" in sql
+    assert "FROM radiant.current_alignment" in sql
+    assert "task_type = 'alignment_germline_variant_calling'" in _cte(sql, "current_alignment")
+    assert "ROW_NUMBER" not in sql
 
 
 def test_the_trigger_document_is_the_germline_cnv_vcf_selected_on_type_fields():
@@ -89,7 +89,7 @@ def test_the_cram_is_carried_but_never_a_reason():
 
 def test_the_alignment_pipeline_comes_back_for_the_caller_guard():
     sql = _without_comments(_render(_TEMPLATE))
-    assert "at.pipeline_name                AS alignment_pipeline" in sql
+    assert "ca.pipeline_name                AS alignment_pipeline" in sql
 
 
 def test_the_anti_join_is_on_the_cnv_annotation_task_type_and_scoped_to_the_case():
@@ -104,10 +104,14 @@ def test_members_without_sequencing_come_back_carrying_a_reason():
     sql = _without_comments(_render(_TEMPLATE))
     for reason in ("pending_sequencing", "pending_alignment", "no_gcnv", "ambiguous_gcnv", "no_project_code"):
         assert f"'{reason}'" in sql
-    assert "LEFT JOIN current_experiment ce" in sql
+    assert "LEFT JOIN radiant.current_experiment ce" in sql
 
 
 def test_only_germline_cases_and_never_revoked_ones():
+    """Revoked and draft cases are left out by `pipeline_case` (RAD-287); the query keeps the
+    germline ones."""
     sql = _without_comments(_render(_TEMPLATE))
-    assert "c.case_type_code = 'germline'" in sql
-    assert "c.status_code NOT IN ('draft', 'revoked')" in sql
+    assert "FROM radiant.pipeline_case pc" in sql
+    assert "WHERE pc.case_type = 'germline'" in sql
+    assert "WHERE ce.case_type = 'germline'" in sql
+    assert "status_code" not in sql

@@ -40,23 +40,23 @@ WITH work_unit_experiment AS (
     ) task_experiment
 ),
 registration_case AS (
-    -- The somatic cases, not draft or revoked, that hold *every* experiment of a calling task: one
-    -- row per (case, calling task), with what the batch PATCH needs to find the case.
+    -- The somatic cases of `pipeline_case` (RAD-287: not draft or revoked) that hold *every*
+    -- experiment of a calling task: one row per (case, calling task), with what the batch PATCH
+    -- needs to find the case.
     --
     -- Through `case_has_sequencing_experiment`, never `task_context.case_id`: only
     -- `tumor_only_variant_calling` carries one. Every experiment, because the portal refuses an
     -- input document produced by an experiment the case does not hold.
-    SELECT c.id                AS case_id,
-           c.submitter_case_id AS submitter_case_id,
-           c.tenant_code       AS tenant_code,
-           c.project_id        AS project_id,
-           te.task_id          AS task_id
+    SELECT pc.case_id           AS case_id,
+           pc.submitter_case_id AS submitter_case_id,
+           pc.tenant_code       AS tenant_code,
+           pc.project_code      AS project_code,
+           te.task_id           AS task_id
     FROM work_unit_experiment te
     JOIN {{ mapping.clinical_case_has_sequencing_experiment }} chse ON chse.sequencing_experiment_id = te.seq_id
-    JOIN {{ mapping.clinical_case }} c                         ON c.id = chse.case_id
-                                                              AND c.case_type_code = 'somatic'
-                                                              AND c.status_code NOT IN ({{ mapping.pipeline_ignored_case_statuses }})
-    GROUP BY c.id, c.submitter_case_id, c.tenant_code, c.project_id, te.task_id, te.task_experiments
+    JOIN {{ mapping.starrocks_pipeline_case }} pc              ON pc.case_id = chse.case_id
+                                                              AND pc.case_type = 'somatic'
+    GROUP BY pc.case_id, pc.submitter_case_id, pc.tenant_code, pc.project_code, te.task_id, te.task_experiments
     HAVING COUNT(DISTINCT te.seq_id) = te.task_experiments
 ),
 vcf_to_annotate AS (
@@ -97,7 +97,7 @@ work_to_do AS (
     SELECT ct.case_id           AS case_id,
            ct.submitter_case_id AS submitter_case_id,
            ct.tenant_code       AS tenant_code,
-           ct.project_id        AS project_id,
+           ct.project_code      AS project_code,
            ct.task_id           AS task_id
     FROM registration_case ct
     LEFT JOIN vcf_to_annotate v   ON v.task_id = ct.task_id
@@ -117,7 +117,7 @@ work_to_do AS (
 SELECT pt.case_id                     AS case_id,
        pt.submitter_case_id           AS submitter_case_id,
        pt.tenant_code                 AS tenant_code,
-       pr.code                        AS project_code,
+       pt.project_code                AS project_code,
        te.task_id                     AS calling_task_id,
        te.task_type                   AS calling_task_type,
        se.id                          AS seq_id,
@@ -131,7 +131,7 @@ SELECT pt.case_id                     AS case_id,
            WHEN se.status_code <> 'completed' THEN 'pending_sequencing'
            WHEN v.task_id IS NULL             THEN 'no_ssnv'
            WHEN v.matches > 1                 THEN 'ambiguous_ssnv'
-           WHEN pr.code IS NULL               THEN 'no_project_code'
+           WHEN pt.project_code IS NULL       THEN 'no_project_code'
            {% if params.excluded_tenants %}
            WHEN pt.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'
            {% endif %}
@@ -142,9 +142,6 @@ JOIN work_unit_experiment te                       ON te.task_id = pt.task_id
 JOIN {{ mapping.clinical_sequencing_experiment }} se  ON se.id = te.seq_id
 LEFT JOIN {{ mapping.clinical_sample }} sa            ON sa.id = se.sample_id
 LEFT JOIN vcf_to_annotate v                           ON v.task_id = pt.task_id
--- On the primary key alone, as in the germline queries: the batch PATCH looks a case up by
--- (project_code, submitter_case_id).
-LEFT JOIN {{ mapping.clinical_project }} pr           ON pr.id = pt.project_id
 ORDER BY te.task_id,
          pt.case_id,
          CASE sa.histology_code WHEN 'tumoral' THEN 0 ELSE 1 END,

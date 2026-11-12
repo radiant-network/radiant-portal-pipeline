@@ -41,8 +41,10 @@ an alignment publishing a `gcnv` / `vcf` document, and no `radiant_germline_cnv_
 task is scoped to that same pair. The rule lives in
 `sql/clinical/pending_cnv_annotation_select.sql`, and its two selections are the annotation
 query's: **one experiment per (case, member)**, the newest `completed` one, and **one
-alignment per experiment**, the newest. Keep the three `pending_*` templates' `current_*`
-CTEs identical when touching any of them.
+alignment per experiment**, the newest. Every `pending_*` query reads them from the StarRocks
+views `current_experiment` and `current_alignment`, and the cases from `pipeline_case`
+(RAD-287, `sql/radiant/init/`). To see why a case is not picked up, query the views:
+`SELECT * FROM current_experiment WHERE case_id = …`.
 
 The trigger document is selected on `data_type_code = 'gcnv' AND format_code = 'vcf'`,
 never on filename. A case where no member has one (joint-called upstream) is not a

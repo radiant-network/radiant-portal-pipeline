@@ -126,6 +126,11 @@ ICEBERG_CATALOG_DATABASE = {
 }
 
 STARROCKS_RADIANT_BASE_MAPPING = {
+    # RAD-287: the case filter and the supersession policy, shared by the pending queries and the staging view.
+    "starrocks_pipeline_case": "pipeline_case",
+    "starrocks_current_experiment": "current_experiment",
+    "starrocks_current_alignment": "current_alignment",
+    "starrocks_case_member": "case_member",
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",

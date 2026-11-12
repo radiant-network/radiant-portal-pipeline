@@ -20,6 +20,9 @@ from radiant.dags import DAGS_DIR
 from radiant.tasks.nextflow.resolve import REL_ORDER
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
+
+# The queries read the RAD-287 views: create them once for the session.
+pytestmark = pytest.mark.usefixtures("pipeline_views")
 _OPEN_DATA_INIT = os.path.join(DAGS_DIR, "sql", "open_data", "init")
 
 DISCOVERY = "pending_annotation_select.sql"

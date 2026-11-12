@@ -27,6 +27,9 @@ from radiant.tasks.nextflow.qc.resolve import select_cases
 from tests.integration.fixtures_common import execute_clinical
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
+
+# The queries read the RAD-287 views: create them once for the session.
+pytestmark = pytest.mark.usefixtures("pipeline_views")
 GERMLINE_QUERY = "pending_quality_control_select.sql"
 SOMATIC_QUERY = "pending_quality_control_somatic_select.sql"
 
