@@ -266,6 +266,23 @@ def import_part():
             )
             return has_cnv
 
+        # RAD-181: the CNV Exomiser rows of the CNV annotation tasks, matched to their occurrence, into the tenant's
+        # `exomiser_cnv` (the twin of `insert_exomiser`). Reads the Iceberg occurrences, so it runs after the CNV VCF
+        # import, and before the occurrence insert, which copies its `variant_rank = 1` row.
+        insert_exomiser_cnv = RadiantStarRocksPartitionSwapOperator.partial(
+            task_id="insert_exomiser_cnv",
+            table="{{ mapping.starrocks_exomiser_cnv }}",
+            task_display_name="[StarRocks] Insert CNV Exomiser Part",
+            map_index_template="{{ task.tenant_code }}",
+            swap_partition=SwapPartition(
+                partition="{{ params.part }}",
+                copy_partition_sql="./sql/radiant/exomiser_cnv_copy_partition.sql",
+            ),
+            submit_task_options=std_submit_task_opts,
+            insert_partition_sql="./sql/radiant/exomiser_cnv_insert_partition_delta.sql",
+            max_active_tis_per_dagrun=1,
+        ).expand_kwargs(tenant_params)
+
         # max_active_tis_per_dagrun=1: process tenants one at a time within a dagrun
         insert_germline_cnv_occurrences = RadiantStarRocksPartitionSwapOperator.partial(
             task_id="insert_germline_cnv_occurrences",
@@ -292,7 +309,12 @@ def import_part():
             max_active_tis_per_dagrun=1,
         ).expand(tenant_code=tenants)
 
-        (sanity_check_cnvs(tasks) >> insert_germline_cnv_occurrences >> aggregate_germline_cnv_variants_frequencies)
+        (
+            sanity_check_cnvs(tasks)
+            >> insert_exomiser_cnv
+            >> insert_germline_cnv_occurrences
+            >> aggregate_germline_cnv_variants_frequencies
+        )
 
     with TaskGroup(group_id="somatic_cnv_occurrence") as tg_somatic_cnv_occurrence_per_tenant:
 
@@ -362,6 +384,21 @@ def import_part():
         table="{{ mapping.starrocks_staging_exomiser }}",
         parameters=task_ids,
         tasks=tasks,
+    )
+
+    # RAD-181: the CNV Exomiser reports of the CNV annotation tasks, into their own shared staging table. Read by the
+    # tenant `exomiser_cnv` insert only (germline_cnv_occurrence group): no CNV row reaches the SNV `exomiser` table.
+    load_exomiser_cnv = RadiantLoadExomiserOperator(
+        task_id="load_exomiser_cnv_files",
+        task_display_name="[StarRocks] Load CNV Exomiser Files",
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/staging_exomiser_cnv_insert_partition_delta.sql",
+        ),
+        table="{{ mapping.starrocks_staging_exomiser_cnv }}",
+        parameters=task_ids,
+        tasks=tasks,
+        annotation_task_type=RADIANT_GERMLINE_CNV_ANNOTATION_TASK,
     )
 
     @task.short_circuit(
@@ -721,6 +758,7 @@ def import_part():
     (
         checkpoint_imports
         >> load_exomiser
+        >> load_exomiser_cnv
         >> refresh_iceberg_tables
         >> insert_hashes
         >> overwrite_snv_tmp_variants

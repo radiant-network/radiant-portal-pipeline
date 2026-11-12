@@ -509,6 +509,20 @@ def sample_exomiser_tsv(s3_fs):
 
 
 @pytest.fixture(scope="session")
+def sample_cnv_exomiser_tsvs(s3_fs):
+    """
+    Uploads the two mock CNV Exomiser TSVs (RAD-181) to S3: one per VCF cnv-post-processing can run Exomiser on.
+    Returns their S3 keys by route (`proband`, `family`).
+    """
+    keys = {}
+    for route in ("proband", "family"):
+        name = f"mock_cnv_{route}.exomiser.variants.tsv"
+        s3_fs.put(str(RESOURCES_DIR / "exomiser" / name), f"exomiser/{name}")
+        keys[route] = f"exomiser/{name}"
+    yield keys
+
+
+@pytest.fixture(scope="session")
 def clinvar_rcv_summary_ndjson(s3_fs):
     """
     Uploads the ClinVar RCV summary JSON to S3.

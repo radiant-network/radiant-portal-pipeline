@@ -124,6 +124,11 @@ def test_seeded_trio_takes_the_probands_cnvs_from_the_slivar_vcf(
     ]
     slivar = case_1.query("task_id == 72")
     assert set(slivar["cnv_vcf_filepath"]) == {"s3://test-vcf/CA1000019.reheader.cnv.slivar.vcf.gz"}
+    # RAD-181: the CNV Exomiser report, on the proband's row only; the HTML and JSON reports stay out.
+    assert slivar.query("family_role == 'proband'")["exomiser_filepath"].tolist() == [
+        "s3://test-vcf/CA1000019.NA12878.exomiser.variants.tsv"
+    ]
+    assert slivar.query("family_role != 'proband'")["exomiser_filepath"].isna().all()
 
 
 def test_sequencing_experiment_delta_carries_tumor_only_tasks(
@@ -283,11 +288,12 @@ def cnv_exomiser_reports(postgres_clinical_seeds, postgres_instance):
     )
 
 
-def test_sequencing_experiment_delta_ignores_cnv_exomiser_reports(
+def test_sequencing_experiment_delta_pairs_each_exomiser_report_with_its_task_type(
     cnv_exomiser_reports, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
 ):
-    """The CNV Exomiser report must stay out of the SNV `exomiser` table: the view reads only the `exomiser`
-    data type. It reads the slivar VCF of a `radiant_germline_cnv_annotation` task, and nothing else."""
+    """Each Exomiser report is admitted on its own task type only (RAD-181): the `exomiser_cnv` report of a germline
+    SNV annotation task stays out, so it never reaches the SNV `exomiser` table; the `exomiser_cnv` report of a
+    `radiant_germline_cnv_annotation` task comes with its slivar VCF, for the CNV load."""
     delta = _delta(starrocks_session, sequencing_delta_columns)
 
     (snv_annotation,) = delta.query("task_id == 9601").itertuples()
@@ -296,7 +302,7 @@ def test_sequencing_experiment_delta_ignores_cnv_exomiser_reports(
 
     (cnv_annotation,) = delta.query("task_id == 9602").itertuples()
     assert cnv_annotation.cnv_vcf_filepath == "s3://test-vcf/mock-9603.cnv.slivar.vcf.gz"
-    assert pd.isna(cnv_annotation.exomiser_filepath)
+    assert cnv_annotation.exomiser_filepath == "s3://test-vcf/mock-9604.exomiser.variants.tsv"
     assert pd.isna(cnv_annotation.vcf_filepath)
 
 

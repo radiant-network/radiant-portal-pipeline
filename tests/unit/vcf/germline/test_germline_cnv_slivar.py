@@ -40,7 +40,8 @@ MEMBERS = {
     "S_SIB": (14, "sibling", "affected"),
 }
 
-NEW_COLUMNS = [f.name for f in SCHEMA.fields if f.field_id >= 125]
+# The slivar set's columns (RAD-206). `vcf_id` (RAD-181) is filled on both sets: it is the record ID.
+NEW_COLUMNS = [f.name for f in SCHEMA.fields if f.field_id >= 125 and f.name != "vcf_id"]
 PARENT_FIELDS = ("calls", "cn", "bc", "pe", "sm", "name")
 
 
@@ -135,6 +136,13 @@ def test_proband_name_is_its_own_decoded_dragen_id(trio_rows):
     assert "DRAGEN:LOSS:chr1:10101-19900" in trio_rows
     assert "DRAGEN:LOSS:chr1:10001-20000" not in trio_rows
     assert trio_rows["DRAGEN:LOSS:chr1:10101-19900"]["mother_name"] == "DRAGEN:LOSS:chr1:10001-20000"
+
+
+def test_vcf_id_is_the_record_id_truvari_kept(trio_rows):
+    """RAD-181: `vcf_id` keeps the record's `ID`, the key of a CNV Exomiser report run on the family VCF. On the
+    slivar set it differs from `name` when the kept call is a parent's."""
+    assert trio_rows["DRAGEN:LOSS:chr1:10101-19900"]["vcf_id"] == "DRAGEN:LOSS:chr1:10001-20000"
+    assert trio_rows["DRAGEN:GAIN:chr1:1001-5000"]["vcf_id"] == "DRAGEN:GAIN:chr1:1001-5000"
 
 
 def test_parent_names_are_their_own_decoded_dragen_ids(trio_rows):
@@ -243,6 +251,8 @@ def test_alignment_task_rows_keep_the_new_columns_null():
     rows = _process([task])
     assert rows
     assert all(r[c] is None for r in rows for c in NEW_COLUMNS)
+    # The DRAGEN set's `name` is the record ID already: `vcf_id` repeats it.
+    assert all(r["vcf_id"] == r["name"] for r in rows)
 
 
 def test_task_without_proband_in_the_vcf_fails():
@@ -286,7 +296,7 @@ def test_a_tag_that_does_not_pair_with_the_probands_origin_is_dropped(tag, origi
 
 
 def test_mode_origins_follow_the_rule_table():
-    """cnv-post-processing @ cad99b4, assets/cnv-slivar-functions.js: TRIO_TABLE columns 3 and 4, the X-linked
+    """cnv-post-processing @ c9e7768, assets/cnv-slivar-functions.js: TRIO_TABLE columns 3 and 4, the X-linked
     renames of `denovo` and `recessive`, the catch-all row (no origin), and `unknown_cn` before the table."""
     assert CNV_MODE_ORIGINS["recessive_lowconf"] == {"MOTHER", "FATHER"}
     assert CNV_MODE_ORIGINS["inheritance_unresolved"] == {"BOTH", "AMBIGUOUS", None}
@@ -420,6 +430,17 @@ def test_task_is_built_from_every_members_row():
     assert isinstance(task, RadiantGermlineCnvAnnotationTask)
     assert task.cnv_vcf_filepath == "s3://test-vcf/mock-9701.cnv.slivar.vcf.gz"
     assert sorted(e.family_role for e in task.experiments) == ["father", "mother", "proband"]
+
+
+def test_task_takes_the_exomiser_report_of_the_probands_row():
+    """RAD-181: the staging view sets the CNV Exomiser report on the proband's row only."""
+    proband = {**_row("S_KID"), "exomiser_filepath": "s3://test-vcf/CA9701.S_KID.exomiser.variants.tsv"}
+    task = build_task_from_rows([_row("S_MOM"), proband, _row("S_DAD")])
+    assert task.exomiser_filepath == "s3://test-vcf/CA9701.S_KID.exomiser.variants.tsv"
+
+
+def test_task_without_exomiser_report_has_none():
+    assert build_task_from_rows([_row("S_KID"), _row("S_MOM")]).exomiser_filepath is None
 
 
 def test_task_without_proband_row_fails():

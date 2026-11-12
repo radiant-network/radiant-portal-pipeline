@@ -21,6 +21,7 @@ _BASE_TABLES = [
     "snv_staging_variant",
     "variant_lookup",
     "staging_exomiser",
+    "staging_exomiser_cnv",
     "germline_snv_staging_variant_frequency",
     "somatic_snv_staging_variant_frequency",
     "open_data_release",

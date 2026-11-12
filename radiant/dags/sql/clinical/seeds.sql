@@ -1403,7 +1403,14 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     -- CEPH trio, samples renamed to the aliquots in the header *and* in the slivar INFO tags (which list sample
     -- names), FORMAT/OID kept. A column-only reheader leaves every parental origin and transmission mode NULL.
     (284, 'CA1000019.reheader.cnv.slivar.vcf.gz', 'genomic', 'gcnv', 'vcf', 285358, '{{ params.vcf_bucket_prefix }}/CA1000019.reheader.cnv.slivar.vcf.gz', '47ee1820a6f51ab7c91fe3ddf5a3bf13', 'radiant'),
-    (285, 'CA1000019.reheader.cnv.slivar.vcf.gz.tbi', 'genomic', 'gcnv', 'tbi', 17264, '{{ params.vcf_bucket_prefix }}/CA1000019.reheader.cnv.slivar.vcf.gz.tbi', '2b88f4ea6432c92bfb0e58d9e5f36499', 'radiant');
+    (285, 'CA1000019.reheader.cnv.slivar.vcf.gz.tbi', 'genomic', 'gcnv', 'tbi', 17264, '{{ params.vcf_bucket_prefix }}/CA1000019.reheader.cnv.slivar.vcf.gz.tbi', '2b88f4ea6432c92bfb0e58d9e5f36499', 'radiant'),
+    -- The CNV Exomiser reports of task 72 (RAD-181), the same cnv-post-processing run: Exomiser ran on the proband
+    -- VCF of NA12878, so the files are named `<family>.<proband>` and the report's VCF_ID is the proband's own call
+    -- (the slivar record's FORMAT/OID). Typed `exomiser_cnv`, as nextflow_cnv_postprocessing_cases registers them;
+    -- the staging view admits the `variants.tsv` only.
+    (286, 'CA1000019.NA12878.exomiser.variants.tsv', 'genomic', 'exomiser_cnv', 'tsv', 1656, '{{ params.vcf_bucket_prefix }}/CA1000019.NA12878.exomiser.variants.tsv', '39252587cf24876ef2d1ba7f2367b789', 'radiant'),
+    (287, 'CA1000019.NA12878.exomiser.html', 'genomic', 'exomiser_cnv', 'html', 163627, '{{ params.vcf_bucket_prefix }}/CA1000019.NA12878.exomiser.html', 'aef9833ceec5991a95375f5a27ba08af', 'radiant'),
+    (288, 'CA1000019.NA12878.exomiser.json', 'genomic', 'exomiser_cnv', 'json', 36377, '{{ params.vcf_bucket_prefix }}/CA1000019.NA12878.exomiser.json', '97585964319e367b2be9fa72c2b296d9', 'radiant');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1683,9 +1690,12 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (71, 281, 'output'),
     (71, 282, 'output'),
     (71, 283, 'output'),
-    -- CNV annotation task 72 -> the family's slivar VCF.
+    -- CNV annotation task 72 -> the family's slivar VCF and the proband's CNV Exomiser reports (RAD-181).
     (72, 284, 'output'),
     (72, 285, 'output'),
+    (72, 286, 'output'),
+    (72, 287, 'output'),
+    (72, 288, 'output'),
     -- Calling tasks 73-76 -> their raw VCFs.
     (73, 274, 'output'),
     (73, 275, 'output'),

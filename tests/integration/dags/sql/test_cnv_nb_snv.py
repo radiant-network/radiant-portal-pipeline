@@ -182,6 +182,10 @@ def _seed(starrocks_session, iceberg_client, namespace, mapping, *, flavour):
         _create_table(starrocks_session, "radiant", table, mapping, truncate=True)
     for table in ("cytoband", "ensembl_gene"):
         _create_table(starrocks_session, "open_data", table, mapping, truncate=False)
+    if flavour == "germline":
+        # Only created: the germline insert LEFT JOINs it (RAD-181), nothing here asserts the Exomiser columns, and
+        # test_germline_cnv_occurrence_exomiser.py owns its content.
+        _create_table(starrocks_session, "radiant", "exomiser_cnv", mapping, truncate=False)
 
     _create_cnv_id_udf(starrocks_session, mapping)
 

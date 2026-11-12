@@ -76,6 +76,18 @@ WITH cytoband AS (SELECT o.name, o.seq_id, o.task_id, array_agg(c.cytoband) AS c
             ORDER BY o.af DESC, o.sf DESC
         ) AS rn
         FROM gnomad_overlaps o
+    ),
+    -- RAD-181: the best CNV Exomiser row of each occurrence (`variant_rank = 1`), from the tenant's `exomiser_cnv`,
+    -- which `insert_exomiser_cnv` fills just before from the CNV annotation task's report, already matched to the
+    -- occurrence's `name` (exomiser_cnv_insert_partition_delta.sql). The same rule as the SNV occurrences and
+    -- `exomiser`. Tagged with the annotation task id, so the DRAGEN set of an alignment task never matches.
+    exomiser AS (
+        SELECT e.seq_id, e.task_id, e.name, e.rank, e.variant_score, e.gene_combined_score, e.moi,
+               e.acmg_classification, e.acmg_evidence
+        FROM {{ mapping.starrocks_exomiser_cnv }} e
+        WHERE e.part = {{ partition }}
+          AND e.variant_rank = 1
+          AND e.task_id IN %(task_ids)s
     )
 SELECT o.part,
        o.seq_id,
@@ -125,7 +137,15 @@ SELECT o.part,
        o.father_bc,
        o.father_pe,
        o.father_sm,
-       o.father_name
+       o.father_name,
+       -- The CNV Exomiser columns (RAD-181), NULL on the DRAGEN set and on a record Exomiser did not rank. Last, as in
+       -- the table: the insert is positional.
+       exomiser.rank AS exomiser_rank,
+       exomiser.variant_score AS exomiser_variant_score,
+       exomiser.gene_combined_score AS exomiser_gene_combined_score,
+       exomiser.moi AS exomiser_moi,
+       exomiser.acmg_classification AS exomiser_acmg_classification,
+       exomiser.acmg_evidence AS exomiser_acmg_evidence
 FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
          -- Keyed on task_id too. Both sets of one sequencing (DRAGEN and slivar) can hold the same call name.
          LEFT JOIN cytoband ON cytoband.seq_id = o.seq_id AND cytoband.task_id = o.task_id AND o.name = cytoband.name
@@ -133,6 +153,7 @@ FROM {{ mapping.iceberg_germline_cnv_occurrence }} o
          LEFT JOIN snv ON snv.seq_id = o.seq_id AND snv.task_id = o.task_id AND o.name = snv.name
          LEFT JOIN gnomad_ranked ON gnomad_ranked.seq_id = o.seq_id AND gnomad_ranked.task_id = o.task_id
               AND o.name = gnomad_ranked.name AND gnomad_ranked.rn = 1
+         LEFT JOIN exomiser ON exomiser.seq_id = o.seq_id AND exomiser.task_id = o.task_id AND o.name = exomiser.name
 WHERE o.seq_id IN %(seq_ids)s
   AND o.task_id IN %(task_ids)s
   AND o.tenant_code = %(tenant_code)s

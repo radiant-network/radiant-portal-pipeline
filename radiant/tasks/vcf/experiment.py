@@ -80,10 +80,14 @@ class RadiantGermlineCnvAnnotationTask(BaseTask):
 
     task_type: str = RADIANT_GERMLINE_CNV_ANNOTATION_TASK
     cnv_vcf_filepath: str
+    # The CNV Exomiser report (`exomiser_cnv`, RAD-181) ranks the proband: the staging view sets it on the proband's
+    # row only.
+    exomiser_filepath: str | None = None
 
     @staticmethod
     def gather_additional_args(rows: list[dict]) -> dict:
-        if not any(r["family_role"] == "proband" for r in rows):
+        proband = next((r for r in rows if r["family_role"] == "proband"), None)
+        if proband is None:
             raise ValueError("No proband found in rows for `radiant_germline_cnv_annotation` task.")
         filepaths = {r["cnv_vcf_filepath"] for r in rows}
         if len(filepaths) != 1:
@@ -91,7 +95,7 @@ class RadiantGermlineCnvAnnotationTask(BaseTask):
                 f"`radiant_germline_cnv_annotation` task [{rows[0].get('task_id')}] expects one slivar VCF, "
                 f"got: {sorted(str(f) for f in filepaths)}."
             )
-        return {"cnv_vcf_filepath": filepaths.pop()}
+        return {"cnv_vcf_filepath": filepaths.pop(), "exomiser_filepath": proband.get("exomiser_filepath")}
 
 
 class RadiantSomaticAnnotationTask(BaseTask):

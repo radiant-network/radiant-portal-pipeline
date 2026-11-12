@@ -34,7 +34,9 @@ EXOMISER_DIR = "exomiser"
 # (`CNV_PIPELINE_REV`) indexes the slivar VCF and publishes the `.tbi` next to it.
 #
 # The Exomiser reports are `exomiser_cnv`, not `exomiser`: the portal tells them from
-# the SNV report, which has the same file names, and the staging view reads only `exomiser`.
+# the SNV report, which has the same file names. The staging view admits `exomiser_cnv` on the
+# `radiant_germline_cnv_annotation` task only (RAD-181): `import_part` loads it into
+# `raw_exomiser_cnv`, never into the SNV `raw_exomiser`.
 OUTPUT_SPEC = {
     "slivar_vcf": (f"{SLIVAR_DIR}/{{prefix}}.cnv.slivar.vcf.gz", "gcnv", "vcf"),
     "slivar_tbi": (f"{SLIVAR_DIR}/{{prefix}}.cnv.slivar.vcf.gz.tbi", "gcnv", "tbi"),
