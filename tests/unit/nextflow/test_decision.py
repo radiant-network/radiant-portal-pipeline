@@ -312,12 +312,8 @@ class _Cursor:
 
 
 def _starrocks(monkeypatch) -> list:
-    from types import SimpleNamespace
-
     executed = []
-    conn = SimpleNamespace(cursor=lambda: _Cursor(executed))
-    hook = SimpleNamespace(get_conn=lambda: conn)
-    monkeypatch.setattr("airflow.hooks.base.BaseHook.get_connection", lambda _: SimpleNamespace(get_hook=lambda: hook))
+    monkeypatch.setattr(decision, "_starrocks_cursor", lambda: _Cursor(executed))
     return executed
 
 

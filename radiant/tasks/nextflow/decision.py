@@ -340,6 +340,13 @@ def _order(d: Decision) -> tuple:
 # --- I/O ---------------------------------------------------------------------------------------
 
 
+def _starrocks_cursor():
+    """A cursor on the `starrocks_conn` connection. Airflow is imported here only."""
+    from airflow.hooks.base import BaseHook
+
+    return BaseHook.get_connection("starrocks_conn").get_hook().get_conn().cursor()
+
+
 def _render(sql_file: str, conf: dict | None, folder: str = "radiant", **variables) -> str:
     import jinja2
 
@@ -350,11 +357,39 @@ def _render(sql_file: str, conf: dict | None, folder: str = "radiant", **variabl
     return jinja2.Template(text).render(mapping=get_radiant_mapping(conf or {}), **variables)
 
 
+def read_rows(folder: str, sql_file: str, conf: dict | None = None, parameters: dict | None = None, **variables):
+    """The rows of `sql/<folder>/<sql_file>`, as dicts keyed by column name."""
+    sql = _render(sql_file, conf, folder, **variables)
+    with _starrocks_cursor() as cursor:
+        cursor.execute(sql, parameters)
+        columns = [d[0] for d in cursor.description]
+        return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
+
+
+# What the case scheduler reads to decide every pipeline: each "from Cases" DAG's fact queries, and
+# what the import still has to load.
+DISCOVERY_QUERIES = {
+    GERMLINE_SNV: [("clinical", "germline_snv_facts_select.sql")],
+    GERMLINE_CNV: [("clinical", "germline_cnv_facts_select.sql")],
+    SOMATIC_SNV: [("clinical", "somatic_snv_facts_select.sql")],
+    QC: [("clinical", "qc_germline_facts_select.sql"), ("clinical", "qc_somatic_facts_select.sql")],
+    IMPORT: [("radiant", "import_pending_case_select.sql")],
+}
+
+
+def read_discovery(conf: dict | None = None) -> dict[str, list[dict]]:
+    """The rows each pipeline decides on, every case of its type. QC reads two queries, one per case type."""
+    rows = {
+        pipeline: [row for folder, sql_file in queries for row in read_rows(folder, sql_file, conf)]
+        for pipeline, queries in DISCOVERY_QUERIES.items()
+    }
+    LOGGER.info("discovery rows: %s", ", ".join(f"{p} {len(r)}" for p, r in rows.items()))
+    return rows
+
+
 def read_facts(sql_file: str, pipeline: str, conf: dict | None = None) -> list[dict]:
     """The fact rows a "from Cases" DAG decides on. Triggered by the case scheduler
     (`decision_run_id` in its conf), only the cases that run decided `run`; run by hand, every case."""
-    from airflow.hooks.base import BaseHook
-
     conf = conf or {}
     case_ids = None
     if conf.get("decision_run_id"):
@@ -362,34 +397,26 @@ def read_facts(sql_file: str, pipeline: str, conf: dict | None = None) -> list[d
         if not case_ids:
             LOGGER.info("no case decided run for %s by %s", pipeline, conf["decision_run_id"])
             return []
-    sql = _render(sql_file, conf, "clinical", case_ids=case_ids)
-    with BaseHook.get_connection("starrocks_conn").get_hook().get_conn().cursor() as cursor:
-        cursor.execute(sql, {"case_ids": case_ids} if case_ids else None)
-        columns = [d[0] for d in cursor.description]
-        rows = [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
+    rows = read_rows("clinical", sql_file, conf, {"case_ids": case_ids} if case_ids else None, case_ids=case_ids)
     LOGGER.info("%d fact row(s) read for %s", len(rows), pipeline)
     return rows
 
 
 def write_decisions(decisions: list[Decision], run_id: str, stage: str, conf: dict | None = None) -> None:
     """Append the decisions to `pipeline_decision_log`, all with the same `decided_at`."""
-    from airflow.hooks.base import BaseHook
-
     if not decisions:
         LOGGER.info("no decision to write for stage %s", stage)
         return
     rows = [{**d.model_dump(), "run_id": run_id, "stage": stage} for d in decisions]
     sql = _render("pipeline_decision_log_insert.sql", conf)
-    with BaseHook.get_connection("starrocks_conn").get_hook().get_conn().cursor() as cursor:
+    with _starrocks_cursor() as cursor:
         cursor.executemany(sql, rows)
     LOGGER.info("%d decision(s) written for run %s, stage %s", len(rows), run_id, stage)
 
 
 def read_run_units(run_id: str, pipeline: str, conf: dict | None = None) -> set[tuple[int | None, int]]:
     """The units a pipeline was decided to run at `discover` by the scheduler run `run_id`."""
-    from airflow.hooks.base import BaseHook
-
     sql = _render("pipeline_decision_run_units_select.sql", conf)
-    with BaseHook.get_connection("starrocks_conn").get_hook().get_conn().cursor() as cursor:
+    with _starrocks_cursor() as cursor:
         cursor.execute(sql, {"run_id": run_id, "pipeline": pipeline})
         return {(row[0], row[1]) for row in cursor.fetchall()}

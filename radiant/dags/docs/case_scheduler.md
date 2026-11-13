@@ -5,20 +5,22 @@ the cases with work waiting to `processing`, runs the pipelines, then moves to `
 cases that every pipeline is done with and that have variant data.
 
 ```
-discover_{germline_snv,germline_cnv,somatic_snv,qc,qc_somatic,import}_cases, fetch_case_statuses
-    -> discover_cases -> set_processing (one per tenant)
-    -> trigger_germline_snv_postprocessing ---+-> trigger_import --+
-    -> trigger_somatic_snv_annotation --------+                    |
-    -> trigger_germline_cnv_postprocessing ---+--------------------+-> rediscover_{germline_snv,germline_cnv,
-    -> trigger_quality_control ------------------------------------+   somatic_snv,qc,qc_somatic,
-                                                                       import}_cases,
-                                                                       refresh_case_statuses
-    -> select_ready_cases -> evaluate_cases (one per tenant)
+discover_cases -> set_processing (one per tenant) -> pipelines -> select_ready_cases -> evaluate_cases (one per tenant)
+
+pipelines:
+    trigger_germline_snv_postprocessing ---+-> trigger_import
+    trigger_somatic_snv_annotation --------+
+    trigger_germline_cnv_postprocessing ---+
+    trigger_quality_control
 ```
 
-Each key names the case type and the variant type: **germline_snv**, **germline_cnv** and
-**somatic_snv**. Quality control has one query per case type: **qc** (germline) and **qc_somatic**
-(the tumor of the somatic cases). Their rows are counted together.
+`select_ready_cases` waits for the import, CNV post-processing and quality control. `watcher` sits
+after everything and fails the run if any step failed.
+
+**discover_cases** and **select_ready_cases** read the facts themselves, in Python
+(`decision.read_discovery`): one query per pipeline, **germline_snv**, **germline_cnv**,
+**somatic_snv**, and two for quality control, germline and somatic (the tumor of the somatic cases),
+whose rows are decided together; plus what the import still has to load, and the case statuses.
 
 The import waits for SNV post-processing, somatic annotation and CNV post-processing, success or
 not: it loads the annotation tasks they register (for CNV post-processing, the proband's slivar VCF,
@@ -55,8 +57,8 @@ The union of:
   predicate. A row leaves the delta as soon as it is inserted, so without the second part a case
   whose `import_part` failed would look done.
 
-The question is asked twice with the same queries: before the pipelines (`discover_*`), to pick
-the cases to move to `processing`, and after them (`rediscover_*`), to hold back the cases a
+The question is asked twice with the same queries: before the pipelines (`discover_cases`), to pick
+the cases to move to `processing`, and after them (`select_ready_cases`), to hold back the cases a
 pipeline still has work for.
 
 ## The decision log
@@ -117,15 +119,14 @@ The pipelines and the import run with `trigger_rule=all_done`:
 
 ## A failed import, CNV post-processing or quality control stops the run
 
-The second discovery (`rediscover_*`, `refresh_case_statuses`) runs with
-`trigger_rule=none_failed`: if **trigger_import**, **trigger_germline_cnv_postprocessing** or
-**trigger_quality_control** failed, it is `upstream_failed`, and so are `select_ready_cases` and
-`evaluate_cases`. No case is moved to `in_progress` and no laboratory is emailed; the cases stay
+The second pass (`select_ready_cases`) runs with `trigger_rule=none_failed`: if **trigger_import**,
+**trigger_germline_cnv_postprocessing** or **trigger_quality_control** failed, it is `upstream_failed`,
+and so is `evaluate_cases`. No case is moved to `in_progress` and no laboratory is emailed; the cases stay
 `processing` and the next run that gets through evaluates them.
 
 A failed SNV post-processing or somatic annotation does not stop it, as long as the import
 succeeds: `evaluate_cases` takes **every** `processing` case, not only this run's, and holds back
-any case the second discovery still finds. A case whose pipeline failed stays `processing`, even
+any case the second pass still finds. A case whose pipeline failed stays `processing`, even
 with some variants in (say its SNV post-processing failed but the alignment's CNV VCF was
 imported), and is moved by the later run that finishes it. A case with nothing pending but no
 variant data stays `processing` too, and is logged as a warning by `select_ready_cases`.
