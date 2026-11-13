@@ -57,13 +57,13 @@ def test_release_order_grouping_version_and_pr(history):
     assert v12.index("#### Before the deploy · step 1") < v12.index("#### After the deploy · steps 2–3")
     before = v12[v12.index("#### Before") : v12.index("#### After")]
     after = v12[v12.index("#### After") :]
-    assert "1. **Pause.** · `RAD-2` · #12" in before
+    assert "##### 1. Pause · `RAD-2` · #12" in before
     assert "> [!IMPORTANT]\n> **Before you start**\n>\n> - No import running. _(step 1)_" in before
     assert "| 1 | Paused. |" in before
     assert "RAD-1" not in before
     # Merge order: RAD-1 merged before RAD-2; the numbers run on from Before to After
-    assert after.index("2. **Do one.** · `RAD-1` · #11") < after.index("3. **Migrate.** · `RAD-2` · #12")
-    assert "   <sub>Refs: `radiant/dags/sql/radiant/migrations/RAD-2.sql`</sub>" in after
+    assert after.index("##### 2. Do one · `RAD-1` · #11") < after.index("##### 3. Migrate · `RAD-2` · #12")
+    assert "<sub>Refs: `radiant/dags/sql/radiant/migrations/RAD-2.sql`</sub>" in after  # No repo URL: no link
     assert "**Checks**\n\n| Step | Check |\n|---:|---|\n| 2 | Query 0 returns no row. |\n| 3 | Done. |" in after
     assert "RAD-4" not in text
     assert "WARNING" not in text
@@ -120,21 +120,21 @@ def test_no_warning_for_next_release_only(repo):
     repo.commit("fix: RAD-8 (#2)", {"upgrade-notes/RAD-8.yaml": note(do="Eight.")})
     guide = build_guide(Git(repo.path), "v1.0.0", "HEAD")
     assert guide.warnings == []
-    assert "1. **Eight.** · `RAD-8` · #2" in render_guide(guide)
+    assert "##### 1. Eight · `RAD-8` · #2" in render_guide(guide)
 
 
 def test_edited_note_shows_new_text(history):
     history.commit("docs: RAD-1 correct the note (#15)", {"upgrade-notes/RAD-1.yaml": note("after", "Do one, fixed.")})
     text = guide_text(history, "v1.1.0", "v1.2.0")
-    assert "**Do one, fixed.** · `RAD-1` · #11" in text
-    assert "**Do one.**" not in text
+    assert "##### 2. Do one, fixed · `RAD-1` · #11" in text
+    assert "Do one ·" not in text
 
 
 def test_notes_text_from_notes_ref(history):
     old = history.git("rev-parse", "v1.2.0").strip()
     history.commit("docs: RAD-1 correct the note (#15)", {"upgrade-notes/RAD-1.yaml": note("after", "Do one, fixed.")})
     text = guide_text(history, "v1.1.0", "v1.2.0", notes_ref=old)
-    assert "Do one." in text
+    assert "Do one ·" in text
     assert "fixed" not in text
 
 
@@ -142,7 +142,7 @@ def test_unreleased_notes_to_branch(history):
     text = guide_text(history, "v1.3.0", "main", next_version="v1.4.0")
     assert text.startswith("## Upgrade guide: v1.3.0 → v1.4.0")
     assert "### v1.4.0" in text
-    assert "1. **Do four.** · `RAD-4` · #14" in text
+    assert "##### 1. Do four · `RAD-4` · #14" in text
 
 
 def test_unreleased_includes_releases_between(history):
@@ -168,13 +168,13 @@ def test_semver_order_not_lexical(repo):
     repo.commit("fix: RAD-6 (#2)", {"upgrade-notes/RAD-6.yaml": note(do="Six.")})
     repo.tag("v1.0.10")
     text = guide_text(repo, "v1.0.9", "v1.0.10")
-    assert "### v1.0.10\n\n#### After the deploy · step 1\n\n1. **Six.** · `RAD-6` · #2" in text
+    assert "### v1.0.10\n\n#### After the deploy · step 1\n\n##### 1. Six · `RAD-6` · #2" in text
 
 
 def test_release_section(history):
     text = render_release_section(Git(history.path), "v1.2.0")
     assert text.startswith("## Upgrade guide\n")
-    assert "1. **Pause.** · `RAD-2` · #12" in text
+    assert "#### 1. Pause · `RAD-2` · #12" in text
     assert "RAD-4" not in text
     assert render_release_section(Git(history.path), "v1.3.0") == "## Upgrade guide\n\nNo upgrade action.\n"
 
@@ -212,8 +212,8 @@ def test_preview_renders_notes_of_the_pr():
     )
     assert text.startswith("## Upgrade guide preview\n")
     assert text.index("### Before the deploy") < text.index("### After the deploy")
-    assert "1. **Pause.** · `RAD-9` · #42" in text
-    assert "2. **Migrate.** · `RAD-8` · #42" in text
+    assert "#### 1. Pause · `RAD-9` · #42" in text
+    assert "#### 2. Migrate · `RAD-8` · #42" in text
 
 
 def test_preview_no_note():
@@ -223,14 +223,14 @@ def test_preview_no_note():
 def test_preview_lists_invalid_notes():
     text = render_preview({"upgrade-notes/RAD-9.yaml": "actions: []\n", "upgrade-notes/RAD-8.yaml": note()})
     assert "`upgrade-notes/RAD-9.yaml`: not valid" in text
-    assert "1. **Run the migration.** · `RAD-8`\n" in text
+    assert "#### 1. Run the migration · `RAD-8`\n" in text
 
 
 def test_cli_preview(repo, capsys):
     base = repo.commit("feat: base (#1)", {"a.txt": "a"})
     head = repo.commit("fix: RAD-9 x", {"upgrade-notes/RAD-9.yaml": note(do="Nine."), "b.txt": "b"})
     assert main(["--repo", str(repo.path), "preview", "--base", base, "--head", head, "--pr", "7"]) == 0
-    assert "1. **Nine.** · `RAD-9` · #7" in capsys.readouterr().out
+    assert "#### 1. Nine · `RAD-9` · #7" in capsys.readouterr().out
 
 
 def test_render_escapes_placeholders_and_lists_preconditions():
@@ -242,7 +242,7 @@ def test_render_escapes_placeholders_and_lists_preconditions():
             )
         }
     )
-    assert "every &lt;tenant&gt;_tenant database." in text
+    assert "every &lt;tenant&gt;_tenant database ·" in text
     assert "> - One. _(step 1)_\n> - Two. _(step 1)_" in text
     assert "`<shared_db>`" in text  # Code spans keep the text as is
     assert "| 1 | A &amp; B. |" in text
@@ -269,7 +269,7 @@ def test_render_step_title_and_rest_and_escaped_star():
     text = render_preview(
         {"upgrade-notes/RAD-9.yaml": note(do="Add the mother_* columns. Run it once.", check="Done.")}, pr="1"
     )
-    assert "1. **Add the mother_\\* columns.** · `RAD-9` · #1\n\n   Run it once.\n\n**Checks**" in text
+    assert "#### 1. Add the mother_\\* columns · `RAD-9` · #1\n\nRun it once.\n\n**Checks**" in text
 
 
 def test_preconditions_shared_by_steps_are_listed_once():
@@ -283,3 +283,37 @@ def test_preconditions_shared_by_steps_are_listed_once():
     assert text.count("No import is running.") == 1
     assert "> - No import is running. _(steps 1, 2)_" in text
     assert "| 1 | a \\| b. |" in text  # A | would end the cell
+
+
+def test_refs_link_to_the_files_of_the_release(history):
+    url = "https://github.com/org/repo"
+    text = render_guide(build_guide(Git(history.path), "v1.1.0", "v1.2.0"), repo_url=url)
+    path = "radiant/dags/sql/radiant/migrations/RAD-2.sql"
+    assert f"<sub>Refs: [`{path}`]({url}/blob/v1.2.0/{path})</sub>" in text
+    section = render_release_section(Git(history.path), "v1.2.0", repo_url=url)
+    assert f"({url}/blob/v1.2.0/{path})" in section
+
+
+def test_refs_of_next_release_link_to_the_commit(history):
+    sha = history.git("rev-parse", "HEAD").strip()
+    guide = build_guide(Git(history.path), "v1.3.0", "HEAD")
+    assert guide.releases[-1].ref == sha
+
+
+def test_preview_links_paths_not_dag_ids():
+    text = render_preview(
+        {"upgrade-notes/RAD-9.yaml": note(do="Run.") + "    refs: [radiant-import, a/b.sql, other-repo docs/x.md]\n"},
+        ref="abc123",
+        repo_url="https://github.com/org/repo",
+    )
+    assert (
+        "<sub>Refs: `radiant-import`, [`a/b.sql`](https://github.com/org/repo/blob/abc123/a/b.sql), `other-repo docs/x.md`</sub>"
+        in text
+    )
+
+
+def test_cli_links_refs_in_github_actions(history, capsys, monkeypatch):
+    monkeypatch.setenv("GITHUB_SERVER_URL", "https://github.com")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "org/repo")
+    assert main(["--repo", str(history.path), "release-section", "--tag", "v1.2.0"]) == 0
+    assert "https://github.com/org/repo/blob/v1.2.0/radiant/" in capsys.readouterr().out

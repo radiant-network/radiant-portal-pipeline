@@ -202,7 +202,7 @@ Otherwise, write "No upgrade action" in the "Upgrade" section of the PR descript
 **Format** (validated by `scripts/upgrade_guide/notes.py`): a list of actions, each with `when` (`before` or `after`
 the deploy), `do`, optional `preconditions` and `refs` (the migration file or the DAG; the note does not copy the SQL,
 the migration file keeps its WHERE / WHEN header), and `check` (how to see that it worked). The first sentence of `do`
-is the title of the step in the guide: make it a short order ("Add the slivar columns to the germline CNV occurrence
+is the title of the step (a subsection) in the guide: make it a short order ("Add the slivar columns to the germline CNV occurrence
 table."), and put the details in the next sentences.
 
 ```yaml

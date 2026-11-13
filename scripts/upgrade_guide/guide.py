@@ -7,6 +7,7 @@
 - The merge order of the notes is the order of these commits in the history.
 """
 
+import os
 import re
 import subprocess
 from dataclasses import dataclass, field
@@ -45,6 +46,8 @@ class Release:
 
     version: str
     notes: list[NoteRecord] = field(default_factory=list)
+    # The tag or commit the ref links point to: the files as they are in this release
+    ref: str | None = None
 
 
 class Git:
@@ -73,6 +76,12 @@ class Git:
         """The ``vX.Y.Z`` tags, oldest version first."""
         tags = [t for t in self.out("tag", "--list", "v*").split() if TAG_PATTERN.match(t)]
         return sorted(tags, key=version_key)
+
+
+def github_repo_url() -> str | None:
+    """The repo URL in a GitHub Actions run (``GITHUB_SERVER_URL``, ``GITHUB_REPOSITORY``), else None: no links."""
+    server, repository = os.environ.get("GITHUB_SERVER_URL"), os.environ.get("GITHUB_REPOSITORY")
+    return f"{server}/{repository}" if server and repository else None
 
 
 def version_key(tag: str) -> tuple[int, int, int]:
@@ -155,9 +164,9 @@ def build_guide(
         if not git.is_ancestor(from_version, to_sha):
             raise GuideError(f"{from_version} is not older than {to}")
         in_range = [t for t in tags if version_key(t) > version_key(from_version) and git.is_ancestor(t, to_sha)]
-        unreleased = Release(version=next_version or "Next release")
+        unreleased = Release(version=next_version or "Next release", ref=to_sha)
 
-    releases = {t: Release(version=t) for t in in_range}
+    releases = {t: Release(version=t, ref=t) for t in in_range}
     for record in load_notes(git, notes_ref):
         if record.release in releases:
             releases[record.release].notes.append(record)
@@ -214,15 +223,26 @@ def _cell(value: str) -> str:
     return _text(value).replace("|", "\\|")
 
 
-def render_actions(release: Release, heading: str) -> list[str]:
+def _ref(ref: str, repo_url: str | None, at: str | None) -> str:
+    """A ref as a link to the file at ``at``, when it is a path of this repo and the repo URL is known.
+
+    A DAG id (no ``/``) and a file of another repo ("radiant-hub docs/…", with a space) stay code.
+    """
+    if repo_url and at and "/" in ref and not re.search(r"\s|://", ref) and not ref.startswith("/"):
+        return f"[`{ref}`]({repo_url}/blob/{at}/{ref})"
+    return f"`{ref}`"
+
+
+def render_actions(release: Release, heading: str, repo_url: str | None = None) -> list[str]:
     """The actions of one release, grouped by ``when``, in merge order. Each group has three parts:
 
     - "Before you start": the preconditions of all its steps, once each, with the numbers of the steps they apply to;
-    - the numbered steps: the first sentence of ``do`` in bold, the ticket and the PR, the rest of ``do``, the refs;
+    - one subsection per step: its number and the first sentence of ``do`` as title, the ticket and the PR, the rest
+      of ``do``, the refs (links to the files at ``release.ref`` when ``repo_url`` is given);
     - "Checks": one table row per step.
 
     The numbers run on from "Before" to "After", so a step has one number in the release. ``heading`` prefixes the
-    group titles.
+    group titles; the step titles are one level below.
     """
     lines = []
     number = 0
@@ -252,11 +272,12 @@ def render_actions(release: Release, heading: str) -> list[str]:
             elif note.commit:
                 source.append(note.commit[:7])
             step_title, rest = split_do(action.do)
-            lines += [f"{n}. **{_text(step_title)}** · {' · '.join(source)}", ""]
+            lines += [f"{heading}# {n}. {_text(step_title.rstrip('.'))} · {' · '.join(source)}", ""]
             if rest:
-                lines += [f"   {_text(rest)}", ""]
+                lines += [_text(rest), ""]
             if action.refs:
-                lines += [f"   <sub>Refs: {', '.join(f'`{r}`' for r in action.refs)}</sub>", ""]
+                refs = ", ".join(_ref(r, repo_url, release.ref) for r in action.refs)
+                lines += [f"<sub>Refs: {refs}</sub>", ""]
 
         lines += ["**Checks**", ""]
         lines += ["| Step | Check |", "|---:|---|"]
@@ -277,12 +298,16 @@ def _count(releases: list[Release]) -> str:
     return f"{len(actions)} action{plural}: {before} before the deploy, {len(actions) - before} after"
 
 
-def render_preview(notes: dict[str, str], pr: str | None = None) -> str:
+def render_preview(
+    notes: dict[str, str], pr: str | None = None, ref: str | None = None, repo_url: str | None = None
+) -> str:
     """How the notes a PR adds or changes will show in the guide of the next release, for the PR's job summary.
 
     Args:
         notes: the path and the text, at the PR head, of each note the PR adds or changes.
         pr: the PR number, without ``#``.
+        ref: the PR head commit, for the ref links.
+        repo_url: the repo URL, for the ref links (none without it).
     """
     lines = ["## Upgrade guide preview", ""]
     if not notes:
@@ -310,13 +335,13 @@ def render_preview(notes: dict[str, str], pr: str | None = None) -> str:
         "",
     ]
     if records:
-        lines += render_actions(Release(version="next release", notes=records), "###")
+        lines += render_actions(Release(version="next release", notes=records, ref=ref), "###", repo_url)
     for path in invalid:
         lines += [f"- `{path}`: not valid, see the errors of the check.", ""]
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_guide(guide: Guide) -> str:
+def render_guide(guide: Guide, repo_url: str | None = None) -> str:
     """The guide, in one ``##`` section: it goes into a PR description, a job summary or a terminal."""
     lines = [f"## Upgrade guide: {guide.from_version} → {guide.to_version}", ""]
     if guide.releases:
@@ -331,15 +356,15 @@ def render_guide(guide: Guide) -> str:
         lines += ["No release in this range.", ""]
     for release in guide.releases:
         lines += [f"### {release.version}", ""]
-        lines += render_actions(release, "####")
+        lines += render_actions(release, "####", repo_url)
     return "\n".join(lines).rstrip() + "\n"
 
 
-def render_release_section(git: Git, tag: str, notes_ref: str = "HEAD") -> str:
+def render_release_section(git: Git, tag: str, notes_ref: str = "HEAD", repo_url: str | None = None) -> str:
     """The "Upgrade guide" section of the GitHub release of ``tag``."""
     tags = git.release_tags()
     if tag not in tags:
         raise GuideError(f"{tag} is not a release tag (vX.Y.Z)")
-    release = Release(version=tag, notes=[n for n in load_notes(git, notes_ref) if n.release == tag])
-    lines = ["## Upgrade guide", ""] + render_actions(release, "###")
+    release = Release(version=tag, notes=[n for n in load_notes(git, notes_ref) if n.release == tag], ref=tag)
+    lines = ["## Upgrade guide", ""] + render_actions(release, "###", repo_url)
     return "\n".join(lines).rstrip() + "\n"

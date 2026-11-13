@@ -16,6 +16,7 @@ from scripts.upgrade_guide.guide import (
     Git,
     GuideError,
     build_guide,
+    github_repo_url,
     render_guide,
     render_preview,
     render_release_section,
@@ -28,12 +29,14 @@ def _guide(args: argparse.Namespace) -> int:
     guide = build_guide(git, args.from_version, args.to, notes_ref=args.notes_ref, next_version=args.next_version)
     for warning in guide.warnings:
         print(f"warning: {warning}", file=sys.stderr)
-    sys.stdout.write(render_guide(guide))
+    sys.stdout.write(render_guide(guide, repo_url=github_repo_url()))
     return 0
 
 
 def _release_section(args: argparse.Namespace) -> int:
-    sys.stdout.write(render_release_section(Git(args.repo), args.tag, notes_ref=args.notes_ref))
+    sys.stdout.write(
+        render_release_section(Git(args.repo), args.tag, notes_ref=args.notes_ref, repo_url=github_repo_url())
+    )
     return 0
 
 
@@ -48,7 +51,7 @@ def _changed_files(git: Git, base: str, head: str) -> tuple[list[ChangedFile], d
 
 def _preview(args: argparse.Namespace) -> int:
     _, note_texts = _changed_files(Git(args.repo), args.base, args.head)
-    sys.stdout.write(render_preview(note_texts, pr=args.pr))
+    sys.stdout.write(render_preview(note_texts, pr=args.pr, ref=args.head, repo_url=github_repo_url()))
     return 0
 
 

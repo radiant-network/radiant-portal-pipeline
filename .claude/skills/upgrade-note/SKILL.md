@@ -76,14 +76,16 @@ actions:
     check: SHOW ALTER TABLE COLUMN gives State = FINISHED, and DESC lists the fourteen new columns last.
 ```
 
-Writing rules (the guide renders each action as a numbered step):
+Writing rules (the guide renders each action as a numbered subsection):
 
-- **First sentence of `do` = the bold step title.** A short order, under ~70 characters. Details, reasons and
+- **First sentence of `do` = the step title** (a heading). A short order, under ~70 characters. Details, reasons and
   warnings ("Against an unmigrated table …", "Do not …") go in the next sentences.
 - `check`: something the operator can run and read: a query and its expected result, a DAG run state, a file.
   **Self-contained:** the guide shows all checks of a phase in one table, away from the step text. Name the table,
   the database and the file ("Check 0 of the RAD-266 migration file", "radiant-init-starrocks-base-tables
   succeeds"), never "the migration file", "the run", "that path" or "step 2" (it clashes with the guide's numbers).
+- `refs`: paths from the repo root. A path of this repo (a `/`, no space) becomes a link to the file at the
+  release tag; a DAG id or a file of another repo ("radiant-hub docs/features/…") stays text.
 - `preconditions`: real conditions only. The guide pools the preconditions of a phase in one "Before you start"
   block, each once, with the steps it applies to. Do not restate the step order ("X has run", "the steps above are
   done"): the numbers already give it. Write a shared condition with the exact same text in every note so it is
