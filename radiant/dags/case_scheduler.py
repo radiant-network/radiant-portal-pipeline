@@ -33,7 +33,7 @@ from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
-from radiant.tasks.nextflow.case_status import IN_PROGRESS, PROCESSING, SUBMITTED
+from radiant.tasks.nextflow.case_status import IN_PROGRESS, PROCESSING
 from radiant.tasks.nextflow.paths import sanitize_run_tag
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
@@ -165,21 +165,13 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
     ]
 
 
-def _decide_and_log(stage: str, rows: list[Any], status_rows: list[dict], context: Any) -> set[int]:
-    """Decide for every pipeline, write the decisions worth keeping to `pipeline_decision_log`
-    under this run, and return the cases with work waiting (a `run` decision anywhere).
+def _decide_and_log(stage: str, rows: list[Any], context: Any) -> set[int]:
+    """Decide for every pipeline, write the decisions to `pipeline_decision_log` under this run (every
+    `run`, the others on change), and return the cases with work waiting (a `run` decision anywhere).
 
     `rows` are the six discovery outputs; the two QC queries are one selection, as in the QC DAG.
     """
-    from radiant.tasks.nextflow.decision import (
-        AFTER,
-        PIPELINES,
-        decide,
-        read_run_units,
-        run_case_ids,
-        to_log,
-        write_decisions,
-    )
+    from radiant.tasks.nextflow.decision import decide, run_case_ids, write_decisions
 
     run_tag = sanitize_run_tag(context["run_id"])
     conf = context["dag_run"].conf
@@ -192,10 +184,7 @@ def _decide_and_log(stage: str, rows: list[Any], status_rows: list[dict], contex
         import_rows,
         excluded_tenants=context["params"]["excluded_tenants"],
     )
-    # `done` is written for the units this run started: the ones decided `run` at `discover`.
-    discovered = {p: read_run_units(run_tag, p, conf) for p in PIPELINES} if stage == AFTER else {}
-    submitted = {row["case_id"] for row in status_rows or [] if row["status_code"] == SUBMITTED}
-    write_decisions(to_log(decisions, stage, discovered, submitted), run_tag, stage, conf)
+    write_decisions(decisions, run_tag, stage, conf)
     return run_case_ids(decisions)
 
 
@@ -243,7 +232,7 @@ def case_scheduler():
 
         context = get_current_context()
         rows = [germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, qc_somatic_rows, import_rows]
-        waiting = _decide_and_log(DISCOVER, rows, status_rows, context)
+        waiting = _decide_and_log(DISCOVER, rows, context)
         context["ti"].xcom_push(key=CASES_WITH_WORK_KEY, value=sorted(waiting))
         return plan_processing(status_rows, waiting, context["params"]["excluded_tenants"])
 
@@ -290,7 +279,7 @@ def case_scheduler():
         if processed is None:
             LOGGER.warning("discover_cases did not run: only the cases moved to in_progress are notified")
         rows = [germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, qc_somatic_rows, import_rows]
-        still_waiting = _decide_and_log(AFTER, rows, status_rows, context)
+        still_waiting = _decide_and_log(AFTER, rows, context)
         return plan_in_progress(
             status_rows, set(processed or []), still_waiting, context["params"]["excluded_tenants"]
         )

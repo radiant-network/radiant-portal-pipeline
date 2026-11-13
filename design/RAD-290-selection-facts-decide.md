@@ -88,15 +88,13 @@ The selections the children call (`select_cases`, `select_tasks`) become thin ad
 
 ### What is written to the log
 
-The decisions are computed for every case on each pass. Not all are written:
+The decisions are computed for every case on each pass, and written with the RAD-288 rule: every `run`, and any other decision only when it differs from the unit's last state (`case_pipeline_state`). So:
+- a unit the run completes goes `run` at `discover`, then `done` at `after`;
+- a case finished long ago is written `done` once, the first time it is decided, then nothing while it stays done;
+- a case with no trigger document is written `skipped` / `no_trigger_document` once;
+- a unit completed by a child run by hand shows `done` at the next pass.
 
-- `run`, `wait`, `excluded`, `skipped` (`tenant_excluded`): written at both passes, as in RAD-288.
-- `done`: written at `after` only, for the units decided `run` at `discover` of the same run. The log then shows `run` → `done` in one run. No read of the log's history.
-- `skipped` / `no_trigger_document` (proposed): written only for the cases still `submitted`, where it explains why nothing happens. The scheduler already reads every case's status.
-
-Volume: the RAD-288 estimate (a few hundred rows a day) plus one `done` row per unit a pipeline completed. No retention needed.
-
-**Known gap.** A child run by hand completes units that no scheduler pass sees run. Their last row stays the previous decision until a later `run` → `done`.
+Volume: the work of the day plus the changes, whatever the number of cases. The first run after deploy writes the state of every case once.
 
 ## 5. Rewriting the consumers
 
@@ -110,7 +108,7 @@ Volume: the RAD-288 estimate (a few hundred rows a day) plus one `done` row per 
 **`radiant/tasks/nextflow/decision.py`:**
 - `DONE` and `no_trigger_document`;
 - `decide` calls the four `decide_<pipeline>`;
-- the write filter of §4 (it needs the `discover` run units and the case statuses at `after`).
+- `decide` gives `done` and `no_trigger_document`; `write_decisions` (RAD-288) keeps them on change.
 
 **`case_scheduler.py`:** `discover_*` / `rediscover_*` run the fact queries.
 
@@ -126,7 +124,7 @@ Volume: the RAD-288 estimate (a few hundred rows a day) plus one `done` row per 
 - the same lab emails go out.
 
 **What changes:**
-- the log gains `done` rows at `after`, and `skipped` / `no_trigger_document` rows for `submitted` cases;
+- the log gains `done` and `skipped` / `no_trigger_document` rows, written when a unit enters them; the first run after deploy writes every case once;
 - QC somatic reports a tumor not sequenced or not aligned yet as `wait` (`pending_sequencing`, `pending_alignment`) instead of leaving it out;
 - the fact queries return every case, not only the candidates. They read the same views; the row count (cases × members) is to check on QA.
 
@@ -143,7 +141,7 @@ Volume: the RAD-288 estimate (a few hundred rows a day) plus one `done` row per 
 - experiment shared between two cases: annotating it on case 1 leaves case 2 `run`;
 - two gVCFs on the current alignment: `excluded` / `ambiguous_gvcf`, with the member row; two alignments with one gVCF each: the current one is used, `run`;
 - `done`, `no_trigger_document`, and each existing reason of each pipeline;
-- the write filter: `done` only after a `run` at `discover`, `no_trigger_document` only for `submitted` cases.
+- end to end, on a log in memory: a settled case is written once, the run's case `run` then `done`.
 
 **Equivalence, in each PR:** on the seeds, `decide_<pipeline>` over the fact query gives the same `run` units as the old pending query and selection. The old query is deleted in the same PR, after this test passes.
 
@@ -164,14 +162,14 @@ Volume: the RAD-288 estimate (a few hundred rows a day) plus one `done` row per 
 
 - The import's three scenarios move to RAD-291 (§9).
 - `done` is a decision deduced from the facts, never a status written by anyone. Only the scheduler writes the log, as in RAD-288.
-- `done` is logged at `after` only, for the units decided `run` at `discover` of the same run.
-- A case with no trigger document is `skipped`, reason `no_trigger_document`. Logged for `submitted` cases only: proposed, to confirm in review.
+- `done` and `no_trigger_document` follow the RAD-288 rule: written when a unit enters them.
+- A case with no trigger document is `skipped`, reason `no_trigger_document`.
 - One PR per pipeline.
 
 ## 11. Delivery
 
 Branch `feat/rad-290-selection-facts`, on top of RAD-288 (#353) once merged. Four PRs in `radiant-portal-pipeline`, in this order:
-1. germline SNV, with `DONE`, `no_trigger_document` and the write filter: it sets the pattern;
+1. germline SNV, with `DONE`, `no_trigger_document` and `read_facts`: it sets the pattern;
 2. germline CNV;
 3. QC (germline and somatic);
 4. somatic SNV.

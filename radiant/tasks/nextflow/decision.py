@@ -241,29 +241,6 @@ def decide(
     return decisions
 
 
-def to_log(
-    decisions: list[Decision],
-    stage: str,
-    discovered_run_units: dict[str, set[tuple[int | None, int]]],
-    submitted_case_ids: set[int],
-) -> list[Decision]:
-    """The decisions worth writing. Every case is decided on each pass, but a case stays `done`
-    or without a trigger document for good, so:
-
-    - `done` only at `after`, for a unit decided `run` at `discover` of the same run;
-    - `no_trigger_document` only for a case still `submitted`, where it explains why nothing happens.
-    """
-
-    def kept(d: Decision) -> bool:
-        if d.decision == DONE:
-            return stage == AFTER and (d.unit_id, d.case_id) in discovered_run_units.get(d.pipeline, set())
-        if d.reason == NO_TRIGGER:
-            return d.case_id in submitted_case_ids
-        return True
-
-    return [d for d in decisions if kept(d)]
-
-
 def run_case_ids(decisions: list[Decision]) -> set[int]:
     """The cases at least one pipeline runs on: what the scheduler counts as work waiting."""
     return {d.case_id for d in decisions if d.scope == "case" and d.decision == RUN}

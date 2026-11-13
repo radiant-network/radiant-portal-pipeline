@@ -7,8 +7,6 @@ import pytest
 from radiant.tasks.nextflow import decision
 from radiant.tasks.nextflow.cnv.resolve import REASON_TEXT as CNV_REASONS
 from radiant.tasks.nextflow.decision import (
-    AFTER,
-    DISCOVER,
     DONE,
     EXCLUDED,
     GERMLINE_SNV,
@@ -24,7 +22,6 @@ from radiant.tasks.nextflow.decision import (
     run_case_ids,
     run_units,
     somatic_decisions,
-    to_log,
 )
 from radiant.tasks.nextflow.problem import Problem
 from radiant.tasks.nextflow.qc.resolve import REASON_TEXT as QC_REASONS
@@ -259,31 +256,6 @@ def test_a_done_case_is_one_done_row():
 def test_a_case_without_a_trigger_document_is_skipped_once():
     rows = trio(**{role: {"gvcf_url": None, "gvcf_matches": 0} for role in ("proband", "father", "mother")})
     assert summary(snv(rows)) == [("case", 1072, None, None, None, SKIPPED, "no_trigger_document")]
-
-
-def _case(case_id, outcome, reason=None, pipeline=GERMLINE_SNV):
-    return decision.Decision(pipeline=pipeline, scope="case", case_id=case_id, decision=outcome, reason=reason)
-
-
-def test_done_is_never_written_at_discover():
-    decisions = [_case(1, RUN), _case(2, DONE)]
-    assert [d.case_id for d in to_log(decisions, DISCOVER, {}, set())] == [1]
-
-
-def test_done_is_written_after_for_the_units_this_run_started_only():
-    decisions = [_case(2, DONE), _case(3, DONE)]
-    kept = to_log(decisions, AFTER, {GERMLINE_SNV: {(None, 2)}}, set())
-    assert [d.case_id for d in kept] == [2]
-
-
-def test_no_trigger_document_is_written_for_submitted_cases_only():
-    decisions = [_case(4, SKIPPED, "no_trigger_document"), _case(5, SKIPPED, "no_trigger_document")]
-    assert [d.case_id for d in to_log(decisions, DISCOVER, {}, {5})] == [5]
-
-
-def test_the_other_decisions_are_always_written():
-    decisions = [_case(1, RUN), _case(6, WAIT, "pending_alignment"), _case(7, SKIPPED, "tenant_excluded")]
-    assert to_log(decisions, AFTER, {}, set()) == decisions
 
 
 # --- the facts a child reads ---------------------------------------------------------------

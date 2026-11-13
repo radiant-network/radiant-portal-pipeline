@@ -76,11 +76,9 @@ at fault (patient, experiment, alignment task):
 - `done`: nothing left to do, the outputs are registered on the case.
 
 Germline SNV post-processing decides from facts on every germline case
-(`sql/clinical/germline_snv_facts_select.sql`), so it also knows the cases with nothing to do. Not all
-of them are written, or they would come back every day:
-
-- `done` only at `after`, for the units decided `run` at `discover` of the same run;
-- `skipped` / `no_trigger_document` (no member has a gVCF, never annotated) only for a case still `submitted`.
+(`sql/clinical/germline_snv_facts_select.sql`), so it also knows the cases with nothing to do:
+`done`, and `skipped` / `no_trigger_document` (no member has a gVCF, never annotated). Like every
+decision but `run`, they are written when a unit enters them, then not again while it stays there.
 
 Only `run` counts as work waiting. Where case X stands, and its history:
 

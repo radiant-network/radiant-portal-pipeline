@@ -265,18 +265,26 @@ def _context(task_instance) -> dict:
     }
 
 
-def _record_writes(monkeypatch, run_units=None) -> list:
-    """`write_decisions` and `read_run_units` without StarRocks: the `(run_id, stage, decisions)`
-    of each write; `run_units` are the units read back as decided `run`, by pipeline."""
+def _record_writes(monkeypatch) -> list:
+    """`pipeline_decision_log` in memory: the `(run_id, stage, decisions)` of each write, filtered by the
+    real `changed` against the state the earlier writes left."""
+    from radiant.tasks.nextflow import decision
+
     written = []
-    monkeypatch.setattr(
-        "radiant.tasks.nextflow.decision.write_decisions",
-        lambda decisions, run_id, stage, conf=None: written.append((run_id, stage, decisions)),
-    )
-    monkeypatch.setattr(
-        "radiant.tasks.nextflow.decision.read_run_units",
-        lambda run_id, pipeline, conf=None: (run_units or {}).get(pipeline, set()),
-    )
+
+    def state() -> list[dict]:
+        last = {}
+        for _, _, decisions in written:
+            for unit, rows in decision._units([d.model_dump() for d in decisions]).items():
+                last[unit] = rows
+        return [row for rows in last.values() for row in rows]
+
+    def write(decisions, run_id, stage, conf=None):
+        kept = decision.changed(decisions, state())
+        if kept:
+            written.append((run_id, stage, kept))
+
+    monkeypatch.setattr(decision, "write_decisions", write)
     return written
 
 
@@ -409,8 +417,9 @@ def test_germline_and_somatic_quality_control_rows_both_count_as_work(dag_bag, m
     assert batches == [{"tenant": "radiant", "case_ids": [3, 23]}]
 
 
-def test_a_germline_case_the_run_annotated_is_logged_done_after_and_only_then(dag_bag, monkeypatch):
-    """`done` at `after` for the unit decided `run` at `discover`; never at `discover`."""
+def test_a_settled_case_is_logged_once_and_the_run_s_case_on_each_change(dag_bag, monkeypatch):
+    """Every `run` is written; the case annotated long ago is `done` once, then nothing; the run's case
+    goes `run` then `done`."""
     from tests.unit.nextflow.conftest import member_row
 
     class TaskInstance:
@@ -422,7 +431,7 @@ def test_a_germline_case_the_run_annotated_is_logged_done_after_and_only_then(da
 
     context = _context(TaskInstance())
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
-    written = _record_writes(monkeypatch, run_units={"germline_snv": {(None, 1)}})
+    written = _record_writes(monkeypatch)
     dag = dag_bag.get_dag(DAG_ID)
     empty = {"germline_cnv_rows": [], "somatic_snv_rows": [], "qc_rows": [], "qc_somatic_rows": [], "import_rows": []}
     annotated_elsewhere = member_row(case_id=2, patient_id=200, seq_id=600, annotated=True)
@@ -435,5 +444,7 @@ def test_a_germline_case_the_run_annotated_is_logged_done_after_and_only_then(da
     rows = [member_row(case_id=1, annotated=True), annotated_elsewhere]
     dag.get_task("select_ready_cases").python_callable(germline_snv_rows=rows, **empty, status_rows=processing)
 
+    dag.get_task("select_ready_cases").python_callable(germline_snv_rows=rows, **empty, status_rows=processing)
+
     logged = [(stage, d.case_id, d.decision) for _, stage, decisions in written for d in decisions]
-    assert logged == [("discover", 1, "run"), ("after", 1, "done")]
+    assert logged == [("discover", 1, "run"), ("discover", 2, "done"), ("after", 1, "done")]
