@@ -11,9 +11,10 @@ the case as a `radiant_somatic_annotation` task, which the scheduled import alre
                       list_tenants --------------> register_tasks (one per tenant)
 
 The unit of work is the calling task, not the case: a tumor-normal and a tumor-only call on the same
-tumor sample are both annotated. The rule lives in `sql/clinical/pending_somatic_annotation_select.sql`:
-a calling task is pending when it published an `ssnv` VCF that no `radiant_somatic_annotation` task
-has as input. No phenotypes, no PED, no Exomiser.
+tumor sample are both annotated. `discover_scope` reads the facts
+(`sql/clinical/somatic_snv_facts_select.sql`) and `select_tasks` decides from them: a calling task runs
+on a case when it published an `ssnv` VCF that no `radiant_somatic_annotation` of that case has as input.
+No phenotypes, no PED, no Exomiser.
 
 Design: radiant-hub `docs/features/RAD-23-somatic-vep-annotation.md`.
 """
@@ -28,7 +29,6 @@ from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
-from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -123,17 +123,15 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_somatic_snv_annotation_cases():
-    discover_scope = RadiantStarRocksOperator(
-        task_id="discover_scope",
-        task_display_name="[StarRocks] Discover calling tasks pending somatic annotation",
-        sql="./sql/clinical/pending_somatic_annotation_select.sql",
-        parameters={
-            "task_ids": "{{ params.task_ids }}",
-            "excluded_tenants": "{{ params.excluded_tenants }}",
-        },
-        output_processor=rows_output_processor,
-        do_xcom_push=True,
-    )
+    @task(task_id="discover_scope", task_display_name="[StarRocks] Read the somatic cases' SNV facts")
+    def discover_scope() -> Any:
+        """The facts of the cases the scheduler decided to run, or of every somatic case by hand."""
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.nextflow.decision import SOMATIC_SNV, read_facts
+
+        context = get_current_context()
+        return read_facts("somatic_snv_facts_select.sql", SOMATIC_SNV, context["dag_run"].conf)
 
     @task(task_id="select_tasks", task_display_name="[PyOp] Select the calling tasks that can run")
     def select_tasks(rows: Any) -> Any:
@@ -148,7 +146,12 @@ def nextflow_somatic_snv_annotation_cases():
         requested = list(context["params"]["task_ids"] or [])
         # Named tasks are an operator's request, so a task that cannot be resolved is an
         # error. A discovered scope is the job's own doing, so it is a line in a report.
-        selection = select(rows, requested, strict=bool(requested))
+        selection = select(
+            rows,
+            requested,
+            strict=bool(requested),
+            excluded_tenants=context["params"]["excluded_tenants"],
+        )
         selection = launch(SOMATIC_SNV, selection, context)
 
         if not selection.tasks:
@@ -302,7 +305,7 @@ def nextflow_somatic_snv_annotation_cases():
             raise AirflowFailException(f"no selected case belongs to tenant '{tenant}'")
         return register_case_batch(tenant, body, context["params"]["dry_run"])
 
-    tasks = select_tasks(discover_scope.output)
+    tasks = select_tasks(discover_scope())
     paths = generate_inputs(tasks)
 
     run_pipeline = TriggerDagRunOperator(

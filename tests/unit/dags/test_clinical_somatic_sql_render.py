@@ -1,4 +1,4 @@
-"""Render `pending_somatic_annotation_select.sql` the way Airflow will, and pin what it must say."""
+"""Render `somatic_snv_facts_select.sql` the way Airflow will, and pin what it must say."""
 
 import re
 
@@ -7,15 +7,13 @@ import jinja2
 from radiant.dags import DAGS_DIR
 from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
-_TEMPLATE = DAGS_DIR / "sql" / "clinical" / "pending_somatic_annotation_select.sql"
+_TEMPLATE = DAGS_DIR / "sql" / "clinical" / "somatic_snv_facts_select.sql"
 _CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
-_NO_PARAMS = {"task_ids": [], "excluded_tenants": []}
 
 
-def _render(params: dict | None = None) -> str:
+def _render(**variables) -> str:
     return jinja2.Template(_TEMPLATE.read_text(), undefined=jinja2.StrictUndefined).render(
-        mapping=get_radiant_mapping(_CONF),
-        params=params if params is not None else _NO_PARAMS,
+        mapping=get_radiant_mapping(_CONF), **variables
     )
 
 
@@ -32,44 +30,44 @@ def test_every_mapping_key_used_exists():
 
 
 def test_the_ctes_answer_one_question_each_in_order():
-    """Five CTEs, each named for the question it answers, built in dependency order."""
+    """Four CTEs, each named for the question it answers, built in dependency order."""
     sql = _without_comments(_render())
     names = [
         "work_unit_experiment",
         "registration_case",
         "vcf_to_annotate",
         "already_registered",
-        "work_to_do",
     ]
     positions = [sql.index(f"{name} AS (") for name in names]
     assert positions == sorted(positions)
     assert re.findall(r"^(?:WITH )?(\w+) AS \($", sql, flags=re.MULTILINE) == names
 
 
-def test_discovery_is_unscoped_by_default_and_needs_an_ssnv_vcf():
+def test_the_fact_query_decides_nothing():
+    """No reason and no candidate filter: Python decides, and the scheduler gets every case."""
     sql = _without_comments(_render())
-    assert "%(task_ids)s" not in sql
-    assert "%(excluded_tenants)s" not in sql
-    assert "AND v.task_id IS NOT NULL" in _cte(sql, "work_to_do")
+    assert "%(" not in sql
+    assert "exclusion_reason" not in sql
+    assert "a.task_id IS NOT NULL          AS annotated" in sql
+    assert "COALESCE(v.matches, 0)         AS ssnv_matches" in sql
+    assert "se.status_code                 AS seq_status" in sql
 
 
-def test_named_tasks_narrow_candidacy_and_report_a_task_without_ssnv():
-    sql = _without_comments(_render({"task_ids": [70], "excluded_tenants": []}))
-    pending = _cte(sql, "work_to_do")
-    assert sql.count("%(task_ids)s") == 1
-    assert "ct.task_id IN %(task_ids)s" in pending
-    assert "v.task_id IS NOT NULL" not in pending
-    assert "'no_ssnv'" in sql
+def test_a_child_reads_the_decided_cases_only():
+    sql = _without_comments(_render(case_ids=[1]))
+    assert sql.count("%(case_ids)s") == 2
+    assert "WHERE rc.case_id IN %(case_ids)s" in sql
+    assert "AND pc.case_id IN %(case_ids)s" in sql
 
 
-def test_the_tenant_block_list_is_a_reason_not_a_filter():
-    sql = _without_comments(_render({"task_ids": [], "excluded_tenants": ["radiant"]}))
-    assert "WHEN pt.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'" in sql
-    assert "WHERE pt.tenant_code" not in sql
+def test_a_somatic_case_no_calling_task_belongs_to_comes_back_once():
+    sql = _without_comments(_render())
+    assert "UNION ALL" in sql
+    assert "AND rcs.case_id IS NULL" in sql
 
 
 def test_no_stray_percent_survives_parameter_binding():
-    sql = _render({"task_ids": [1], "excluded_tenants": ["radiant"]})
+    sql = _render(case_ids=[1])
     assert "%" not in re.sub(r"%\(\w+\)s", "", sql).replace("%%", "")
 
 
@@ -111,10 +109,4 @@ def test_a_vcf_already_input_of_an_annotation_on_the_same_case_is_done():
     assert "ann_in.type = 'input'" in annotated
     assert "call_out.document_id = ann_in.document_id" in annotated
     assert "call_out.type = 'output'" in annotated
-    pending = _cte(sql, "work_to_do")
-    assert "a.case_id = ct.case_id" in pending
-    assert "WHERE a.task_id IS NULL" in pending
-
-
-def test_only_completed_experiments_run():
-    assert "WHEN se.status_code <> 'completed' THEN 'pending_sequencing'" in _render()
+    assert "ON a.case_id = rc.case_id" in sql

@@ -44,10 +44,10 @@ eligible and tomorrow's run does the same work again. Manual runs only.
 
 A `(case, sequencing experiment)` pair is eligible when the pair's *current* experiment has
 an alignment publishing a `gcnv` / `vcf` document, and no `radiant_germline_cnv_annotation`
-task is scoped to that same pair. The rule lives in
-`sql/clinical/pending_cnv_annotation_select.sql`, and its two selections are the annotation
+task is scoped to that same pair. **select_cases** decides it from the facts of
+`sql/clinical/germline_cnv_facts_select.sql`, whose two selections are the annotation
 query's: **one experiment per (case, member)**, the newest `completed` one, and **one
-alignment per experiment**, the newest. Every `pending_*` query reads them from the StarRocks
+alignment per experiment**, the newest. Every fact query reads them from the StarRocks
 views `current_experiment` and `current_alignment`, and the cases from `pipeline_case`
 (RAD-287, `sql/radiant/init/`). To see why a case is not picked up, query the views:
 `SELECT * FROM current_experiment WHERE case_id = …`.

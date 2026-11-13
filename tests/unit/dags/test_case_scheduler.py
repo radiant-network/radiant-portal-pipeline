@@ -12,16 +12,14 @@ CASES_DAG_IDS = {
     "trigger_somatic_snv_annotation": "radiant-nextflow-somatic-snv-annotation-cases",
     "trigger_quality_control": "radiant-nextflow-quality-control-cases",
 }
-# Each discovery task: the cases DAG and the task of it that runs the same query.
-DISCOVERY = {
-    "discover_germline_snv_cases": ("radiant-nextflow-snv-postprocessing-cases", "discover_scope"),
-    "discover_germline_cnv_cases": ("radiant-nextflow-cnv-postprocessing-cases", "discover_scope"),
-    "discover_somatic_snv_cases": ("radiant-nextflow-somatic-snv-annotation-cases", "discover_scope"),
-    "discover_qc_cases": ("radiant-nextflow-quality-control-cases", "discover_germline"),
-    "discover_qc_somatic_cases": ("radiant-nextflow-quality-control-cases", "discover_somatic"),
+# Each discovery task: the fact query the cases DAG reads too (from Python, narrowed to the decided cases).
+FACT_QUERIES = {
+    "discover_germline_snv_cases": "germline_snv_facts_select.sql",
+    "discover_germline_cnv_cases": "germline_cnv_facts_select.sql",
+    "discover_somatic_snv_cases": "somatic_snv_facts_select.sql",
+    "discover_qc_cases": "qc_germline_facts_select.sql",
+    "discover_qc_somatic_cases": "qc_somatic_facts_select.sql",
 }
-# The discoveries that read facts and decide in Python.
-FACT_QUERIES = {"discover_germline_snv_cases": "germline_snv_facts_select.sql"}
 
 
 def _upstream(dag, task_id):
@@ -82,23 +80,14 @@ def test_the_cases_dags_have_no_schedule_of_their_own(dag_bag):
         assert dag_bag.get_dag(dag_id).schedule is None
 
 
-def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
-    """Only count what the DAG would actually run: same query, same excluded tenants."""
+def test_discovery_reads_each_cases_dag_facts(dag_bag):
+    """Only count what the DAG would actually run: the same fact query, decided by the same Python.
+    A fact query takes no parameter: the run's block list is applied in Python."""
     dag = dag_bag.get_dag(DAG_ID)
-    for task_id, (cases_dag_id, cases_task_id) in DISCOVERY.items():
+    for task_id, sql_file in FACT_QUERIES.items():
         discover = dag.get_task(task_id)
-        # Inherited from the DAG, not set per task: a run conf `excluded_tenants` must reach it.
-        assert discover.params["excluded_tenants"] == dag.params["excluded_tenants"]
-        if task_id in FACT_QUERIES:
-            # The child reads the same file from Python, narrowed to the decided cases.
-            assert discover.sql.strip() == (DAGS_DIR / "sql" / "clinical" / FACT_QUERIES[task_id]).read_text().strip()
-            # A fact query takes no parameter: the block list is applied in Python.
-            assert not discover.parameters
-            assert "task_ids" not in discover.params
-            continue
-        assert discover.sql == dag_bag.get_dag(cases_dag_id).get_task(cases_task_id).sql
-        assert discover.parameters == {"excluded_tenants": "{{ params.excluded_tenants }}"}
-        assert discover.params["task_ids"] == []
+        assert discover.sql.strip() == (DAGS_DIR / "sql" / "clinical" / sql_file).read_text().strip()
+        assert not discover.parameters
     import_sql = dag.get_task("discover_import_cases").sql
     assert "staging_sequencing_experiment_delta" in import_sql
     # A row leaves the delta once inserted: the ones `import_part` has not loaded are still pending.
@@ -132,7 +121,7 @@ def test_the_block_list_defaults_to_the_env_var(dag_bag, monkeypatch):
 
 def test_discover_cases_reads_every_discovery_and_the_statuses(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
-    assert _upstream(dag, "discover_cases") == {*DISCOVERY, "discover_import_cases", "fetch_case_statuses"}
+    assert _upstream(dag, "discover_cases") == {*FACT_QUERIES, "discover_import_cases", "fetch_case_statuses"}
     assert "{{ mapping.starrocks_pipeline_case }}" in dag.get_task("fetch_case_statuses").sql
 
 
@@ -184,7 +173,7 @@ def test_evaluation_waits_for_every_pipeline_and_stops_if_one_failed(dag_bag):
     """A failed import, CNV post-processing or quality control leaves the second pass, and so the
     status changes and the emails after it, upstream_failed."""
     dag = dag_bag.get_dag(DAG_ID)
-    second_pass = ["refresh_case_statuses", *(f"re{task_id}" for task_id in DISCOVERY), "rediscover_import_cases"]
+    second_pass = ["refresh_case_statuses", *(f"re{task_id}" for task_id in FACT_QUERIES), "rediscover_import_cases"]
     for task_id in second_pass:
         assert dag.get_task(task_id).trigger_rule == TriggerRule.NONE_FAILED
         assert _upstream(dag, task_id) == {

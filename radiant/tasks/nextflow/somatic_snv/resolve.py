@@ -1,9 +1,9 @@
 """Turn the somatic discovery result set into validated `CallingTask` objects.
 
-Same strict / lenient split as `radiant.tasks.nextflow.resolve`: an operator who named calling
-tasks gets an error for any that cannot run; a discovered scope drops them with a reason and runs
-the rest. What differs is the unit, a calling task rather than a case, and so the granularity of an
-exclusion:
+Decided from the fact rows, with the same strict / lenient split as
+`radiant.tasks.nextflow.germline_snv.resolve`: an operator who named calling tasks gets an error for
+any that cannot run; a discovered scope drops them with a reason and runs the rest. What differs
+is the unit, a calling task rather than a case, and so the granularity of an exclusion:
 
 - a reason about the task (its experiments, its VCF, its aliquots) excludes the task from every
   case it belongs to: the pipeline runs once per task;
@@ -17,7 +17,7 @@ from collections import defaultdict
 from pydantic import BaseModel
 
 from radiant.tasks.nextflow.problem import Problem, case_problem
-from radiant.tasks.nextflow.selection import SEQUENCING_TYPES, CaseResolutionError
+from radiant.tasks.nextflow.selection import CASE_REASON_TEXT, SEQUENCING_TYPES, CaseResolutionError
 from radiant.tasks.nextflow.somatic_snv.model import NORMAL, TUMORAL, CallingTask, CallingTaskRow, SomaticCase
 
 LOGGER = logging.getLogger(__name__)
@@ -41,17 +41,6 @@ TASK_REASON_TEXT = {
     ),
 }
 
-CASE_REASON_TEXT = {
-    "no_project_code": (
-        "the case has no project_code -- `cases.project_id` did not resolve to a row in `project`, "
-        "and the batch PATCH requires it to look the case up"
-    ),
-    "tenant_excluded": (
-        "its tenant is in `excluded_tenants` (`$RADIANT_ETL_EXCLUDED_TENANTS`), which the ETL leaves "
-        "out of case processing"
-    ),
-}
-
 
 class ExcludedTask(BaseModel):
     """A calling task that will not be run for `case_ids`, and why. `reason` is the first problem
@@ -65,10 +54,14 @@ class ExcludedTask(BaseModel):
 
 
 class Selection(BaseModel):
-    """What `select_tasks` decided: what runs, what does not."""
+    """What `select_tasks` decided: what runs, what does not. `done`: the (calling task, case) pairs
+    whose VCF is already annotated on the case. `untriggered`: the pairs whose task published no
+    VCF, and the cases no calling task belongs to (task None). Both stay empty on a targeted run."""
 
     tasks: list[CallingTask] = []
     excluded: list[ExcludedTask] = []
+    done: list[tuple[int, int]] = []
+    untriggered: list[tuple[int | None, int]] = []
 
     @property
     def case_ids(self) -> list[int]:
@@ -84,24 +77,45 @@ def select_tasks(
     requested_task_ids: list[int] | None = None,
     *,
     strict: bool | None = None,
+    excluded_tenants: list[str] | None = None,
 ) -> Selection:
-    """Group the candidate rows by calling task and keep the ones that can actually be run.
+    """Decide every (calling task, case) pair of the fact rows: run, done, untriggered, or excluded
+    with its reasons. The work is a task's VCF not annotated on the case yet.
 
     `strict` defaults to "an operator asked for specific tasks", i.e. to whether
-    `requested_task_ids` is non-empty.
+    `requested_task_ids` is non-empty. A targeted run only looks at the requested tasks.
     """
-    requested = list(requested_task_ids or [])
+    requested = set(requested_task_ids or [])
     if strict is None:
         strict = bool(requested)
+    blocked = set(excluded_tenants or [])
 
-    parsed = [CallingTaskRow(**row) for row in rows]
+    selection = Selection()
     by_task: dict[int, dict[int, list[CallingTaskRow]]] = defaultdict(lambda: defaultdict(list))
-    for row in parsed:
+    for row in (CallingTaskRow(**r) for r in rows):
+        if row.calling_task_id is None:
+            if not requested:
+                selection.untriggered.append((None, row.case_id))
+            continue
         by_task[row.calling_task_id][row.case_id].append(row)
+
+    candidates: dict[int, dict[int, list[CallingTaskRow]]] = defaultdict(dict)
+    for task_id in sorted(by_task):
+        for case_id, case_rows in sorted(by_task[task_id].items()):
+            first = case_rows[0]
+            if requested:
+                if task_id in requested and not first.annotated:
+                    candidates[task_id][case_id] = case_rows
+            elif first.annotated:
+                selection.done.append((task_id, case_id))
+            elif first.ssnv_matches == 0:
+                selection.untriggered.append((task_id, case_id))
+            else:
+                candidates[task_id][case_id] = case_rows
 
     problems: list[str] = []
     if requested:
-        unmatched = sorted(set(requested) - set(by_task))
+        unmatched = sorted(requested - set(candidates))
         if unmatched:
             problems.append(
                 f"calling task(s) {unmatched} produced no candidate -- either the id does not exist or "
@@ -109,9 +123,8 @@ def select_tasks(
                 f"or its `ssnv` VCF is already the input of a `radiant_somatic_annotation`"
             )
 
-    selection = Selection()
-    for task_id in sorted(by_task):
-        task, excluded = _resolve(task_id, by_task[task_id])
+    for task_id, rows_by_case in candidates.items():
+        task, excluded = _resolve(task_id, rows_by_case, blocked)
         selection.excluded += excluded
         problems += [e.detail for e in excluded]
         if task:
@@ -141,7 +154,7 @@ def tenants_of(tasks: list[CallingTask]) -> list[str]:
 
 
 def _resolve(
-    task_id: int, rows_by_case: dict[int, list[CallingTaskRow]]
+    task_id: int, rows_by_case: dict[int, list[CallingTaskRow]], excluded_tenants: set[str]
 ) -> tuple[CallingTask | None, list[ExcludedTask]]:
     case_ids = sorted(rows_by_case)
     # The experiments of a task do not depend on the case framing it, so any case's rows describe it.
@@ -158,9 +171,9 @@ def _resolve(
     cases, excluded = [], []
     for case_id in case_ids:
         case_rows = rows_by_case[case_id]
-        reason = next((r.exclusion_reason for r in case_rows if r.exclusion_reason), None)
+        reason = _case_reason(case_rows[0], excluded_tenants)
         if reason:
-            text = CASE_REASON_TEXT.get(reason, "is not usable")
+            text = CASE_REASON_TEXT[reason]
             detail = f"calling task {task_id}, case {case_id}: {text}"
             excluded.append(
                 ExcludedTask(
@@ -198,11 +211,33 @@ def _resolve(
     return task, excluded
 
 
+def _task_reasons(rows: list[CallingTaskRow]) -> list[str]:
+    """The reasons about the task's experiments and VCF. Pending sequencing is transient: the task waits."""
+    reasons = []
+    if any(r.seq_status != "completed" for r in rows):
+        reasons.append("pending_sequencing")
+    matches = rows[0].ssnv_matches
+    if matches == 0:
+        reasons.append("no_ssnv")
+    elif matches > 1:
+        reasons.append("ambiguous_ssnv")
+    return reasons
+
+
+def _case_reason(row: CallingTaskRow, excluded_tenants: set[str]) -> str | None:
+    """The reason about one case of the task, read off any of its rows."""
+    if row.project_code is None:
+        return "no_project_code"
+    if row.tenant_code in excluded_tenants:
+        return "tenant_excluded"
+    return None
+
+
 def _validate_task(task_id: int, rows: list[CallingTaskRow]) -> list[Problem]:
     """`(reason, detail)` pairs about the task itself, whichever case frames it."""
     problems: list[Problem] = []
 
-    for reason in dict.fromkeys(r.exclusion_reason for r in rows if r.exclusion_reason in TASK_REASON_TEXT):
+    for reason in _task_reasons(rows):
         problems.append(case_problem(reason, f"calling task {task_id}: {TASK_REASON_TEXT[reason]}"))
     if problems:
         return problems

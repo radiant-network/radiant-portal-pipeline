@@ -4,7 +4,7 @@ from radiant.tasks.nextflow.family import Family, FamilyMember
 
 
 class CnvMember(FamilyMember):
-    """One row of `sql/clinical/pending_cnv_annotation_select.sql`: a family member with the CNV
+    """One row of `sql/clinical/germline_cnv_facts_select.sql`: a family member with the CNV
     trigger document and the optional alignment. A `FamilyMember`, so the PED and phenopacket
     writers, and `Family.proband/father/mother`, apply unchanged.
     """
@@ -18,8 +18,6 @@ class CnvMember(FamilyMember):
     # as `<cram>.crai` by *file existence on the mount*, so the crai must sit at that path.
     cram_url: str | None = None
     crai_url: str | None = None
-    # Set by the query when this member is why the case cannot run. None means usable.
-    exclusion_reason: str | None = None
 
 
 class CnvFamily(Family):

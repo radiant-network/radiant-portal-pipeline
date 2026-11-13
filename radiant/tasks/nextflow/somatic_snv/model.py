@@ -9,26 +9,25 @@ NORMAL = "normal"
 
 
 class CallingTaskRow(BaseModel):
-    """One row of `sql/clinical/pending_somatic_annotation_select.sql`: one experiment of one
-    calling task, framed by one somatic case.
-
-    Everything describing the experiment or the VCF is optional: the query returns a task that
-    cannot run with its `exclusion_reason` rather than dropping it.
+    """One row of `sql/clinical/somatic_snv_facts_select.sql`: one experiment of one calling task,
+    framed by one somatic case. A case no calling task belongs to comes back once, with no task.
     """
 
     case_id: int
     submitter_case_id: str
     tenant_code: str
     project_code: str | None = None
-    calling_task_id: int
-    calling_task_type: str
-    seq_id: int
+    calling_task_id: int | None = None
+    calling_task_type: str | None = None
+    seq_id: int | None = None
+    seq_status: str | None = None
     aliquot: str | None = None
     strategy: str | None = None
     histology: str | None = None
     ssnv_url: str | None = None
-    # Set by the query when this row is why the task, or this case of it, cannot run.
-    exclusion_reason: str | None = None
+    ssnv_matches: int = 0
+    # An annotation of the task's VCF is already registered on the case.
+    annotated: bool = False
 
 
 class SomaticCase(BaseModel):

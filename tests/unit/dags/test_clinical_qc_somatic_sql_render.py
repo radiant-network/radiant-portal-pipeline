@@ -1,4 +1,4 @@
-"""Render `pending_quality_control_somatic_select.sql` the way Airflow will, and pin what it must say."""
+"""Render `qc_somatic_facts_select.sql` the way Airflow will, and pin what it must say."""
 
 import re
 
@@ -9,16 +9,14 @@ from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
 _CLINICAL_SQL = DAGS_DIR / "sql" / "clinical"
 _CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
-_TEMPLATE = "pending_quality_control_somatic_select.sql"
-_GERMLINE_TEMPLATE = "pending_quality_control_select.sql"
-_NO_PARAMS = {"task_ids": [], "excluded_tenants": []}
+_TEMPLATE = "qc_somatic_facts_select.sql"
+_GERMLINE_TEMPLATE = "qc_germline_facts_select.sql"
 
 
-def _render(filename: str, params: dict | None = None) -> str:
+def _render(filename: str, **variables) -> str:
     text = (_CLINICAL_SQL / filename).read_text()
     return jinja2.Template(text, undefined=jinja2.StrictUndefined).render(
-        mapping=get_radiant_mapping(_CONF),
-        params=params if params is not None else _NO_PARAMS,
+        mapping=get_radiant_mapping(_CONF), **variables
     )
 
 
@@ -39,26 +37,29 @@ def test_every_mapping_key_used_exists():
     assert "{{" not in _render(_TEMPLATE)
 
 
-def test_discovery_is_unscoped_by_default():
+def test_the_fact_query_decides_nothing():
+    """No reason and no filter on the QC: Python decides, and the scheduler gets every case."""
     sql = _without_comments(_render(_TEMPLATE))
-    assert "%(task_ids)s" not in sql
-    assert "%(excluded_tenants)s" not in sql
+    assert "%(" not in sql
+    assert "exclusion_reason" not in sql
+    assert "qc.seq_id IS NULL" not in sql
+    assert "qc.seq_id IS NOT NULL                       AS annotated" in sql
 
 
-def test_named_tasks_narrow_the_rows_on_the_alignment_task():
-    sql = _without_comments(_render(_TEMPLATE, {"task_ids": [1], "excluded_tenants": []}))
-    assert sql.count("%(task_ids)s") == 1
-    assert "AND ca.task_id IN %(task_ids)s" in sql.split("AND qc.seq_id IS NULL")[1]
+def test_a_child_reads_the_decided_cases_only():
+    sql = _without_comments(_render(_TEMPLATE, case_ids=[1]))
+    assert sql.count("%(case_ids)s") == 1
+    assert "AND pc.case_id IN %(case_ids)s" in sql
 
 
-def test_the_tenant_block_list_is_a_reason_not_a_filter():
-    sql = _without_comments(_render(_TEMPLATE, {"task_ids": [], "excluded_tenants": ["radiant"]}))
-    assert "'tenant_excluded'" in sql
-    assert "WHERE pc.tenant_code" not in sql
+def test_a_tumor_not_sequenced_or_not_aligned_comes_back():
+    sql = _without_comments(_render(_TEMPLATE))
+    assert "LEFT JOIN current_tumor ce" in sql
+    assert "LEFT JOIN current_alignment ca" in sql
 
 
 def test_no_stray_percent_survives_parameter_binding():
-    sql = _render(_TEMPLATE, {"task_ids": [1], "excluded_tenants": ["radiant"]})
+    sql = _render(_TEMPLATE, case_ids=[1])
     assert "%" not in re.sub(r"%\(\w+\)s", "", sql).replace("%%", "")
 
 
@@ -108,7 +109,7 @@ def test_the_tarball_is_selected_on_type_fields_and_counted():
     assert "LIKE" not in sql
 
 
-def test_the_anti_join_is_on_the_qc_task_type_and_scoped_to_the_case():
+def test_the_qc_task_is_scoped_to_the_case():
     done = _cte(_without_comments(_render(_TEMPLATE)), "quality_controlled")
     assert "t.task_type_code = 'quality_control_metrics'" in done
     assert "tc.case_id IS NOT NULL" in done
@@ -134,8 +135,5 @@ def test_the_member_is_the_proband_and_the_family_row_only_gives_the_affected_st
     assert "JOIN radiant_jdbc.public.patient p" in sql
 
 
-def test_a_tumor_without_a_tarball_is_no_metrics_and_reasons_come_most_specific_first():
-    sql = _without_comments(_render(_TEMPLATE, {"task_ids": [], "excluded_tenants": ["radiant"]}))
-    reasons = re.findall(r"THEN '(\w+)'", sql)
-    assert reasons == ["ambiguous_dragen_metrics", "no_metrics", "no_project_code", "tenant_excluded"]
-    assert "'somatic'                                   AS case_type" in sql
+def test_the_case_type_is_returned():
+    assert "'somatic'                                   AS case_type" in _without_comments(_render(_TEMPLATE))

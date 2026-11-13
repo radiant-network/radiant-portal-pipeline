@@ -27,21 +27,34 @@ def test_work_waiting_is_the_union_of_every_pipeline_and_the_import_delta():
 
 
 # The germline SNV facts behind each reason; the other pipelines still get the reason from SQL.
-SNV_FACTS = {
-    "pending_sequencing": {"seq_id": None, "alignment_task_id": None, "gvcf_url": None, "gvcf_matches": 0},
-    "no_gvcf": {"gvcf_url": None, "gvcf_matches": 0},
-    "tenant_excluded": {},
+# The facts behind each reason, per pipeline.
+NOT_SEQUENCED = {"seq_id": None, "alignment_task_id": None}
+FACTS = {
+    "pending_sequencing": {
+        "snv": NOT_SEQUENCED | {"gvcf_url": None, "gvcf_matches": 0},
+        "cnv": NOT_SEQUENCED | {"gcnv_url": None, "gcnv_matches": 0},
+        "somatic": {"seq_status": "in_progress"},
+        "qc": NOT_SEQUENCED | {"documents": False},
+    },
+    "no_trigger": {
+        "snv": {"gvcf_url": None, "gvcf_matches": 0},
+        "cnv": {"gcnv_url": None, "gcnv_matches": 0},
+        "somatic": {"ssnv_url": None, "ssnv_matches": 0},
+        "qc": {"documents": False},
+    },
+    "tenant_excluded": {"snv": {}, "cnv": {}, "somatic": {}, "qc": {}},
 }
 
 
-@pytest.mark.parametrize("reason", ["pending_sequencing", "no_gvcf", "tenant_excluded"])
-def test_a_case_the_pipeline_would_exclude_is_not_work_waiting(reason):
+@pytest.mark.parametrize("reason", sorted(FACTS))
+def test_a_case_the_pipeline_would_not_run_is_not_work_waiting(reason):
     """Moved to `processing`, it would wait there with nothing running for it."""
+    facts = FACTS[reason]
     waiting = case_status.cases_with_work(
-        germline_snv_rows=[snv_member_row(case_id=1, **SNV_FACTS[reason])],
-        germline_cnv_rows=[cnv_member_row(case_id=2, exclusion_reason=reason)],
-        somatic_snv_rows=calling_task_rows(case_id=5, exclusion_reason=reason),
-        qc_rows=[qc_member_row(case_id=3, exclusion_reason=reason)],
+        germline_snv_rows=[snv_member_row(case_id=1, **facts["snv"])],
+        germline_cnv_rows=[cnv_member_row(case_id=2, **facts["cnv"])],
+        somatic_snv_rows=calling_task_rows(case_id=5, **facts["somatic"]),
+        qc_rows=[qc_member_row(case_id=3, **facts["qc"])],
         import_rows=[],
         excluded_tenants=["radiant"] if reason == "tenant_excluded" else None,
     )
@@ -54,7 +67,7 @@ def test_a_germline_case_already_annotated_is_not_work_waiting():
 
 def test_a_qc_case_with_two_metrics_tarballs_is_not_work_waiting():
     """The QC DAG excludes it at `select_cases`, so it would hold the case in processing for ever."""
-    row = qc_member_row(case_id=3, dragen_metrics_matches=2, exclusion_reason="ambiguous_dragen_metrics")
+    row = qc_member_row(case_id=3, dragen_metrics_matches=2)
     assert case_status.cases_with_work([], [], [], [row], []) == set()
 
 
@@ -70,7 +83,7 @@ def test_a_tumor_only_case_waiting_for_qc_is_work_waiting():
 
 def test_a_tumor_without_a_metrics_tarball_is_not_work_waiting():
     """The QC DAG excludes it as `no_metrics`: a tumor has no CRAM-directory fallback."""
-    row = qc_member_row(case_id=23, case_type="somatic", tarball=False, exclusion_reason="no_metrics")
+    row = qc_member_row(case_id=23, case_type="somatic", tarball=False)
     assert case_status.cases_with_work([], [], [], [row], []) == set()
 
 

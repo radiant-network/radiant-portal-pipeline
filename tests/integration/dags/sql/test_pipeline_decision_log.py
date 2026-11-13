@@ -54,18 +54,18 @@ def decision_log(starrocks_session, radiant_mapping, sequencing_experiment_table
         name: _rows(starrocks_session, _render(f"clinical/{name}_select.sql", radiant_mapping))
         for name in (
             "germline_snv_facts",
-            "pending_cnv_annotation",
-            "pending_somatic_annotation",
-            "pending_quality_control",
-            "pending_quality_control_somatic",
+            "germline_cnv_facts",
+            "somatic_snv_facts",
+            "qc_germline_facts",
+            "qc_somatic_facts",
         )
     }
     import_rows = _rows(starrocks_session, _render("radiant/import_pending_case_select.sql", radiant_mapping))
     decisions = decide(
         pending["germline_snv_facts"],
-        pending["pending_cnv_annotation"],
-        pending["pending_somatic_annotation"],
-        [*pending["pending_quality_control"], *pending["pending_quality_control_somatic"]],
+        pending["germline_cnv_facts"],
+        pending["somatic_snv_facts"],
+        [*pending["qc_germline_facts"], *pending["qc_somatic_facts"]],
         import_rows,
     )
     with starrocks_session.cursor() as cursor:

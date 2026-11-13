@@ -1,4 +1,4 @@
-"""Row fixtures shaped like what `sql/clinical/pending_quality_control_select.sql` and its somatic sibling return:
+"""Row fixtures shaped like what `sql/clinical/qc_germline_facts_select.sql` and its somatic sibling return:
 one row per member."""
 
 import pytest
@@ -34,7 +34,7 @@ def member_row(
     alignment_task_id=900,
     strategy="wgs",
     run="run-42",
-    exclusion_reason=None,
+    annotated=False,
     documents=True,
     tarball=True,
     **overrides,
@@ -63,7 +63,7 @@ def member_row(
         "crai_url": None,
         "dragen_metrics_url": None,
         "dragen_metrics_matches": 0,
-        "exclusion_reason": exclusion_reason,
+        "annotated": annotated,
     }
     if documents:
         urls = alignment_urls(aliquot, run)

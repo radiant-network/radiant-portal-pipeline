@@ -61,8 +61,8 @@ A calling task (**somatic_variant_calling**, **tumor_only_variant_calling** or
 - a somatic case, not draft or revoked, holds **every** sequencing experiment of the task. The
   portal refuses an input document from an experiment the case does not hold.
 
-The rule lives in **sql/clinical/pending_somatic_annotation_select.sql**. A calling task sent the
-old way (no **ssnv** VCF, annotation from QLIN) is not a candidate, and is left as it is.
+**select_tasks** decides it from the facts of **sql/clinical/somatic_snv_facts_select.sql**. A calling
+task sent the old way (no **ssnv** VCF, annotation from QLIN) has no trigger document, and is left as it is.
 
 ---
 

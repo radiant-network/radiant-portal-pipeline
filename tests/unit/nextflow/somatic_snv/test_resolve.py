@@ -36,12 +36,18 @@ def test_a_task_held_by_two_cases_runs_once_for_both():
     assert selection.case_ids == [23, 24]
 
 
+TASK_FACTS = {
+    "pending_sequencing": {"seq_status": "in_progress"},
+    "no_ssnv": {"ssnv_url": None, "ssnv_matches": 0},
+    "ambiguous_ssnv": {"ssnv_matches": 2},
+}
+
+
 @pytest.mark.parametrize("reason", ["pending_sequencing", "no_ssnv", "ambiguous_ssnv"])
 def test_a_task_level_reason_excludes_the_task_from_every_case(reason):
-    rows = calling_task_rows(case_id=23, exclusion_reason=reason) + calling_task_rows(
-        case_id=24, exclusion_reason=reason
-    )
-    selection = select_tasks(rows)
+    rows = calling_task_rows(case_id=23, **TASK_FACTS[reason]) + calling_task_rows(case_id=24, **TASK_FACTS[reason])
+    # A task with no VCF is only a candidate when named: a discovery run leaves it untriggered.
+    selection = select_tasks(rows, [70] if reason == "no_ssnv" else None, strict=False)
     assert selection.tasks == []
     assert selection.case_ids == []
     [excluded] = selection.excluded
@@ -51,15 +57,16 @@ def test_a_task_level_reason_excludes_the_task_from_every_case(reason):
 
 @pytest.mark.parametrize("reason", ["no_project_code", "tenant_excluded"])
 def test_a_case_level_reason_drops_that_case_only(reason):
-    rows = calling_task_rows(case_id=23) + calling_task_rows(case_id=24, exclusion_reason=reason)
-    selection = select_tasks(rows)
+    case_24 = {"project_code": None} if reason == "no_project_code" else {"tenant_code": "other"}
+    rows = calling_task_rows(case_id=23) + calling_task_rows(case_id=24, **case_24)
+    selection = select_tasks(rows, excluded_tenants=["other"])
     assert [c.case_id for c in selection.tasks[0].cases] == [23]
     [excluded] = selection.excluded
     assert (excluded.case_ids, excluded.reason) == ([24], reason)
 
 
 def test_a_task_with_its_only_case_dropped_does_not_run():
-    selection = select_tasks(calling_task_rows(exclusion_reason="tenant_excluded"))
+    selection = select_tasks(calling_task_rows(), excluded_tenants=["radiant"])
     assert selection.tasks == []
     assert selection.excluded[0].reason == "tenant_excluded"
 
@@ -98,14 +105,14 @@ def test_an_unsupported_strategy_is_excluded(strategy):
 
 
 def test_lenient_mode_runs_the_rest():
-    rows = calling_task_rows(task_id=70) + calling_task_rows(task_id=71, case_id=24, exclusion_reason="no_ssnv")
+    rows = calling_task_rows(task_id=70) + calling_task_rows(task_id=71, case_id=24, ssnv_matches=2)
     selection = select_tasks(rows, strict=False)
     assert [t.task_id for t in selection.tasks] == [70]
 
 
 def test_a_named_task_that_cannot_run_is_an_error_naming_it():
     with pytest.raises(CaseResolutionError, match="calling task 71"):
-        select_tasks(calling_task_rows(task_id=71, exclusion_reason="no_ssnv"), [71])
+        select_tasks(calling_task_rows(task_id=71, ssnv_url=None, ssnv_matches=0), [71])
 
 
 def test_a_named_task_that_produced_no_row_is_an_error():
@@ -116,3 +123,30 @@ def test_a_named_task_that_produced_no_row_is_an_error():
 def test_tenants_are_read_off_the_cases():
     rows = calling_task_rows(case_id=23) + calling_task_rows(task_id=71, case_id=24, tenant_code="other")
     assert select_tasks(rows).tenants == ["other", "radiant"]
+
+
+# --- decided from the facts: done, no trigger document ---------------------------------------
+
+
+def test_a_task_annotated_on_one_case_still_runs_for_the_other():
+    rows = calling_task_rows(case_id=23, annotated=True) + calling_task_rows(case_id=24)
+    selection = select_tasks(rows)
+    assert selection.done == [(70, 23)]
+    assert [c.case_id for c in selection.tasks[0].cases] == [24]
+
+
+def test_a_task_without_a_vcf_has_no_trigger_document_on_a_discovery_run():
+    selection = select_tasks(calling_task_rows(ssnv_url=None, ssnv_matches=0))
+    assert (selection.tasks, selection.excluded, selection.untriggered) == ([], [], [(70, 23)])
+
+
+def test_a_somatic_case_no_calling_task_belongs_to_has_no_trigger_document():
+    no_task = {"case_id": 25, "submitter_case_id": "CASE-25", "tenant_code": "radiant", "project_code": "N1"}
+    selection = select_tasks([no_task])
+    assert selection.untriggered == [(None, 25)]
+
+
+def test_a_targeted_run_ignores_the_tasks_it_was_not_asked_for():
+    rows = calling_task_rows(task_id=70) + calling_task_rows(task_id=71, case_id=24, annotated=True)
+    selection = select_tasks(rows, [70])
+    assert ([t.task_id for t in selection.tasks], selection.done, selection.untriggered) == ([70], [], [])
