@@ -139,8 +139,8 @@ def nextflow_cnv_postprocessing_cases():
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.cnv.resolve import select_cases as select
         from radiant.tasks.nextflow.decision import GERMLINE_CNV, launch
+        from radiant.tasks.nextflow.germline_cnv.resolve import select_cases as select
 
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
@@ -180,7 +180,7 @@ def nextflow_cnv_postprocessing_cases():
 
     @task(task_id="resolve_cases", task_display_name="[PyOp] Resolve cases to families")
     def resolve_cases(selected: Any, phenotype_rows: Any) -> Any:
-        from radiant.tasks.nextflow.cnv.resolve import resolve_families
+        from radiant.tasks.nextflow.germline_cnv.resolve import resolve_families
 
         families = resolve_families(selected["members"], phenotype_rows)
         LOGGER.info(
@@ -199,8 +199,8 @@ def nextflow_cnv_postprocessing_cases():
     def list_tenants(families: Any) -> Any:
         """One batch PATCH per tenant, and one mapped `register_tasks` per batch: PATCH appends,
         so a retried loop would double-register every tenant that had already succeeded."""
-        from radiant.tasks.nextflow.cnv.model import CnvFamily
-        from radiant.tasks.nextflow.cnv.resolve import tenants_of
+        from radiant.tasks.nextflow.germline_cnv.model import CnvFamily
+        from radiant.tasks.nextflow.germline_cnv.resolve import tenants_of
 
         return tenants_of([CnvFamily(**f) for f in families])
 
@@ -211,8 +211,8 @@ def nextflow_cnv_postprocessing_cases():
         import boto3
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.cnv.inputs import build_inputs
-        from radiant.tasks.nextflow.cnv.model import CnvFamily
+        from radiant.tasks.nextflow.germline_cnv.inputs import build_inputs
+        from radiant.tasks.nextflow.germline_cnv.model import CnvFamily
         from radiant.tasks.nextflow.paths import run_paths, sanitize_run_tag, split_s3_uri
 
         env = _workspace_env()
@@ -263,8 +263,8 @@ def nextflow_cnv_postprocessing_cases():
 
         import boto3
 
-        from radiant.tasks.nextflow.cnv.model import CnvFamily
-        from radiant.tasks.nextflow.cnv.outputs import MissingOutputsError, collect
+        from radiant.tasks.nextflow.germline_cnv.model import CnvFamily
+        from radiant.tasks.nextflow.germline_cnv.outputs import MissingOutputsError, collect
         from radiant.tasks.nextflow.paths import split_s3_uri
 
         parsed = [CnvFamily(**f) for f in families]
@@ -302,8 +302,8 @@ def nextflow_cnv_postprocessing_cases():
         from airflow.exceptions import AirflowFailException
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.cnv.batch import build_patch_body
-        from radiant.tasks.nextflow.cnv.model import CnvFamily
+        from radiant.tasks.nextflow.germline_cnv.batch import build_patch_body
+        from radiant.tasks.nextflow.germline_cnv.model import CnvFamily
         from radiant.tasks.nextflow.register import register_case_batch
 
         context = get_current_context()

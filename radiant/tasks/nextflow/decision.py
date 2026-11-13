@@ -1,6 +1,6 @@
 """What each pipeline decided for each candidate case, and why: the rows of `pipeline_decision_log`.
 
-The selections (`resolve.py`, `cnv/`, `qc/`, `somatic/`) keep deciding; this module only names
+The selections (`germline_snv/`, `germline_cnv/`, `qc/`, `somatic_snv/`) keep deciding; this module only names
 their outcome. Per pipeline and candidate unit, one **case row** with the decision of the unit,
 plus one **member row** per member at fault:
 
@@ -23,12 +23,12 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from radiant.tasks.nextflow.cnv.resolve import select_cases as select_cnv_cases
+from radiant.tasks.nextflow.germline_cnv.resolve import select_cases as select_cnv_cases
+from radiant.tasks.nextflow.germline_snv.resolve import select_cases as select_snv_cases
 from radiant.tasks.nextflow.problem import Problem
 from radiant.tasks.nextflow.qc.resolve import select_cases as select_qc_cases
-from radiant.tasks.nextflow.resolve import ExcludedCase
-from radiant.tasks.nextflow.resolve import select_cases as select_snv_cases
-from radiant.tasks.nextflow.somatic.resolve import select_tasks as select_somatic_tasks
+from radiant.tasks.nextflow.selection import ExcludedCase
+from radiant.tasks.nextflow.somatic_snv.resolve import select_tasks as select_somatic_tasks
 
 LOGGER = logging.getLogger(__name__)
 

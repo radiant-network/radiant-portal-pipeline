@@ -17,7 +17,8 @@ import psycopg2
 import pytest
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.nextflow.resolve import REL_ORDER, CaseResolutionError, select_cases
+from radiant.tasks.nextflow.germline_snv.resolve import select_cases
+from radiant.tasks.nextflow.selection import REL_ORDER, CaseResolutionError
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
 

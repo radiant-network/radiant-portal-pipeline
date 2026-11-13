@@ -142,7 +142,7 @@ def nextflow_somatic_snv_annotation_cases():
         from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.decision import SOMATIC_SNV, launch
-        from radiant.tasks.nextflow.somatic.resolve import select_tasks as select
+        from radiant.tasks.nextflow.somatic_snv.resolve import select_tasks as select
 
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
@@ -174,8 +174,8 @@ def nextflow_somatic_snv_annotation_cases():
     def list_tenants(tasks: Any) -> Any:
         """One batch PATCH per tenant, and one mapped `register_tasks` per batch: PATCH appends,
         so a retried loop would double-register every tenant that had already succeeded."""
-        from radiant.tasks.nextflow.somatic.model import CallingTask
-        from radiant.tasks.nextflow.somatic.resolve import tenants_of
+        from radiant.tasks.nextflow.somatic_snv.model import CallingTask
+        from radiant.tasks.nextflow.somatic_snv.resolve import tenants_of
 
         return tenants_of([CallingTask(**t) for t in tasks])
 
@@ -188,8 +188,8 @@ def nextflow_somatic_snv_annotation_cases():
         from botocore.exceptions import ClientError
 
         from radiant.tasks.nextflow.paths import run_paths, sanitize_run_tag, split_s3_uri
-        from radiant.tasks.nextflow.somatic.inputs import build_inputs
-        from radiant.tasks.nextflow.somatic.model import CallingTask
+        from radiant.tasks.nextflow.somatic_snv.inputs import build_inputs
+        from radiant.tasks.nextflow.somatic_snv.model import CallingTask
 
         env = _workspace_env()
         context = get_current_context()
@@ -254,8 +254,8 @@ def nextflow_somatic_snv_annotation_cases():
         import boto3
 
         from radiant.tasks.nextflow.paths import split_s3_uri
-        from radiant.tasks.nextflow.somatic.model import CallingTask
-        from radiant.tasks.nextflow.somatic.outputs import MissingOutputsError, collect
+        from radiant.tasks.nextflow.somatic_snv.model import CallingTask
+        from radiant.tasks.nextflow.somatic_snv.outputs import MissingOutputsError, collect
 
         parsed = [CallingTask(**t) for t in tasks]
         bucket, prefix = split_s3_uri(paths["outdir_s3"])
@@ -293,8 +293,8 @@ def nextflow_somatic_snv_annotation_cases():
         from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.register import register_case_batch
-        from radiant.tasks.nextflow.somatic.batch import build_patch_body
-        from radiant.tasks.nextflow.somatic.model import CallingTask
+        from radiant.tasks.nextflow.somatic_snv.batch import build_patch_body
+        from radiant.tasks.nextflow.somatic_snv.model import CallingTask
 
         context = get_current_context()
         body = build_patch_body([CallingTask(**t) for t in tasks], collected, tenant)

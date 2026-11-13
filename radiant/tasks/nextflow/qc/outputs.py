@@ -8,8 +8,8 @@ sample outside the case is never registered. The portal hides the `aggqc` / `jso
 from its files list and lab manifest: they are an input of the ETL, not a deliverable.
 """
 
-from radiant.tasks.nextflow.outputs import MissingOutputsError
 from radiant.tasks.nextflow.paths import join_s3
+from radiant.tasks.nextflow.pipeline import MissingOutputsError
 from radiant.tasks.nextflow.qc.model import QcCase
 
 __all__ = ["MissingOutputsError", "expected_keys", "collect"]

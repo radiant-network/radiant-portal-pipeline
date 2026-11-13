@@ -161,7 +161,7 @@ def nextflow_snv_postprocessing_cases():
         from airflow.sdk import get_current_context
 
         from radiant.tasks.nextflow.decision import GERMLINE_SNV, launch
-        from radiant.tasks.nextflow.resolve import select_cases as select
+        from radiant.tasks.nextflow.germline_snv.resolve import select_cases as select
 
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
@@ -206,7 +206,7 @@ def nextflow_snv_postprocessing_cases():
 
     @task(task_id="resolve_cases", task_display_name="[PyOp] Resolve cases to families")
     def resolve_cases(selected: Any, phenotype_rows: Any) -> Any:
-        from radiant.tasks.nextflow.resolve import resolve_families
+        from radiant.tasks.nextflow.germline_snv.resolve import resolve_families
 
         families = resolve_families(selected["members"], phenotype_rows)
         LOGGER.info(
@@ -226,8 +226,8 @@ def nextflow_snv_postprocessing_cases():
         succeeded -- a second annotation task per case, pointing at the same outputs and
         indistinguishable from a legitimate re-run. Mapping gives per-tenant retry for free.
         """
-        from radiant.tasks.nextflow.model import Family
-        from radiant.tasks.nextflow.resolve import tenants_of
+        from radiant.tasks.nextflow.family import Family
+        from radiant.tasks.nextflow.germline_snv.resolve import tenants_of
 
         return tenants_of([Family(**f) for f in families])
 
@@ -238,8 +238,8 @@ def nextflow_snv_postprocessing_cases():
         import boto3
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.inputs import build_inputs
-        from radiant.tasks.nextflow.model import Family
+        from radiant.tasks.nextflow.family import Family
+        from radiant.tasks.nextflow.germline_snv.inputs import build_inputs
         from radiant.tasks.nextflow.paths import run_paths, sanitize_run_tag, split_s3_uri
 
         env = _workspace_env()
@@ -291,9 +291,10 @@ def nextflow_snv_postprocessing_cases():
 
         import boto3
 
-        from radiant.tasks.nextflow.model import Family
-        from radiant.tasks.nextflow.outputs import MissingOutputsError, collect
+        from radiant.tasks.nextflow.family import Family
+        from radiant.tasks.nextflow.germline_snv.outputs import collect
         from radiant.tasks.nextflow.paths import split_s3_uri
+        from radiant.tasks.nextflow.pipeline import MissingOutputsError
 
         parsed = [Family(**f) for f in families]
         bucket, prefix = split_s3_uri(paths["outdir_s3"])
@@ -330,8 +331,8 @@ def nextflow_snv_postprocessing_cases():
         from airflow.hooks.base import BaseHook
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.batch import build_patch_body
-        from radiant.tasks.nextflow.model import Family
+        from radiant.tasks.nextflow.family import Family
+        from radiant.tasks.nextflow.germline_snv.batch import build_patch_body
         from radiant.tasks.nextflow.portal import fetch_token, patch_case_batch, wait_for_batch
 
         context = get_current_context()

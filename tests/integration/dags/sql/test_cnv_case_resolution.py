@@ -16,7 +16,7 @@ import jinja2
 import pytest
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.nextflow.cnv.resolve import resolve_families, select_cases
+from radiant.tasks.nextflow.germline_cnv.resolve import resolve_families, select_cases
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
 

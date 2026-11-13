@@ -5,7 +5,6 @@ from types import SimpleNamespace
 import pytest
 
 from radiant.tasks.nextflow import decision
-from radiant.tasks.nextflow.cnv.resolve import REASON_TEXT as CNV_REASONS
 from radiant.tasks.nextflow.decision import (
     DONE,
     EXCLUDED,
@@ -23,15 +22,16 @@ from radiant.tasks.nextflow.decision import (
     run_units,
     somatic_decisions,
 )
+from radiant.tasks.nextflow.germline_cnv.resolve import REASON_TEXT as CNV_REASONS
+from radiant.tasks.nextflow.germline_snv.resolve import REASON_TEXT as SNV_REASONS
+from radiant.tasks.nextflow.germline_snv.resolve import select_cases as select_snv
 from radiant.tasks.nextflow.problem import Problem
 from radiant.tasks.nextflow.qc.resolve import REASON_TEXT as QC_REASONS
-from radiant.tasks.nextflow.resolve import REASON_TEXT as SNV_REASONS
-from radiant.tasks.nextflow.resolve import select_cases as select_snv
-from radiant.tasks.nextflow.somatic.resolve import CASE_REASON_TEXT, TASK_REASON_TEXT
-from radiant.tasks.nextflow.somatic.resolve import select_tasks as select_somatic
-from tests.unit.nextflow.conftest import member_row as snv_member_row
+from radiant.tasks.nextflow.somatic_snv.resolve import CASE_REASON_TEXT, TASK_REASON_TEXT
+from radiant.tasks.nextflow.somatic_snv.resolve import select_tasks as select_somatic
+from tests.unit.nextflow.germline_snv.conftest import member_row as snv_member_row
 from tests.unit.nextflow.qc.conftest import member_row as qc_member_row
-from tests.unit.nextflow.somatic.conftest import calling_task_rows
+from tests.unit.nextflow.somatic_snv.conftest import calling_task_rows
 
 PYTHON_REASONS = {
     "missing_aliquot",

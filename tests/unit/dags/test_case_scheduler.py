@@ -350,7 +350,7 @@ def test_a_failed_discovery_still_moves_the_cases_to_in_progress(dag_bag, monkey
 def test_somatic_candidates_count_as_work_in_both_passes(dag_bag, monkeypatch):
     """Each discovery input reaches `_cases_with_work` in its own place: a somatic SNV candidate
     makes its case work waiting before the pipelines, and keeps it in processing after them."""
-    from tests.unit.nextflow.somatic.conftest import calling_task_rows
+    from tests.unit.nextflow.somatic_snv.conftest import calling_task_rows
 
     pushed = {}
 
@@ -420,7 +420,7 @@ def test_germline_and_somatic_quality_control_rows_both_count_as_work(dag_bag, m
 def test_a_settled_case_is_logged_once_and_the_run_s_case_on_each_change(dag_bag, monkeypatch):
     """Every `run` is written; the case annotated long ago is `done` once, then nothing; the run's case
     goes `run` then `done`."""
-    from tests.unit.nextflow.conftest import member_row
+    from tests.unit.nextflow.germline_snv.conftest import member_row
 
     class TaskInstance:
         def xcom_push(self, key, value):
