@@ -56,7 +56,7 @@ def test_the_fact_query_decides_nothing():
 def test_a_child_reads_the_decided_cases_only():
     sql = _without_comments(_render(case_ids=[1]))
     assert sql.count("%(case_ids)s") == 2
-    assert "WHERE rc.case_id IN %(case_ids)s" in sql
+    assert "AND rc.case_id IN %(case_ids)s" in sql
     assert "AND pc.case_id IN %(case_ids)s" in sql
 
 

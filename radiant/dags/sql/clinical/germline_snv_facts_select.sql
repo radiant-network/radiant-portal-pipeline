@@ -37,6 +37,33 @@ annotated AS (
     WHERE t.task_type_code = 'radiant_germline_annotation'
       AND tc.case_id IS NOT NULL
 )
+{% if live_only is defined and live_only %},
+-- The scheduler's discovery reads the live cases only: work not done yet, a status still moving, or a last
+-- state that is not settled (`done`, `no_trigger_document`). A settled case keeps its state in
+-- `case_pipeline_state` until its facts give it work again.
+settled_case AS (
+    SELECT case_id
+    FROM {{ mapping.starrocks_case_pipeline_state }}
+    WHERE pipeline = 'germline_snv'
+      AND scope = 'case'
+    GROUP BY case_id
+    HAVING SUM(CASE WHEN decision = 'done' OR reason = 'no_trigger_document' THEN 0 ELSE 1 END) = 0
+),
+live_case AS (
+    SELECT ce.case_id
+    FROM {{ mapping.starrocks_current_experiment }} ce
+    JOIN gvcf g          ON g.seq_id = ce.seq_id
+    LEFT JOIN annotated a ON a.case_id = ce.case_id
+                         AND a.seq_id = ce.seq_id
+    WHERE a.seq_id IS NULL
+    UNION
+    SELECT pc.case_id
+    FROM {{ mapping.starrocks_pipeline_case }} pc
+    LEFT JOIN settled_case s ON s.case_id = pc.case_id
+    WHERE pc.status_code IN ('submitted', 'processing')
+       OR s.case_id IS NULL
+)
+{% endif %}
 SELECT pc.case_id                      AS case_id,
        pc.submitter_case_id            AS submitter_case_id,
        pc.primary_condition            AS primary_condition,
@@ -65,6 +92,9 @@ LEFT JOIN gvcf g                                        ON g.seq_id = ce.seq_id
 LEFT JOIN annotated a                                   ON a.case_id = pc.case_id
                                                        AND a.seq_id = ce.seq_id
 WHERE pc.case_type = 'germline'
+{% if live_only is defined and live_only %}
+  AND pc.case_id IN (SELECT case_id FROM live_case)
+{% endif %}
 {% if case_ids is defined and case_ids %}
   AND pc.case_id IN %(case_ids)s
 {% endif %}

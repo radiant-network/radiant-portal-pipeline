@@ -22,6 +22,12 @@ after everything and fails the run if any step failed.
 **somatic_snv**, and two for quality control, germline and somatic (the tumor of the somatic cases),
 whose rows are decided together; plus what the import still has to load, and the case statuses.
 
+They read the **live** cases only (`live_only`): a case with a trigger document not processed yet, a
+case still `submitted` or `processing`, or a case whose last state for that pipeline is not settled
+(`done`, `no_trigger_document`) or missing. A settled case does not come back: it keeps its state in
+`case_pipeline_state` until its facts give it work again (a new experiment aligned, a new document).
+The "from Cases" DAGs read the facts of the cases decided `run` instead.
+
 The import waits for SNV post-processing, somatic annotation and CNV post-processing, success or
 not: it loads the annotation tasks they register (for CNV post-processing, the proband's slivar VCF,
 RAD-206). Without that order the import could run first, and the case's variants would only arrive
@@ -77,8 +83,8 @@ at fault (patient, experiment, alignment task):
 - `excluded`: something needs fixing (a document, the case in the portal, an unsupported upstream pipeline);
 - `done`: nothing left to do, the outputs are registered on the case.
 
-Every pipeline decides from facts on every case of its type (`sql/clinical/*_facts_select.sql`), so
-it also knows the cases with nothing to do: `done`, and `skipped` / `no_trigger_document` (no trigger
+Every pipeline decides from facts on its live cases (`sql/clinical/*_facts_select.sql`), so it also
+knows the cases with nothing to do: `done`, and `skipped` / `no_trigger_document` (no trigger
 document, never processed). Like every decision but `run`, they are written when a unit enters them,
 then not again while it stays there.
 

@@ -27,10 +27,10 @@ DECIDED_AT = datetime.datetime.now(datetime.UTC).replace(tzinfo=None, microsecon
 TRIO_CASE_ID = 16
 
 
-def _render(path, mapping, params=None):
+def _render(path, mapping, params=None, **variables):
     with open(os.path.join(_SQL, path)) as f:
         return jinja2.Template(f.read()).render(
-            mapping=mapping, params=params or {"task_ids": [], "excluded_tenants": []}
+            mapping=mapping, params=params or {"task_ids": [], "excluded_tenants": []}, **variables
         )
 
 
@@ -168,3 +168,33 @@ def test_a_second_identical_pass_writes_the_runs_only(decision_log, starrocks_se
     assert {(d.pipeline, d.case_id, d.unit_id) for d in kept} == {
         (d.pipeline, d.case_id, d.unit_id) for d in decision_log if d.scope == "case" and d.decision == RUN
     }
+
+
+def test_the_discovery_reads_the_live_cases_only(decision_log, starrocks_session, radiant_mapping):
+    """With the seeds' decisions as the state: a case comes back when it is not settled for the pipeline, or its
+    status still moves; a settled case stays out, with its state."""
+    statuses = {
+        r["case_id"]: r["status_code"]
+        for r in _rows(starrocks_session, _render("clinical/case_status_select.sql", radiant_mapping))
+    }
+    settled_decisions = {"done"}
+    for pipeline, sql_file in (
+        ("germline_snv", "germline_snv_facts_select.sql"),
+        (QC, "qc_germline_facts_select.sql"),
+    ):
+        unsettled = {
+            d.case_id
+            for d in decision_log
+            if d.pipeline == pipeline
+            and d.scope == "case"
+            and d.decision not in settled_decisions
+            and d.reason != "no_trigger_document"
+        }
+        every = {r["case_id"] for r in _rows(starrocks_session, _render(f"clinical/{sql_file}", radiant_mapping))}
+        live = {
+            r["case_id"]
+            for r in _rows(starrocks_session, _render(f"clinical/{sql_file}", radiant_mapping, live_only=True))
+        }
+        expected = {c for c in every if c in unsettled or statuses.get(c) in ("submitted", "processing")}
+        assert live == expected, pipeline
+        assert live < every, pipeline

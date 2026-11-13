@@ -96,6 +96,12 @@ The decisions are computed for every case on each pass, and written with the RAD
 
 Volume: the work of the day plus the changes, whatever the number of cases. The first run after deploy writes the state of every case once.
 
+### Live cases only, for the scheduler
+
+The scheduler's discovery passes `live_only` to the fact queries. A case comes back when it has a trigger document not processed yet (the former `candidate` condition), is still `submitted` or `processing`, or its last state for the pipeline is not settled (`done`, `no_trigger_document`) or missing. A settled case does not come back and keeps its state in `case_pipeline_state`; it comes back when its facts give it work again. The "from Cases" DAGs read the facts of the cases decided `run` (`case_ids`).
+
+Scale: about 3 member rows per germline case. Without the filter, a pass would read about 75 000 fact rows at 5 000 cases, 300 000 at 20 000 (a project already there), 1.5 million at 100 000 (the target). With it, a pass reads the live cases: the work, the blocked cases and the open ones. To measure on QA: fact rows per pass, the duration of both passes, the rows written per day.
+
 ## 5. Rewriting the consumers
 
 **`radiant/dags/sql/clinical/`:** each `pending_*_select.sql` is replaced by a `*_facts_select.sql` over the RAD-287 views. The integration tests of a pipeline move to its fact query when it is migrated.
@@ -126,7 +132,7 @@ Volume: the work of the day plus the changes, whatever the number of cases. The 
 **What changes:**
 - the log gains `done` and `skipped` / `no_trigger_document` rows, written when a unit enters them; the first run after deploy writes every case once;
 - QC somatic reports a tumor not aligned yet as `skipped` / `no_trigger_document` instead of leaving it out (its alignment is the trigger), and a somatic SNV calling task without its VCF likewise on a discovery run;
-- the fact queries return every case, not only the candidates. They read the same views; the row count (cases × members) is to check on QA.
+- the scheduler's fact queries return the live cases (§4), the children's the decided ones; to measure on QA.
 
 ## 7. Deployment
 

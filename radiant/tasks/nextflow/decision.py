@@ -386,9 +386,10 @@ DISCOVERY_QUERIES = {
 
 
 def read_discovery(conf: dict | None = None) -> dict[str, list[dict]]:
-    """The rows each pipeline decides on, every case of its type. QC reads two queries, one per case type."""
+    """The rows each pipeline decides on: its live cases (`live_only`), the settled ones keeping their state in
+    `case_pipeline_state`. QC reads two queries, one per case type."""
     rows = {
-        pipeline: [row for folder, sql_file in queries for row in read_rows(folder, sql_file, conf)]
+        pipeline: [row for folder, sql_file in queries for row in read_rows(folder, sql_file, conf, live_only=True)]
         for pipeline, queries in DISCOVERY_QUERIES.items()
     }
     LOGGER.info("discovery rows: %s", ", ".join(f"{p} {len(r)}" for p, r in rows.items()))

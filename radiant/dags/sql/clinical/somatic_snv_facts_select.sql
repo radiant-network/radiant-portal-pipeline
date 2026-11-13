@@ -89,7 +89,33 @@ already_registered AS (
                                                          AND call_out.type = 'output'
     WHERE t.task_type_code = 'radiant_somatic_annotation'
 )
-
+{% if live_only is defined and live_only %},
+-- The scheduler's discovery reads the live cases only: work not done yet, a status still moving, or a last
+-- state that is not settled (`done`, `no_trigger_document`). A settled case keeps its state in
+-- `case_pipeline_state` until its facts give it work again.
+settled_case AS (
+    SELECT case_id
+    FROM {{ mapping.starrocks_case_pipeline_state }}
+    WHERE pipeline = 'somatic_snv'
+      AND scope = 'case'
+    GROUP BY case_id
+    HAVING SUM(CASE WHEN decision = 'done' OR reason = 'no_trigger_document' THEN 0 ELSE 1 END) = 0
+),
+live_case AS (
+    SELECT rc.case_id
+    FROM registration_case rc
+    JOIN vcf_to_annotate v          ON v.task_id = rc.task_id
+    LEFT JOIN already_registered a  ON a.case_id = rc.case_id
+                                   AND a.task_id = rc.task_id
+    WHERE a.task_id IS NULL
+    UNION
+    SELECT pc.case_id
+    FROM {{ mapping.starrocks_pipeline_case }} pc
+    LEFT JOIN settled_case s ON s.case_id = pc.case_id
+    WHERE pc.status_code IN ('submitted', 'processing')
+       OR s.case_id IS NULL
+)
+{% endif %}
 SELECT rc.case_id                     AS case_id,
        rc.submitter_case_id           AS submitter_case_id,
        rc.tenant_code                 AS tenant_code,
@@ -111,8 +137,12 @@ LEFT JOIN {{ mapping.clinical_sample }} sa            ON sa.id = se.sample_id
 LEFT JOIN vcf_to_annotate v                           ON v.task_id = rc.task_id
 LEFT JOIN already_registered a                        ON a.case_id = rc.case_id
                                                      AND a.task_id = rc.task_id
+WHERE 1 = 1
 {% if case_ids is defined and case_ids %}
-WHERE rc.case_id IN %(case_ids)s
+  AND rc.case_id IN %(case_ids)s
+{% endif %}
+{% if live_only is defined and live_only %}
+  AND rc.case_id IN (SELECT case_id FROM live_case)
 {% endif %}
 UNION ALL
 -- The somatic cases no calling task belongs to: nothing to annotate.
@@ -124,6 +154,9 @@ FROM {{ mapping.starrocks_pipeline_case }} pc
 LEFT JOIN (SELECT DISTINCT case_id FROM registration_case) rcs ON rcs.case_id = pc.case_id
 WHERE pc.case_type = 'somatic'
   AND rcs.case_id IS NULL
+{% if live_only is defined and live_only %}
+  AND pc.case_id IN (SELECT case_id FROM live_case)
+{% endif %}
 {% if case_ids is defined and case_ids %}
   AND pc.case_id IN %(case_ids)s
 {% endif %}

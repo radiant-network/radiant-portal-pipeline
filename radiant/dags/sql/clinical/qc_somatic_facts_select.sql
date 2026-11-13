@@ -47,6 +47,33 @@ quality_controlled AS (
     WHERE t.task_type_code = 'quality_control_metrics'
       AND tc.case_id IS NOT NULL
 )
+{% if live_only is defined and live_only %},
+-- The scheduler's discovery reads the live cases only: work not done yet, a status still moving, or a last
+-- state that is not settled (`done`, `no_trigger_document`). A settled case keeps its state in
+-- `case_pipeline_state` until its facts give it work again.
+settled_case AS (
+    SELECT case_id
+    FROM {{ mapping.starrocks_case_pipeline_state }}
+    WHERE pipeline = 'qc'
+      AND scope = 'case'
+    GROUP BY case_id
+    HAVING SUM(CASE WHEN decision = 'done' OR reason = 'no_trigger_document' THEN 0 ELSE 1 END) = 0
+),
+live_case AS (
+    SELECT ce.case_id
+    FROM current_tumor ce
+    JOIN current_alignment ca       ON ca.seq_id = ce.seq_id
+    LEFT JOIN quality_controlled qc ON qc.case_id = ce.case_id
+                                   AND qc.seq_id = ce.seq_id
+    WHERE qc.seq_id IS NULL
+    UNION
+    SELECT pc.case_id
+    FROM {{ mapping.starrocks_pipeline_case }} pc
+    LEFT JOIN settled_case s ON s.case_id = pc.case_id
+    WHERE pc.status_code IN ('submitted', 'processing')
+       OR s.case_id IS NULL
+)
+{% endif %}
 SELECT pc.case_id                                  AS case_id,
        pc.submitter_case_id                        AS submitter_case_id,
        pc.tenant_code                              AS tenant_code,
@@ -81,6 +108,9 @@ LEFT JOIN quality_controlled qc                  ON qc.case_id = pc.case_id
 LEFT JOIN {{ mapping.starrocks_case_member }} cm ON cm.case_id = pc.case_id
                                                 AND cm.patient_id = pc.proband_id
 WHERE pc.case_type = 'somatic'
+{% if live_only is defined and live_only %}
+  AND pc.case_id IN (SELECT case_id FROM live_case)
+{% endif %}
 {% if case_ids is defined and case_ids %}
   AND pc.case_id IN %(case_ids)s
 {% endif %}
