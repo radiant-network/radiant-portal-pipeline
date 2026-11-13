@@ -29,8 +29,6 @@ on:
   push:
     branches:
       - main
-      # TEMP(RAD-186): test the release PR comment on the feature branch. Revert before the merge.
-      - feat/rad-186
 
 # One run at a time. A newer push replaces a run that still waits, which loses nothing: each
 # run rebuilds the release PR from all the commits since the last release.
@@ -68,8 +66,6 @@ jobs:
 
       - name: Open or update the release PR, or tag the release
         id: release
-        # TEMP(RAD-186): never run release-please from the feature branch (it acts on main). Revert before the merge.
-        if: github.ref == 'refs/heads/main'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           token: ${{ steps.app-token.outputs.token }}
