@@ -17,7 +17,7 @@ import psycopg2
 import pytest
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.nextflow.resolve import REL_ORDER
+from radiant.tasks.nextflow.resolve import REL_ORDER, CaseResolutionError, select_cases
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
 
@@ -25,7 +25,7 @@ _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
 pytestmark = pytest.mark.usefixtures("pipeline_views")
 _OPEN_DATA_INIT = os.path.join(DAGS_DIR, "sql", "open_data", "init")
 
-DISCOVERY = "pending_annotation_select.sql"
+DISCOVERY = "germline_snv_facts_select.sql"
 PHENOTYPES = "case_phenotypes_select.sql"
 
 TRIO_CASE_ID = 16
@@ -41,25 +41,27 @@ REALIGNED_CASE = 9004
 PENDING_CASE = 9005
 
 
-def _render(sql_file, radiant_mapping, params=None):
+def _render(sql_file, radiant_mapping, **variables):
     with open(sql_file) as f:
-        return jinja2.Template(f.read()).render(
-            mapping=radiant_mapping,
-            params=params if params is not None else {"task_ids": [], "excluded_tenants": []},
-        )
+        return jinja2.Template(f.read()).render(mapping=radiant_mapping, **variables)
 
 
-def _run(starrocks_session, radiant_mapping, filename, parameters=None, params=None):
-    sql = _render(os.path.join(_CLINICAL_SQL, filename), radiant_mapping, params)
+def _run(starrocks_session, radiant_mapping, filename, parameters=None):
+    sql = _render(os.path.join(_CLINICAL_SQL, filename), radiant_mapping, **(parameters or {}))
     with starrocks_session.cursor() as cursor:
         cursor.execute(sql, parameters or {})
         columns = [d[0] for d in cursor.description]
         return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
 
 
-def _discover(starrocks_session, radiant_mapping, case_id=None, **kwargs):
-    rows = _run(starrocks_session, radiant_mapping, DISCOVERY, **kwargs)
+def _discover(starrocks_session, radiant_mapping, case_id=None):
+    rows = _run(starrocks_session, radiant_mapping, DISCOVERY)
     return [r for r in rows if case_id is None or r["case_id"] == case_id]
+
+
+def _select(starrocks_session, radiant_mapping, requested=None, **kwargs):
+    """What the selection decides over the facts of every germline case."""
+    return select_cases(_run(starrocks_session, radiant_mapping, DISCOVERY), requested, **kwargs)
 
 
 @pytest.fixture(scope="session")
@@ -196,9 +198,10 @@ def test_a_trio_with_alignments_and_no_annotation_is_discovered(
     assert [r["role"] for r in rows] == ["proband", "father", "mother"]
     assert {r["patient_id"] for r in rows} == {44, 45, 46}
     assert all(r["tenant_code"] == "radiant" for r in rows)
-    assert all(r["exclusion_reason"] is None for r in rows)
     assert [r["gvcf_matches"] for r in rows] == [1, 1, 1]
     assert all(r["alignment_task_id"] for r in rows)
+    assert not any(r["annotated"] for r in rows)
+    assert TRIO_CASE_ID in _select(starrocks_session, radiant_mapping).case_ids
 
 
 def test_the_proband_ordering_matches_what_the_writers_assume(
@@ -218,13 +221,25 @@ def test_the_case_carries_a_project_code(postgres_clinical_seeds, starrocks_sess
     assert all(r["submitter_case_id"] for r in rows)
 
 
-# --- the anti-join --------------------------------------------------------------------------
+def test_a_child_reads_the_decided_cases_with_every_member(
+    postgres_clinical_seeds, starrocks_session, radiant_mapping
+):
+    """What a child triggered by the scheduler reads: those cases only, each with its whole family."""
+    rows = _run(starrocks_session, radiant_mapping, DISCOVERY, {"case_ids": [TRIO_CASE_ID]})
+    assert {r["case_id"] for r in rows} == {TRIO_CASE_ID}
+    assert [r["role"] for r in rows] == ["proband", "father", "mother"]
 
 
-def test_an_annotated_case_is_not_discovered(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+# --- done, and no trigger document -----------------------------------------------------------
+
+
+def test_an_annotated_case_is_done(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     """Case 8 already carries task 65, a `radiant_germline_annotation` over its experiment.
-    Returning it would mean re-running the pipeline over it every night, for ever."""
-    assert _discover(starrocks_session, radiant_mapping, ANNOTATED_CASE_ID) == []
+    Running it would mean re-running the pipeline over it every night, for ever."""
+    assert all(r["annotated"] for r in _discover(starrocks_session, radiant_mapping, ANNOTATED_CASE_ID))
+    selection = _select(starrocks_session, radiant_mapping)
+    assert ANNOTATED_CASE_ID in selection.done
+    assert ANNOTATED_CASE_ID not in selection.case_ids
 
 
 def test_a_somatic_case_is_never_discovered(postgres_clinical_seeds, starrocks_session, radiant_mapping):
@@ -232,10 +247,15 @@ def test_a_somatic_case_is_never_discovered(postgres_clinical_seeds, starrocks_s
     assert _discover(starrocks_session, radiant_mapping, SOMATIC_CASE_ID) == []
 
 
-def test_a_case_with_no_gvcfs_at_all_is_not_reported(postgres_clinical_seeds, starrocks_session, radiant_mapping):
-    """Case 1 was joint-called upstream. It is permanently out of scope, so it is absent
-    rather than excluded -- reporting it nightly would be noise, not information."""
-    assert _discover(starrocks_session, radiant_mapping, 1) == []
+def test_a_case_with_no_gvcfs_at_all_has_no_trigger_document(
+    postgres_clinical_seeds, starrocks_session, radiant_mapping
+):
+    """Case 2 was joint-called upstream and never annotated here: out of scope, reported as
+    such rather than as one `no_gvcf` per member."""
+    assert not any(r["gvcf_matches"] for r in _discover(starrocks_session, radiant_mapping, 2))
+    selection = _select(starrocks_session, radiant_mapping)
+    assert 2 in selection.untriggered
+    assert 2 not in {e.case_id for e in selection.excluded}
 
 
 # --- 3. one alignment task, several cases ---------------------------------------------------
@@ -253,7 +273,7 @@ def test_a_shared_experiment_yields_both_cases(
     # each family independently and each case gets its own annotation task.
     assert {r["seq_id"] for r in shared} == {9101}
     assert {r["gvcf_url"] for r in shared} == {"s3://t/a9101.gvcf.gz"}
-    assert all(r["exclusion_reason"] is None for r in shared)
+    assert {SHARED_CASE_A, SHARED_CASE_B} <= set(_select(starrocks_session, radiant_mapping).case_ids)
 
 
 def test_a_targeted_run_on_a_shared_task_still_returns_both_cases(
@@ -261,14 +281,9 @@ def test_a_targeted_run_on_a_shared_task_still_returns_both_cases(
 ):
     """`task_ids` narrows *candidacy*. If it reached the member rows instead, a shared task
     would come back with one case and a family missing everyone else."""
-    rows = _run(
-        starrocks_session,
-        radiant_mapping,
-        DISCOVERY,
-        parameters={"task_ids": [9201]},
-        params={"task_ids": [9201], "excluded_tenants": []},
-    )
-    assert {r["case_id"] for r in rows} == {SHARED_CASE_A, SHARED_CASE_B}
+    selection = _select(starrocks_session, radiant_mapping, [9201])
+    assert selection.case_ids == [SHARED_CASE_A, SHARED_CASE_B]
+    assert {m.case_id for m in selection.members} == {SHARED_CASE_A, SHARED_CASE_B}
 
 
 # --- 5. two experiments, no annotation ------------------------------------------------------
@@ -285,21 +300,15 @@ def test_the_newest_experiment_wins_and_the_older_one_disappears(
     assert rows[0]["seq_id"] == 9113
     assert rows[0]["aliquot"] == "A9103-NEW"
     assert rows[0]["gvcf_url"] == "s3://t/a9103new.gvcf.gz"
-    assert rows[0]["exclusion_reason"] is None
+    assert SUPERSEDED_CASE in _select(starrocks_session, radiant_mapping).case_ids
 
 
 def test_the_superseded_experiment_cannot_make_the_case_eligible(
     supersession_fixtures, postgres_clinical_seeds, starrocks_session, radiant_mapping
 ):
-    """Its own alignment task is not a way back in either."""
-    rows = _run(
-        starrocks_session,
-        radiant_mapping,
-        DISCOVERY,
-        parameters={"task_ids": [9203]},
-        params={"task_ids": [9203], "excluded_tenants": []},
-    )
-    assert rows == []
+    """Its own alignment task is not a way back in either: naming it gives no candidate case."""
+    with pytest.raises(CaseResolutionError, match=r"\[9203\]"):
+        _select(starrocks_session, radiant_mapping, [9203])
 
 
 # --- 6. re-alignment ------------------------------------------------------------------------
@@ -316,7 +325,7 @@ def test_the_newest_alignment_task_wins(
     assert rows[0]["alignment_task_id"] == 9214
     assert rows[0]["gvcf_url"] == "s3://t/a9104new.gvcf.gz"
     assert rows[0]["gvcf_matches"] == 1
-    assert rows[0]["exclusion_reason"] is None
+    assert REALIGNED_CASE in _select(starrocks_session, radiant_mapping).case_ids
 
 
 def test_two_gvcfs_on_one_alignment_task_are_still_ambiguous(
@@ -347,8 +356,9 @@ def test_two_gvcfs_on_one_alignment_task_are_still_ambiguous(
         conn.commit()
         try:
             rows = _discover(starrocks_session, radiant_mapping, REALIGNED_CASE)
-            assert [r["exclusion_reason"] for r in rows] == ["ambiguous_gvcf"]
             assert rows[0]["gvcf_matches"] == 2
+            excluded = {e.case_id: e.reason for e in _select(starrocks_session, radiant_mapping).excluded}
+            assert excluded[REALIGNED_CASE] == "ambiguous_gvcf"
         finally:
             cur.execute("DELETE FROM task_has_document WHERE document_id = 9399;")
             cur.execute("DELETE FROM document WHERE id = 9399;")
@@ -358,7 +368,7 @@ def test_two_gvcfs_on_one_alignment_task_are_still_ambiguous(
 # --- members that are not ready --------------------------------------------------------------
 
 
-def test_a_member_never_sequenced_comes_back_with_a_reason(
+def test_a_member_never_sequenced_comes_back_and_makes_the_case_wait(
     supersession_fixtures, postgres_clinical_seeds, starrocks_session, radiant_mapping
 ):
     """Returned, not dropped. A family silently short one member is the worst outcome here:
@@ -366,22 +376,17 @@ def test_a_member_never_sequenced_comes_back_with_a_reason(
     rows = _discover(starrocks_session, radiant_mapping, PENDING_CASE)
     assert len(rows) == 2
     by_role = {r["role"]: r for r in rows}
-    assert by_role["proband"]["exclusion_reason"] is None
-    assert by_role["father"]["exclusion_reason"] == "pending_sequencing"
+    assert by_role["proband"]["gvcf_matches"] == 1
     assert by_role["father"]["seq_id"] is None
+    excluded = {e.case_id: e.reason for e in _select(starrocks_session, radiant_mapping).excluded}
+    assert excluded[PENDING_CASE] == "pending_sequencing"
 
 
 def test_an_excluded_tenant_is_reported_not_hidden(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     """Excluding it silently would leave someone wondering why the annotation never happened."""
-    rows = _discover(
-        starrocks_session,
-        radiant_mapping,
-        TRIO_CASE_ID,
-        params={"task_ids": [], "excluded_tenants": ["radiant"]},
-        parameters={"excluded_tenants": ["radiant"]},
-    )
-    assert rows
-    assert all(r["exclusion_reason"] == "tenant_excluded" for r in rows)
+    selection = _select(starrocks_session, radiant_mapping, excluded_tenants=["radiant"])
+    assert TRIO_CASE_ID not in selection.case_ids
+    assert {e.case_id: e.reason for e in selection.excluded}[TRIO_CASE_ID] == "tenant_excluded"
 
 
 # --- phenotypes --------------------------------------------------------------------------------

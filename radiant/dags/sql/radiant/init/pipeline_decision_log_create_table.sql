@@ -1,7 +1,7 @@
 -- What each pipeline decided for each candidate case, at each stage of a case scheduler run, and why.
 -- Written by `radiant.tasks.nextflow.decision.write_decisions`; append-only.
 --
--- No retention for now: a few hundred rows a day. The daily partitions keep one possible later, with a
+-- No retention for now: a few hundred rows a day. `done` is written once per unit a run completed. The daily partitions keep one possible later, with a
 -- `partition_live_number` property or by dropping the old partitions.
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_pipeline_decision_log }} (
     run_id      VARCHAR(250) NOT NULL COMMENT "The case scheduler run, sanitized as the child run ids (`sanitize_run_tag`)",
@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_pipeline_decision_log }} (
     seq_id      INT          NULL     COMMENT "member rows: its current sequencing experiment, NULL while it has none",
     task_id     INT          NULL     COMMENT "member rows: its current alignment task, when it has one",
     unit_id     INT          NULL     COMMENT "somatic_snv: the calling task; the unit is the (calling task, case) pair",
-    decision    VARCHAR(16)  NOT NULL COMMENT "run, wait (the data will come), skipped (left out by configuration), excluded (something needs fixing)",
+    decision    VARCHAR(16)  NOT NULL COMMENT "run, wait (the data will come), skipped (left out by configuration or nothing to process), excluded (something needs fixing), done",
     reason      VARCHAR(64)  NULL     COMMENT "the reason code; NULL for run, except the import's",
     detail      VARCHAR(2048) NULL    COMMENT "the readable reason, written for the ETL team",
     decided_at  DATETIME     NOT NULL COMMENT "UTC, like the staging timestamps"

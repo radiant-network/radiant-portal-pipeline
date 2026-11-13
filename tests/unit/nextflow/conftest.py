@@ -1,4 +1,4 @@
-"""Row fixtures shaped like what `sql/clinical/pending_annotation_select.sql` returns."""
+"""Row fixtures shaped like what `sql/clinical/germline_snv_facts_select.sql` returns."""
 
 import pytest
 
@@ -33,7 +33,7 @@ def member_row(case_id=1072, submitter_case_id="1KGP-1463", role="proband", **ov
         "alignment_task_id": 900,
         "gvcf_url": f"{GVCF_BUCKET}/individuals/NA12878/NA12878.hard-filtered.gvcf.gz",
         "gvcf_matches": 1,
-        "exclusion_reason": None,
+        "annotated": False,
     }
     row.update(overrides)
     return row

@@ -29,7 +29,8 @@ parameters below exist for targeted reruns and for configuration, not for normal
 ## Decisions
 
 Triggered by `radiant-case-scheduler`, this DAG launches only the units (the case) that run decided `run`,
-read from `pipeline_decision_log` with the `decision_run_id` of its `conf`. One that became runnable since waits
+read from `pipeline_decision_log` with the `decision_run_id` of its `conf`: **discover_scope** reads the facts
+of those cases only, with every member. One that became runnable since waits
 for the next run. Run by hand, it launches its whole selection. It reads the log, it does not write it.
 
 ## Parameters
@@ -58,7 +59,8 @@ run may span several tenants; registration groups by tenant and sends one batch 
 
 A (case, sequencing experiment) pair is eligible when the pair's *current* experiment has an
 alignment publishing a gVCF, and no **radiant_germline_annotation** is scoped to that same
-pair. The whole rule lives in sql/clinical/pending_annotation_select.sql.
+pair. sql/clinical/germline_snv_facts_select.sql returns these facts for every germline case;
+**select_cases** decides from them.
 
 Two selections make it work, and both matter more than they look:
 
@@ -76,7 +78,9 @@ re-discovered and the pipeline re-run every night, for ever.
 | A case re-annotated after a member was re-sequenced | The newer experiment became current. The earlier annotation is untouched and stays queryable |
 | A case's parents re-annotated when only the proband changed | A joint call over a different proband sample is a different result for every member. A family is one unit |
 | Two families in one run naming the same gVCF | One experiment linked to two cases. Each is its own family and gets its own annotation task |
-| A case that never appears | It has no gVCFs at all (joint-called upstream, out of scope), it is revoked, it is somatic, or it is already annotated |
+| A case **done** | Already annotated, and no member's gVCF is left to annotate |
+| A case **skipped**, **no_trigger_document** | No member has a gVCF and it was never annotated: joint-called upstream, out of scope |
+| A case that never appears | It is revoked or draft, or it is somatic |
 
 ---
 
@@ -96,6 +100,7 @@ one; grep its task log for "excluded".
 | **unsupported_strategy** | A strategy outside {wgs, wxs, wes}, or several within one case | No |
 | **no_project_code** | cases.project_id did not resolve, and the batch PATCH needs it to look the case up | No |
 | **tenant_excluded** | The tenant is in **excluded_tenants** | No, by configuration |
+| **no_trigger_document** | No member has a gVCF (decided **skipped**, not excluded) | No, out of scope |
 
 The two pending reasons are normal traffic, not errors. A member whose newest experiment has
 no alignment yet makes the case **wait**, rather than run against the superseded one and

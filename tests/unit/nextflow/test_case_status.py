@@ -26,17 +26,30 @@ def test_work_waiting_is_the_union_of_every_pipeline_and_the_import_delta():
     assert waiting == {1, 2, 3, 4, 5}
 
 
+# The germline SNV facts behind each reason; the other pipelines still get the reason from SQL.
+SNV_FACTS = {
+    "pending_sequencing": {"seq_id": None, "alignment_task_id": None, "gvcf_url": None, "gvcf_matches": 0},
+    "no_gvcf": {"gvcf_url": None, "gvcf_matches": 0},
+    "tenant_excluded": {},
+}
+
+
 @pytest.mark.parametrize("reason", ["pending_sequencing", "no_gvcf", "tenant_excluded"])
 def test_a_case_the_pipeline_would_exclude_is_not_work_waiting(reason):
     """Moved to `processing`, it would wait there with nothing running for it."""
     waiting = case_status.cases_with_work(
-        germline_snv_rows=[snv_member_row(case_id=1, exclusion_reason=reason)],
+        germline_snv_rows=[snv_member_row(case_id=1, **SNV_FACTS[reason])],
         germline_cnv_rows=[cnv_member_row(case_id=2, exclusion_reason=reason)],
         somatic_snv_rows=calling_task_rows(case_id=5, exclusion_reason=reason),
         qc_rows=[qc_member_row(case_id=3, exclusion_reason=reason)],
         import_rows=[],
+        excluded_tenants=["radiant"] if reason == "tenant_excluded" else None,
     )
     assert waiting == set()
+
+
+def test_a_germline_case_already_annotated_is_not_work_waiting():
+    assert case_status.cases_with_work([snv_member_row(case_id=1, annotated=True)], [], [], [], []) == set()
 
 
 def test_a_qc_case_with_two_metrics_tarballs_is_not_work_waiting():

@@ -49,7 +49,7 @@ def decision_log(starrocks_session, radiant_mapping, sequencing_experiment_table
     pending = {
         name: _rows(starrocks_session, _render(f"clinical/{name}_select.sql", radiant_mapping))
         for name in (
-            "pending_annotation",
+            "germline_snv_facts",
             "pending_cnv_annotation",
             "pending_somatic_annotation",
             "pending_quality_control",
@@ -58,7 +58,7 @@ def decision_log(starrocks_session, radiant_mapping, sequencing_experiment_table
     }
     import_rows = _rows(starrocks_session, _render("radiant/import_pending_case_select.sql", radiant_mapping))
     decisions = decide(
-        pending["pending_annotation"],
+        pending["germline_snv_facts"],
         pending["pending_cnv_annotation"],
         pending["pending_somatic_annotation"],
         [*pending["pending_quality_control"], *pending["pending_quality_control_somatic"]],

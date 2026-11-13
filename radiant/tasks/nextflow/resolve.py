@@ -1,18 +1,14 @@
-"""Turn the clinical query result set into validated `Family` objects.
+"""Turn the germline SNV fact rows into decisions and validated `Family` objects.
 
-Two steps, deliberately separate. `select_cases` decides which candidate cases can be run
-and why the others cannot; `resolve_families` builds the families it kept. Splitting them
-is what lets the same checks behave differently depending on how the scope was chosen:
+Two steps, deliberately separate. `select_cases` decides every case (run, done, no trigger
+document, or excluded and why); the fact query decides nothing. `resolve_families` builds the
+families it kept. Splitting them is what lets the same checks behave differently depending on
+how the scope was chosen:
 
 - **strict** -- an operator named specific alignment tasks, so a case that cannot be
   resolved is an error they must see;
 - **lenient** -- the scope was discovered by the nightly query, so a case that cannot be
   resolved is dropped and reported, and every other case still runs.
-
-Dropping the checks in lenient mode and trusting the query instead was considered and
-rejected: the two sets of predicates would drift, and the day they disagree the failure is
-a wrong samplesheet rather than an error. These are a backstop behind the query, not a
-replacement for it.
 
 A samplesheet that is merely *plausible* costs hours of pipeline time before anyone finds
 out, and an unnoticed mis-attributed gVCF costs more than that.
@@ -34,8 +30,7 @@ REL_ORDER = {"proband": 0, "father": 1, "mother": 2, "brother": 3, "sister": 3, 
 # under two dictionaries; the pipeline only knows WES.
 SEQUENCING_TYPES = {"wgs": "WGS", "wxs": "WES", "wes": "WES"}
 
-# Reasons the query itself can see, in the wording used when reporting them. The codes are
-# the query's; the sentences are here so a reader of the log does not need the SQL open.
+# The reasons, in the wording used when reporting them.
 REASON_TEXT = {
     "pending_sequencing": "has no completed sequencing experiment yet",
     "pending_alignment": "its current sequencing experiment has no alignment task yet",
@@ -56,6 +51,9 @@ REASON_TEXT = {
         "its tenant is in `excluded_tenants` (`$RADIANT_ETL_EXCLUDED_TENANTS`), which the ETL "
         "leaves out of case processing"
     ),
+    "no_trigger_document": (
+        "no member's current alignment published a gVCF -- joint-called upstream, nothing for this DAG to do"
+    ),
 }
 
 
@@ -75,11 +73,18 @@ class ExcludedCase(BaseModel):
 
 
 class Selection(BaseModel):
-    """What `select_cases` decided: what runs, what does not, and the tenants involved."""
+    """What `select_cases` decided: what runs, what does not, and the tenants involved.
+
+    `done`: annotated, and no member's gVCF is left to annotate. `untriggered`: never annotated and
+    no member has a gVCF. Both are left empty on a targeted run, which only looks at the requested
+    tasks.
+    """
 
     members: list[CaseMember] = []
     case_ids: list[int] = []
     excluded: list[ExcludedCase] = []
+    done: list[int] = []
+    untriggered: list[int] = []
 
     @property
     def tenants(self) -> list[str]:
@@ -91,28 +96,46 @@ def select_cases(
     requested_task_ids: list[int] | None = None,
     *,
     strict: bool | None = None,
+    excluded_tenants: list[str] | None = None,
 ) -> Selection:
-    """Group the candidate rows by case and keep the ones that can actually be run.
+    """Decide every germline case of the fact rows: run, done, untriggered, or excluded with
+    its reasons.
 
     `strict` defaults to "an operator asked for specific tasks", i.e. to whether
     `requested_task_ids` is non-empty.
     """
-    requested = list(requested_task_ids or [])
+    requested = set(requested_task_ids or [])
     if strict is None:
         strict = bool(requested)
+    excluded_tenants = set(excluded_tenants or [])
 
     members = [CaseMember(**row) for row in member_rows]
     by_case = _group_by_case(members)
 
+    selection = Selection()
+    candidates: dict[int, list[CaseMember]] = {}
+    for case_id in sorted(by_case):
+        case_members = by_case[case_id]
+        # A member's gVCF not annotated on this case yet is the work.
+        pending = [m for m in case_members if m.gvcf_matches > 0 and not m.annotated]
+        if requested:
+            # A targeted run only looks at the cases a requested task still has work for.
+            if any(m.alignment_task_id in requested for m in pending):
+                candidates[case_id] = case_members
+        elif pending:
+            candidates[case_id] = case_members
+        elif any(m.annotated for m in case_members):
+            selection.done.append(case_id)
+        else:
+            selection.untriggered.append(case_id)
+
     problems: list[str] = []
 
-    # A requested task that produced no candidate case. The query filters candidacy by task
-    # id, so this means the task does not exist, is not an alignment task, or every case it
-    # belongs to is already annotated -- worth naming when someone asked for it by hand, and
-    # meaningless on a discovery run where nobody did.
+    # A requested task that gave no candidate case: it does not exist, is not an alignment task,
+    # or every case it belongs to is already annotated.
     if requested:
-        found = {m.alignment_task_id for m in members if m.alignment_task_id is not None}
-        unmatched = sorted(set(requested) - found)
+        found = {m.alignment_task_id for ms in candidates.values() for m in ms if m.alignment_task_id is not None}
+        unmatched = sorted(requested - found)
         if unmatched:
             problems.append(
                 f"alignment task(s) {unmatched} produced no candidate case -- either the id does "
@@ -120,10 +143,8 @@ def select_cases(
                 f"it belongs to already carries a `radiant_germline_annotation`"
             )
 
-    selection = Selection()
-    for case_id in sorted(by_case):
-        case_members = by_case[case_id]
-        case_problems = _validate(case_id, case_members)
+    for case_id, case_members in candidates.items():
+        case_problems = _validate(case_id, case_members, excluded_tenants)
         if case_problems:
             first = case_problems[0]
             selection.excluded.append(
@@ -174,25 +195,44 @@ def _group_by_case(members: list[CaseMember]) -> dict[int, list[CaseMember]]:
     return by_case
 
 
-def _validate(case_id: int, members: list[CaseMember]) -> list[Problem]:
-    """`(reason, detail)` pairs. Exclusion is at case granularity: the pipeline joint-calls
-    whole families, so a family missing a member is not a smaller job, it is a different one.
+def member_reason(member: CaseMember) -> str | None:
+    """Why this member keeps its case from running, most specific first: a member with no
+    experiment has no alignment either. The two `pending_*` are transient: the case waits."""
+    if member.seq_id is None:
+        return "pending_sequencing"
+    if member.alignment_task_id is None:
+        return "pending_alignment"
+    if member.gvcf_matches == 0:
+        return "no_gvcf"
+    if member.gvcf_matches > 1:
+        return "ambiguous_gvcf"
+    return None
+
+
+def _validate(case_id: int, members: list[CaseMember], excluded_tenants: set[str]) -> list[Problem]:
+    """Every problem of a candidate case. Exclusion is at case granularity: the pipeline
+    joint-calls whole families, so a family missing a member is not a smaller job, it is a
+    different one.
     """
     problems: list[Problem] = []
 
-    # Reasons the query already worked out. It sees the supersession rules; this does not.
+    reasons = {member.patient_id: member_reason(member) for member in members}
     for member in members:
-        if member.exclusion_reason:
-            text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
-            problems.append(
-                member_problem(member, member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}")
-            )
+        reason = reasons[member.patient_id]
+        if reason:
+            detail = f"case {case_id}, patient {member.patient_id}: {REASON_TEXT[reason]}"
+            problems.append(member_problem(member, reason, detail))
 
-    # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket) because it is
-    # the gVCF sample name. The query only leaves it null on a member it has already excluded
-    # as `pending_sequencing`; this names the failure should that ever stop being true.
+    case = members[0]
+    if case.project_code is None:
+        problems.append(case_problem("no_project_code", f"case {case_id}: {REASON_TEXT['no_project_code']}"))
+    if case.tenant_code in excluded_tenants:
+        problems.append(case_problem("tenant_excluded", f"case {case_id}: {REASON_TEXT['tenant_excluded']}"))
+
+    # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket): the gVCF
+    # sample name. A completed experiment always has one; this names it should that change.
     for member in members:
-        if not member.exclusion_reason and not member.aliquot:
+        if not reasons[member.patient_id] and not member.aliquot:
             detail = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
             problems.append(member_problem(member, "missing_aliquot", detail))
 

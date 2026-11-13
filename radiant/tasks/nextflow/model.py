@@ -27,12 +27,12 @@ def case_id_of(fam_id: str) -> int:
 
 
 class CaseMember(BaseModel):
-    """One row of `sql/clinical/pending_annotation_select.sql`.
+    """One row of `sql/clinical/germline_snv_facts_select.sql`.
 
     Everything describing the member's sequencing is optional, because the query returns a
     member that has none rather than dropping it. A family silently short one person is a
-    worse failure than a family the run refuses to build, so the row comes back carrying
-    `exclusion_reason` and the case is excluded whole.
+    worse failure than a family the run refuses to build: `select_cases` names the member and
+    excludes the case whole.
     """
 
     case_id: int
@@ -49,13 +49,12 @@ class CaseMember(BaseModel):
     seq_id: int | None = None
     aliquot: str | None = None
     strategy: str | None = None
-    # The alignment task the gVCF hangs off -- the newest one for this experiment. Carried
-    # so a targeted `task_ids` run can report a task that produced no candidate case.
+    # The current alignment task of this experiment, where the gVCF hangs.
     alignment_task_id: int | None = None
     gvcf_url: str | None = None
     gvcf_matches: int = 0
-    # Set by the query when this member is why the case cannot run. None means usable.
-    exclusion_reason: str | None = None
+    # The case already has a germline annotation for this experiment.
+    annotated: bool = False
 
 
 class Phenotype(BaseModel):
