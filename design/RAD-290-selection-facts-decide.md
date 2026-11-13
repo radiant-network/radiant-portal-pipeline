@@ -172,6 +172,6 @@ Volume: the RAD-288 estimate (a few hundred rows a day) plus one `done` row per 
 
 Two PRs in `radiant-portal-pipeline`, on top of RAD-288 (#353):
 1. `feat/rad-290-selection-facts` (#354): germline SNV, with `DONE`, `no_trigger_document`, the write filter and `read_facts`. It sets the pattern.
-2. `feat/rad-290-facts-cnv-qc-somatic`: germline CNV, QC (germline and somatic) and somatic SNV, on top of the `tasks/nextflow` refactor (#355). The case-based pipelines share `decide_cases` in `selection.py`.
+2. `feat/rad-290-facts-cnv-qc-somatic`: germline CNV, QC (germline and somatic) and somatic SNV, on top of the `tasks/nextflow` refactor (#357). The case-based pipelines share `decide_cases` in `selection.py`.
 
 Each carries its fact queries and models, the selections, the unit scenarios, the equivalence check on the seeds, and the docs.
