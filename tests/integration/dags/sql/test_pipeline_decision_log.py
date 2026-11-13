@@ -88,7 +88,7 @@ def test_a_child_reads_back_the_units_decided_run(decision_log, starrocks_sessio
     rows = _rows(
         starrocks_session,
         _render("radiant/pipeline_decision_run_units_select.sql", radiant_mapping),
-        {"run_id": RUN_ID, "pipeline": QC},
+        {"run_id": RUN_ID, "pipeline": QC, "stage": DISCOVER},
     )
     assert {(r["unit_id"], r["case_id"]) for r in rows} == run_units(decision_log, QC)
     assert (None, TRIO_CASE_ID) in {(r["unit_id"], r["case_id"]) for r in rows}

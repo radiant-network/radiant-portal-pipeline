@@ -49,11 +49,6 @@ IMPORT_DAG_ID = f"{NAMESPACE}-import"
 # in the manifest's file name.
 CASE_GROUP_PREFIX = "results"
 
-# `discover_cases` XCom: the cases this run had work for, read back by `select_ready_cases` to
-# email the ones past `processing` it finished. Pulled rather than passed, so a failed discovery
-# costs those emails only, not the status changes.
-CASES_WITH_WORK_KEY = "cases_with_work"
-
 # Passed to the four "from Cases" DAGs:
 # - the run's block list, so they leave out exactly the tenants discovery left out. A tenant that is
 #   not excluded but not granted to the service account gets a 403 from the portal instead, logged
@@ -112,10 +107,9 @@ def _trigger(task_id: str, display_name: str, dag_id: str, conf: dict | None = N
     )
 
 
-def _decide_and_log(stage: str, context: Any) -> tuple[set[int], list[dict]]:
-    """Read every pipeline's facts and the case statuses, decide, write the decisions worth keeping
-    to `pipeline_decision_log` under this run. Returns the cases with work waiting (a `run` decision
-    anywhere) and the case statuses.
+def _decide_and_log(stage: str, context: Any) -> None:
+    """Read every pipeline's facts, decide, and write the decisions to `pipeline_decision_log` under this
+    run (every `run`, the others on change). The work waiting is then read back from the log.
 
     Asked the same way before the pipelines (`discover`) and after them (`after`), so the question
     cannot drift. The facts are the "from Cases" DAGs' own queries; the run's `excluded_tenants` is
@@ -129,15 +123,12 @@ def _decide_and_log(stage: str, context: Any) -> tuple[set[int], list[dict]]:
         SOMATIC_SNV,
         decide,
         read_discovery,
-        read_rows,
-        run_case_ids,
         write_decisions,
     )
 
     run_tag = sanitize_run_tag(context["run_id"])
     conf = context["dag_run"].conf
     rows = read_discovery(conf)
-    status_rows = read_rows("clinical", "case_status_select.sql", conf)
     decisions = decide(
         rows[GERMLINE_SNV],
         rows[GERMLINE_CNV],
@@ -147,7 +138,46 @@ def _decide_and_log(stage: str, context: Any) -> tuple[set[int], list[dict]]:
         excluded_tenants=context["params"]["excluded_tenants"],
     )
     write_decisions(decisions, run_tag, stage, conf)
-    return run_case_ids(decisions), status_rows
+
+
+def _case_statuses(context: Any) -> list[dict]:
+    from radiant.tasks.nextflow.decision import read_rows
+
+    return read_rows("clinical", "case_status_select.sql", context["dag_run"].conf)
+
+
+def _waiting(stage: str, context: Any) -> set[int]:
+    """The cases with work waiting at `stage` of this run: its `run` decisions in the log."""
+    from radiant.tasks.nextflow.decision import read_run_case_ids
+
+    return read_run_case_ids(sanitize_run_tag(context["run_id"]), stage, context["dag_run"].conf)
+
+
+def _processing_plan(context: Any) -> list[dict]:
+    """`{tenant, case_ids}` to move to `processing`, from the log and the current statuses."""
+    from radiant.tasks.nextflow.case_status import plan_processing
+    from radiant.tasks.nextflow.decision import DISCOVER
+
+    waiting = _waiting(DISCOVER, context)
+    return plan_processing(_case_statuses(context), waiting, context["params"]["excluded_tenants"])
+
+
+def _in_progress_plan(context: Any) -> list[dict]:
+    """`{tenant, case_ids, processed_case_ids}` to move to `in_progress` and to notify, from the log
+    (the work this run had at `discover`, the work still waiting `after`) and the current statuses.
+    A failed discovery leaves no `discover` row: the cases are still moved, only the others are not
+    emailed."""
+    from radiant.tasks.nextflow.case_status import plan_in_progress
+    from radiant.tasks.nextflow.decision import AFTER, DISCOVER
+
+    processed, waiting = _waiting(DISCOVER, context), _waiting(AFTER, context)
+    return plan_in_progress(_case_statuses(context), processed, waiting, context["params"]["excluded_tenants"])
+
+
+def _tenant_batch(plan: list[dict], tenant: str) -> dict:
+    return next(
+        (b for b in plan if b["tenant"] == tenant), {"tenant": tenant, "case_ids": [], "processed_case_ids": []}
+    )
 
 
 @dag(
@@ -172,16 +202,16 @@ def case_scheduler():
         task_id="discover_cases",
         task_display_name="[PyOp] Decide every pipeline and select the submitted cases with work waiting",
     )
-    def discover_cases() -> Any:
+    def discover_cases() -> list[str]:
+        """The tenants with cases to move to `processing`: the only XCom, each tenant's task reads
+        its cases back from the log."""
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.case_status import plan_processing
         from radiant.tasks.nextflow.decision import DISCOVER
 
         context = get_current_context()
-        waiting, status_rows = _decide_and_log(DISCOVER, context)
-        context["ti"].xcom_push(key=CASES_WITH_WORK_KEY, value=sorted(waiting))
-        return plan_processing(status_rows, waiting, context["params"]["excluded_tenants"])
+        _decide_and_log(DISCOVER, context)
+        return [batch["tenant"] for batch in _processing_plan(context)]
 
     @task(
         task_id="set_processing",
@@ -189,10 +219,12 @@ def case_scheduler():
         retries=STATUS_RETRIES,
         retry_delay=STATUS_RETRY_DELAY,
     )
-    def set_processing(batch: dict) -> Any:
+    def set_processing(tenant: str) -> Any:
+        from airflow.sdk import get_current_context
+
         from radiant.tasks.nextflow.case_status import change_tenant_status
 
-        return change_tenant_status(batch, PROCESSING)
+        return change_tenant_status(_tenant_batch(_processing_plan(get_current_context()), tenant), PROCESSING)
 
     @task(
         task_id="select_ready_cases",
@@ -201,20 +233,15 @@ def case_scheduler():
         # them failed, nothing is evaluated nor emailed; the next run picks the cases up.
         trigger_rule=TriggerRule.NONE_FAILED,
     )
-    def select_ready_cases() -> Any:
+    def select_ready_cases() -> list[str]:
+        """The tenants with cases to move to `in_progress` or to notify."""
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.case_status import plan_in_progress
         from radiant.tasks.nextflow.decision import AFTER
 
         context = get_current_context()
-        processed = context["ti"].xcom_pull(task_ids="discover_cases", key=CASES_WITH_WORK_KEY)
-        if processed is None:
-            LOGGER.warning("discover_cases did not run: only the cases moved to in_progress are notified")
-        still_waiting, status_rows = _decide_and_log(AFTER, context)
-        return plan_in_progress(
-            status_rows, set(processed or []), still_waiting, context["params"]["excluded_tenants"]
-        )
+        _decide_and_log(AFTER, context)
+        return [batch["tenant"] for batch in _in_progress_plan(context)]
 
     @task(
         task_id="set_in_progress",
@@ -222,16 +249,20 @@ def case_scheduler():
         retries=STATUS_RETRIES,
         retry_delay=STATUS_RETRY_DELAY,
     )
-    def set_in_progress(batch: dict) -> Any:
+    def set_in_progress(tenant: str) -> Any:
+        """The portal's answer, kept in XCom: which cases did move."""
+        from airflow.sdk import get_current_context
+
         from radiant.tasks.nextflow.case_status import change_tenant_status
 
-        return change_tenant_status(batch, IN_PROGRESS)
+        return change_tenant_status(_tenant_batch(_in_progress_plan(get_current_context()), tenant), IN_PROGRESS)
 
     @task(task_id="create_case_group", task_display_name="[PyOp] Group the cases to notify")
-    def create_case_group(batch: dict, results: Any) -> str:
+    def create_case_group(tenant: str, results: Any) -> None:
         """One group per run and tenant, named after the run tag so a retry overwrites its own.
 
-        The cases moved to `in_progress`, and the cases past it this run finished processing.
+        The cases moved to `in_progress`, and the cases past it this run finished processing (read
+        again: the ones just moved are among them too, which changes nothing to the union).
         """
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
@@ -239,31 +270,33 @@ def case_scheduler():
         from radiant.tasks.nextflow.case_status import cases_now_in, skip_if_not_granted
         from radiant.tasks.nextflow.notify import group_name, post_group
 
-        case_ids = sorted({*cases_now_in(results, IN_PROGRESS), *batch["processed_case_ids"]})
+        context = get_current_context()
+        processed = _tenant_batch(_in_progress_plan(context), tenant)["processed_case_ids"]
+        case_ids = sorted({*cases_now_in(results, IN_PROGRESS), *processed})
         if not case_ids:
-            raise AirflowSkipException(f"no case of tenant '{batch['tenant']}' to notify")
-        name = group_name(CASE_GROUP_PREFIX, get_current_context()["run_id"])
-        skip_if_not_granted(batch["tenant"], post_group, name, case_ids)
-        return name
+            raise AirflowSkipException(f"no case of tenant '{tenant}' to notify")
+        skip_if_not_granted(tenant, post_group, group_name(CASE_GROUP_PREFIX, context["run_id"]), case_ids)
 
     @task(task_id="notify_labs", task_display_name="[PyOp] Email the laboratories their manifest")
-    def notify_labs(batch: dict, name: str) -> Any:
-        """Stateless on the portal side: a retry of this instance emails the tenant's labs again."""
+    def notify_labs(tenant: str) -> Any:
+        """Stateless on the portal side: a retry of this instance emails the tenant's labs again.
+        Skipped with `create_case_group`, when there is no group to send."""
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.notify import send_notification
+        from radiant.tasks.nextflow.notify import group_name, send_notification
 
-        if not get_current_context()["params"]["notify"]:
+        context = get_current_context()
+        name = group_name(CASE_GROUP_PREFIX, context["run_id"])
+        if not context["params"]["notify"]:
             raise AirflowSkipException(f"notify=false: case group '{name}' exists, use the notify_cases DAG to send")
-        return send_notification(batch["tenant"], name)
+        return send_notification(tenant, name)
 
     @task_group(group_id="evaluate_cases", tooltip="Move a tenant's cases to in_progress, then email its labs")
-    def evaluate_cases(batch: dict) -> None:
+    def evaluate_cases(tenant: str) -> None:
         # One chain per tenant, mapped as a group: a tenant skipped on a 403, or failed, must not
         # hold back the other tenants' emails, as mapping each task on its own would.
-        name = create_case_group(batch, set_in_progress(batch))
-        notify_labs(batch, name)
+        create_case_group(tenant, set_in_progress(tenant)) >> notify_labs(tenant)
 
     @task(
         task_id="watcher",
@@ -274,7 +307,7 @@ def case_scheduler():
         raise AirflowFailException("a step of this run failed, see the failed task(s) and the child runs")
 
     batches = discover_cases()
-    processing = set_processing.expand(batch=batches)
+    processing = set_processing.expand(tenant=batches)
 
     with TaskGroup(
         group_id="pipelines",
@@ -314,7 +347,7 @@ def case_scheduler():
     processing >> pipelines[:4]
     ready = select_ready_cases()
     [trigger_import, trigger_germline_cnv, trigger_qc] >> ready
-    evaluated = evaluate_cases.expand(batch=ready)
+    evaluated = evaluate_cases.expand(tenant=ready)
 
     [batches, processing, *pipelines, ready, evaluated] >> watcher()
 

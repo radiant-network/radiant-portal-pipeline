@@ -435,9 +435,17 @@ def write_decisions(decisions: list[Decision], run_id: str, stage: str, conf: di
     LOGGER.info("%d decision(s) written for run %s, stage %s", len(rows), run_id, stage)
 
 
-def read_run_units(run_id: str, pipeline: str, conf: dict | None = None) -> set[tuple[int | None, int]]:
-    """The units a pipeline was decided to run at `discover` by the scheduler run `run_id`."""
+def read_run_units(
+    run_id: str, pipeline: str, conf: dict | None = None, stage: str = DISCOVER
+) -> set[tuple[int | None, int]]:
+    """The units a pipeline was decided to run by the scheduler run `run_id` at `stage`."""
     sql = _render("pipeline_decision_run_units_select.sql", conf)
     with _starrocks_cursor() as cursor:
-        cursor.execute(sql, {"run_id": run_id, "pipeline": pipeline})
+        cursor.execute(sql, {"run_id": run_id, "pipeline": pipeline, "stage": stage})
         return {(row[0], row[1]) for row in cursor.fetchall()}
+
+
+def read_run_case_ids(run_id: str, stage: str, conf: dict | None = None) -> set[int]:
+    """The cases at least one pipeline was decided to run by the scheduler run `run_id` at `stage`:
+    the work waiting, as the log has it."""
+    return {case_id for pipeline in PIPELINES for _, case_id in read_run_units(run_id, pipeline, conf, stage)}

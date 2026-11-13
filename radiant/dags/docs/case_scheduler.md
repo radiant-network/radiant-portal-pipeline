@@ -165,9 +165,14 @@ emailed, whether its status changed or not:
   analysis. Their status is left alone.
 
 A `submitted` or `processing` case is not emailed until it reaches `in_progress`, and a case a
-pipeline failed on is emailed by the later run that finishes it. `discover_cases` hands its cases
-to `select_ready_cases` as the `cases_with_work` XCom, pulled rather than passed: if discovery
-failed, the cases are still moved to `in_progress` and emailed, only the others are not.
+pipeline failed on is emailed by the later run that finishes it. The cases this run had work for
+are its `run` rows at `discover` in `pipeline_decision_log`: if discovery failed, there are none,
+and the cases are still moved to `in_progress` and emailed, only the others are not.
+
+Little goes through XCom: `discover_cases` and `select_ready_cases` hand on the tenants only, and
+each tenant's task reads its cases back from the log and the current statuses. The one other XCom is
+the portal's answer to `set_in_progress` (which cases did move), read by `create_case_group`;
+`notify_labs` recomputes the group name from the run.
 
 The "from Cases" DAGs no longer email. `evaluate_cases` is a mapped task group, one chain per
 tenant, so a tenant skipped or failed never holds back another tenant's email:

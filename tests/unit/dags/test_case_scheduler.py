@@ -216,27 +216,41 @@ def _feed(monkeypatch, status_rows, **rows):
     monkeypatch.setattr("radiant.tasks.nextflow.decision.read_rows", lambda *args, **kwargs: status_rows)
 
 
-def _record_writes(monkeypatch) -> list:
-    """`pipeline_decision_log` in memory: the `(run_id, stage, decisions)` of each write, filtered by the
-    real `changed` against the state the earlier writes left."""
+def _fake_log(monkeypatch, *entries) -> list:
+    """`pipeline_decision_log` in memory: `write_decisions` appends `(run_id, stage, decision)`,
+    `read_run_units` reads the `run` case rows back. `entries` are already in it."""
     from radiant.tasks.nextflow import decision
 
-    written = []
-
-    def state() -> list[dict]:
-        last = {}
-        for _, _, decisions in written:
-            for unit, rows in decision._units([d.model_dump() for d in decisions]).items():
-                last[unit] = rows
-        return [row for rows in last.values() for row in rows]
+    log = list(entries)
 
     def write(decisions, run_id, stage, conf=None):
-        kept = decision.changed(decisions, state())
-        if kept:
-            written.append((run_id, stage, kept))
+        # A unit's state is the rows of its last write: one pass, one (run_id, stage).
+        last: dict[tuple, tuple] = {}
+        for r, st, d in log:
+            unit = (d.pipeline, d.case_id, d.unit_id)
+            if last.get(unit, ((None, None), []))[0] != (r, st):
+                last[unit] = ((r, st), [])
+            last[unit][1].append(d.model_dump())
+        state = [row for _, rows in last.values() for row in rows]
+        log.extend((run_id, stage, d) for d in decision.changed(decisions, state))
+
+    def read(run_id, pipeline, conf=None, stage=decision.DISCOVER):
+        return {
+            (d.unit_id, d.case_id)
+            for r, st, d in log
+            if (r, st, d.pipeline, d.scope, d.decision) == (run_id, stage, pipeline, "case", decision.RUN)
+        }
 
     monkeypatch.setattr(decision, "write_decisions", write)
-    return written
+    monkeypatch.setattr(decision, "read_run_units", read)
+    return log
+
+
+def _run(pipeline, case_id, stage="discover", unit_id=None):
+    """A `run` case row of this run, as the log holds it."""
+    from radiant.tasks.nextflow.decision import Decision
+
+    return RUN_TAG, stage, Decision(pipeline=pipeline, scope="case", case_id=case_id, unit_id=unit_id, decision="run")
 
 
 def test_the_children_follow_this_run_s_decisions(dag_bag):
@@ -254,99 +268,103 @@ def test_the_children_follow_this_run_s_decisions(dag_bag):
     assert not dag.get_task("trigger_import").conf
 
 
-def _run_select_ready_cases(dag, monkeypatch, cases_with_work):
-    """`select_ready_cases` with no work left anywhere, reading `cases_with_work` from discovery."""
+def _in_progress_after(dag, monkeypatch, *entries):
+    """`select_ready_cases`, with no work left anywhere, then the plan its tenants' tasks read."""
     from radiant.dags import case_scheduler
 
-    pulls = []
-
-    class TaskInstance:
-        def xcom_pull(self, task_ids, key):
-            pulls.append((task_ids, key))
-            return cases_with_work
-
-    context = _context(TaskInstance())
+    context = _context(None)
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
-    # No discovery row: nothing decided, nothing waiting. The decisions are not written anywhere.
-    _record_writes(monkeypatch)
+    _fake_log(monkeypatch, *entries)
     status_rows = [
         {"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True},
         {"case_id": 2, "tenant_code": "radiant", "status_code": "in_progress", "has_variants": True},
     ]
     _feed(monkeypatch, status_rows)
-    batches = dag.get_task("select_ready_cases").python_callable()
-    assert pulls == [("discover_cases", case_scheduler.CASES_WITH_WORK_KEY)]
-    return batches
+    assert dag.get_task("select_ready_cases").python_callable() == ["radiant"]
+    return case_scheduler._in_progress_plan(context)
 
 
 def test_the_cases_this_run_processed_are_notified_whatever_their_status(dag_bag, monkeypatch):
-    """Not only the cases moved to in_progress: one already past it gets its new results too."""
-    batches = _run_select_ready_cases(dag_bag.get_dag(DAG_ID), monkeypatch, cases_with_work=[2])
-    assert batches == [{"tenant": "radiant", "case_ids": [1], "processed_case_ids": [2]}]
+    """Not only the cases moved to in_progress: one already past it gets its new results too. The work
+    this run had is read from the log, not passed along."""
+    plan = _in_progress_after(dag_bag.get_dag(DAG_ID), monkeypatch, _run("import", 2))
+    assert plan == [{"tenant": "radiant", "case_ids": [1], "processed_case_ids": [2]}]
 
 
 def test_a_failed_discovery_still_moves_the_cases_to_in_progress(dag_bag, monkeypatch):
-    """Pulled, not passed: discovery failing costs the extra emails only, not the status changes."""
-    batches = _run_select_ready_cases(dag_bag.get_dag(DAG_ID), monkeypatch, cases_with_work=None)
-    assert batches == [{"tenant": "radiant", "case_ids": [1], "processed_case_ids": []}]
+    """No `discover` row in the log: the status changes go out, only the extra emails do not."""
+    plan = _in_progress_after(dag_bag.get_dag(DAG_ID), monkeypatch)
+    assert plan == [{"tenant": "radiant", "case_ids": [1], "processed_case_ids": []}]
+
+
+def test_the_mapped_tasks_get_the_tenant_only(dag_bag):
+    """The cases of each tenant are read back from the log and the statuses, not passed in XCom."""
+    import inspect
+
+    dag = dag_bag.get_dag(DAG_ID)
+    parameters = {
+        task_id: list(inspect.signature(dag.get_task(task_id).python_callable).parameters)
+        for task_id in (
+            "set_processing",
+            "evaluate_cases.set_in_progress",
+            "evaluate_cases.create_case_group",
+            "evaluate_cases.notify_labs",
+        )
+    }
+    assert parameters == {
+        "set_processing": ["tenant"],
+        "evaluate_cases.set_in_progress": ["tenant"],
+        # The portal's answer: which cases did move.
+        "evaluate_cases.create_case_group": ["tenant", "results"],
+        "evaluate_cases.notify_labs": ["tenant"],
+    }
 
 
 def test_somatic_candidates_count_as_work_in_both_passes(dag_bag, monkeypatch):
-    """Each discovery input reaches `_cases_with_work` in its own place: a somatic SNV candidate
-    makes its case work waiting before the pipelines, and keeps it in processing after them."""
+    """A somatic SNV candidate makes its case work waiting before the pipelines, and keeps it in
+    processing after them."""
+    from radiant.dags import case_scheduler
     from tests.unit.nextflow.somatic_snv.conftest import calling_task_rows
 
-    pushed = {}
-
-    class TaskInstance:
-        def xcom_push(self, key, value):
-            pushed[key] = value
-
-        def xcom_pull(self, task_ids, key):
-            return pushed.get(key)
-
-    context = _context(TaskInstance())
+    context = _context(None)
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
-    written = _record_writes(monkeypatch)
+    log = _fake_log(monkeypatch)
     dag = dag_bag.get_dag(DAG_ID)
     somatic_rows = calling_task_rows(case_id=23)
 
     submitted = [{"case_id": 23, "tenant_code": "radiant", "status_code": "submitted", "has_variants": False}]
     _feed(monkeypatch, submitted, somatic_snv=somatic_rows)
-    batches = dag.get_task("discover_cases").python_callable()
-    assert batches == [{"tenant": "radiant", "case_ids": [23]}]
+    assert dag.get_task("discover_cases").python_callable() == ["radiant"]
+    assert case_scheduler._processing_plan(context) == [{"tenant": "radiant", "case_ids": [23]}]
 
     processing = [{"case_id": 23, "tenant_code": "radiant", "status_code": "processing", "has_variants": True}]
     _feed(monkeypatch, processing, somatic_snv=somatic_rows)
     assert dag.get_task("select_ready_cases").python_callable() == []
 
     # Both passes are logged under the run, the calling task as the unit.
-    assert [(run_id, stage) for run_id, stage, _ in written] == [(RUN_TAG, "discover"), (RUN_TAG, "after")]
-    for _, _, decisions in written:
-        assert [(d.pipeline, d.unit_id, d.case_id, d.decision) for d in decisions if d.scope == "case"] == [
-            ("somatic_snv", 70, 23, "run")
-        ]
+    assert [(stage, d.pipeline, d.unit_id, d.case_id, d.decision) for run_id, stage, d in log] == [
+        ("discover", "somatic_snv", 70, 23, "run"),
+        ("after", "somatic_snv", 70, 23, "run"),
+    ]
+    assert {run_id for run_id, _, _ in log} == {RUN_TAG}
 
 
 def test_germline_and_somatic_quality_control_rows_both_count_as_work(dag_bag, monkeypatch):
-    """The two QC discoveries reach `_cases_with_work` together: either one makes its case work waiting."""
+    """The two QC queries are decided together: either one makes its case work waiting."""
+    from radiant.dags import case_scheduler
     from tests.unit.nextflow.qc.conftest import member_row
 
-    class TaskInstance:
-        def xcom_push(self, key, value):
-            pass
-
-    context = _context(TaskInstance())
+    context = _context(None)
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
-    _record_writes(monkeypatch)
+    _fake_log(monkeypatch)
     submitted = [
         {"case_id": case_id, "tenant_code": "radiant", "status_code": "submitted", "has_variants": False}
         for case_id in (3, 23)
     ]
     qc_rows = [member_row(case_id=3), member_row(case_id=23, case_type="somatic", affected_status="unknown")]
     _feed(monkeypatch, submitted, qc=qc_rows)
-    batches = dag_bag.get_dag(DAG_ID).get_task("discover_cases").python_callable()
-    assert batches == [{"tenant": "radiant", "case_ids": [3, 23]}]
+    dag_bag.get_dag(DAG_ID).get_task("discover_cases").python_callable()
+    assert case_scheduler._processing_plan(context) == [{"tenant": "radiant", "case_ids": [3, 23]}]
 
 
 def test_a_settled_case_is_logged_once_and_the_run_s_case_on_each_change(dag_bag, monkeypatch):
@@ -354,16 +372,9 @@ def test_a_settled_case_is_logged_once_and_the_run_s_case_on_each_change(dag_bag
     goes `run` then `done`."""
     from tests.unit.nextflow.germline_snv.conftest import member_row
 
-    class TaskInstance:
-        def xcom_push(self, key, value):
-            pass
-
-        def xcom_pull(self, task_ids, key):
-            return [1]
-
-    context = _context(TaskInstance())
+    context = _context(None)
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
-    written = _record_writes(monkeypatch)
+    log = _fake_log(monkeypatch)
     dag = dag_bag.get_dag(DAG_ID)
     annotated_elsewhere = member_row(case_id=2, patient_id=200, seq_id=600, annotated=True)
 
@@ -374,8 +385,11 @@ def test_a_settled_case_is_logged_once_and_the_run_s_case_on_each_change(dag_bag
     processing = [{"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True}]
     _feed(monkeypatch, processing, germline_snv=[member_row(case_id=1, annotated=True), annotated_elsewhere])
     dag.get_task("select_ready_cases").python_callable()
+    # A second pass with the same facts writes nothing: no `run`, no change.
+    dag.get_task("select_ready_cases").python_callable()
 
-    dag.get_task("select_ready_cases").python_callable(germline_snv_rows=rows, **empty, status_rows=processing)
-
-    logged = [(stage, d.case_id, d.decision) for _, stage, decisions in written for d in decisions]
-    assert logged == [("discover", 1, "run"), ("discover", 2, "done"), ("after", 1, "done")]
+    assert [(stage, d.case_id, d.decision) for _, stage, d in log] == [
+        ("discover", 1, "run"),
+        ("discover", 2, "done"),
+        ("after", 1, "done"),
+    ]
