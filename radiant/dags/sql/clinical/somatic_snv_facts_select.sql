@@ -1,19 +1,17 @@
--- One row per (candidate somatic calling task, somatic case it belongs to, sequencing experiment
--- it called): the raw somatic SNV VCF the task published, and why it cannot run if it cannot.
+-- One row per (somatic calling task, somatic case it belongs to, sequencing experiment it called):
+-- the raw somatic SNV VCF the task published, the experiment's status, and whether an annotation
+-- of that VCF is already registered on the case. Plus one row, with no calling task, per somatic
+-- case that no calling task belongs to.
 --
--- Consumed by `radiant-nextflow-somatic-snv-annotation-cases` (discover_scope). Design: radiant-hub
--- `docs/features/RAD-23-somatic-vep-annotation.md`.
+-- Facts only: every somatic case of `pipeline_case` comes back, and the decision is made in Python
+-- by `radiant.tasks.nextflow.somatic_snv.resolve.select_tasks`. Read by the case scheduler (every
+-- case), and by `radiant-nextflow-somatic-snv-annotation-cases` (`case_ids`: the cases the
+-- scheduler decided to run). Design: radiant-hub `docs/features/RAD-23-somatic-vep-annotation.md`.
 --
--- The unit of work is the calling task, not the case: a tumor-normal and a tumor-only call on the
--- same tumor sample are two VCFs, and both are annotated. A calling task is pending on a case when
--- it published an `ssnv`/`vcf` document and no `radiant_somatic_annotation` registered on that
--- case has that document as input. Per case, not global: a registration that succeeded in one
--- tenant must not hide a case of another.
---
--- Only the `ssnv` VCF is selected: the `scnv` VCF of the same task is never a trigger.
---
--- The tenant is returned, not filtered on: clinical is one shared schema and `cases.id` is unique
--- across it. `params.excluded_tenants` is a block list, not a scope.
+-- The unit of work is the (calling task, case) pair: a tumor-normal and a tumor-only call on the
+-- same tumor sample are two VCFs, and both are annotated. Annotated per case, not globally: a
+-- registration that succeeded in one tenant must not hide a case of another. Only the `ssnv` VCF
+-- is a trigger; the `scnv` VCF of the same task never is.
 WITH work_unit_experiment AS (
     -- Every somatic calling task, one row per sequencing experiment it called, with the number of
     -- experiments of the task. These three types are the ones QLIN sends with the raw VCF; listing
@@ -90,59 +88,43 @@ already_registered AS (
     JOIN {{ mapping.clinical_task_has_document }} call_out ON call_out.document_id = ann_in.document_id
                                                          AND call_out.type = 'output'
     WHERE t.task_type_code = 'radiant_somatic_annotation'
-),
-work_to_do AS (
-    -- The (case, calling task) pairs left to run: `registration_case` minus `already_registered`
-    -- (the LEFT JOIN ... IS NULL anti-join).
-    SELECT ct.case_id           AS case_id,
-           ct.submitter_case_id AS submitter_case_id,
-           ct.tenant_code       AS tenant_code,
-           ct.project_code      AS project_code,
-           ct.task_id           AS task_id
-    FROM registration_case ct
-    LEFT JOIN vcf_to_annotate v   ON v.task_id = ct.task_id
-    LEFT JOIN already_registered a ON a.case_id = ct.case_id
-                                 AND a.task_id = ct.task_id
-    WHERE a.task_id IS NULL
-    {% if params.task_ids %}
-      -- Targeted rerun: the named tasks only, including one with no `ssnv` VCF, so that the
-      -- operator sees why it cannot run instead of silence.
-      AND ct.task_id IN %(task_ids)s
-    {% else %}
-      -- A task with no `ssnv` VCF is not a candidate on a discovery run: a calling task sent the
-      -- old way, with its annotation from QLIN, would otherwise be reported every night.
-      AND v.task_id IS NOT NULL
-    {% endif %}
 )
-SELECT pt.case_id                     AS case_id,
-       pt.submitter_case_id           AS submitter_case_id,
-       pt.tenant_code                 AS tenant_code,
-       pt.project_code                AS project_code,
+
+SELECT rc.case_id                     AS case_id,
+       rc.submitter_case_id           AS submitter_case_id,
+       rc.tenant_code                 AS tenant_code,
+       rc.project_code                AS project_code,
        te.task_id                     AS calling_task_id,
        te.task_type                   AS calling_task_type,
        se.id                          AS seq_id,
+       se.status_code                 AS seq_status,
        se.aliquot                     AS aliquot,
        se.experimental_strategy_code  AS strategy,
        sa.histology_code              AS histology,
        v.url                          AS ssnv_url,
-       -- Task-level reasons first: they hold for every case of the task. `pending_sequencing` is
-       -- transient, the task waits for its experiments rather than running on unfinished data.
-       CASE
-           WHEN se.status_code <> 'completed' THEN 'pending_sequencing'
-           WHEN v.task_id IS NULL             THEN 'no_ssnv'
-           WHEN v.matches > 1                 THEN 'ambiguous_ssnv'
-           WHEN pt.project_code IS NULL       THEN 'no_project_code'
-           {% if params.excluded_tenants %}
-           WHEN pt.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'
-           {% endif %}
-           ELSE NULL
-       END                            AS exclusion_reason
-FROM work_to_do pt
-JOIN work_unit_experiment te                       ON te.task_id = pt.task_id
+       COALESCE(v.matches, 0)         AS ssnv_matches,
+       a.task_id IS NOT NULL          AS annotated
+FROM registration_case rc
+JOIN work_unit_experiment te                          ON te.task_id = rc.task_id
 JOIN {{ mapping.clinical_sequencing_experiment }} se  ON se.id = te.seq_id
 LEFT JOIN {{ mapping.clinical_sample }} sa            ON sa.id = se.sample_id
-LEFT JOIN vcf_to_annotate v                           ON v.task_id = pt.task_id
-ORDER BY te.task_id,
-         pt.case_id,
-         CASE sa.histology_code WHEN 'tumoral' THEN 0 ELSE 1 END,
-         se.id
+LEFT JOIN vcf_to_annotate v                           ON v.task_id = rc.task_id
+LEFT JOIN already_registered a                        ON a.case_id = rc.case_id
+                                                     AND a.task_id = rc.task_id
+{% if case_ids is defined and case_ids %}
+WHERE rc.case_id IN %(case_ids)s
+{% endif %}
+UNION ALL
+-- The somatic cases no calling task belongs to: nothing to annotate.
+SELECT pc.case_id, pc.submitter_case_id, pc.tenant_code, pc.project_code,
+       CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR), CAST(NULL AS BIGINT), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       0, FALSE
+FROM {{ mapping.starrocks_pipeline_case }} pc
+LEFT JOIN (SELECT DISTINCT case_id FROM registration_case) rcs ON rcs.case_id = pc.case_id
+WHERE pc.case_type = 'somatic'
+  AND rcs.case_id IS NULL
+{% if case_ids is defined and case_ids %}
+  AND pc.case_id IN %(case_ids)s
+{% endif %}
+ORDER BY calling_task_id, case_id, histology DESC, seq_id

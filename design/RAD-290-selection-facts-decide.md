@@ -127,13 +127,13 @@ Volume: the RAD-288 estimate (a few hundred rows a day) plus one `done` row per 
 
 **What changes:**
 - the log gains `done` rows at `after`, and `skipped` / `no_trigger_document` rows for `submitted` cases;
-- QC somatic reports a tumor not sequenced or not aligned yet as `wait` (`pending_sequencing`, `pending_alignment`) instead of leaving it out;
+- QC somatic reports a tumor not aligned yet as `skipped` / `no_trigger_document` instead of leaving it out (its alignment is the trigger), and a somatic SNV calling task without its VCF likewise on a discovery run;
 - the fact queries return every case, not only the candidates. They read the same views; the row count (cases × members) is to check on QA.
 
 ## 7. Deployment
 
 - No migration. `decision` is a VARCHAR; the DDL comment of `pipeline_decision_log` gains `done`.
-- One PR per pipeline. Each deploys alone: the other pipelines keep their pending query until migrated.
+- Two PRs (§11). The first deploys alone: the other pipelines keep their pending query until the second.
 - Rollback: deploy the previous ETL version.
 
 ## 8. How this gets verified
@@ -166,14 +166,12 @@ Volume: the RAD-288 estimate (a few hundred rows a day) plus one `done` row per 
 - `done` is a decision deduced from the facts, never a status written by anyone. Only the scheduler writes the log, as in RAD-288.
 - `done` is logged at `after` only, for the units decided `run` at `discover` of the same run.
 - A case with no trigger document is `skipped`, reason `no_trigger_document`. Logged for `submitted` cases only: proposed, to confirm in review.
-- One PR per pipeline.
+- Two PRs: germline SNV first, to set the pattern; then germline CNV, QC and somatic SNV together.
 
 ## 11. Delivery
 
-Branch `feat/rad-290-selection-facts`, on top of RAD-288 (#353) once merged. Four PRs in `radiant-portal-pipeline`, in this order:
-1. germline SNV, with `DONE`, `no_trigger_document` and the write filter: it sets the pattern;
-2. germline CNV;
-3. QC (germline and somatic);
-4. somatic SNV.
+Two PRs in `radiant-portal-pipeline`, on top of RAD-288 (#353):
+1. `feat/rad-290-selection-facts` (#354): germline SNV, with `DONE`, `no_trigger_document`, the write filter and `read_facts`. It sets the pattern.
+2. `feat/rad-290-facts-cnv-qc-somatic`: germline CNV, QC (germline and somatic) and somatic SNV, on top of the `tasks/nextflow` refactor (#355). The case-based pipelines share `decide_cases` in `selection.py`.
 
-Each PR carries its fact query and models, `decide_<pipeline>`, the adapter, its unit scenarios, the equivalence test, and its docs.
+Each carries its fact queries and models, the selections, the unit scenarios, the equivalence check on the seeds, and the docs.

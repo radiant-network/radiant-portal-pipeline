@@ -1,12 +1,12 @@
-"""Execute `pending_cnv_annotation_select.sql` against a real StarRocks + clinical Postgres.
+"""Execute `germline_cnv_facts_select.sql` against a real StarRocks + clinical Postgres.
 
 The unit tests pin what the template says; what only a database shows is that the joins hold
 over the JDBC catalog and the rows resolve into families.
 
 Case 16 in the seeds is the happy path: a trio whose three alignments each published a
 germline CNV VCF (documents 268-273) plus a CRAM and its index, and no CNV annotation. Case 1
-carries task 72, a `radiant_germline_cnv_annotation` over all three of its experiments, and
-must not come back although its alignments also publish `gcnv` VCFs. Case 8 is the other
+carries task 72, a `radiant_germline_cnv_annotation` over all three of its experiments, and is
+`done` although its alignments also publish `gcnv` VCFs. Case 8 is the other
 seeded case with a `gcnv` VCF and no CNV annotation, and comes back too.
 """
 
@@ -22,7 +22,7 @@ _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
 
 # The queries read the RAD-287 views: create them once for the session.
 pytestmark = pytest.mark.usefixtures("pipeline_views")
-DISCOVERY = "pending_cnv_annotation_select.sql"
+DISCOVERY = "germline_cnv_facts_select.sql"
 
 TRIO_CASE_ID = 16
 CNV_ANNOTATED_CASE_ID = 1
@@ -32,17 +32,14 @@ SOMATIC_CASE_ID = 22
 TRIO_PROBAND_ALIGNMENT_TASK = 44
 
 
-def _render(radiant_mapping, params=None):
+def _render(radiant_mapping, **variables):
     with open(os.path.join(_CLINICAL_SQL, DISCOVERY)) as f:
-        return jinja2.Template(f.read()).render(
-            mapping=radiant_mapping,
-            params=params if params is not None else {"task_ids": [], "excluded_tenants": []},
-        )
+        return jinja2.Template(f.read()).render(mapping=radiant_mapping, **variables)
 
 
-def _discover(starrocks_session, radiant_mapping, case_id=None, parameters=None, params=None):
+def _discover(starrocks_session, radiant_mapping, case_id=None):
     with starrocks_session.cursor() as cursor:
-        cursor.execute(_render(radiant_mapping, params), parameters or {})
+        cursor.execute(_render(radiant_mapping))
         columns = [d[0] for d in cursor.description]
         rows = [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
     return [r for r in rows if case_id is None or r["case_id"] == case_id]
@@ -54,7 +51,7 @@ def test_a_trio_with_cnv_vcfs_and_no_cnv_annotation_is_discovered(
     rows = _discover(starrocks_session, radiant_mapping, TRIO_CASE_ID)
     assert [r["role"] for r in rows] == ["proband", "father", "mother"]
     assert {r["patient_id"] for r in rows} == {44, 45, 46}
-    assert all(r["exclusion_reason"] is None for r in rows)
+    assert not any(r["annotated"] for r in rows)
     assert all(r["gcnv_matches"] == 1 and r["gcnv_url"].endswith(".cnv.vcf.gz") for r in rows)
     assert all(r["cram_url"] and r["crai_url"] for r in rows)
     assert all(r["alignment_pipeline"] == "Dragen" for r in rows)
@@ -73,39 +70,40 @@ def test_the_rows_resolve_into_one_family(postgres_clinical_seeds, starrocks_ses
     assert family.crams_complete is False
 
 
-def test_a_cnv_annotated_case_is_not_discovered(postgres_clinical_seeds, starrocks_session, radiant_mapping):
-    assert _discover(starrocks_session, radiant_mapping, CNV_ANNOTATED_CASE_ID) == []
+def test_a_cnv_annotated_case_is_done(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+    assert all(r["annotated"] for r in _discover(starrocks_session, radiant_mapping, CNV_ANNOTATED_CASE_ID))
+    assert CNV_ANNOTATED_CASE_ID in select_cases(_discover(starrocks_session, radiant_mapping)).done
 
 
-def test_a_somatic_case_is_never_discovered(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+def test_a_somatic_case_is_never_returned(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     assert _discover(starrocks_session, radiant_mapping, SOMATIC_CASE_ID) == []
 
 
-def test_only_cases_with_a_cnv_vcf_are_candidates(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+def test_only_cases_with_a_cnv_vcf_run(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     """Three seeded cases carry `gcnv` documents: 1 (already CNV-annotated), 16 (the trio) and 8
-    (a singleton whose SNV annotation is done -- irrelevant here, CNV eligibility is its own
-    anti-join). Every other case is silence, not a `no_gcnv` exclusion."""
-    rows = _discover(starrocks_session, radiant_mapping)
-    assert {r["case_id"] for r in rows} == {TRIO_CASE_ID, SNV_ANNOTATED_SINGLETON_CASE_ID}
+    (a singleton whose SNV annotation is done -- irrelevant here, CNV is its own annotation). Every
+    other germline case has no trigger document, not a `no_gcnv` exclusion."""
+    selection = select_cases(_discover(starrocks_session, radiant_mapping))
+    assert selection.case_ids == [SNV_ANNOTATED_SINGLETON_CASE_ID, TRIO_CASE_ID]
+    assert selection.excluded == []
+    assert 2 in selection.untriggered
 
 
-def test_a_targeted_run_returns_the_whole_case(postgres_clinical_seeds, starrocks_session, radiant_mapping):
-    rows = _discover(
-        starrocks_session,
-        radiant_mapping,
-        parameters={"task_ids": [TRIO_PROBAND_ALIGNMENT_TASK]},
-        params={"task_ids": [TRIO_PROBAND_ALIGNMENT_TASK], "excluded_tenants": []},
-    )
-    assert {r["case_id"] for r in rows} == {TRIO_CASE_ID}
-    assert {r["patient_id"] for r in rows} == {44, 45, 46}
+def test_a_targeted_run_takes_the_whole_case(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+    selection = select_cases(_discover(starrocks_session, radiant_mapping), [TRIO_PROBAND_ALIGNMENT_TASK])
+    assert selection.case_ids == [TRIO_CASE_ID]
+    assert {m.patient_id for m in selection.members} == {44, 45, 46}
 
 
 def test_an_excluded_tenant_is_reported_not_hidden(postgres_clinical_seeds, starrocks_session, radiant_mapping):
-    rows = _discover(
-        starrocks_session,
-        radiant_mapping,
-        TRIO_CASE_ID,
-        parameters={"excluded_tenants": ["radiant"]},
-        params={"task_ids": [], "excluded_tenants": ["radiant"]},
-    )
-    assert rows and all(r["exclusion_reason"] == "tenant_excluded" for r in rows)
+    selection = select_cases(_discover(starrocks_session, radiant_mapping), excluded_tenants=["radiant"])
+    assert {e.case_id: e.reason for e in selection.excluded}[TRIO_CASE_ID] == "tenant_excluded"
+
+
+def test_a_child_reads_the_decided_cases_with_every_member(
+    postgres_clinical_seeds, starrocks_session, radiant_mapping
+):
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(_render(radiant_mapping, case_ids=[TRIO_CASE_ID]), {"case_ids": [TRIO_CASE_ID]})
+        rows = cursor.fetchall()
+    assert len(rows) == 3

@@ -35,17 +35,11 @@ def test_it_finds_its_own_work(dag_bag):
     assert dag.params["dry_run"] is False
 
 
-def test_discovery_is_one_query_per_case_type(dag_bag):
-    """Airflow resolves the `.sql` template into its text at parse time, so check the query
-    itself: the anti-join must be on the QC task type, not the annotation one."""
+def test_discovery_reads_one_fact_query_per_case_type(dag_bag):
+    """Two Python tasks over `read_facts`: the germline and the somatic facts."""
     dag = dag_bag.get_dag(DAG_ID)
-    germline, somatic = dag.get_task("discover_germline"), dag.get_task("discover_somatic")
-    assert "pc.case_type = 'germline'" in germline.sql
-    assert "pc.case_type = 'somatic'" in somatic.sql
-    for query in (germline, somatic):
-        assert "quality_control_metrics" in query.sql
-        assert "radiant_germline_annotation" not in query.sql
-        assert set(query.parameters) == {"task_ids", "excluded_tenants"}
+    for task_id in ("discover_germline", "discover_somatic"):
+        assert dag.get_task(task_id).python_callable.__name__ == task_id
 
 
 def test_both_discoveries_feed_the_selection(dag_bag):

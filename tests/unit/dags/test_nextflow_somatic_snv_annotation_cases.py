@@ -34,13 +34,10 @@ def test_it_finds_its_own_work(dag_bag):
     assert dag.params["dry_run"] is False
 
 
-def test_discovery_uses_the_somatic_query(dag_bag):
-    """The anti-join is on the somatic annotation task type, and the trigger the ssnv VCF."""
-    sql = dag_bag.get_dag(DAG_ID).get_task("discover_scope").sql
-    assert "radiant_somatic_annotation" in sql
-    assert "'ssnv'" in sql
-    assert "'gvcf'" not in sql
-    assert "{{ mapping.starrocks_pipeline_case }}" in sql
+def test_discovery_reads_the_somatic_facts(dag_bag):
+    """A Python task over `read_facts`: the facts of the cases the scheduler decided to run."""
+    discover = dag_bag.get_dag(DAG_ID).get_task("discover_scope")
+    assert discover.python_callable.__name__ == "discover_scope"
 
 
 def test_it_runs_its_own_launcher_not_the_germline_one(dag_bag):

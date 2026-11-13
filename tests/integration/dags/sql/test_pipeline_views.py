@@ -177,12 +177,8 @@ def test_a_resequenced_somatic_proband_keeps_its_newest_tumor_and_its_normal(
 
 
 def test_somatic_qc_runs_on_the_newest_tumor(resequenced_tumor, starrocks_session, radiant_mapping):
-    with open(os.path.join(_CLINICAL_SQL, "pending_quality_control_somatic_select.sql")) as f:
-        sql = jinja2.Template(f.read()).render(
-            mapping=radiant_mapping, params={"task_ids": [], "excluded_tenants": []}
-        )
+    with open(os.path.join(_CLINICAL_SQL, "qc_somatic_facts_select.sql")) as f:
+        sql = jinja2.Template(f.read()).render(mapping=radiant_mapping)
     rows = [r for r in _rows(starrocks_session, sql) if r["case_id"] == TUMOR_NORMAL_CASE_ID]
-    assert [(r["seq_id"], r["alignment_task_id"], r["exclusion_reason"]) for r in rows] == [
-        (NEW_TUMOR, NEW_TUMOR, None)
-    ]
+    assert [(r["seq_id"], r["alignment_task_id"], r["annotated"]) for r in rows] == [(NEW_TUMOR, NEW_TUMOR, 0)]
     assert SEEDED_TUMOR_EXPERIMENT not in {r["seq_id"] for r in rows}

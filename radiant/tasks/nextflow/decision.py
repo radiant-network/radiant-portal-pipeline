@@ -162,27 +162,36 @@ def germline_decisions(pipeline: str, rows: list[dict], selection) -> list[Decis
         decisions += _unit_rows(pipeline, case_id, tenants.get(case_id), [])
     for excluded in selection.excluded:
         decisions += _unit_rows(pipeline, excluded.case_id, tenants.get(excluded.case_id), _problems_of(excluded))
-    # Only the selections built on fact rows know these; the others leave them out.
-    for case_id in getattr(selection, "done", []):
-        decisions.append(
-            Decision(pipeline=pipeline, scope="case", case_id=case_id, tenant_code=tenants.get(case_id), decision=DONE)
-        )
-    for case_id in getattr(selection, "untriggered", []):
-        decisions.append(
-            Decision(
-                pipeline=pipeline,
-                scope="case",
-                case_id=case_id,
-                tenant_code=tenants.get(case_id),
-                decision=SKIPPED,
-                reason=NO_TRIGGER,
-            )
-        )
+    decisions += _settled(
+        pipeline, [(None, c) for c in selection.done], [(None, c) for c in selection.untriggered], tenants
+    )
     return sorted(decisions, key=_order)
 
 
+def _settled(pipeline: str, done: list, untriggered: list, tenants: dict[int, str]) -> list[Decision]:
+    """One case row per `(unit_id, case_id)` done or with no trigger document."""
+    rows = [
+        Decision(pipeline=pipeline, scope="case", case_id=c, unit_id=u, tenant_code=tenants.get(c), decision=DONE)
+        for u, c in done
+    ]
+    rows += [
+        Decision(
+            pipeline=pipeline,
+            scope="case",
+            case_id=c,
+            unit_id=u,
+            tenant_code=tenants.get(c),
+            decision=SKIPPED,
+            reason=NO_TRIGGER,
+        )
+        for u, c in untriggered
+    ]
+    return rows
+
+
 def somatic_decisions(rows: list[dict], selection) -> list[Decision]:
-    """The decisions of the somatic selection, one unit per (calling task, case)."""
+    """The decisions of the somatic selection, one unit per (calling task, case). A case no calling
+    task belongs to is one unit with no task."""
     tenants = _tenants(rows)
     decisions: list[Decision] = []
     for task in selection.tasks:
@@ -192,6 +201,7 @@ def somatic_decisions(rows: list[dict], selection) -> list[Decision]:
         problems = excluded.problems or [Problem(reason=excluded.reason, detail=excluded.detail)]
         for case_id in excluded.case_ids:
             decisions += _unit_rows(SOMATIC_SNV, case_id, tenants.get(case_id), problems, unit_id=excluded.task_id)
+    decisions += _settled(SOMATIC_SNV, selection.done, selection.untriggered, tenants)
     return sorted(decisions, key=_order)
 
 
@@ -226,12 +236,12 @@ def decide(
 ) -> list[Decision]:
     """Every pipeline's decisions, from the rows of its discovery query. The selections are run
     lenient, as on a scheduled run: an excluded case is a decision, not an error."""
-    snv_selection = select_snv_cases(germline_snv_rows, strict=False, excluded_tenants=excluded_tenants)
+    lenient = {"strict": False, "excluded_tenants": excluded_tenants}
     decisions = [
-        *germline_decisions(GERMLINE_SNV, germline_snv_rows, snv_selection),
-        *germline_decisions(GERMLINE_CNV, germline_cnv_rows, select_cnv_cases(germline_cnv_rows, strict=False)),
-        *somatic_decisions(somatic_snv_rows, select_somatic_tasks(somatic_snv_rows, strict=False)),
-        *germline_decisions(QC, qc_rows, select_qc_cases(qc_rows, strict=False)),
+        *germline_decisions(GERMLINE_SNV, germline_snv_rows, select_snv_cases(germline_snv_rows, **lenient)),
+        *germline_decisions(GERMLINE_CNV, germline_cnv_rows, select_cnv_cases(germline_cnv_rows, **lenient)),
+        *somatic_decisions(somatic_snv_rows, select_somatic_tasks(somatic_snv_rows, **lenient)),
+        *germline_decisions(QC, qc_rows, select_qc_cases(qc_rows, **lenient)),
         *import_decisions(import_rows),
     ]
     for pipeline in PIPELINES:

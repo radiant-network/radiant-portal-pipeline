@@ -67,21 +67,21 @@ def test_an_index_not_registered_beside_its_cram_makes_the_family_incomplete(tri
 
 
 def test_a_discovered_case_that_cannot_run_is_excluded_not_raised(trio_rows, singleton_rows):
-    trio_rows[0]["exclusion_reason"] = "no_gcnv"
+    trio_rows[0].update(gcnv_url=None, gcnv_matches=0)
     selection = select_cases(trio_rows + singleton_rows)
     assert selection.case_ids == [8]
     assert [(e.case_id, e.reason) for e in selection.excluded] == [(1072, "no_gcnv")]
 
 
 def test_the_exclusion_carries_a_sentence_not_only_a_code(trio_rows):
-    trio_rows[0]["exclusion_reason"] = "ambiguous_gcnv"
+    trio_rows[0]["gcnv_matches"] = 2
     (excluded,) = select_cases(trio_rows).excluded
     assert "mistyped at the source" in excluded.detail
     assert "format_code 'vcf' instead of 'tbi'" in excluded.detail
 
 
 def test_one_bad_member_excludes_the_whole_case(trio_rows):
-    trio_rows[1]["exclusion_reason"] = "pending_alignment"
+    trio_rows[1].update(alignment_task_id=None, alignment_pipeline=None, gcnv_url=None, gcnv_matches=0)
     selection = select_cases(trio_rows)
     assert selection.case_ids == []
     assert selection.members == []
@@ -112,9 +112,8 @@ def test_an_alignment_without_a_pipeline_name_is_excluded_not_assumed_dragen(tri
 
 
 def test_a_member_still_awaiting_alignment_is_not_also_reported_as_unknown_caller(trio_rows):
-    """One reason per cause: the query already says `pending_alignment`."""
+    """One reason per cause: `pending_alignment` already says it."""
     trio_rows[1].update(alignment_task_id=None, alignment_pipeline=None, gcnv_url=None, gcnv_matches=0)
-    trio_rows[1]["exclusion_reason"] = "pending_alignment"
     selection = select_cases(trio_rows)
     assert [e.reason for e in selection.excluded] == ["pending_alignment"]
 
@@ -145,7 +144,7 @@ def test_members_spanning_several_strategies_are_excluded(trio_rows):
 
 
 def test_a_named_task_that_cannot_run_raises(trio_rows):
-    trio_rows[0]["exclusion_reason"] = "no_gcnv"
+    trio_rows[0].update(gcnv_url=None, gcnv_matches=0)
     with pytest.raises(CaseResolutionError, match="no germline CNV VCF"):
         select_cases(trio_rows, [900, 901, 902])
 
@@ -156,7 +155,7 @@ def test_a_named_task_that_produced_no_candidate_is_reported(trio_rows):
 
 
 def test_a_discovery_run_is_lenient_by_default(trio_rows):
-    trio_rows[0]["exclusion_reason"] = "no_gcnv"
+    trio_rows[0].update(gcnv_url=None, gcnv_matches=0)
     assert select_cases(trio_rows).excluded  # does not raise
 
 
@@ -174,7 +173,29 @@ def test_a_run_may_span_several_tenants(trio_rows, singleton_rows):
 
 
 def test_an_excluded_tenant_is_left_out_before_the_pipeline_runs(singleton_rows):
-    singleton_rows[0]["exclusion_reason"] = "tenant_excluded"
-    (excluded,) = select_cases(singleton_rows).excluded
+    (excluded,) = select_cases(singleton_rows, excluded_tenants=["radiant"]).excluded
     assert excluded.reason == "tenant_excluded"
     assert "RADIANT_ETL_EXCLUDED_TENANTS" in excluded.detail
+
+
+# --- decided from the facts: done, no trigger document ---------------------------------------
+
+
+def test_a_case_whose_every_cnv_vcf_is_annotated_is_done(trio_rows):
+    for row in trio_rows:
+        row["annotated"] = True
+    selection = select_cases(trio_rows)
+    assert (selection.case_ids, selection.done) == ([], [1072])
+
+
+def test_a_case_where_no_member_has_a_cnv_vcf_has_no_trigger_document(trio_rows):
+    for row in trio_rows:
+        row.update(gcnv_url=None, gcnv_matches=0)
+    selection = select_cases(trio_rows)
+    assert (selection.case_ids, selection.untriggered, selection.excluded) == ([], [1072], [])
+
+
+def test_a_member_without_a_cnv_vcf_is_not_also_reported_for_its_caller(trio_rows):
+    trio_rows[0].update(gcnv_url=None, gcnv_matches=0, alignment_pipeline=None)
+    (excluded,) = select_cases(trio_rows).excluded
+    assert [p.reason for p in excluded.problems] == ["no_gcnv"]

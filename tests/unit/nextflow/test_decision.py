@@ -30,8 +30,10 @@ from radiant.tasks.nextflow.germline_snv.resolve import REASON_TEXT as SNV_REASO
 from radiant.tasks.nextflow.germline_snv.resolve import select_cases as select_snv
 from radiant.tasks.nextflow.problem import Problem
 from radiant.tasks.nextflow.qc.resolve import REASON_TEXT as QC_REASONS
-from radiant.tasks.nextflow.somatic_snv.resolve import CASE_REASON_TEXT, TASK_REASON_TEXT
+from radiant.tasks.nextflow.selection import CASE_REASON_TEXT
+from radiant.tasks.nextflow.somatic_snv.resolve import TASK_REASON_TEXT
 from radiant.tasks.nextflow.somatic_snv.resolve import select_tasks as select_somatic
+from tests.unit.nextflow.germline_cnv.conftest import member_row as cnv_member_row
 from tests.unit.nextflow.germline_snv.conftest import member_row as snv_member_row
 from tests.unit.nextflow.qc.conftest import member_row as qc_member_row
 from tests.unit.nextflow.somatic_snv.conftest import calling_task_rows
@@ -160,26 +162,26 @@ def test_qc_decides_germline_and_somatic_cases_as_one_pipeline():
 def test_somatic_units_are_calling_task_and_case_pairs():
     """A case with a tumor-normal call that runs and a tumor-only call without VCF: two units."""
     rows = [*calling_task_rows(task_id=70, case_id=22, normal=True), *calling_task_rows(task_id=71, case_id=22)]
-    rows[-1]["exclusion_reason"] = "no_ssnv"
+    rows[-1].update(ssnv_url=None, ssnv_matches=0)
     decisions = somatic_decisions(rows, select_somatic(rows, strict=False))
     assert [(d.scope, d.unit_id, d.case_id, d.decision, d.reason) for d in decisions] == [
         ("case", 70, 22, RUN, None),
-        ("case", 71, 22, EXCLUDED, "no_ssnv"),
+        ("case", 71, 22, SKIPPED, "no_trigger_document"),
     ]
 
 
 def test_a_somatic_task_excluded_for_two_cases_gives_two_case_rows():
     rows = [*calling_task_rows(task_id=70, case_id=22), *calling_task_rows(task_id=70, case_id=30)]
     for row in rows:
-        row["exclusion_reason"] = "ambiguous_ssnv"
+        row["ssnv_matches"] = 2
     decisions = somatic_decisions(rows, select_somatic(rows, strict=False))
     assert [(d.unit_id, d.case_id, d.decision) for d in decisions] == [(70, 22, EXCLUDED), (70, 30, EXCLUDED)]
 
 
 def test_a_somatic_case_level_reason_drops_that_case_only():
     rows = [*calling_task_rows(task_id=70, case_id=22), *calling_task_rows(task_id=70, case_id=30)]
-    rows[1]["exclusion_reason"] = "tenant_excluded"
-    decisions = somatic_decisions(rows, select_somatic(rows, strict=False))
+    rows[1]["tenant_code"] = "other"
+    decisions = somatic_decisions(rows, select_somatic(rows, strict=False, excluded_tenants=["other"]))
     assert [(d.unit_id, d.case_id, d.decision) for d in decisions] == [(70, 22, RUN), (70, 30, SKIPPED)]
 
 
@@ -209,7 +211,7 @@ def test_the_cases_with_work_are_the_run_decisions_of_any_pipeline():
         trio(),
         [],
         calling_task_rows(case_id=5),
-        [qc_member_row(case_id=3, exclusion_reason="pending_alignment")],
+        [qc_member_row(case_id=3, alignment_task_id=None, documents=False), qc_member_row(case_id=3, patient_id=101)],
         [{"case_id": 4, "tenant_code": "radiant", "reason": "deleted"}],
     )
     assert run_case_ids(decisions) == {1072, 5, 4}
@@ -342,3 +344,18 @@ def test_a_child_run_by_hand_reads_every_case(monkeypatch):
     ((sql, args),) = executed
     assert "%(case_ids)s" not in sql
     assert args is None
+
+
+def test_every_pipeline_logs_its_done_and_untriggered_units():
+    decisions = decide(
+        [],
+        [cnv_member_row(case_id=2, annotated=True)],
+        calling_task_rows(case_id=5, ssnv_url=None, ssnv_matches=0),
+        [qc_member_row(case_id=3, documents=False)],
+        [],
+    )
+    assert [(d.pipeline, d.unit_id, d.case_id, d.decision, d.reason) for d in decisions] == [
+        ("germline_cnv", None, 2, DONE, None),
+        ("somatic_snv", 70, 5, SKIPPED, "no_trigger_document"),
+        ("qc", None, 3, SKIPPED, "no_trigger_document"),
+    ]

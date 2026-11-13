@@ -30,7 +30,6 @@ from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
-from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
 LOGGER = logging.getLogger(__name__)
 
@@ -122,29 +121,25 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_quality_control_cases():
-    def discover(task_id: str, display_name: str, sql: str) -> RadiantStarRocksOperator:
-        return RadiantStarRocksOperator(
-            task_id=task_id,
-            task_display_name=f"[StarRocks] {display_name}",
-            sql=sql,
-            parameters={
-                "task_ids": "{{ params.task_ids }}",
-                "excluded_tenants": "{{ params.excluded_tenants }}",
-            },
-            output_processor=rows_output_processor,
-            do_xcom_push=True,
-        )
+    @task(task_id="discover_germline", task_display_name="[StarRocks] Read the germline cases' QC facts")
+    def discover_germline() -> Any:
+        """The facts of the germline cases the scheduler decided to run, or of every one by hand."""
+        from airflow.sdk import get_current_context
 
-    discover_germline = discover(
-        "discover_germline",
-        "Discover germline cases pending quality control",
-        "./sql/clinical/pending_quality_control_select.sql",
-    )
-    discover_somatic = discover(
-        "discover_somatic",
-        "Discover somatic cases pending quality control",
-        "./sql/clinical/pending_quality_control_somatic_select.sql",
-    )
+        from radiant.tasks.nextflow.decision import QC, read_facts
+
+        context = get_current_context()
+        return read_facts("qc_germline_facts_select.sql", QC, context["dag_run"].conf)
+
+    @task(task_id="discover_somatic", task_display_name="[StarRocks] Read the somatic cases' QC facts")
+    def discover_somatic() -> Any:
+        """The facts of the somatic cases the scheduler decided to run, or of every one by hand."""
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.nextflow.decision import QC, read_facts
+
+        context = get_current_context()
+        return read_facts("qc_somatic_facts_select.sql", QC, context["dag_run"].conf)
 
     @task(task_id="select_cases", task_display_name="[PyOp] Select the cases that can run")
     def select_cases(germline_rows: Any, somatic_rows: Any) -> Any:
@@ -157,7 +152,12 @@ def nextflow_quality_control_cases():
 
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
-        selection = select([*germline_rows, *somatic_rows], requested, strict=bool(requested))
+        selection = select(
+            [*germline_rows, *somatic_rows],
+            requested,
+            strict=bool(requested),
+            excluded_tenants=context["params"]["excluded_tenants"],
+        )
         selection = launch(QC, selection, context)
 
         if not selection.case_ids:
@@ -291,7 +291,7 @@ def nextflow_quality_control_cases():
         body = build_patch_body(parsed, collected)
         return register_case_batch(tenant, body, context["params"]["dry_run"])
 
-    cases = resolve_cases(select_cases(discover_germline.output, discover_somatic.output))
+    cases = resolve_cases(select_cases(discover_germline(), discover_somatic()))
     paths = generate_inputs(cases)
 
     run_pipeline = TriggerDagRunOperator(

@@ -1,9 +1,9 @@
-"""Execute `pending_somatic_annotation_select.sql` against a real StarRocks + clinical Postgres.
+"""Execute `somatic_snv_facts_select.sql` against a real StarRocks + clinical Postgres.
 
 The seeds follow the RAD-23 contract. Calling tasks 73 (tumor-normal, case 22), 74 (tumor-only,
 case 22) and 70 (tumor-only, case 23) published raw `ssnv` VCFs that are the inputs of the
-annotation tasks 67, 68 and 69: they are done. Calling tasks 75 (tumor-normal, case 22) and 76
-(`alignment_somatic_variant_calling`, case 23, with an `scnv` VCF too) are pending.
+annotation tasks 67, 68 and 69: they are `done`. Calling tasks 75 (tumor-normal, case 22) and 76
+(`alignment_somatic_variant_calling`, case 23, with an `scnv` VCF too) run.
 
 The shapes the seeds do not have are built on ids far above the seeded range, and removed after
 each test, so no other integration test can see them:
@@ -19,14 +19,15 @@ import jinja2
 import pytest
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.nextflow.somatic_snv.resolve import CaseResolutionError, select_tasks
+from radiant.tasks.nextflow.selection import CaseResolutionError
+from radiant.tasks.nextflow.somatic_snv.resolve import select_tasks
 from tests.integration.fixtures_common import execute_clinical
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
 
 # The queries read the RAD-287 views: create them once for the session.
 pytestmark = pytest.mark.usefixtures("pipeline_views")
-DISCOVERY = "pending_somatic_annotation_select.sql"
+DISCOVERY = "somatic_snv_facts_select.sql"
 
 PENDING_TN_TASK = 75
 PENDING_TO_TASK = 76
@@ -35,17 +36,18 @@ NO_SSNV_TASK = 9501
 MAF_DOCUMENT = 9531
 
 
-def _render(radiant_mapping, params):
+def _render(radiant_mapping):
     with open(os.path.join(_CLINICAL_SQL, DISCOVERY)) as f:
-        return jinja2.Template(f.read()).render(mapping=radiant_mapping, params=params)
+        return jinja2.Template(f.read()).render(mapping=radiant_mapping)
 
 
-def _discover(starrocks_session, radiant_mapping, task_ids=None, excluded_tenants=None):
-    params = {"task_ids": task_ids or [], "excluded_tenants": excluded_tenants or []}
+def _discover(starrocks_session, radiant_mapping, task_id=None):
+    """The fact rows, of one calling task when `task_id` is given."""
     with starrocks_session.cursor() as cursor:
-        cursor.execute(_render(radiant_mapping, params), params)
+        cursor.execute(_render(radiant_mapping))
         columns = [d[0] for d in cursor.description]
-        return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
+        rows = [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
+    return [r for r in rows if task_id is None or r["calling_task_id"] == task_id]
 
 
 def _cleanup(postgres_instance, task_ids, document_ids=(), case_ids=()):
@@ -147,33 +149,32 @@ def maf_document(postgres_clinical_seeds, postgres_instance):
     )
 
 
-def test_a_tumor_normal_and_a_tumor_only_calling_task_are_pending(
-    postgres_clinical_seeds, starrocks_session, radiant_mapping
-):
-    """AC1. And AC7: the calling tasks whose VCF is already an annotation's input are not."""
+def test_a_tumor_normal_and_a_tumor_only_calling_task_run(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+    """AC1. And AC7: the calling tasks whose VCF is already an annotation's input are done."""
     rows = _discover(starrocks_session, radiant_mapping)
     by_task = {}
     for row in rows:
         by_task.setdefault(row["calling_task_id"], []).append(row)
 
-    assert set(by_task) == {PENDING_TN_TASK, PENDING_TO_TASK}
-    assert not set(ANNOTATED_TASKS) & set(by_task)
+    selection = select_tasks(rows)
+    assert {t.task_id for t in selection.tasks} == {PENDING_TN_TASK, PENDING_TO_TASK}
+    assert {task for task, _ in selection.done} == set(ANNOTATED_TASKS)
 
     tn = by_task[PENDING_TN_TASK]
     assert [(r["case_id"], r["seq_id"], r["histology"]) for r in tn] == [(22, 62, "tumoral"), (22, 63, "normal")]
-    assert all(r["exclusion_reason"] is None for r in tn)
+    assert not any(r["annotated"] for r in tn)
 
     [to] = by_task[PENDING_TO_TASK]
     assert (to["case_id"], to["seq_id"], to["calling_task_type"]) == (23, 64, "alignment_somatic_variant_calling")
-    assert to["exclusion_reason"] is None
+    assert not to["annotated"]
 
 
 def test_only_the_ssnv_vcf_is_selected(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     """AC3: task 76 publishes an `scnv` VCF too, which is never the trigger."""
-    rows = _discover(starrocks_session, radiant_mapping, task_ids=[PENDING_TO_TASK])
+    rows = _discover(starrocks_session, radiant_mapping, PENDING_TO_TASK)
     assert [r["ssnv_url"].rsplit("/", 1)[-1] for r in rows] == ["TCRBOA6_SRX1166091-T.v2.snv.vcf.gz"]
     # Counted, the `scnv` VCF would make the task `ambiguous_ssnv`.
-    assert rows[0]["exclusion_reason"] is None
+    assert rows[0]["ssnv_matches"] == 1
 
 
 def test_a_maf_next_to_the_ssnv_vcf_is_never_selected(maf_document, starrocks_session, radiant_mapping):
@@ -182,14 +183,12 @@ def test_a_maf_next_to_the_ssnv_vcf_is_never_selected(maf_document, starrocks_se
     targeted run would fail on it. Both runs are checked."""
     vcf_url = "s3://test-vcf/TCR002361_SRX1091647-T_vs_SRX1091646-N.v2.snv.vcf.gz"
 
-    nightly = [r for r in _discover(starrocks_session, radiant_mapping) if r["calling_task_id"] == PENDING_TN_TASK]
-    targeted = _discover(starrocks_session, radiant_mapping, task_ids=[PENDING_TN_TASK])
-
-    for rows in (nightly, targeted):
-        assert rows
-        assert {(r["ssnv_url"], r["exclusion_reason"]) for r in rows} == {(vcf_url, None)}
-    assert PENDING_TN_TASK in {t.task_id for t in select_tasks(nightly).tasks}
-    [task] = select_tasks(targeted, [PENDING_TN_TASK]).tasks
+    rows = _discover(starrocks_session, radiant_mapping)
+    task_rows = [r for r in rows if r["calling_task_id"] == PENDING_TN_TASK]
+    assert task_rows
+    assert {(r["ssnv_url"], r["ssnv_matches"]) for r in task_rows} == {(vcf_url, 1)}
+    assert PENDING_TN_TASK in {t.task_id for t in select_tasks(rows).tasks}
+    [task] = select_tasks(rows, [PENDING_TN_TASK]).tasks
     assert task.task_id == PENDING_TN_TASK
 
 
@@ -204,32 +203,31 @@ def test_the_rows_resolve_into_calling_tasks(postgres_clinical_seeds, starrocks_
 
 
 def test_an_annotated_task_named_by_hand_is_an_error(postgres_clinical_seeds, starrocks_session, radiant_mapping):
-    rows = _discover(starrocks_session, radiant_mapping, task_ids=[73])
-    assert rows == []
+    rows = _discover(starrocks_session, radiant_mapping)
+    assert all(r["annotated"] for r in rows if r["calling_task_id"] == 73)
     with pytest.raises(CaseResolutionError, match=r"\[73\]"):
         select_tasks(rows, [73])
 
 
-def test_a_task_without_ssnv_is_only_reported_when_named(no_ssnv_task, starrocks_session, radiant_mapping):
-    """AC8: no `ssnv` VCF, no annotation, and an error naming the task."""
-    assert NO_SSNV_TASK not in {r["calling_task_id"] for r in _discover(starrocks_session, radiant_mapping)}
-
-    rows = _discover(starrocks_session, radiant_mapping, task_ids=[NO_SSNV_TASK])
-    assert {r["exclusion_reason"] for r in rows} == {"no_ssnv"}
+def test_a_task_without_ssnv_has_no_trigger_document_unless_named(no_ssnv_task, starrocks_session, radiant_mapping):
+    """AC8: no `ssnv` VCF, no annotation; named by hand, an error naming the task."""
+    rows = _discover(starrocks_session, radiant_mapping)
+    assert {r["ssnv_matches"] for r in rows if r["calling_task_id"] == NO_SSNV_TASK} == {0}
+    assert NO_SSNV_TASK in {task for task, _ in select_tasks(rows).untriggered}
     with pytest.raises(CaseResolutionError, match=f"calling task {NO_SSNV_TASK}"):
         select_tasks(rows, [NO_SSNV_TASK])
 
 
 def test_an_excluded_tenant_is_reported_not_filtered(postgres_clinical_seeds, starrocks_session, radiant_mapping):
-    rows = _discover(starrocks_session, radiant_mapping, excluded_tenants=["radiant"])
-    assert rows and {r["exclusion_reason"] for r in rows} == {"tenant_excluded"}
-    assert select_tasks(rows).tasks == []
+    selection = select_tasks(_discover(starrocks_session, radiant_mapping), excluded_tenants=["radiant"])
+    assert selection.tasks == []
+    assert {e.reason for e in selection.excluded} == {"tenant_excluded"}
 
 
 def test_an_annotation_on_one_case_does_not_hide_another_case_of_the_task(
     shared_task_fixtures, starrocks_session, radiant_mapping
 ):
-    rows = _discover(starrocks_session, radiant_mapping, task_ids=[9521])
-    assert [r["case_id"] for r in rows] == [9520]
-    [task] = select_tasks(rows).tasks
+    rows = _discover(starrocks_session, radiant_mapping, 9521)
+    assert sorted(r["case_id"] for r in rows if not r["annotated"]) == [9520]
+    [task] = select_tasks(rows, [9521]).tasks
     assert [c.case_id for c in task.cases] == [9520]

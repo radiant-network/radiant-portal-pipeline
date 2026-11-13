@@ -50,9 +50,9 @@ for the next run. Run by hand, it launches its whole selection. It reads the log
 
 A (case, sequencing experiment) pair is eligible when the pair's *current* experiment has an
 alignment (for a germline member, one publishing a CRAM), and no **quality_control_metrics**
-task is scoped to that same pair. The rule lives in two queries, one per case type:
-sql/clinical/pending_quality_control_select.sql (germline) and
-sql/clinical/pending_quality_control_somatic_select.sql (somatic). Their two selections are the
+task is scoped to that same pair. **select_cases** decides it from two fact queries, one per case
+type: sql/clinical/qc_germline_facts_select.sql (germline) and
+sql/clinical/qc_somatic_facts_select.sql (somatic). Their two selections are the
 same as the annotation query's:
 
 - **One experiment per (case, member)** — the newest completed one.

@@ -8,8 +8,6 @@ class SnvMember(FamilyMember):
 
     gvcf_url: str | None = None
     gvcf_matches: int = 0
-    # The case already has a germline annotation for this experiment.
-    annotated: bool = False
 
 
 class SnvFamily(Family):

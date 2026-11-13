@@ -1,4 +1,4 @@
-"""Row fixtures shaped like what `sql/clinical/pending_cnv_annotation_select.sql` returns:
+"""Row fixtures shaped like what `sql/clinical/germline_cnv_facts_select.sql` returns:
 one row per (case, member), carrying the alignment's CNV VCF and, when present, its CRAM."""
 
 import pytest
@@ -43,7 +43,7 @@ def member_row(case_id=1072, submitter_case_id="1KGP-1463", role="proband", aliq
         "gcnv_matches": 1,
         "cram_url": urls["cram"],
         "crai_url": urls["crai"],
-        "exclusion_reason": None,
+        "annotated": False,
     }
     row.update(overrides)
     return row

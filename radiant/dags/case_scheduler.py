@@ -113,15 +113,14 @@ def _trigger(task_id: str, display_name: str, dag_id: str, conf: dict | None = N
 
 
 def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksOperator]:
-    """The six "work waiting" queries, `{prefix}_{germline_snv,germline_cnv,somatic_snv,qc,qc_somatic,import}_cases`.
+    """The six discovery queries, `{prefix}_{germline_snv,germline_cnv,somatic_snv,qc,qc_somatic,import}_cases`.
 
     Built once before the pipelines (`discover`) and once after (`rediscover`), so the question
-    asked both times cannot drift. Each "from Cases" DAG's own query, with the run's
-    `excluded_tenants`: the same block list this DAG passes to that DAG.
+    asked both times cannot drift. The five Nextflow ones are the "from Cases" DAGs' own fact
+    queries: they take no parameter, the run's `excluded_tenants` is applied in Python.
     """
 
-    def query(name: str, display_name: str, sql: str, facts: bool = False):
-        # A fact query takes no parameter: `excluded_tenants` is applied in Python.
+    def query(name: str, display_name: str, sql: str):
         return RadiantStarRocksOperator(
             task_id=f"{prefix}_{name}_cases",
             task_display_name=f"[StarRocks] {display_name}",
@@ -129,9 +128,6 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
             output_processor=rows_output_processor,
             do_xcom_push=True,
             trigger_rule=trigger_rule,
-            # `task_ids` empty, as on a discovery run; `excluded_tenants` is the DAG's param.
-            params={} if facts else {"task_ids": []},
-            parameters=None if facts else {"excluded_tenants": "{{ params.excluded_tenants }}"},
         )
 
     return [
@@ -139,23 +135,22 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
             "germline_snv",
             "Germline cases and their SNV post-processing facts",
             "./sql/clinical/germline_snv_facts_select.sql",
-            facts=True,
         ),
         query(
             "germline_cnv",
-            "Cases pending germline CNV post-processing",
-            "./sql/clinical/pending_cnv_annotation_select.sql",
+            "Germline cases and their CNV post-processing facts",
+            "./sql/clinical/germline_cnv_facts_select.sql",
         ),
         query(
             "somatic_snv",
-            "Cases pending somatic SNV annotation",
-            "./sql/clinical/pending_somatic_annotation_select.sql",
+            "Somatic cases and their SNV annotation facts",
+            "./sql/clinical/somatic_snv_facts_select.sql",
         ),
-        query("qc", "Cases pending quality control", "./sql/clinical/pending_quality_control_select.sql"),
+        query("qc", "Germline cases and their quality control facts", "./sql/clinical/qc_germline_facts_select.sql"),
         query(
             "qc_somatic",
-            "Somatic cases pending quality control",
-            "./sql/clinical/pending_quality_control_somatic_select.sql",
+            "Somatic cases and their quality control facts",
+            "./sql/clinical/qc_somatic_facts_select.sql",
         ),
         query(
             "import",

@@ -44,7 +44,7 @@ The portal checks it under a row lock: a case a geneticist moved in the meantime
 
 The union of:
 
-- the cases each "from Cases" DAG would run: its own `pending_*_select.sql` query and its own
+- the cases each "from Cases" DAG would run: its own `*_facts_select.sql` query and its own
   `select_cases` (`select_tasks` for somatic annotation, whose unit is the calling task: its cases
   count), with the run's `excluded_tenants` (the list that DAG is given). A case that DAG would exclude
   (sequencing pending, no gVCF, tenant not granted, two DRAGEN metrics tarballs...) is **not** counted: it
@@ -73,12 +73,12 @@ at fault (patient, experiment, alignment task):
 - `excluded`: something needs fixing (a document, the case in the portal, an unsupported upstream pipeline);
 - `done`: nothing left to do, the outputs are registered on the case.
 
-Germline SNV post-processing decides from facts on every germline case
-(`sql/clinical/germline_snv_facts_select.sql`), so it also knows the cases with nothing to do. Not all
+Every pipeline decides from facts on every case of its type (`sql/clinical/*_facts_select.sql`), so
+it also knows the cases with nothing to do. Not all
 of them are written, or they would come back every day:
 
 - `done` only at `after`, for the units decided `run` at `discover` of the same run;
-- `skipped` / `no_trigger_document` (no member has a gVCF, never annotated) only for a case still `submitted`.
+- `skipped` / `no_trigger_document` (no trigger document, never processed) only for a case still `submitted`.
 
 Only `run` counts as work waiting. Why was case X not processed:
 

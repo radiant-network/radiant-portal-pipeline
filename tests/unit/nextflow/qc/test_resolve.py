@@ -23,7 +23,6 @@ def test_a_member_without_documents_still_comes_back(trio_rows):
             aliquot=None,
             seq_id=None,
             alignment_task_id=None,
-            exclusion_reason="pending_sequencing",
             documents=False,
         )
     ]
@@ -46,7 +45,7 @@ def test_a_member_without_a_tarball_still_runs(singleton_rows):
 
 
 def test_two_tarballs_exclude_the_case(trio_rows, singleton_rows):
-    ambiguous = {"dragen_metrics_matches": 2, "exclusion_reason": "ambiguous_dragen_metrics"}
+    ambiguous = {"dragen_metrics_matches": 2}
     rows = [r | ambiguous if r["role"] == "father" else r for r in trio_rows]
     selection = select_cases(rows + singleton_rows)
     assert selection.case_ids == [8]
@@ -60,10 +59,8 @@ def test_a_case_with_an_excluded_member_is_dropped_whole_in_lenient_mode(trio_ro
         member_row(
             role="sister",
             patient_id=104,
-            aliquot=None,
-            seq_id=None,
+            seq_id=504,
             alignment_task_id=None,
-            exclusion_reason="pending_alignment",
             documents=False,
         )
     ]
@@ -77,10 +74,8 @@ def test_strict_mode_raises_instead(trio_rows):
         member_row(
             role="sister",
             patient_id=104,
-            aliquot=None,
-            seq_id=None,
-            alignment_task_id=None,
-            exclusion_reason="no_cram",
+            seq_id=504,
+            alignment_task_id=904,
             documents=False,
         )
     ]
@@ -140,7 +135,7 @@ def test_a_tumor_needs_no_cram(tumor_rows):
 
 def test_a_germline_member_without_a_cram_is_still_excluded(trio_rows):
     rows = [
-        r | {"cram_url": None, "crai_url": None, "cram_matches": 0, "exclusion_reason": "no_cram"} for r in trio_rows
+        r | {"cram_url": None, "crai_url": None, "cram_matches": 0} if r["role"] == "father" else r for r in trio_rows
     ]
     selection = select_cases(rows)
     assert selection.case_ids == []
@@ -148,7 +143,7 @@ def test_a_germline_member_without_a_cram_is_still_excluded(trio_rows):
 
 
 def test_a_tumor_with_two_tarballs_is_excluded_as_ambiguous(tumor_rows):
-    rows = [r | {"dragen_metrics_matches": 2, "exclusion_reason": "ambiguous_dragen_metrics"} for r in tumor_rows]
+    rows = [r | {"dragen_metrics_matches": 2} for r in tumor_rows]
     selection = select_cases(rows)
     assert selection.case_ids == []
     assert [(e.case_id, e.reason) for e in selection.excluded] == [(23, "ambiguous_dragen_metrics")]
@@ -156,7 +151,7 @@ def test_a_tumor_with_two_tarballs_is_excluded_as_ambiguous(tumor_rows):
 
 def test_a_tumor_without_a_tarball_is_excluded_as_no_metrics(tumor_rows, trio_rows, caplog):
     """No CRAM-directory fallback for a tumor: it would give a green run with an empty report."""
-    rows = [r | {"dragen_metrics_url": None, "exclusion_reason": "no_metrics"} for r in tumor_rows]
+    rows = [r | {"dragen_metrics_url": None, "dragen_metrics_matches": 0} for r in tumor_rows]
     with caplog.at_level(logging.WARNING):
         selection = select_cases(rows + trio_rows)
     assert selection.case_ids == [1072]
@@ -166,7 +161,7 @@ def test_a_tumor_without_a_tarball_is_excluded_as_no_metrics(tumor_rows, trio_ro
 
 
 def test_a_targeted_rerun_of_a_tumor_without_a_tarball_fails(tumor_rows):
-    rows = [r | {"dragen_metrics_url": None, "exclusion_reason": "no_metrics"} for r in tumor_rows]
+    rows = [r | {"dragen_metrics_url": None, "dragen_metrics_matches": 0} for r in tumor_rows]
     with pytest.raises(CaseResolutionError, match="no CRAM-directory fallback"):
         select_cases(rows, [76])
 
@@ -174,3 +169,24 @@ def test_a_targeted_rerun_of_a_tumor_without_a_tarball_fails(tumor_rows):
 def test_a_germline_case_keeps_its_type(trio_rows):
     case = resolve_cases([m.model_dump() for m in select_cases(trio_rows).members])[0]
     assert (case.case_type, case.is_somatic) == ("germline", False)
+
+
+# --- decided from the facts: done, no trigger document ---------------------------------------
+
+
+def test_a_case_whose_every_cram_is_qcd_is_done(trio_rows):
+    selection = select_cases([r | {"annotated": True} for r in trio_rows])
+    assert (selection.case_ids, selection.done) == ([], [1072])
+
+
+def test_a_tumor_not_aligned_yet_has_nothing_to_qc(tumor_rows):
+    rows = [
+        r | {"alignment_task_id": None, "dragen_metrics_url": None, "dragen_metrics_matches": 0} for r in tumor_rows
+    ]
+    selection = select_cases(rows)
+    assert (selection.case_ids, selection.untriggered, selection.excluded) == ([], [23], [])
+
+
+def test_an_excluded_tenant_is_reported(trio_rows):
+    (excluded,) = select_cases(trio_rows, excluded_tenants=["radiant"]).excluded
+    assert excluded.reason == "tenant_excluded"

@@ -1,13 +1,11 @@
--- Somatic sibling of `pending_quality_control_select.sql`, with the same output columns: one row
--- per candidate somatic case, for its proband alone. The row carries the proband's *current* tumor
--- experiment and the DRAGEN metrics tarball of that experiment's *current*
--- `alignment_somatic_variant_calling`. A normal experiment of the case is ignored, and the
--- pipeline never reads a tumor's CRAM, so the CRAM columns are NULL. Both files read the
--- supersession policy from the views `current_experiment` and `current_alignment`, and the cases
--- from `pipeline_case` (RAD-287).
+-- Somatic twin of `qc_germline_facts_select.sql`, with the same columns: one row per somatic case,
+-- for its proband alone. The row carries the proband's current tumor experiment, the current
+-- `alignment_somatic_variant_calling` of that experiment (the work: a tumor aligned and never
+-- QC'd) and its DRAGEN metrics tarball. A normal experiment of the case is ignored, and the
+-- pipeline never reads a tumor's CRAM, so the CRAM columns are NULL.
 --
--- The tenant is returned, not filtered on: clinical is one shared schema and `cases.id` is
--- unique across it. `params.excluded_tenants` is a block list, not a scope.
+-- Facts only: every somatic case of `pipeline_case` comes back, and the decision is made in
+-- Python by `radiant.tasks.nextflow.qc.resolve.select_cases`.
 WITH current_tumor AS (
     -- The proband's current tumor experiment of each somatic case. `current_experiment` ranks a
     -- somatic case per histology, so the filter keeps the newest `completed` tumor.
@@ -70,32 +68,21 @@ SELECT pc.case_id                                  AS case_id,
        CAST(NULL AS VARCHAR)                       AS crai_url,
        dm.url                                      AS dragen_metrics_url,
        COALESCE(dm.matches, 0)                     AS dragen_metrics_matches,
-       -- Most specific first.
-       CASE
-           WHEN dm.matches > 1     THEN 'ambiguous_dragen_metrics'
-           -- No CRAM-directory fallback for a tumor: it would give a green run with an empty report.
-           WHEN dm.matches IS NULL THEN 'no_metrics'
-           WHEN pc.project_code IS NULL THEN 'no_project_code'
-           {% if params.excluded_tenants %}
-           WHEN pc.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'
-           {% endif %}
-           ELSE NULL
-       END                                         AS exclusion_reason
+       qc.seq_id IS NOT NULL                       AS annotated
 FROM {{ mapping.starrocks_pipeline_case }} pc
 -- The patient directly, not through `case_member`: a somatic case can have no family row.
 JOIN {{ mapping.clinical_patient }} p            ON p.id = pc.proband_id
-JOIN current_tumor ce                            ON ce.case_id = pc.case_id
-JOIN current_alignment ca                        ON ca.seq_id = ce.seq_id
+-- LEFT: a tumor not sequenced or not aligned yet comes back, with nothing to QC.
+LEFT JOIN current_tumor ce                       ON ce.case_id = pc.case_id
+LEFT JOIN current_alignment ca                   ON ca.seq_id = ce.seq_id
 LEFT JOIN dragen_metrics dm                      ON dm.seq_id = ce.seq_id
 LEFT JOIN quality_controlled qc                  ON qc.case_id = pc.case_id
                                                 AND qc.seq_id  = ce.seq_id
 LEFT JOIN {{ mapping.starrocks_case_member }} cm ON cm.case_id = pc.case_id
                                                 AND cm.patient_id = pc.proband_id
 WHERE pc.case_type = 'somatic'
-  AND qc.seq_id IS NULL
-{% if params.task_ids %}
-  -- Targeted rerun.
-  AND ca.task_id IN %(task_ids)s
+{% if case_ids is defined and case_ids %}
+  AND pc.case_id IN %(case_ids)s
 {% endif %}
 ORDER BY pc.case_id,
          p.id

@@ -9,16 +9,19 @@ samplesheet carries `experimentalStrategy` per row, and that a somatic case is o
 proband's tumor.
 """
 
-import logging
-
 from pydantic import BaseModel
 
 from radiant.tasks.nextflow.family import family_id
 from radiant.tasks.nextflow.problem import Problem, case_problem, member_problem
-from radiant.tasks.nextflow.qc.model import QcCase, QcMember
-from radiant.tasks.nextflow.selection import REL_ORDER, CaseResolutionError, ExcludedCase
-
-LOGGER = logging.getLogger(__name__)
+from radiant.tasks.nextflow.qc.model import SOMATIC, QcCase, QcMember
+from radiant.tasks.nextflow.selection import (
+    CaseResolutionError,
+    ExcludedCase,
+    case_problems,
+    decide_cases,
+    document_reason,
+    group_by_case,
+)
 
 # The pipeline's `experimentalStrategy` enum. `wxs` and `wes` are the same thing under two
 # dictionaries; the pipeline spells it WXS.
@@ -32,14 +35,6 @@ REASON_TEXT = {
         "its current alignment published more than one CRAM. One alignment task cannot "
         "legitimately produce two, so a document is mistyped at the source -- typically an "
         "index recorded with format_code 'cram' instead of 'crai'"
-    ),
-    "no_project_code": (
-        "the case has no project_code -- `cases.project_id` did not resolve to a row in "
-        "`project`, and the batch PATCH requires it to look the case up"
-    ),
-    "tenant_excluded": (
-        "its tenant is in `excluded_tenants` (`$RADIANT_ETL_EXCLUDED_TENANTS`), which the ETL "
-        "leaves out of case processing"
     ),
     "ambiguous_dragen_metrics": (
         "its current alignment published more than one DRAGEN metrics tarball (`ssup`/`tgz`), "
@@ -55,11 +50,14 @@ __all__ = ["CaseResolutionError", "ExcludedCase", "Selection", "select_cases", "
 
 
 class Selection(BaseModel):
-    """What `select_cases` decided: what runs, what does not, and the tenants involved."""
+    """What `select_cases` decided: what runs, what does not, and the tenants involved
+    (`selection.CaseDecisions`)."""
 
     members: list[QcMember] = []
     case_ids: list[int] = []
     excluded: list[ExcludedCase] = []
+    done: list[int] = []
+    untriggered: list[int] = []
 
     @property
     def tenants(self) -> list[str]:
@@ -71,55 +69,31 @@ def select_cases(
     requested_task_ids: list[int] | None = None,
     *,
     strict: bool | None = None,
+    excluded_tenants: list[str] | None = None,
 ) -> Selection:
-    """Group the candidate rows by case and keep the ones that can actually be run."""
-    requested = list(requested_task_ids or [])
-    if strict is None:
-        strict = bool(requested)
-
-    members = [QcMember(**row) for row in rows]
-    by_case = _group_by_case(members)
-    problems: list[str] = []
-
-    if requested:
-        found = {m.alignment_task_id for m in members if m.alignment_task_id is not None}
-        unmatched = sorted(set(requested) - found)
-        if unmatched:
-            problems.append(
-                f"alignment task(s) {unmatched} produced no candidate case -- either the id does "
-                f"not exist, is not the current `alignment_germline_variant_calling` or "
-                f"`alignment_somatic_variant_calling` task of its experiment, or every case it "
-                f"belongs to already carries a `quality_control_metrics` task"
-            )
-
-    selection = Selection()
-    for case_id in sorted(by_case):
-        case_members = by_case[case_id]
-        case_problems = _validate(case_id, case_members)
-        if case_problems:
-            first = case_problems[0]
-            selection.excluded.append(
-                ExcludedCase(case_id=case_id, reason=first.reason, detail=first.detail, problems=case_problems)
-            )
-            problems += [problem.detail for problem in case_problems]
-            continue
-        selection.members += case_members
-        selection.case_ids.append(case_id)
-
-    if problems and strict:
-        raise CaseResolutionError("\n".join(problems))
-
-    for excluded in selection.excluded:
-        LOGGER.warning("case %d excluded (%s): %s", excluded.case_id, excluded.reason, excluded.detail)
-    if problems and not strict:
-        LOGGER.warning("%d candidate case(s) excluded, %d kept", len(selection.excluded), len(selection.case_ids))
-    return selection
+    """Decide every germline and somatic case of the fact rows: run, done, untriggered, or excluded
+    with its reasons. The work is a germline member's CRAM, or a somatic tumor's alignment, not
+    QC'd on the case yet."""
+    blocked = set(excluded_tenants or [])
+    decisions = decide_cases(
+        [QcMember(**row) for row in rows],
+        triggered=_triggered,
+        validate=lambda case_id, members: _validate(case_id, members, blocked),
+        requested_task_ids=requested_task_ids,
+        strict=strict,
+        unmatched_text=(
+            "either the id does not exist, is not the current `alignment_germline_variant_calling` or "
+            "`alignment_somatic_variant_calling` task of its experiment, or every case it belongs to "
+            "already carries a `quality_control_metrics` task"
+        ),
+    )
+    return Selection(**decisions.model_dump())
 
 
 def resolve_cases(member_dicts: list[dict]) -> list[QcCase]:
     """Build one `QcCase` per case. `select_cases` has already validated these members."""
     members = [QcMember(**m) for m in member_dicts]
-    by_case = _group_by_case(members)
+    by_case = group_by_case(members)
     return [_build(case_id, by_case[case_id]) for case_id in sorted(by_case)]
 
 
@@ -132,26 +106,34 @@ def strategy_of(member: QcMember) -> str:
     return STRATEGIES[member.strategy.lower()]
 
 
-def _group_by_case(members: list[QcMember]) -> dict[int, list[QcMember]]:
-    by_case: dict[int, list[QcMember]] = {}
-    for member in members:
-        by_case.setdefault(member.case_id, []).append(member)
-    for case_members in by_case.values():
-        case_members.sort(key=lambda m: (REL_ORDER.get(m.role, 9), m.patient_id))
-    return by_case
+def _triggered(member: QcMember) -> bool:
+    if member.case_type == SOMATIC:
+        return member.alignment_task_id is not None
+    return member.cram_matches > 0
 
 
-def _validate(case_id: int, members: list[QcMember]) -> list[Problem]:
-    """`(reason, detail)` pairs. Exclusion is at case granularity: the report is per family,
-    and a family short one member is a different report, not a smaller one."""
+def _member_reason(member: QcMember) -> str | None:
+    if member.case_type == SOMATIC:
+        # No CRAM-directory fallback for a tumor: it would give a green run with an empty report.
+        return document_reason(member, member.dragen_metrics_matches, "no_metrics", "ambiguous_dragen_metrics")
+    reason = document_reason(member, member.cram_matches, "no_cram", "ambiguous_cram")
+    if reason is None and member.dragen_metrics_matches > 1:
+        return "ambiguous_dragen_metrics"
+    return reason
+
+
+def _validate(case_id: int, members: list[QcMember], excluded_tenants: set[str]) -> list[Problem]:
+    """Every problem of a candidate case. Exclusion is at case granularity: the report is per
+    family, and a family short one member is a different report, not a smaller one."""
     problems: list[Problem] = []
 
     for member in members:
-        if member.exclusion_reason:
-            text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
-            problems.append(
-                member_problem(member, member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}")
-            )
+        reason = _member_reason(member)
+        if reason:
+            detail = f"case {case_id}, patient {member.patient_id}: {REASON_TEXT[reason]}"
+            problems.append(member_problem(member, reason, detail))
+
+    problems += case_problems(case_id, members[0], excluded_tenants)
 
     probands = [m for m in members if m.role == "proband"]
     if len(probands) != 1:

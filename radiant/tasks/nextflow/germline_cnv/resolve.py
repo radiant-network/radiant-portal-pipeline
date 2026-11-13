@@ -1,22 +1,26 @@
 """Turn the CNV discovery result set into validated `CnvFamily` objects.
 
-Same two-step shape as `radiant.tasks.nextflow.resolve`, for the same reasons: `select_cases`
-decides which candidate cases can run and why the others cannot, in strict mode (an operator
-named alignment tasks) or lenient mode (the nightly query found them); `resolve_families`
-builds the families it kept. What differs is the trigger document -- a germline CNV VCF, not
-a gVCF -- and one extra guard: the pipeline only knows DRAGEN's CNV conventions.
+Same two-step shape as `radiant.tasks.nextflow.germline_snv.resolve`, for the same reasons:
+`select_cases` decides every case from the fact rows, in strict mode (an operator named alignment
+tasks) or lenient mode (a discovery run); `resolve_families` builds the families it kept. What
+differs is the trigger document -- a germline CNV VCF, not a gVCF -- and one extra guard: the
+pipeline only knows DRAGEN's CNV conventions.
 """
-
-import logging
 
 from pydantic import BaseModel
 
 from radiant.tasks.nextflow.family import Phenotype, family_id
 from radiant.tasks.nextflow.germline_cnv.model import CnvFamily, CnvMember
 from radiant.tasks.nextflow.problem import Problem, case_problem, member_problem
-from radiant.tasks.nextflow.selection import REL_ORDER, SEQUENCING_TYPES, CaseResolutionError, ExcludedCase
-
-LOGGER = logging.getLogger(__name__)
+from radiant.tasks.nextflow.selection import (
+    SEQUENCING_TYPES,
+    CaseResolutionError,
+    ExcludedCase,
+    case_problems,
+    decide_cases,
+    document_reason,
+    group_by_case,
+)
 
 # What the pipeline's samplesheet `caller` column accepts for a per-sample VCF. Matched
 # case-insensitively as a prefix against `task.pipeline_name` ("Dragen", "DRAGEN 4.2", ...).
@@ -34,14 +38,6 @@ REASON_TEXT = {
         "cannot legitimately produce two, so a document is mistyped at the source -- typically an "
         "index recorded with format_code 'vcf' instead of 'tbi'"
     ),
-    "no_project_code": (
-        "the case has no project_code -- `cases.project_id` did not resolve to a row in "
-        "`project`, and the batch PATCH requires it to look the case up"
-    ),
-    "tenant_excluded": (
-        "its tenant is in `excluded_tenants` (`$RADIANT_ETL_EXCLUDED_TENANTS`), which the ETL "
-        "leaves out of case processing"
-    ),
     "unsupported_caller": (
         "its alignment was not produced by DRAGEN, and the pipeline's normalization step only "
         "implements DRAGEN's CNV VCF conventions -- it would fail on the first process"
@@ -56,11 +52,14 @@ __all__ = ["CaseResolutionError", "ExcludedCase", "Selection", "select_cases", "
 
 
 class Selection(BaseModel):
-    """What `select_cases` decided: what runs, what does not, and the tenants involved."""
+    """What `select_cases` decided: what runs, what does not, and the tenants involved
+    (`selection.CaseDecisions`)."""
 
     members: list[CnvMember] = []
     case_ids: list[int] = []
     excluded: list[ExcludedCase] = []
+    done: list[int] = []
+    untriggered: list[int] = []
 
     @property
     def tenants(self) -> list[str]:
@@ -72,55 +71,30 @@ def select_cases(
     requested_task_ids: list[int] | None = None,
     *,
     strict: bool | None = None,
+    excluded_tenants: list[str] | None = None,
 ) -> Selection:
-    """Group the candidate rows by case and keep the ones that can actually be run."""
-    requested = list(requested_task_ids or [])
-    if strict is None:
-        strict = bool(requested)
-
-    members = [CnvMember(**row) for row in member_rows]
-    by_case = _group_by_case(members)
-    problems: list[str] = []
-
-    if requested:
-        found = {m.alignment_task_id for m in members if m.alignment_task_id is not None}
-        unmatched = sorted(set(requested) - found)
-        if unmatched:
-            problems.append(
-                f"alignment task(s) {unmatched} produced no candidate case -- either the id does "
-                f"not exist or is not an `alignment_germline_variant_calling` task, or every case "
-                f"it belongs to already carries a `radiant_germline_cnv_annotation`"
-            )
-
-    selection = Selection()
-    for case_id in sorted(by_case):
-        case_members = by_case[case_id]
-        case_problems = _validate(case_id, case_members)
-        if case_problems:
-            first = case_problems[0]
-            selection.excluded.append(
-                ExcludedCase(case_id=case_id, reason=first.reason, detail=first.detail, problems=case_problems)
-            )
-            problems += [problem.detail for problem in case_problems]
-            continue
-        selection.members += case_members
-        selection.case_ids.append(case_id)
-
-    if problems and strict:
-        raise CaseResolutionError("\n".join(problems))
-
-    for excluded in selection.excluded:
-        LOGGER.warning("case %d excluded (%s): %s", excluded.case_id, excluded.reason, excluded.detail)
-    if problems and not strict:
-        LOGGER.warning("%d candidate case(s) excluded, %d kept", len(selection.excluded), len(selection.case_ids))
-    return selection
+    """Decide every germline case of the fact rows: run, done, untriggered, or excluded with
+    its reasons. The work is a member's CNV VCF not annotated on the case yet."""
+    blocked = set(excluded_tenants or [])
+    decisions = decide_cases(
+        [CnvMember(**row) for row in member_rows],
+        triggered=lambda m: m.gcnv_matches > 0,
+        validate=lambda case_id, members: _validate(case_id, members, blocked),
+        requested_task_ids=requested_task_ids,
+        strict=strict,
+        unmatched_text=(
+            "either the id does not exist or is not an `alignment_germline_variant_calling` task, "
+            "or every case it belongs to already carries a `radiant_germline_cnv_annotation`"
+        ),
+    )
+    return Selection(**decisions.model_dump())
 
 
 def resolve_families(member_rows: list[dict], phenotype_rows: list[dict]) -> list[CnvFamily]:
     """Build one `CnvFamily` per case. `select_cases` has already validated these rows."""
     members = [CnvMember(**row) for row in member_rows]
     phenotypes = [Phenotype(**row) for row in phenotype_rows]
-    by_case = _group_by_case(members)
+    by_case = group_by_case(members)
     return [_build(case_id, by_case[case_id], phenotypes) for case_id in sorted(by_case)]
 
 
@@ -129,32 +103,24 @@ def tenants_of(families: list[CnvFamily]) -> list[str]:
     return sorted({f.tenant_code for f in families})
 
 
-def _group_by_case(members: list[CnvMember]) -> dict[int, list[CnvMember]]:
-    by_case: dict[int, list[CnvMember]] = {}
-    for member in members:
-        by_case.setdefault(member.case_id, []).append(member)
-    for case_members in by_case.values():
-        case_members.sort(key=lambda m: (REL_ORDER.get(m.role, 9), m.patient_id))
-    return by_case
-
-
-def _validate(case_id: int, members: list[CnvMember]) -> list[Problem]:
-    """`(reason, detail)` pairs. Exclusion is at case granularity: the pipeline merges and
-    classifies whole families, so a family short one member is a different job."""
+def _validate(case_id: int, members: list[CnvMember], excluded_tenants: set[str]) -> list[Problem]:
+    """Every problem of a candidate case. Exclusion is at case granularity: the pipeline merges
+    and classifies whole families, so a family short one member is a different job."""
     problems: list[Problem] = []
 
+    reasons = {m.patient_id: document_reason(m, m.gcnv_matches, "no_gcnv", "ambiguous_gcnv") for m in members}
     for member in members:
-        if member.exclusion_reason:
-            text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
-            problems.append(
-                member_problem(member, member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}")
-            )
+        reason = reasons[member.patient_id]
+        if reason:
+            detail = f"case {case_id}, patient {member.patient_id}: {REASON_TEXT[reason]}"
+            problems.append(member_problem(member, reason, detail))
+
+    problems += case_problems(case_id, members[0], excluded_tenants)
 
     # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket), and the
-    # `<proband>` segment of the Exomiser report names `collect_outputs` expects. The query
-    # does not filter on it; this names the failure instead of a `None` in the samplesheet.
+    # `<proband>` segment of the Exomiser report names `collect_outputs` expects.
     for member in members:
-        if not member.exclusion_reason and not member.aliquot:
+        if not reasons[member.patient_id] and not member.aliquot:
             detail = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
             problems.append(member_problem(member, "missing_aliquot", detail))
 
@@ -162,8 +128,8 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[Problem]:
     # is nullable. An alignment that does not say what produced it is excluded and reported
     # rather than asserted to be DRAGEN and found out hours in, every night.
     for member in members:
-        if member.alignment_task_id is None:
-            continue  # already reported by the query (`pending_alignment`)
+        if reasons[member.patient_id]:
+            continue
         pipeline = (member.alignment_pipeline or "").strip().lower()
         if not pipeline:
             problems.append(

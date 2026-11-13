@@ -35,13 +35,10 @@ def test_it_finds_its_own_work(dag_bag):
     assert dag.params["dry_run"] is False
 
 
-def test_discovery_uses_the_cnv_query(dag_bag):
-    """The anti-join must be on the CNV annotation task type, and the trigger the gcnv VCF."""
-    sql = dag_bag.get_dag(DAG_ID).get_task("discover_scope").sql
-    assert "radiant_germline_cnv_annotation" in sql
-    assert "'gcnv'" in sql
-    assert "'gvcf'" not in sql
-    assert "{{ mapping.starrocks_pipeline_case }}" in sql
+def test_discovery_reads_the_cnv_facts(dag_bag):
+    """A Python task over `read_facts`: the facts of the cases the scheduler decided to run."""
+    discover = dag_bag.get_dag(DAG_ID).get_task("discover_scope")
+    assert discover.python_callable.__name__ == "discover_scope"
 
 
 def test_the_pipeline_run_is_pinned_to_the_generated_inputs(dag_bag):

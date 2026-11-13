@@ -58,6 +58,8 @@ class FamilyMember(BaseModel):
     strategy: str | None = None
     # The current alignment task of this experiment, where the documents hang.
     alignment_task_id: int | None = None
+    # The case already has this pipeline's annotation for this experiment.
+    annotated: bool = False
 
 
 class Phenotype(BaseModel):

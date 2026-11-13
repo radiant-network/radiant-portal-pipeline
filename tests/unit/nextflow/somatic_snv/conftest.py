@@ -1,4 +1,4 @@
-"""Row fixtures shaped like what `sql/clinical/pending_somatic_annotation_select.sql` returns:
+"""Row fixtures shaped like what `sql/clinical/somatic_snv_facts_select.sql` returns:
 one row per (calling task, case, sequencing experiment), tumor first."""
 
 from radiant.tasks.nextflow.somatic_snv.model import CallingTask, SomaticCase
@@ -28,11 +28,13 @@ def row(
         "calling_task_id": task_id,
         "calling_task_type": task_type,
         "seq_id": seq_id,
+        "seq_status": "completed",
         "aliquot": aliquot,
         "strategy": "wgs",
         "histology": histology,
         "ssnv_url": vcf_url(task_id),
-        "exclusion_reason": None,
+        "ssnv_matches": 1,
+        "annotated": False,
     }
     base.update(overrides)
     return base
