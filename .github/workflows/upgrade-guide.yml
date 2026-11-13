@@ -1,0 +1,51 @@
+# Writes the upgrade guide between two releases to the job summary: the actions of the upgrade notes
+# (upgrade-notes/) of every release after `from` up to `to`, in release order, grouped before and after the
+# deploy. Same command as `make upgrade-guide FROM=<vA> TO=<vB>` (README, "Upgrade guide").
+#
+# Run it on `main` (Actions → Upgrade Guide → Run workflow): the text of each note comes from the branch the run
+# checks out, so a corrected note reaches the guide. It reads nothing but the repo, and the notes are public.
+name: Upgrade Guide
+
+on:
+  workflow_dispatch:
+    inputs:
+      from:
+        description: The version deployed now (vX.Y.Z tag)
+        required: true
+        type: string
+      to:
+        description: The version to deploy (vX.Y.Z tag), or `main` for the next release
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade-guide:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The full history and the tags: the release of a note is the first tag that contains its commit
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the guide's dependencies
+        run: pip install -r scripts/upgrade_guide/requirements.txt
+
+      # The inputs go through env, never into the script text
+      - name: Write the guide to the job summary
+        env:
+          FROM: ${{ inputs.from }}
+          TO: ${{ inputs.to }}
+        run: |
+          # `main` is not a local branch in a checkout of another ref: use its remote branch
+          if [ "$TO" = main ]; then TO=origin/main; fi
+          python -m scripts.upgrade_guide guide --from "$FROM" --to "$TO" > guide.md
+          cat guide.md >> "$GITHUB_STEP_SUMMARY"

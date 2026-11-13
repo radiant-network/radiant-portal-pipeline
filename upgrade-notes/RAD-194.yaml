@@ -1,0 +1,23 @@
+actions:
+  - when: before
+    do: >-
+      Pause radiant-case-scheduler and radiant-reannotate-open-data. Keep both paused until the last steps of this
+      release unpause them. The release changes the germline CNV tables under the import.
+    preconditions:
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
+    refs:
+      - radiant-case-scheduler
+      - radiant-reannotate-open-data
+    check: Both DAGs show as paused, and the check-lock command of radiant-toolbox reports the import lock free.
+  - when: before
+    do: >-
+      Add gnomad_ac to the germline and somatic CNV occurrence tables. Run the ALTERs of the migration file in every
+      <tenant>_tenant database (the base database for a single-tenant deployment), one at a time, each until
+      FINISHED. Against an unmigrated table, every import_part with CNVs fails. New deployments must not run it.
+    preconditions:
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
+    refs:
+      - radiant/dags/sql/radiant/migrations/RAD-194_cnv_occurrence_add_gnomad_ac.sql
+    check: >-
+      In each tenant database, SHOW ALTER TABLE COLUMN gives State = FINISHED, and DESC on both CNV occurrence
+      tables lists gnomad_ac after gnomad_sc_het.

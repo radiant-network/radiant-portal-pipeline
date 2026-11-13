@@ -1,0 +1,15 @@
+actions:
+  - when: after
+    do: >-
+      Run radiant-import-open-data with force_import = true. It fills the new gene_reference_transcript table: its
+      gate compares the Iceberg snapshots, so it does not see a new table. The same run covers RAD-253.
+    preconditions:
+      - The OpenDataLake contract tables ensembl_transcript and mane are published and not held back. Otherwise the
+        insert is skipped.
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
+    refs:
+      - radiant-import-open-data
+      - radiant/dags/sql/open_data/gene_reference_transcript_insert.sql
+    check: >-
+      SELECT count(*) FROM gene_reference_transcript returns more than 0, and the data_qa tests of
+      gene_reference_transcript pass (radiant-data-integrity-starrocks).

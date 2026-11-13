@@ -1,0 +1,71 @@
+# Adds the "Upgrade guide" section to a GitHub release: the actions of the upgrade notes (upgrade-notes/) whose
+# release is this tag, after the changelog (README, "Upgrade guide").
+#
+# - On `release: published`: release-please creates the release with the App token, so the event starts this
+#   workflow. A release created by hand gets the section too.
+# - By hand (Actions → Upgrade Guide Release → Run workflow, input `tag`): when a run failed, or to refresh the
+#   section after a note was corrected on main. A re-run of the Release workflow cannot do this, because
+#   release-please does not create the release again.
+#
+# The note text comes from `main`, as in the release PR description. The marker makes a run replace the section
+# instead of adding a second one.
+name: Upgrade Guide Release
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag (vX.Y.Z)
+        required: true
+        type: string
+
+# One run per tag: two runs on the same release body would overwrite each other
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+# Edit the release body
+permissions:
+  contents: write
+
+jobs:
+  release-section:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # main, with the full history and the tags: the release of a note is the first tag that contains its commit
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install the guide's dependencies
+        run: pip install -r scripts/upgrade_guide/requirements.txt
+
+      # The tag goes through env, never into the script text
+      - name: Add the upgrade guide to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+          MARKER: '<!-- upgrade-guide -->'
+        run: |
+          python -m scripts.upgrade_guide release-section --tag "$TAG_NAME" > section.md
+          gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body > release.md
+          sed -i "\|^$MARKER\$|,\$d" release.md
+          {
+            cat release.md
+            echo
+            echo "$MARKER"
+            cat section.md
+          } > new-release.md
+          gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --notes-file new-release.md
+          echo "Upgrade guide added to the release $TAG_NAME." >> "$GITHUB_STEP_SUMMARY"

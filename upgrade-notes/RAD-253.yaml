@@ -1,0 +1,11 @@
+actions:
+  - when: after
+    do: >-
+      Check that gnomad_constraint has the gnomAD v4.1.2 values. The force_import run of RAD-246 re-imports it with
+      the new insert: no separate run.
+    refs:
+      - radiant-import-open-data
+      - radiant/dags/sql/open_data/gnomad_constraint_insert.sql
+    check: >-
+      SELECT count(*) FROM gnomad_constraint WHERE pli IS NOT NULL returns more than 0, and the data_qa tests of
+      gnomad_constraint pass.

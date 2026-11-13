@@ -1,0 +1,4 @@
+# The only dependencies of the upgrade guide CLI, for the workflows that run it without the full ETL install.
+# Keep pydantic equal to requirements.txt.
+pydantic==2.11.9
+PyYAML==6.0.3

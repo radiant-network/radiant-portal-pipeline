@@ -1,0 +1,107 @@
+# Fails the PR when it needs an upgrade note and has none, or when a note is wrong (README, "Upgrade guide").
+# Make the `upgrade-note` job a required status check in the ruleset of main: otherwise a migration can merge with
+# no note, and its action is missing from the upgrade guide. It fails when:
+#   - the PR adds or changes a file under radiant/dags/sql/**/migrations/ and adds or changes no note;
+#   - the PR title has `!` after the type, or the description has a `BREAKING CHANGE:` footer, and the PR adds no note;
+#   - a note does not match the format (scripts/upgrade_guide/notes.py), or a file in upgrade-notes/ is not a note
+#     (a subfolder, a .YAML extension);
+#   - a note holds an IP address, a URL whose host is not on the allowlist, a 12-digit account number, or an s3://
+#     path or S3 ARN whose bucket is not a <placeholder> (the notes are public). A host name with no scheme is not
+#     detected: the reviewer must catch it;
+#   - the PR deletes a note;
+#   - the PR adds a note and its type opens no release (`chore`, `docs` …): the note would wait for the next one.
+# The job summary also previews the notes the PR adds or changes, as the guide will show them.
+# The rules are in scripts/upgrade_guide/check.py, with their unit tests. The job runs the checker of the base
+# branch.
+#
+# `edited` is the event of a title or description change: without it, a fixed title is not checked again.
+# Read-only token, no secret.
+name: Check Upgrade Note
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - edited
+      - reopened
+      - synchronize
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade-note:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # The base and the head commits of the PR, for the diff between them
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The checker of the base branch, not the one of the PR: a PR cannot relax the rules it is checked by. A PR
+      # that changes the rules is checked by the old ones; its new rules apply from the next PR. Before the
+      # checker is on main (the PR that adds it), the PR's copy runs.
+      - name: Get the checker of the base branch
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          checker="$RUNNER_TEMP/checker"
+          mkdir -p "$checker"
+          if git cat-file -e "$BASE:scripts/upgrade_guide/check.py" 2> /dev/null; then
+            git archive "$BASE" scripts/upgrade_guide | tar -x -C "$checker"
+          else
+            echo "::notice::No checker on the base branch: the PR's copy runs."
+            cp -r --parents scripts/upgrade_guide "$checker"
+          fi
+          echo "CHECKER=$checker" >> "$GITHUB_ENV"
+
+      - name: Install the check's dependencies
+        run: pip install -r "$CHECKER/scripts/upgrade_guide/requirements.txt"
+
+      # The title and the description go through env, never into the script text
+      - name: Check the upgrade note
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          TITLE: ${{ github.event.pull_request.title }}
+          BODY: ${{ github.event.pull_request.body }}
+        run: |
+          printf '%s' "$BODY" > "$RUNNER_TEMP/body.md"
+          errors="$RUNNER_TEMP/errors.txt"
+          if (cd "$CHECKER" && python -m scripts.upgrade_guide --repo "$GITHUB_WORKSPACE" check --base "$BASE" \
+              --head "$HEAD" --title "$TITLE" --body-file "$RUNNER_TEMP/body.md") 2> "$errors"; then
+            echo "Upgrade note check passed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          cat "$errors"
+          {
+            echo "## Upgrade note check failed"
+            echo
+            sed 's/^error: /- /' "$errors"
+            echo
+            echo "See upgrade-notes/README.md for when a PR needs a note and its format."
+          } >> "$GITHUB_STEP_SUMMARY"
+          sed 's/^error: /::error::/' "$errors"
+          exit 1
+
+      # The notes the PR adds or changes, as the guide will show them: the reviewer reads what the operator will
+      # read, not only the YAML. Also after a failed check, to show the valid notes. A preview error does not fail
+      # the job: the check above is the gate.
+      - name: Preview the upgrade guide
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          (cd "$CHECKER" && python -m scripts.upgrade_guide --repo "$GITHUB_WORKSPACE" preview --base "$BASE" \
+            --head "$HEAD" --pr "$PR") >> "$GITHUB_STEP_SUMMARY"
