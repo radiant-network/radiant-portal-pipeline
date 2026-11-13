@@ -5,10 +5,10 @@ from airflow.exceptions import AirflowSkipException
 
 from radiant.tasks.nextflow import case_status
 from radiant.tasks.nextflow.portal import PortalError
-from tests.unit.nextflow.cnv.conftest import member_row as cnv_member_row
-from tests.unit.nextflow.conftest import member_row as snv_member_row
+from tests.unit.nextflow.germline_cnv.conftest import member_row as cnv_member_row
+from tests.unit.nextflow.germline_snv.conftest import member_row as snv_member_row
 from tests.unit.nextflow.qc.conftest import member_row as qc_member_row
-from tests.unit.nextflow.somatic.conftest import calling_task_rows
+from tests.unit.nextflow.somatic_snv.conftest import calling_task_rows
 
 
 def status_row(case_id, status_code="submitted", has_variants=False, tenant_code="radiant"):

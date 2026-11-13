@@ -1,6 +1,6 @@
 """Turn the discovery result set into validated `QcCase` objects.
 
-Same two-step shape as `radiant.tasks.nextflow.resolve`, for the same reasons: `select_cases`
+Same two-step shape as `radiant.tasks.nextflow.germline_snv.resolve`, for the same reasons: `select_cases`
 decides which candidate cases can run and why the others cannot, in strict mode (an operator
 named alignment tasks) or lenient mode (the nightly query found them); `resolve_cases` builds
 the cases it kept. What differs is the trigger document -- a CRAM, not a gVCF; for a somatic
@@ -13,9 +13,10 @@ import logging
 
 from pydantic import BaseModel
 
+from radiant.tasks.nextflow.family import family_id
 from radiant.tasks.nextflow.problem import Problem, case_problem, member_problem
-from radiant.tasks.nextflow.qc.model import QcCase, QcMember, family_id
-from radiant.tasks.nextflow.resolve import REL_ORDER, CaseResolutionError, ExcludedCase
+from radiant.tasks.nextflow.qc.model import QcCase, QcMember
+from radiant.tasks.nextflow.selection import REL_ORDER, CaseResolutionError, ExcludedCase
 
 LOGGER = logging.getLogger(__name__)
 

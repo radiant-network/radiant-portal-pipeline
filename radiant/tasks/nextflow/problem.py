@@ -1,6 +1,6 @@
 """Why a case, or a calling task, cannot run: one `Problem` per cause found.
 
-Shared by the four selections (`resolve.py`, `cnv/`, `qc/`, `somatic/`) and by the decision log
+Shared by the four selections (`germline_snv/`, `germline_cnv/`, `qc/`, `somatic_snv/`) and by the decision log
 (`decision.py`). Kept apart from both so neither imports the other.
 """
 
@@ -21,7 +21,7 @@ class Problem(BaseModel):
 
 
 def member_problem(member, reason: str, detail: str) -> Problem:
-    """A problem about one member of a candidate case (`CaseMember`, `CnvMember`, `QcMember`): the
+    """A problem about one member of a candidate case (`SnvMember`, `CnvMember`, `QcMember`): the
     patient, its current experiment and the alignment task to look at."""
     return Problem(
         reason=reason,

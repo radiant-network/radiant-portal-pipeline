@@ -25,7 +25,7 @@ ARG PIPELINE_REPO=Ferlab-Ste-Justine/snv-post-processing
 # Pinned to a commit of `main` until the next release is tagged: v3.0.0 types
 # `sample`/`familyId` as string-only in its samplesheet schema, and nf-schema
 # casts numeric IDs to integers, so every Radiant samplesheet fails validation
-# (fixed upstream in BIOINFO-221). `radiant/tasks/nextflow/batch.py::ANNOTATION_PIPELINE`
+# (fixed upstream in BIOINFO-221). `radiant/tasks/nextflow/pipeline.py::ANNOTATION_PIPELINE`
 # records the same revision on every task it registers -- bump both together.
 ARG PIPELINE_REV=0df1ac09dd8c44364cc7fdd2c4ba072f9b7717d9
 
@@ -40,7 +40,7 @@ ARG QC_PIPELINE_REV=77d819e5cc141b9920511d16ba6f03010e6cf527
 
 # Same `-r` story (manifest says `master`). Pinned to a commit of the
 # feat/BIOINFO-214-expand-CNV-post-processing branch until the expanded pipeline
-# is tagged; `radiant/tasks/nextflow/cnv/batch.py::ANNOTATION_PIPELINE` records
+# is tagged; `radiant/tasks/nextflow/germline_cnv/batch.py::ANNOTATION_PIPELINE` records
 # the same revision on every task it registers -- bump both together.
 ARG CNV_PIPELINE_REPO=Ferlab-Ste-Justine/cnv-post-processing
 ARG CNV_PIPELINE_REV=c9e7768d411c954edf005bba4d994b14cd5484b1

@@ -7,7 +7,7 @@ each member's metrics.json. A somatic case is one member, its tumor, whose only 
 tarball. PATCH appends: a re-run adds a second task alongside the first.
 """
 
-from radiant.tasks.nextflow.batch import GENOME_BUILD
+from radiant.tasks.nextflow.pipeline import GENOME_BUILD
 from radiant.tasks.nextflow.qc.model import QcCase
 
 QC_TASK_TYPE = "quality_control_metrics"

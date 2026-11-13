@@ -1,7 +1,7 @@
 from radiant.tasks.vcf.experiment import BaseTask
 
 # The children of the case's father and mother, the same roles as `CHILD_ROLES` in the PED
-# (`radiant/tasks/nextflow/inputs.py`). A fetus is the proband's child, not a progeny.
+# (`radiant/tasks/nextflow/family.py`). A fetus is the proband's child, not a progeny.
 PROGENY_ROLES = ("proband", "brother", "sister", "sibling")
 
 

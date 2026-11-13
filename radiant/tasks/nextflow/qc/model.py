@@ -2,10 +2,6 @@
 
 from pydantic import BaseModel
 
-# `familyId` is `CA<case id>`, exactly as for post-processing: the pipeline names its
-# per-family MultiQC output after it, so a report maps back to a case by arithmetic.
-from radiant.tasks.nextflow.model import case_id_of, family_id  # noqa: F401  (re-exported)
-
 SOMATIC = "somatic"
 
 

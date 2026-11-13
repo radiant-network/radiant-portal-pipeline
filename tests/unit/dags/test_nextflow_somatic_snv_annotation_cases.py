@@ -93,7 +93,7 @@ def _run_generate_inputs(dag_bag, monkeypatch, head_error_code):
     import boto3
     from botocore.exceptions import ClientError
 
-    from tests.unit.nextflow.somatic.conftest import BUCKET, calling_task
+    from tests.unit.nextflow.somatic_snv.conftest import BUCKET, calling_task
 
     class FakeS3:
         def head_object(self, Bucket, Key):

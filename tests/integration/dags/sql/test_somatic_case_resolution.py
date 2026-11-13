@@ -19,7 +19,7 @@ import jinja2
 import pytest
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.nextflow.somatic.resolve import CaseResolutionError, select_tasks
+from radiant.tasks.nextflow.somatic_snv.resolve import CaseResolutionError, select_tasks
 from tests.integration.fixtures_common import execute_clinical
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
