@@ -151,7 +151,7 @@ sequenceDiagram
 
 Reading a unit's rows for one run:
 
-- `run` at `discover`, absent at `after`: the pipeline ran it, it is no longer a candidate.
+- `run` at `discover`, absent at `after`: the pipeline ran it, it is no longer a candidate. A pipeline that decides from facts (germline SNV, RAD-290) writes `done` instead.
 - `run` at `discover`, `run` again at `after`: the pipeline failed on it, or the child did not launch it.
 - `wait`, `skipped` or `excluded` at `discover`: not launched; the member rows say who is at fault. The `after` row usually repeats it.
 - absent at `discover`, `run` at `after`: it became runnable during the run; the child left it for the next run (see its warning).

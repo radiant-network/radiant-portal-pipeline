@@ -2,6 +2,8 @@ from airflow.sdk.definitions.mappedoperator import MappedOperator
 from airflow.sdk.definitions.taskgroup import MappedTaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
+from radiant.dags import DAGS_DIR
+
 DAG_ID = "radiant-case-scheduler"
 
 CASES_DAG_IDS = {
@@ -18,6 +20,8 @@ DISCOVERY = {
     "discover_qc_cases": ("radiant-nextflow-quality-control-cases", "discover_germline"),
     "discover_qc_somatic_cases": ("radiant-nextflow-quality-control-cases", "discover_somatic"),
 }
+# The discoveries that read facts and decide in Python.
+FACT_QUERIES = {"discover_germline_snv_cases": "germline_snv_facts_select.sql"}
 
 
 def _upstream(dag, task_id):
@@ -83,10 +87,17 @@ def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     for task_id, (cases_dag_id, cases_task_id) in DISCOVERY.items():
         discover = dag.get_task(task_id)
-        assert discover.sql == dag_bag.get_dag(cases_dag_id).get_task(cases_task_id).sql
-        assert discover.parameters == {"excluded_tenants": "{{ params.excluded_tenants }}"}
         # Inherited from the DAG, not set per task: a run conf `excluded_tenants` must reach it.
         assert discover.params["excluded_tenants"] == dag.params["excluded_tenants"]
+        if task_id in FACT_QUERIES:
+            # The child reads the same file from Python, narrowed to the decided cases.
+            assert discover.sql.strip() == (DAGS_DIR / "sql" / "clinical" / FACT_QUERIES[task_id]).read_text().strip()
+            # A fact query takes no parameter: the block list is applied in Python.
+            assert not discover.parameters
+            assert "task_ids" not in discover.params
+            continue
+        assert discover.sql == dag_bag.get_dag(cases_dag_id).get_task(cases_task_id).sql
+        assert discover.parameters == {"excluded_tenants": "{{ params.excluded_tenants }}"}
         assert discover.params["task_ids"] == []
     import_sql = dag.get_task("discover_import_cases").sql
     assert "staging_sequencing_experiment_delta" in import_sql
@@ -254,12 +265,17 @@ def _context(task_instance) -> dict:
     }
 
 
-def _record_writes(monkeypatch) -> list:
-    """`write_decisions` without StarRocks: the `(run_id, stage, decisions)` of each call."""
+def _record_writes(monkeypatch, run_units=None) -> list:
+    """`write_decisions` and `read_run_units` without StarRocks: the `(run_id, stage, decisions)`
+    of each write; `run_units` are the units read back as decided `run`, by pipeline."""
     written = []
     monkeypatch.setattr(
         "radiant.tasks.nextflow.decision.write_decisions",
         lambda decisions, run_id, stage, conf=None: written.append((run_id, stage, decisions)),
+    )
+    monkeypatch.setattr(
+        "radiant.tasks.nextflow.decision.read_run_units",
+        lambda run_id, pipeline, conf=None: (run_units or {}).get(pipeline, set()),
     )
     return written
 
@@ -391,3 +407,33 @@ def test_germline_and_somatic_quality_control_rows_both_count_as_work(dag_bag, m
         status_rows=submitted,
     )
     assert batches == [{"tenant": "radiant", "case_ids": [3, 23]}]
+
+
+def test_a_germline_case_the_run_annotated_is_logged_done_after_and_only_then(dag_bag, monkeypatch):
+    """`done` at `after` for the unit decided `run` at `discover`; never at `discover`."""
+    from tests.unit.nextflow.conftest import member_row
+
+    class TaskInstance:
+        def xcom_push(self, key, value):
+            pass
+
+        def xcom_pull(self, task_ids, key):
+            return [1]
+
+    context = _context(TaskInstance())
+    monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
+    written = _record_writes(monkeypatch, run_units={"germline_snv": {(None, 1)}})
+    dag = dag_bag.get_dag(DAG_ID)
+    empty = {"germline_cnv_rows": [], "somatic_snv_rows": [], "qc_rows": [], "qc_somatic_rows": [], "import_rows": []}
+    annotated_elsewhere = member_row(case_id=2, patient_id=200, seq_id=600, annotated=True)
+
+    submitted = [{"case_id": 1, "tenant_code": "radiant", "status_code": "submitted", "has_variants": False}]
+    rows = [member_row(case_id=1), annotated_elsewhere]
+    dag.get_task("discover_cases").python_callable(germline_snv_rows=rows, **empty, status_rows=submitted)
+
+    processing = [{"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True}]
+    rows = [member_row(case_id=1, annotated=True), annotated_elsewhere]
+    dag.get_task("select_ready_cases").python_callable(germline_snv_rows=rows, **empty, status_rows=processing)
+
+    logged = [(stage, d.case_id, d.decision) for _, stage, decisions in written for d in decisions]
+    assert logged == [("discover", 1, "run"), ("after", 1, "done")]

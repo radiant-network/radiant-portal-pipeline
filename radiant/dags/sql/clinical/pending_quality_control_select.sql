@@ -6,7 +6,7 @@
 -- `design/SJRA-1879-nextflow-quality-control-automation.md`, and radiant-hub
 -- `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the tarball.
 --
--- Sibling of `pending_annotation_select.sql`: both read the supersession policy (SJRA-1698 5)
+-- Sibling of `germline_snv_facts_select.sql`: both read the supersession policy (SJRA-1698 5)
 -- from the views `current_experiment` and `current_alignment`, and the cases from
 -- `pipeline_case` (RAD-287). What differs is the trigger document (CRAM here, gVCF there) and
 -- the anti-join (a `quality_control_metrics` task here, an annotation there).

@@ -38,6 +38,7 @@ def cases_with_work(
     somatic_snv_rows: list[dict],
     qc_rows: list[dict],
     import_rows: list[dict],
+    excluded_tenants: list[str] | None = None,
 ) -> set[int]:
     """The cases at least one pipeline will run on: the cases of a `run` decision
     (`decision.decide`), in any pipeline or the import.
@@ -47,7 +48,9 @@ def cases_with_work(
     it would sit in `processing` with nothing running for it, and never reach `in_progress`.
     The scheduler calls `decide` itself, to write the decisions; this is the same answer.
     """
-    return run_case_ids(decide(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows))
+    return run_case_ids(
+        decide(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows, excluded_tenants)
+    )
 
 
 def plan_processing(status_rows: list[dict], waiting: set[int], excluded_tenants: list[str]) -> list[dict]:

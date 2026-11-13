@@ -23,6 +23,8 @@ class CnvMember(CaseMember):
     # as `<cram>.crai` by *file existence on the mount*, so the crai must sit at that path.
     cram_url: str | None = None
     crai_url: str | None = None
+    # Set by the query when this member is why the case cannot run. None means usable.
+    exclusion_reason: str | None = None
 
 
 class CnvFamily(Family):

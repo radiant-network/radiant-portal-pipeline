@@ -12,17 +12,18 @@ reports among its outputs.
                                                                                   |
               register_tasks (one per tenant) <- collect_outputs <----------------+
 
-Nothing is asked of an operator on a scheduled run. `discover_scope` asks the clinical model
-which sequencing has been aligned but never annotated; `task_ids` narrows that to specific
-alignment tasks when someone wants a targeted rerun, and is empty otherwise.
+Nothing is asked of an operator on a scheduled run. `discover_scope` reads the facts
+(`sql/clinical/germline_snv_facts_select.sql`) of the cases the case scheduler decided to run,
+or of every germline case when run by hand, and `select_cases` decides which ones have a gVCF
+never annotated; `task_ids` narrows that to specific alignment tasks when
+someone wants a targeted rerun, and is empty otherwise.
 
-Two rules do most of the work, and both live in
-`sql/clinical/pending_annotation_select.sql` rather than here:
+Two rules do most of the work:
 
 - exactly one sequencing experiment per (case, member) -- the newest `completed` one -- and
-  exactly one alignment task per experiment. The same selection decides eligibility *and*
-  builds the family, which is what stops a superseded experiment keeping its case eligible
-  for ever;
+  exactly one alignment task per experiment (the `current_*` views). The same rows decide
+  eligibility *and* build the family, which is what stops a superseded experiment keeping its
+  case eligible for ever;
 - a candidate that cannot be run is excluded with a reason and reported, never fatal. One
   unfixable case must not block every other case, every night.
 
@@ -143,17 +144,15 @@ def nextflow_snv_postprocessing_cases():
     # per tenant, and `cases.id` is a single-column primary key over all of it -- so the
     # tenant comes back with the rows rather than scoping the query. Nothing here needs
     # RADIANT_TENANT_CODE.
-    discover_scope = RadiantStarRocksOperator(
-        task_id="discover_scope",
-        task_display_name="[StarRocks] Discover cases pending annotation",
-        sql="./sql/clinical/pending_annotation_select.sql",
-        parameters={
-            "task_ids": "{{ params.task_ids }}",
-            "excluded_tenants": "{{ params.excluded_tenants }}",
-        },
-        output_processor=rows_output_processor,
-        do_xcom_push=True,
-    )
+    @task(task_id="discover_scope", task_display_name="[StarRocks] Read the germline cases' SNV facts")
+    def discover_scope() -> Any:
+        """The facts of the cases the scheduler decided to run, or of every germline case by hand."""
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.nextflow.decision import GERMLINE_SNV, read_facts
+
+        context = get_current_context()
+        return read_facts("germline_snv_facts_select.sql", GERMLINE_SNV, context["dag_run"].conf)
 
     @task(task_id="select_cases", task_display_name="[PyOp] Select the cases that can run")
     def select_cases(member_rows: Any) -> Any:
@@ -168,7 +167,12 @@ def nextflow_snv_postprocessing_cases():
         requested = list(context["params"]["task_ids"] or [])
         # Named tasks are an operator's request, so a case that cannot be resolved is an
         # error. A discovered scope is the job's own doing, so it is a line in a report.
-        selection = select(member_rows, requested, strict=bool(requested))
+        selection = select(
+            member_rows,
+            requested,
+            strict=bool(requested),
+            excluded_tenants=context["params"]["excluded_tenants"],
+        )
         selection = launch(GERMLINE_SNV, selection, context)
 
         if not selection.case_ids:
@@ -189,7 +193,7 @@ def nextflow_snv_postprocessing_cases():
             "excluded": [e.model_dump() for e in selection.excluded],
         }
 
-    selection = select_cases(discover_scope.output)
+    selection = select_cases(discover_scope())
 
     fetch_phenotypes = RadiantStarRocksOperator(
         task_id="fetch_phenotypes",

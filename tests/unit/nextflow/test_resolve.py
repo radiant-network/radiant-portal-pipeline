@@ -52,7 +52,7 @@ def test_strategy_maps_to_the_pipelines_vocabulary(singleton_rows):
 def test_a_discovered_case_that_cannot_run_is_excluded_not_raised(trio_rows, singleton_rows):
     """The whole point of automation: one unfixable case must not block every other case,
     every night."""
-    trio_rows[0]["exclusion_reason"] = "no_gvcf"
+    trio_rows[0].update(gvcf_url=None, gvcf_matches=0)
     selection = select_cases(trio_rows + singleton_rows)
     assert selection.case_ids == [8]
     assert [(e.case_id, e.reason) for e in selection.excluded] == [(1072, "no_gvcf")]
@@ -60,7 +60,7 @@ def test_a_discovered_case_that_cannot_run_is_excluded_not_raised(trio_rows, sin
 
 def test_the_exclusion_carries_a_sentence_not_only_a_code(trio_rows):
     """The report is read by someone who does not have the SQL open."""
-    trio_rows[0]["exclusion_reason"] = "ambiguous_gvcf"
+    trio_rows[0]["gvcf_matches"] = 2
     (excluded,) = select_cases(trio_rows).excluded
     assert "mistyped at the source" in excluded.detail
     assert "index recorded with format_code 'gvcf'" in excluded.detail
@@ -69,7 +69,7 @@ def test_the_exclusion_carries_a_sentence_not_only_a_code(trio_rows):
 def test_one_bad_member_excludes_the_whole_case(trio_rows):
     """The pipeline joint-calls whole families, so a family missing a member is not a
     smaller job -- it is a different one."""
-    trio_rows[1]["exclusion_reason"] = "pending_alignment"
+    trio_rows[1].update(alignment_task_id=None, gvcf_url=None, gvcf_matches=0)
     selection = select_cases(trio_rows)
     assert selection.case_ids == []
     assert selection.members == []
@@ -78,8 +78,9 @@ def test_one_bad_member_excludes_the_whole_case(trio_rows):
 def test_a_member_awaiting_sequencing_makes_the_case_wait(trio_rows):
     """Rather than running against the superseded experiment and producing an annotation
     that is obsolete the moment it lands."""
-    trio_rows[1].update(seq_id=None, sample_id=None, aliquot=None, strategy=None, gvcf_url=None)
-    trio_rows[1]["exclusion_reason"] = "pending_sequencing"
+    trio_rows[1].update(
+        seq_id=None, sample_id=None, aliquot=None, strategy=None, alignment_task_id=None, gvcf_url=None, gvcf_matches=0
+    )
     (excluded,) = select_cases(trio_rows).excluded
     assert excluded.reason == "pending_sequencing"
     assert "no completed sequencing experiment yet" in excluded.detail
@@ -122,7 +123,7 @@ def test_members_spanning_several_strategies_are_excluded(trio_rows):
 
 def test_a_named_task_that_cannot_run_raises(trio_rows):
     """An operator asked for this specific work, so silence would be the wrong answer."""
-    trio_rows[0]["exclusion_reason"] = "no_gvcf"
+    trio_rows[0].update(gvcf_url=None, gvcf_matches=0)
     with pytest.raises(CaseResolutionError, match="joint-called upstream"):
         select_cases(trio_rows, [900, 901, 902])
 
@@ -137,7 +138,7 @@ def test_a_named_task_that_produced_no_candidate_is_reported(trio_rows):
 def test_strict_reports_every_problem_at_once(trio_rows, singleton_rows):
     """One round trip per run, not one per defect: these queries are slow and the operator
     is remote."""
-    trio_rows[0]["exclusion_reason"] = "no_gvcf"
+    trio_rows[0].update(gvcf_url=None, gvcf_matches=0)
     singleton_rows[0]["strategy"] = "rnaseq"
     with pytest.raises(CaseResolutionError) as excinfo:
         select_cases(trio_rows + singleton_rows, [900, 901, 902, 910, 999])
@@ -149,7 +150,7 @@ def test_strict_reports_every_problem_at_once(trio_rows, singleton_rows):
 
 def test_a_discovery_run_is_lenient_by_default(trio_rows):
     """No task ids means nobody asked for anything in particular."""
-    trio_rows[0]["exclusion_reason"] = "no_gvcf"
+    trio_rows[0].update(gvcf_url=None, gvcf_matches=0)
     assert select_cases(trio_rows).excluded  # does not raise
 
 
@@ -180,7 +181,64 @@ def test_a_run_may_span_several_tenants(trio_rows, singleton_rows):
 
 def test_an_excluded_tenant_is_left_out_before_the_pipeline_runs(singleton_rows):
     """Reported with its reason, so the log says why the case never ran."""
-    singleton_rows[0]["exclusion_reason"] = "tenant_excluded"
-    (excluded,) = select_cases(singleton_rows).excluded
+    (excluded,) = select_cases(singleton_rows, excluded_tenants=["radiant"]).excluded
     assert excluded.reason == "tenant_excluded"
     assert "RADIANT_ETL_EXCLUDED_TENANTS" in excluded.detail
+
+
+# --- decided from the facts: done, no trigger document, supersession ------------------------
+
+
+def _annotated(rows):
+    for row in rows:
+        row["annotated"] = True
+    return rows
+
+
+def test_a_case_whose_every_gvcf_is_annotated_is_done(trio_rows):
+    selection = select_cases(_annotated(trio_rows))
+    assert (selection.case_ids, selection.done, selection.excluded) == ([], [1072], [])
+
+
+def test_a_case_where_no_member_has_a_gvcf_has_no_trigger_document(trio_rows):
+    """Joint-called upstream: reported once as such, never as three `no_gvcf` members."""
+    for row in trio_rows:
+        row.update(gvcf_url=None, gvcf_matches=0)
+    selection = select_cases(trio_rows)
+    assert (selection.case_ids, selection.untriggered, selection.excluded) == ([], [1072], [])
+
+
+def test_a_parent_resequenced_since_the_annotation_makes_the_case_run_again(trio_rows):
+    """The father's newest completed experiment is current, aligned, with a gVCF never annotated."""
+    _annotated(trio_rows)
+    father = next(r for r in trio_rows if r["role"] == "father")
+    father.update(seq_id=700, alignment_task_id=990, annotated=False)
+    selection = select_cases(trio_rows)
+    assert selection.case_ids == [1072]
+
+
+def test_a_parent_resequenced_but_not_aligned_yet_keeps_the_case_done(trio_rows):
+    """Nothing new to annotate until the father's gVCF lands; the case then runs."""
+    _annotated(trio_rows)
+    father = next(r for r in trio_rows if r["role"] == "father")
+    father.update(seq_id=700, alignment_task_id=None, gvcf_url=None, gvcf_matches=0, annotated=False)
+    assert select_cases(trio_rows).done == [1072]
+
+
+def test_an_experiment_shared_by_two_cases_is_annotated_per_case(singleton_rows):
+    """Annotating it on case 8 must not make case 9 look done."""
+    shared = [dict(singleton_rows[0], annotated=True), dict(singleton_rows[0], case_id=9)]
+    selection = select_cases(shared)
+    assert (selection.case_ids, selection.done) == ([9], [8])
+
+
+def test_a_targeted_run_only_looks_at_the_cases_of_the_requested_tasks(trio_rows, singleton_rows):
+    """The other cases are neither run nor reported, done or not."""
+    untriggered = [member_row(case_id=50, patient_id=300, gvcf_url=None, gvcf_matches=0)]
+    selection = select_cases(trio_rows + _annotated(singleton_rows) + untriggered, [900])
+    assert (selection.case_ids, selection.done, selection.untriggered) == ([1072], [], [])
+
+
+def test_a_targeted_run_on_an_annotated_task_is_reported(singleton_rows):
+    with pytest.raises(CaseResolutionError, match=r"\[910\]"):
+        select_cases(_annotated(singleton_rows), [910])

@@ -72,7 +72,15 @@ at fault (patient, experiment, alignment task):
 - `run`: nothing stops it;
 - `wait`: the data will come by itself (`pending_sequencing`, `pending_alignment`);
 - `skipped`: left out by configuration (`tenant_excluded`);
-- `excluded`: something needs fixing (a document, the case in the portal, an unsupported upstream pipeline).
+- `excluded`: something needs fixing (a document, the case in the portal, an unsupported upstream pipeline);
+- `done`: nothing left to do, the outputs are registered on the case.
+
+Germline SNV post-processing decides from facts on every germline case
+(`sql/clinical/germline_snv_facts_select.sql`), so it also knows the cases with nothing to do. Not all
+of them are written, or they would come back every day:
+
+- `done` only at `after`, for the units decided `run` at `discover` of the same run;
+- `skipped` / `no_trigger_document` (no member has a gVCF, never annotated) only for a case still `submitted`.
 
 Only `run` counts as work waiting. Where case X stands, and its history:
 

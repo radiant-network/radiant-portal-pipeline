@@ -8,7 +8,8 @@ plus one **member row** per member at fault:
 - `wait`: the data will come by itself (sequencing or alignment not done yet);
 - `skipped`: left out on purpose, by configuration (`excluded_tenants`);
 - `excluded`: something needs fixing -- a document, the case in the portal, or an upstream
-  pipeline the ETL does not support.
+  pipeline the ETL does not support;
+- `done`: nothing left to do, the outputs are registered on the case.
 
 The unit is the case, except for somatic annotation, where it is the (calling task, case) pair:
 a case can have a tumor-normal and a tumor-only calling task, and a task can serve several cases.
@@ -42,17 +43,21 @@ RUN = "run"
 WAIT = "wait"
 SKIPPED = "skipped"
 EXCLUDED = "excluded"
+DONE = "done"
 
 DISCOVER = "discover"
 AFTER = "after"
 
 # Transient: the data will come without anyone doing anything.
 WAIT_REASONS = frozenset({"pending_sequencing", "pending_alignment"})
-# Deliberate: the ETL is configured to leave these out.
-SKIP_REASONS = frozenset({"tenant_excluded"})
+# Deliberate: the ETL is configured to leave these out, or the case has nothing for the pipeline.
+NO_TRIGGER = "no_trigger_document"
+SKIP_REASONS = frozenset({"tenant_excluded", NO_TRIGGER})
 # About the case (or the calling task) as a whole. The queries repeat the case-level ones on every
 # member row; they are reported once, on no member.
-CASE_LEVEL_REASONS = frozenset({"no_project_code", "tenant_excluded", "proband_count", "unsupported_strategy"})
+CASE_LEVEL_REASONS = frozenset(
+    {"no_project_code", "tenant_excluded", "proband_count", "unsupported_strategy", NO_TRIGGER}
+)
 
 # The most severe decision wins for the case: something to fix before a deliberate exclusion,
 # before something that will come.
@@ -157,6 +162,22 @@ def germline_decisions(pipeline: str, rows: list[dict], selection) -> list[Decis
         decisions += _unit_rows(pipeline, case_id, tenants.get(case_id), [])
     for excluded in selection.excluded:
         decisions += _unit_rows(pipeline, excluded.case_id, tenants.get(excluded.case_id), _problems_of(excluded))
+    # Only the selections built on fact rows know these; the others leave them out.
+    for case_id in getattr(selection, "done", []):
+        decisions.append(
+            Decision(pipeline=pipeline, scope="case", case_id=case_id, tenant_code=tenants.get(case_id), decision=DONE)
+        )
+    for case_id in getattr(selection, "untriggered", []):
+        decisions.append(
+            Decision(
+                pipeline=pipeline,
+                scope="case",
+                case_id=case_id,
+                tenant_code=tenants.get(case_id),
+                decision=SKIPPED,
+                reason=NO_TRIGGER,
+            )
+        )
     return sorted(decisions, key=_order)
 
 
@@ -201,11 +222,13 @@ def decide(
     somatic_snv_rows: list[dict],
     qc_rows: list[dict],
     import_rows: list[dict],
+    excluded_tenants: list[str] | None = None,
 ) -> list[Decision]:
-    """Every pipeline's decisions, from the rows of its pending query. The selections are run
+    """Every pipeline's decisions, from the rows of its discovery query. The selections are run
     lenient, as on a scheduled run: an excluded case is a decision, not an error."""
+    snv_selection = select_snv_cases(germline_snv_rows, strict=False, excluded_tenants=excluded_tenants)
     decisions = [
-        *germline_decisions(GERMLINE_SNV, germline_snv_rows, select_snv_cases(germline_snv_rows, strict=False)),
+        *germline_decisions(GERMLINE_SNV, germline_snv_rows, snv_selection),
         *germline_decisions(GERMLINE_CNV, germline_cnv_rows, select_cnv_cases(germline_cnv_rows, strict=False)),
         *somatic_decisions(somatic_snv_rows, select_somatic_tasks(somatic_snv_rows, strict=False)),
         *germline_decisions(QC, qc_rows, select_qc_cases(qc_rows, strict=False)),
@@ -213,9 +236,32 @@ def decide(
     ]
     for pipeline in PIPELINES:
         cases = [d for d in decisions if d.pipeline == pipeline and d.scope == "case"]
-        counts = {decision: sum(d.decision == decision for d in cases) for decision in (RUN, *SEVERITY)}
+        counts = {decision: sum(d.decision == decision for d in cases) for decision in (RUN, *SEVERITY, DONE)}
         LOGGER.info("%s: %s", pipeline, ", ".join(f"{n} {decision}" for decision, n in counts.items()))
     return decisions
+
+
+def to_log(
+    decisions: list[Decision],
+    stage: str,
+    discovered_run_units: dict[str, set[tuple[int | None, int]]],
+    submitted_case_ids: set[int],
+) -> list[Decision]:
+    """The decisions worth writing. Every case is decided on each pass, but a case stays `done`
+    or without a trigger document for good, so:
+
+    - `done` only at `after`, for a unit decided `run` at `discover` of the same run;
+    - `no_trigger_document` only for a case still `submitted`, where it explains why nothing happens.
+    """
+
+    def kept(d: Decision) -> bool:
+        if d.decision == DONE:
+            return stage == AFTER and (d.unit_id, d.case_id) in discovered_run_units.get(d.pipeline, set())
+        if d.reason == NO_TRIGGER:
+            return d.case_id in submitted_case_ids
+        return True
+
+    return [d for d in decisions if kept(d)]
 
 
 def run_case_ids(decisions: list[Decision]) -> set[int]:
@@ -322,14 +368,33 @@ def _starrocks_cursor():
     return BaseHook.get_connection("starrocks_conn").get_hook().get_conn().cursor()
 
 
-def _render(sql_file: str, conf: dict | None) -> str:
+def _render(sql_file: str, conf: dict | None, folder: str = "radiant", **variables) -> str:
     import jinja2
 
     from radiant.dags import DAGS_DIR
     from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
-    text = (DAGS_DIR / "sql" / "radiant" / sql_file).read_text()
-    return jinja2.Template(text).render(mapping=get_radiant_mapping(conf or {}))
+    text = (DAGS_DIR / "sql" / folder / sql_file).read_text()
+    return jinja2.Template(text).render(mapping=get_radiant_mapping(conf or {}), **variables)
+
+
+def read_facts(sql_file: str, pipeline: str, conf: dict | None = None) -> list[dict]:
+    """The fact rows a "from Cases" DAG decides on. Triggered by the case scheduler
+    (`decision_run_id` in its conf), only the cases that run decided `run`; run by hand, every case."""
+    conf = conf or {}
+    case_ids = None
+    if conf.get("decision_run_id"):
+        case_ids = sorted({case_id for _, case_id in read_run_units(conf["decision_run_id"], pipeline, conf)})
+        if not case_ids:
+            LOGGER.info("no case decided run for %s by %s", pipeline, conf["decision_run_id"])
+            return []
+    sql = _render(sql_file, conf, "clinical", case_ids=case_ids)
+    with _starrocks_cursor() as cursor:
+        cursor.execute(sql, {"case_ids": case_ids} if case_ids else None)
+        columns = [d[0] for d in cursor.description]
+        rows = [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
+    LOGGER.info("%d fact row(s) read for %s", len(rows), pipeline)
+    return rows
 
 
 def read_state(conf: dict | None = None) -> list[dict]:
