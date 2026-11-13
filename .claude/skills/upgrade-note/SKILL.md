@@ -78,7 +78,8 @@ actions:
 
 Writing rules (the guide renders each action as a numbered subsection):
 
-- **First sentence of `do` = the step title** (a heading). A short order, under ~70 characters. Details, reasons and
+- **First sentence of `do` = the step title** (a heading). Each next sentence is one item of the step's "Change"
+  list: one fact or order per sentence. A short order, under ~70 characters. Details, reasons and
   warnings ("Against an unmigrated table …", "Do not …") go in the next sentences.
 - `check`: something the operator can run and read: a query and its expected result, a DAG run state, a file.
   **Self-contained:** the guide shows all checks of a phase in one table, away from the step text. Name the table,

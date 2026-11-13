@@ -27,7 +27,7 @@ actions:
 Rules:
 
 - The first sentence of `do` is the title of the step in the guide. Make it a short order, and put the details, the
-  reasons and the warnings in the next sentences.
+  reasons and the warnings in the next sentences. The guide lists each next sentence as one item.
 - The guide pools the `preconditions` of a phase (before or after the deploy) in one "Before you start" block, and
   the `check` of each step in one table. So a precondition is a real condition, not the step order, and the same
   condition has the same text in every note ("No import is running (radiant-import, radiant-import-part,

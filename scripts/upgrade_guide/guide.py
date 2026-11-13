@@ -237,8 +237,9 @@ def render_actions(release: Release, heading: str, repo_url: str | None = None) 
     """The actions of one release, grouped by ``when``, in merge order. Each group has three parts:
 
     - "Before you start": the preconditions of all its steps, once each, with the numbers of the steps they apply to;
-    - one subsection per step: its number and the first sentence of ``do`` as title, the ticket and the PR, the rest
-      of ``do``, the refs (links to the files at ``release.ref`` when ``repo_url`` is given);
+    - one subsection per step: its number and the first sentence of ``do`` as title, the ticket and the PR; under it,
+      a "Change" list with one item per sentence of the rest of ``do``, and a "Refs" list (links to the files at
+      ``release.ref`` when ``repo_url`` is given);
     - "Checks": one table row per step.
 
     The numbers run on from "Before" to "After", so a step has one number in the release. ``heading`` prefixes the
@@ -273,11 +274,13 @@ def render_actions(release: Release, heading: str, repo_url: str | None = None) 
                 source.append(note.commit[:7])
             step_title, rest = split_do(action.do)
             lines += [f"{heading}# {n}. {_text(step_title.rstrip('.'))} · {' · '.join(source)}", ""]
+            body = []
             if rest:
-                lines += [_text(rest), ""]
+                body += ["- **Change**", *(f"  - {_text(s)}" for s in SENTENCE_END.split(rest))]
             if action.refs:
-                refs = ", ".join(_ref(r, repo_url, release.ref) for r in action.refs)
-                lines += [f"<sub>Refs: {refs}</sub>", ""]
+                body += ["- **Refs**", *(f"  - {_ref(r, repo_url, release.ref)}" for r in action.refs)]
+            if body:
+                lines += [*body, ""]
 
         lines += ["**Checks**", ""]
         lines += ["| Step | Check |", "|---:|---|"]
@@ -309,7 +312,7 @@ def render_preview(
         ref: the PR head commit, for the ref links.
         repo_url: the repo URL, for the ref links (none without it).
     """
-    lines = ["## Upgrade guide preview", ""]
+    lines = ["# Upgrade guide preview", ""]
     if not notes:
         return "\n".join([*lines, "This PR adds or changes no upgrade note.", ""])
     records, invalid = [], []
@@ -335,28 +338,36 @@ def render_preview(
         "",
     ]
     if records:
-        lines += render_actions(Release(version="next release", notes=records, ref=ref), "###", repo_url)
+        lines += render_actions(Release(version="next release", notes=records, ref=ref), "##", repo_url)
     for path in invalid:
         lines += [f"- `{path}`: not valid, see the errors of the check.", ""]
     return "\n".join(lines).rstrip() + "\n"
 
 
 def render_guide(guide: Guide, repo_url: str | None = None) -> str:
-    """The guide, in one ``##`` section: it goes into a PR description, a job summary or a terminal."""
-    lines = [f"## Upgrade guide: {guide.from_version} → {guide.to_version}", ""]
+    """The guide, in one ``#`` section: it goes into a PR description, a job summary or a terminal.
+
+    With one release (the release PR: the last tag to ``main``), the title names it, so the guide has no version
+    heading: its phases are ``##`` and its steps ``###``. With several releases: ``##`` versions, ``###`` phases,
+    ``####`` steps.
+    """
+    lines = [f"# Upgrade guide: {guide.from_version} → {guide.to_version}", ""]
     if guide.releases:
         lines += [
             f"{len(guide.releases)} release{'s' if len(guide.releases) > 1 else ''}, {_count(guide.releases)}. "
-            f"Do the steps in order, release by release.",
+            f"Do the steps in order{', release by release' if len(guide.releases) > 1 else ''}.",
             "",
         ]
     for warning in guide.warnings:
         lines += ["> [!WARNING]", f"> {_text(warning)}", ""]
     if not guide.releases:
         lines += ["No release in this range.", ""]
+    if len(guide.releases) == 1:
+        lines += render_actions(guide.releases[0], "##", repo_url)
+        return "\n".join(lines).rstrip() + "\n"
     for release in guide.releases:
-        lines += [f"### {release.version}", ""]
-        lines += render_actions(release, "####", repo_url)
+        lines += [f"## {release.version}", ""]
+        lines += render_actions(release, "###", repo_url)
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -366,5 +377,5 @@ def render_release_section(git: Git, tag: str, notes_ref: str = "HEAD", repo_url
     if tag not in tags:
         raise GuideError(f"{tag} is not a release tag (vX.Y.Z)")
     release = Release(version=tag, notes=[n for n in load_notes(git, notes_ref) if n.release == tag], ref=tag)
-    lines = ["## Upgrade guide", ""] + render_actions(release, "###", repo_url)
+    lines = ["# Upgrade guide", ""] + render_actions(release, "##", repo_url)
     return "\n".join(lines).rstrip() + "\n"
