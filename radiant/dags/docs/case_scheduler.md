@@ -61,8 +61,10 @@ pipeline still has work for.
 
 ## The decision log
 
-Both passes write every decision to `pipeline_decision_log` (RAD-288, `radiant/tasks/nextflow/decision.py`,
-design `design/RAD-288-pipeline-decision-log.md`), under this run's tag, with the stage `discover` or `after`.
+Both passes write their decisions to `pipeline_decision_log` (RAD-288, `radiant/tasks/nextflow/decision.py`,
+design `design/RAD-288-pipeline-decision-log.md`), under this run's tag, with the stage `discover` or `after`:
+every `run`, and any other decision only when it changed since the unit's last state, the view
+`case_pipeline_state`. The table grows with the changes, not with the number of cases.
 Per pipeline (`germline_snv`, `germline_cnv`, `somatic_snv`, `qc`, `import`) and candidate unit (the case;
 the calling task and case for somatic), one `case` row with the decision, plus one `member` row per member
 at fault (patient, experiment, alignment task):
@@ -72,9 +74,14 @@ at fault (patient, experiment, alignment task):
 - `skipped`: left out by configuration (`tenant_excluded`);
 - `excluded`: something needs fixing (a document, the case in the portal, an unsupported upstream pipeline).
 
-Only `run` counts as work waiting. Why was case X not processed:
+Only `run` counts as work waiting. Where case X stands, and its history:
 
 ```sql
+SELECT pipeline, scope, patient_id, seq_id, task_id, decision, reason, detail, run_id, stage
+FROM case_pipeline_state
+WHERE case_id = 1234
+ORDER BY pipeline, scope, patient_id;
+
 SELECT run_id, stage, pipeline, scope, patient_id, seq_id, task_id, decision, reason, detail
 FROM pipeline_decision_log
 WHERE case_id = 1234

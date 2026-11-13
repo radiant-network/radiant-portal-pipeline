@@ -3,5 +3,5 @@ INSERT INTO {{ mapping.starrocks_pipeline_decision_log }} (
     decided_at
 ) VALUES (
     %(run_id)s, %(stage)s, %(pipeline)s, %(case_id)s, %(scope)s, %(tenant_code)s, %(patient_id)s, %(seq_id)s,
-    %(task_id)s, %(unit_id)s, %(decision)s, %(reason)s, %(detail)s, UTC_TIMESTAMP()
+    %(task_id)s, %(unit_id)s, %(decision)s, %(reason)s, %(detail)s, %(decided_at)s
 )

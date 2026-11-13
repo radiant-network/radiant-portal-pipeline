@@ -6,13 +6,14 @@ spec. Seed case 1 already carries a `quality_control_metrics` task, so it is not
 trio ready for QC.
 """
 
+import datetime
 import os
 
 import jinja2
 import pytest
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.nextflow.decision import DISCOVER, QC, decide, run_units
+from radiant.tasks.nextflow.decision import DISCOVER, QC, RUN, changed, decide, run_units
 from tests.integration.dags.sql.test_sequencing_experiment_select_delta import (  # noqa: F401
     sequencing_experiment_tables,
 )
@@ -21,6 +22,8 @@ pytestmark = pytest.mark.usefixtures("pipeline_views")
 
 _SQL = os.path.join(DAGS_DIR, "sql")
 RUN_ID = "scheduled-2026-11-12T00-00-00-00-00"
+# One value per pass, as `write_decisions` sets it.
+DECIDED_AT = datetime.datetime.now(datetime.UTC).replace(tzinfo=None, microsecond=0)
 TRIO_CASE_ID = 16
 
 
@@ -44,6 +47,7 @@ def decision_log(starrocks_session, radiant_mapping, sequencing_experiment_table
     table = radiant_mapping["starrocks_pipeline_decision_log"]
     with starrocks_session.cursor() as cursor:
         cursor.execute(_render("radiant/init/pipeline_decision_log_create_table.sql", radiant_mapping))
+        cursor.execute(_render("radiant/init/case_pipeline_state_create_table.sql", radiant_mapping))
         cursor.execute(f"TRUNCATE TABLE {table}")
 
     pending = {
@@ -67,7 +71,7 @@ def decision_log(starrocks_session, radiant_mapping, sequencing_experiment_table
     with starrocks_session.cursor() as cursor:
         cursor.executemany(
             _render("radiant/pipeline_decision_log_insert.sql", radiant_mapping),
-            [{**d.model_dump(), "run_id": RUN_ID, "stage": DISCOVER} for d in decisions],
+            [{**d.model_dump(), "run_id": RUN_ID, "stage": DISCOVER, "decided_at": DECIDED_AT} for d in decisions],
         )
     yield decisions
     with starrocks_session.cursor() as cursor:
@@ -114,3 +118,53 @@ def test_the_import_cases_come_with_a_reason(sequencing_experiment_tables, starr
     rows = _rows(starrocks_session, _render("radiant/import_pending_case_select.sql", radiant_mapping))
     assert rows
     assert {r["reason"] for r in rows} <= {"new_or_changed", "not_loaded", "deleted"}
+
+
+def _state(starrocks_session, radiant_mapping):
+    return _rows(starrocks_session, _render("radiant/case_pipeline_state_select.sql", radiant_mapping))
+
+
+def test_the_state_is_the_last_write_of_each_unit(decision_log, starrocks_session, radiant_mapping):
+    """A later write of the trio's QC replaces its state; the other units keep the first write."""
+    table = radiant_mapping["starrocks_pipeline_decision_log"]
+    view = radiant_mapping["starrocks_case_pipeline_state"]
+    later = {
+        "run_id": "later-run",
+        "stage": "after",
+        "pipeline": QC,
+        "case_id": TRIO_CASE_ID,
+        "scope": "case",
+        "tenant_code": "radiant",
+        "patient_id": None,
+        "seq_id": None,
+        "task_id": None,
+        "unit_id": None,
+        "decision": "excluded",
+        "reason": "ambiguous_cram",
+        "detail": None,
+        "decided_at": DECIDED_AT + datetime.timedelta(hours=1),
+    }
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(_render("radiant/pipeline_decision_log_insert.sql", radiant_mapping), later)
+    try:
+        rows = _rows(
+            starrocks_session,
+            f"SELECT run_id, pipeline, decision FROM {view} WHERE case_id = %(c)s AND scope = 'case'",
+            {"c": TRIO_CASE_ID},
+        )
+        by_pipeline = {r["pipeline"]: (r["run_id"], r["decision"]) for r in rows}
+        assert by_pipeline[QC] == ("later-run", "excluded")
+        assert all(run_id == RUN_ID for p, (run_id, _) in by_pipeline.items() if p != QC)
+        assert len(rows) == len(by_pipeline)
+    finally:
+        with starrocks_session.cursor() as cursor:
+            cursor.execute(f"DELETE FROM {table} WHERE run_id = 'later-run'")
+
+
+def test_a_second_identical_pass_writes_the_runs_only(decision_log, starrocks_session, radiant_mapping):
+    """The state read back from StarRocks compares equal to the same decisions: only the work is written again."""
+    kept = changed(decision_log, _state(starrocks_session, radiant_mapping))
+    assert kept
+    assert {(d.pipeline, d.case_id, d.unit_id) for d in kept} == {
+        (d.pipeline, d.case_id, d.unit_id) for d in decision_log if d.scope == "case" and d.decision == RUN
+    }

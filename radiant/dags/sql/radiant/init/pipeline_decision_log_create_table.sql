@@ -1,8 +1,7 @@
--- What each pipeline decided for each candidate case, at each stage of a case scheduler run, and why.
--- Written by `radiant.tasks.nextflow.decision.write_decisions`; append-only.
---
--- No retention for now: a few hundred rows a day. The daily partitions keep one possible later, with a
--- `partition_live_number` property or by dropping the old partitions.
+-- What each pipeline decided for each case, at each stage of a case scheduler run, and why: the changes.
+-- Written by `radiant.tasks.nextflow.decision.write_decisions`; append-only. A pass writes every `run` (the work of
+-- the run, read back by the "from Cases" DAGs) and any other decision only when it differs from the unit's last state,
+-- the view `case_pipeline_state`. The table grows with the changes, not with the cases: no retention.
 CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_pipeline_decision_log }} (
     run_id      VARCHAR(250) NOT NULL COMMENT "The case scheduler run, sanitized as the child run ids (`sanitize_run_tag`)",
     stage       VARCHAR(16)  NOT NULL COMMENT "discover (before the pipelines) or after (after them)",
@@ -17,7 +16,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_pipeline_decision_log }} (
     decision    VARCHAR(16)  NOT NULL COMMENT "run, wait (the data will come), skipped (left out by configuration), excluded (something needs fixing)",
     reason      VARCHAR(64)  NULL     COMMENT "the reason code; NULL for run, except the import's",
     detail      VARCHAR(2048) NULL    COMMENT "the readable reason, written for the ETL team",
-    decided_at  DATETIME     NOT NULL COMMENT "UTC, like the staging timestamps"
+    decided_at  DATETIME     NOT NULL COMMENT "UTC, like the staging timestamps; one value per pass"
 ) ENGINE=OLAP
 DUPLICATE KEY(run_id, stage, pipeline, case_id)
 PARTITION BY date_trunc('day', decided_at)

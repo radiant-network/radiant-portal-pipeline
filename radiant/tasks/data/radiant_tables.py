@@ -134,6 +134,7 @@ STARROCKS_RADIANT_BASE_MAPPING = {
     "starrocks_current_alignment": "current_alignment",
     "starrocks_case_member": "case_member",
     "starrocks_pipeline_decision_log": "pipeline_decision_log",
+    "starrocks_case_pipeline_state": "case_pipeline_state",
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",

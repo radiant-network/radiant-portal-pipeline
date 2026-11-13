@@ -236,3 +236,79 @@ def test_a_child_run_by_hand_launches_its_whole_selection(monkeypatch):
     rows = [*trio(), *[{**r, "case_id": 2000} for r in trio()]]
     selection = decision.launch(GERMLINE_SNV, select_snv(rows, strict=False), {"dag_run": SimpleNamespace(conf={})})
     assert selection.case_ids == [1072, 2000]
+
+
+# --- what is written: every `run`, the other decisions on change ------------------------------
+
+
+def _state(decisions) -> list[dict]:
+    """The state rows `case_pipeline_state` would hold after these decisions."""
+    return [d.model_dump(exclude={"tenant_code", "detail"}) for d in decisions]
+
+
+def test_every_run_is_written_even_unchanged():
+    """The children and the scheduler read back the `run` units of the current run."""
+    decisions = snv(trio())
+    assert decision.changed(decisions, _state(decisions)) == decisions
+
+
+def test_an_unchanged_blocked_unit_is_not_written_again():
+    decisions = snv(trio(father={"exclusion_reason": "pending_alignment", "alignment_task_id": None}))
+    assert decision.changed(decisions, _state(decisions)) == []
+
+
+def test_a_new_reason_or_member_writes_the_whole_unit():
+    before = snv(trio(father={"exclusion_reason": "pending_alignment", "alignment_task_id": None}))
+    after = snv(
+        trio(
+            father={"exclusion_reason": "pending_alignment", "alignment_task_id": None},
+            mother={"exclusion_reason": "ambiguous_gvcf"},
+        )
+    )
+    assert decision.changed(after, _state(before)) == after
+
+
+def test_a_unit_with_no_state_is_written():
+    decisions = snv(trio(father={"exclusion_reason": "pending_alignment", "alignment_task_id": None}))
+    assert decision.changed(decisions, []) == decisions
+
+
+def test_only_the_changed_units_are_written():
+    blocked = snv(trio(father={"exclusion_reason": "pending_alignment", "alignment_task_id": None}))
+    other = germline_decisions(GERMLINE_SNV, [snv_member_row(case_id=8)], select_snv([snv_member_row(case_id=8)]))
+    other_blocked = [d.model_copy(update={"decision": WAIT, "reason": "pending_sequencing"}) for d in other]
+    assert decision.changed(blocked + other_blocked, _state(blocked)) == other_blocked
+
+
+class _Cursor:
+    """A StarRocks cursor that returns `rows` and records what it is sent."""
+
+    def __init__(self, rows, sent):
+        self.rows, self.sent = rows, sent
+        self.description = [(k,) for k in (rows[0] if rows else {})]
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, sql, args=None):
+        self.sent.append(("execute", sql))
+
+    def executemany(self, sql, rows):
+        self.sent.append(("executemany", rows))
+
+    def fetchall(self):
+        return [tuple(r.values()) for r in self.rows]
+
+
+def test_a_pass_writes_its_changes_with_one_timestamp(monkeypatch):
+    unchanged = snv(trio(father={"exclusion_reason": "pending_alignment", "alignment_task_id": None}))
+    new = germline_decisions(GERMLINE_SNV, [snv_member_row(case_id=8)], select_snv([snv_member_row(case_id=8)]))
+    sent = []
+    monkeypatch.setattr(decision, "_starrocks_cursor", lambda: _Cursor(_state(unchanged), sent))
+    decision.write_decisions(unchanged + new, "run-1", decision.DISCOVER)
+    (_, written) = sent[-1]
+    assert [(r["case_id"], r["decision"]) for r in written] == [(8, RUN)]
+    assert len({r["decided_at"] for r in written}) == 1

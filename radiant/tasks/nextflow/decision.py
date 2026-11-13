@@ -281,7 +281,45 @@ def _order(d: Decision) -> tuple:
     return (d.case_id, d.unit_id or 0, d.scope != "case", d.patient_id or 0, d.seq_id or 0)
 
 
+# --- what is written --------------------------------------------------------------------------
+
+
+def _signature(rows) -> frozenset:
+    """What a unit's rows say, `detail` and the run aside: equal signatures are the same decision."""
+    return frozenset(
+        (r["scope"], r["patient_id"], r["seq_id"], r["task_id"], r["decision"], r["reason"]) for r in rows
+    )
+
+
+def _units(rows) -> dict[tuple, list]:
+    by_unit: dict[tuple, list] = {}
+    for row in rows:
+        by_unit.setdefault((row["pipeline"], row["case_id"], row["unit_id"]), []).append(row)
+    return by_unit
+
+
+def changed(decisions: list[Decision], state_rows: list[dict]) -> list[Decision]:
+    """The decisions to write: every `run` (the work of this pass, which the children and the scheduler read
+    back), and any other decision of a unit whose rows differ from its last state in `case_pipeline_state`.
+    A unit that keeps its decision writes nothing: the log grows with the changes, not with the cases."""
+    state = {unit: _signature(rows) for unit, rows in _units(state_rows).items()}
+    kept = []
+    for unit, rows in _units([d.model_dump() for d in decisions]).items():
+        is_run = any(r["scope"] == "case" and r["decision"] == RUN for r in rows)
+        if is_run or state.get(unit) != _signature(rows):
+            kept.append(unit)
+    keep = set(kept)
+    return [d for d in decisions if (d.pipeline, d.case_id, d.unit_id) in keep]
+
+
 # --- I/O ---------------------------------------------------------------------------------------
+
+
+def _starrocks_cursor():
+    """A cursor on the `starrocks_conn` connection. Airflow is imported here only."""
+    from airflow.hooks.base import BaseHook
+
+    return BaseHook.get_connection("starrocks_conn").get_hook().get_conn().cursor()
 
 
 def _render(sql_file: str, conf: dict | None) -> str:
@@ -294,25 +332,34 @@ def _render(sql_file: str, conf: dict | None) -> str:
     return jinja2.Template(text).render(mapping=get_radiant_mapping(conf or {}))
 
 
-def write_decisions(decisions: list[Decision], run_id: str, stage: str, conf: dict | None = None) -> None:
-    """Append the decisions to `pipeline_decision_log`, all with the same `decided_at`."""
-    from airflow.hooks.base import BaseHook
+def read_state(conf: dict | None = None) -> list[dict]:
+    """The last state of every unit: the rows of `case_pipeline_state`."""
+    with _starrocks_cursor() as cursor:
+        cursor.execute(_render("case_pipeline_state_select.sql", conf))
+        columns = [d[0] for d in cursor.description]
+        return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
 
+
+def write_decisions(decisions: list[Decision], run_id: str, stage: str, conf: dict | None = None) -> None:
+    """Append to `pipeline_decision_log` the decisions that changed (`changed`), all with the same
+    `decided_at` (UTC): one pass."""
+    import datetime
+
+    decisions = changed(decisions, read_state(conf)) if decisions else []
     if not decisions:
         LOGGER.info("no decision to write for stage %s", stage)
         return
-    rows = [{**d.model_dump(), "run_id": run_id, "stage": stage} for d in decisions]
+    decided_at = datetime.datetime.now(datetime.UTC).replace(tzinfo=None, microsecond=0)
+    rows = [{**d.model_dump(), "run_id": run_id, "stage": stage, "decided_at": decided_at} for d in decisions]
     sql = _render("pipeline_decision_log_insert.sql", conf)
-    with BaseHook.get_connection("starrocks_conn").get_hook().get_conn().cursor() as cursor:
+    with _starrocks_cursor() as cursor:
         cursor.executemany(sql, rows)
     LOGGER.info("%d decision(s) written for run %s, stage %s", len(rows), run_id, stage)
 
 
 def read_run_units(run_id: str, pipeline: str, conf: dict | None = None) -> set[tuple[int | None, int]]:
     """The units a pipeline was decided to run at `discover` by the scheduler run `run_id`."""
-    from airflow.hooks.base import BaseHook
-
     sql = _render("pipeline_decision_run_units_select.sql", conf)
-    with BaseHook.get_connection("starrocks_conn").get_hook().get_conn().cursor() as cursor:
+    with _starrocks_cursor() as cursor:
         cursor.execute(sql, {"run_id": run_id, "pipeline": pipeline})
         return {(row[0], row[1]) for row in cursor.fetchall()}

@@ -112,7 +112,13 @@ Every import row is a `run`.
 
 **Storage.** `DUPLICATE KEY(run_id, stage, pipeline, case_id)`, `PARTITION BY date_trunc('day', decided_at)`. Append-only: a run never updates a row.
 
-**Retention.** None for now. The table is expected to stay small: one row per candidate case, per pipeline, per stage, per day, plus one per member at fault, i.e. a few hundred rows a day. The daily partitions keep a retention possible later without rewriting the table: either a `"partition_live_number"` property (`ALTER TABLE … SET`), or dropping the old partitions from a task.
+**A log of changes.** A pass writes:
+- every `run`: the work of this pass, which the "from Cases" DAGs and the scheduler read back for the current run;
+- any other decision only when the unit's rows differ from its last state (`scope`, member, experiment, task, decision, reason; not the `detail`).
+
+A unit that keeps its decision writes nothing, so the table grows with the changes and the work, not with the number of cases (100 000 are expected): no retention. One `decided_at` per pass, set by `write_decisions`.
+
+**State view `case_pipeline_state`.** The rows of each unit's last write (pipeline, case, calling task for somatic): its current state until the next change. `write_decisions` reads it to tell what changed; an operator reads it to see where a case stands. Created by Init StarRocks Base Tables, after the table.
 
 ### Flow
 
@@ -155,7 +161,7 @@ Reading a unit's rows for one run:
 **1. `decide` (scheduler, stage `discover`).**
 - Replaces the selection inside `cases_with_work`.
 - Reads the five `discover_*` row lists, runs the four selections (lenient, as today) and the import adapter.
-- Writes every decision, then returns the `run` case ids per pipeline (the somatic `run` task ids too).
+- Writes the decisions (every `run`, the others on change), then returns the `run` case ids per pipeline (the somatic `run` task ids too).
 - `plan_processing` uses the union, as today.
 
 **2. Children triggered by the scheduler.**
@@ -179,7 +185,15 @@ Reading a unit's rows for one run:
 
 ### Reading the log
 
-**Why was case X not processed:**
+**Where case X stands, per pipeline:**
+```sql
+SELECT pipeline, scope, patient_id, seq_id, decision, reason, detail, run_id, stage, decided_at
+FROM case_pipeline_state
+WHERE case_id = :case_id
+ORDER BY pipeline, scope, patient_id;
+```
+
+**Its history:**
 ```sql
 SELECT run_id, stage, pipeline, patient_id, seq_id, decision, reason, detail
 FROM pipeline_decision_log
@@ -269,7 +283,7 @@ Both stay as they are. The log shows them; changing them is a separate decision.
 **QA:**
 - one daily run, then compare the `discover` rows with the `case X excluded` warnings in the scheduler log: same cases, same reasons;
 - check that the `run` cases match the cases the children launched;
-- after a week, check the row count per day against the estimate (a few hundred).
+- after a week, check the rows written per day: the `run` units plus the changes.
 
 ## 9. Out of scope
 
@@ -282,14 +296,13 @@ Both stay as they are. The log shows them; changing them is a separate decision.
   - a view of the latest decision per case and pipeline, since the key starts with `run_id`;
   - the portal's tenant filtering on `tenant_code`;
   - a choice of which reasons laboratories see (`wait` and some `excluded`) and which stay internal (`skipped`, unsupported upstream pipeline).
-- A retention policy (§4: possible later on the daily partitions).
 - The task output rules of the staging view (RAD-289) and the import ledger (RAD-291, RAD-292).
 
 ## 10. Decisions
 
 No question left open.
 
-- No retention for now (§4).
+- A log of changes, read through the state view: every `run`, the other decisions on change; no retention (§4).
 - One case row per pipeline and stage, plus one row per member at fault, with `patient_id` and `seq_id` (§4). The member is the patient: a member in `pending_sequencing` has no `seq_id` yet.
 - `tenant_excluded` is `skipped`, not `excluded`: a deliberate exclusion by configuration, so that `excluded` always means someone has to act.
 - One `qc` pipeline for germline and somatic QC, as the DAG selects them together. The case type is readable through `pipeline_case`.
