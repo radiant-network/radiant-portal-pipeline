@@ -3,8 +3,6 @@ actions:
     do: >-
       Check that gnomad_constraint has the gnomAD v4.1.2 values. The force_import run of RAD-246 re-imports it with
       the new insert: no separate run.
-    preconditions:
-      - The radiant-import-open-data run of RAD-246 is done.
     refs:
       - radiant-import-open-data
       - radiant/dags/sql/open_data/gnomad_constraint_insert.sql

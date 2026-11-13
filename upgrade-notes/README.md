@@ -28,6 +28,10 @@ Rules:
 
 - The first sentence of `do` is the title of the step in the guide. Make it a short order, and put the details, the
   reasons and the warnings in the next sentences.
+- The guide pools the `preconditions` of a phase (before or after the deploy) in one "Before you start" block, and
+  the `check` of each step in one table. So a precondition is a real condition, not the step order, and the same
+  condition has the same text in every note ("No import is running (radiant-import, radiant-import-part,
+  radiant-reannotate-open-data)."). A check names its file, table or DAG: it is read away from its step.
 - The notes are public. No IP address, no host outside the allowlist of `scripts/upgrade_guide/check.py`, no account
   number, no real bucket name (`s3://<bucket>/...`, `arn:aws:s3:::<bucket>`), no patient data. Use the placeholders of
   the migration files (`<shared_db>`, `<tenant>_tenant`). The check does not find a host name written with no scheme

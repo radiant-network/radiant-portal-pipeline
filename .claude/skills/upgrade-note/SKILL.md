@@ -81,6 +81,14 @@ Writing rules (the guide renders each action as a numbered step):
 - **First sentence of `do` = the bold step title.** A short order, under ~70 characters. Details, reasons and
   warnings ("Against an unmigrated table …", "Do not …") go in the next sentences.
 - `check`: something the operator can run and read: a query and its expected result, a DAG run state, a file.
+  **Self-contained:** the guide shows all checks of a phase in one table, away from the step text. Name the table,
+  the database and the file ("Check 0 of the RAD-266 migration file", "radiant-init-starrocks-base-tables
+  succeeds"), never "the migration file", "the run", "that path" or "step 2" (it clashes with the guide's numbers).
+- `preconditions`: real conditions only. The guide pools the preconditions of a phase in one "Before you start"
+  block, each once, with the steps it applies to. Do not restate the step order ("X has run", "the steps above are
+  done"): the numbers already give it. Write a shared condition with the exact same text in every note so it is
+  listed once; the usual one is "No import is running (radiant-import, radiant-import-part,
+  radiant-reannotate-open-data)."
 - DAG ids as deployed: `radiant-<name>` (`NAMESPACE` prefix): `radiant-import`, `radiant-import-part`,
   `radiant-case-scheduler`, `radiant-import-open-data`, `radiant-reannotate-open-data`,
   `radiant-init-starrocks-base-tables`, `radiant-toolbox`.

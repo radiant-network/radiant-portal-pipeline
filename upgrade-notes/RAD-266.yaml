@@ -6,12 +6,11 @@ actions:
       but the delta does not remove the rows already there. Section 1 of the file (the views) is the view drop and
       init run of RAD-206: do not run it again.
     preconditions:
-      - radiant-init-starrocks-base-tables has run after the view drop (RAD-206).
-      - No radiant-import or radiant-import-part run is active.
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
       - A row of check 0 whose germline_parts is a different part, or empty, needs a look before the delete.
     refs:
       - radiant/dags/sql/radiant/migrations/RAD-266_germline_tasks_out_of_somatic_cases.sql
-    check: Check 0 of the migration file returns no row.
+    check: Check 0 of the RAD-266 migration file returns no row.
   # The two closing steps of the release are here, the last note file: the guide sorts the notes of one commit by
   # file name, and both steps must run after every other step.
   - when: after
@@ -19,8 +18,6 @@ actions:
       Run radiant-import manually, then unpause radiant-case-scheduler. The run re-imports the parts marked by
       RAD-256, the parts that failed before this delete, and the slivar VCFs of RAD-206. Wait until it and every
       radiant-import-part run it triggers succeed before the unpause.
-    preconditions:
-      - The steps above are done, the RAD-256 backfill and the portal backend of RAD-206 included.
     refs:
       - radiant-import
       - radiant/dags/sql/radiant/migrations/RAD-256_germline_cnv_occurrence_add_exomiser.sql
@@ -32,11 +29,9 @@ actions:
       Unpause radiant-reannotate-open-data and run it with force_reannotation = true. It fills gnomad_ac (RAD-194)
       on the CNV occurrences already loaded. Its gates watch the open-data sources, not the code, so a scheduled run
       does not do it. It holds the import lock.
-    preconditions:
-      - The manual radiant-import above and its radiant-import-part runs are done.
     refs:
       - radiant-reannotate-open-data
       - radiant/dags/sql/radiant/migrations/RAD-194_cnv_occurrence_add_gnomad_ac.sql
     check: >-
-      The run succeeds. The post-checks of the RAD-194 migration file return 0 for should_be_zero and a non-zero
+      radiant-reannotate-open-data succeeds. The post-checks of the RAD-194 migration file return 0 for should_be_zero and a non-zero
       count for should_be_non_zero.

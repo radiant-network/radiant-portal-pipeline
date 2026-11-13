@@ -8,5 +8,5 @@ actions:
       - radiant/dags/nextflow_quality_control_cases.py
       - radiant/dags/docs/nextflow_quality_control_cases.md
     check: >-
-      The file exists at that path in a pod with the reference mount. After the first QC run with a somatic case,
+      The placeholder VCF exists in a pod with the reference mount. After the first QC run with a somatic case,
       its execution trace has no SOMALIER_EXTRACT or SOMALIER_RELATE task for the tumor.

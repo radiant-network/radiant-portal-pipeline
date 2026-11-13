@@ -204,12 +204,25 @@ def split_do(do: str) -> tuple[str, str]:
     return parts[0], parts[1] if len(parts) > 1 else ""
 
 
-def render_actions(release: Release, heading: str) -> list[str]:
-    """The actions of one release as numbered steps, grouped by ``when``, in merge order.
+def _steps(numbers: list[int]) -> str:
+    """ "step 3", "steps 2, 3, 5"."""
+    return f"step {numbers[0]}" if len(numbers) == 1 else f"steps {', '.join(str(n) for n in numbers)}"
 
-    Each step: the first sentence of ``do`` in bold, the ticket and the PR, the rest of ``do``, then the
-    preconditions, the check and the refs. The numbers run on from "Before" to "After", so a step has one number in
-    the release. ``heading`` prefixes the group titles.
+
+def _cell(value: str) -> str:
+    """A note text in a table cell: a ``|`` would end the cell."""
+    return _text(value).replace("|", "\\|")
+
+
+def render_actions(release: Release, heading: str) -> list[str]:
+    """The actions of one release, grouped by ``when``, in merge order. Each group has three parts:
+
+    - "Before you start": the preconditions of all its steps, once each, with the numbers of the steps they apply to;
+    - the numbered steps: the first sentence of ``do`` in bold, the ticket and the PR, the rest of ``do``, the refs;
+    - "Checks": one table row per step.
+
+    The numbers run on from "Before" to "After", so a step has one number in the release. ``heading`` prefixes the
+    group titles.
     """
     lines = []
     number = 0
@@ -217,27 +230,38 @@ def render_actions(release: Release, heading: str) -> list[str]:
         items = [(note, action) for note in release.notes for action in note.actions if action.when == when]
         if not items:
             continue
-        lines += [f"{heading} {title}", ""]
-        for note, action in items:
-            number += 1
-            source = [note.ticket]
+        first = number + 1
+        numbered = [(first + i, note, action) for i, (note, action) in enumerate(items)]
+        number += len(items)
+        span = f"step {first}" if first == number else f"steps {first}–{number}"
+        lines += [f"{heading} {title} · {span}", ""]
+
+        preconditions: dict[str, list[int]] = {}
+        for n, _, action in numbered:
+            for p in action.preconditions:
+                preconditions.setdefault(p, []).append(n)
+        if preconditions:
+            lines += ["> [!IMPORTANT]", "> **Before you start**", ">"]
+            lines += [f"> - {_text(p)} _({_steps(ns)})_" for p, ns in preconditions.items()]
+            lines.append("")
+
+        for n, note, action in numbered:
+            source = [f"`{note.ticket}`"]
             if note.pr:
                 source.append(note.pr)
             elif note.commit:
                 source.append(note.commit[:7])
             step_title, rest = split_do(action.do)
-            lines.append(f"{number}. **{_text(step_title)}** · {' · '.join(source)}")
+            lines += [f"{n}. **{_text(step_title)}** · {' · '.join(source)}", ""]
             if rest:
-                lines.append(f"   {_text(rest)}")
-            if len(action.preconditions) == 1:
-                lines.append(f"   - **Before you start:** {_text(action.preconditions[0])}")
-            elif action.preconditions:
-                lines.append("   - **Before you start:**")
-                lines += [f"     - {_text(p)}" for p in action.preconditions]
-            lines.append(f"   - **Check:** {_text(action.check)}")
+                lines += [f"   {_text(rest)}", ""]
             if action.refs:
-                lines.append(f"   - **Refs:** {', '.join(f'`{r}`' for r in action.refs)}")
-            lines.append("")
+                lines += [f"   <sub>Refs: {', '.join(f'`{r}`' for r in action.refs)}</sub>", ""]
+
+        lines += ["**Checks**", ""]
+        lines += ["| Step | Check |", "|---:|---|"]
+        lines += [f"| {n} | {_cell(action.check)} |" for n, _, action in numbered]
+        lines.append("")
     if not lines:
         lines = [NO_ACTION, ""]
     return lines
