@@ -40,8 +40,8 @@ def test_discovery_is_one_query_per_case_type(dag_bag):
     itself: the anti-join must be on the QC task type, not the annotation one."""
     dag = dag_bag.get_dag(DAG_ID)
     germline, somatic = dag.get_task("discover_germline"), dag.get_task("discover_somatic")
-    assert "case_type_code = 'germline'" in germline.sql
-    assert "case_type_code = 'somatic'" in somatic.sql
+    assert "pc.case_type = 'germline'" in germline.sql
+    assert "pc.case_type = 'somatic'" in somatic.sql
     for query in (germline, somatic):
         assert "quality_control_metrics" in query.sql
         assert "radiant_germline_annotation" not in query.sql

@@ -6,65 +6,18 @@
 -- `design/SJRA-1879-nextflow-quality-control-automation.md`, and radiant-hub
 -- `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the tarball.
 --
--- Sibling of `pending_annotation_select.sql`, deliberately *not* a shared template: the
--- current-experiment and current-alignment CTEs are the same supersession policy
--- (SJRA-1698 5), but the trigger document (CRAM here, gVCF there) and the anti-join (a
--- `quality_control_metrics` task here, an annotation there) differ, and the unit tests render
--- each file standalone. Keep the two `current_*` CTEs identical when touching either.
+-- Sibling of `pending_annotation_select.sql`: both read the supersession policy (SJRA-1698 5)
+-- from the views `current_experiment` and `current_alignment`, and the cases from
+-- `pipeline_case` (RAD-287). What differs is the trigger document (CRAM here, gVCF there) and
+-- the anti-join (a `quality_control_metrics` task here, an annotation there).
 --
 -- The tenant is returned, not filtered on: clinical is one shared schema and `cases.id` is
 -- unique across it. `params.excluded_tenants` is a block list, not a scope.
-WITH germline_case AS (
-    -- `revoke` excluded deliberately: a revoked case is often one left alone on purpose, and
-    -- admitting it would resurrect every one of them nightly.
-    SELECT c.id                AS case_id,
-           c.submitter_case_id AS submitter_case_id,
-           c.tenant_code       AS tenant_code,
-           c.project_id        AS project_id
-    FROM {{ mapping.clinical_case }} c
-    WHERE c.case_type_code = 'germline'
-      AND c.status_code NOT IN ({{ mapping.pipeline_ignored_case_statuses }})
-),
-current_experiment AS (
-    -- The supersession policy: one `completed` experiment per (case, member), newest wins.
-    SELECT case_id, patient_id, seq_id, sample_id, aliquot, strategy
-    FROM (
-        SELECT chse.case_id                  AS case_id,
-               s.patient_id                  AS patient_id,
-               se.id                         AS seq_id,
-               s.submitter_sample_id         AS sample_id,
-               se.aliquot                    AS aliquot,
-               se.experimental_strategy_code AS strategy,
-               ROW_NUMBER() OVER (
-                   PARTITION BY chse.case_id, s.patient_id
-                   ORDER BY se.created_on DESC, se.id DESC
-               ) AS rn
-        FROM {{ mapping.clinical_case_has_sequencing_experiment }} chse
-        JOIN germline_case gc                                     ON gc.case_id = chse.case_id
-        JOIN {{ mapping.clinical_sequencing_experiment }} se       ON se.id = chse.sequencing_experiment_id
-        JOIN {{ mapping.clinical_sample }} s                       ON s.id = se.sample_id
-        WHERE se.status_code = 'completed'
-    ) ranked
-    WHERE rn = 1
-),
-current_alignment AS (
-    -- Same policy one level down: a re-aligned experiment carries two alignment tasks.
-    --
-    -- Joined through `sequencing_experiment_id`, never `task_context.case_id`: alignment
-    -- tasks carry a null case_id, so joining on it returns an empty set, not an error.
+WITH current_alignment AS (
+    -- The current germline alignment of each experiment (view `current_alignment`, RAD-287).
     SELECT seq_id, task_id
-    FROM (
-        SELECT tc.sequencing_experiment_id AS seq_id,
-               t.id                        AS task_id,
-               ROW_NUMBER() OVER (
-                   PARTITION BY tc.sequencing_experiment_id
-                   ORDER BY t.created_on DESC, t.id DESC
-               ) AS rn
-        FROM {{ mapping.clinical_task }} t
-        JOIN {{ mapping.clinical_task_context }} tc ON tc.task_id = t.id
-        WHERE t.task_type_code = 'alignment_germline_variant_calling'
-    ) ranked
-    WHERE rn = 1
+    FROM {{ mapping.starrocks_current_alignment }}
+    WHERE task_type = 'alignment_germline_variant_calling'
 ),
 alignment_document AS (
     -- Every output of the current alignment. Selected on the task, never on filename.
@@ -122,27 +75,28 @@ quality_controlled AS (
 candidate AS (
     -- At least one member's current experiment has a CRAM and no QC task for that pair.
     SELECT DISTINCT ce.case_id AS case_id
-    FROM current_experiment ce
+    FROM {{ mapping.starrocks_current_experiment }} ce
     JOIN cram cr                    ON cr.seq_id = ce.seq_id
     LEFT JOIN quality_controlled qc ON qc.case_id = ce.case_id
                                    AND qc.seq_id  = ce.seq_id
-    WHERE qc.seq_id IS NULL
+    WHERE ce.case_type = 'germline'
+      AND qc.seq_id IS NULL
     {% if params.task_ids %}
       -- Targeted rerun: narrows candidacy, never membership -- every member of a matched
       -- case still comes back.
       AND cr.task_id IN %(task_ids)s
     {% endif %}
 )
-SELECT gc.case_id                      AS case_id,
-       gc.submitter_case_id            AS submitter_case_id,
-       gc.tenant_code                  AS tenant_code,
+SELECT pc.case_id                      AS case_id,
+       pc.submitter_case_id            AS submitter_case_id,
+       pc.tenant_code                  AS tenant_code,
        'germline'                      AS case_type,
-       pr.code                         AS project_code,
-       f.relationship_to_proband_code  AS role,
-       f.affected_status_code          AS affected_status,
-       p.id                            AS patient_id,
-       p.sex_code                      AS sex,
-       p.submitter_patient_id          AS submitter_patient_id,
+       pc.project_code                 AS project_code,
+       cm.role                         AS role,
+       cm.affected_status              AS affected_status,
+       cm.patient_id                   AS patient_id,
+       cm.sex                          AS sex,
+       cm.submitter_patient_id         AS submitter_patient_id,
        ce.sample_id                    AS sample_id,
        ce.seq_id                       AS seq_id,
        ce.aliquot                      AS aliquot,
@@ -160,32 +114,29 @@ SELECT gc.case_id                      AS case_id,
            WHEN cr.matches IS NULL THEN 'no_cram'
            WHEN cr.matches > 1     THEN 'ambiguous_cram'
            WHEN dm.matches > 1     THEN 'ambiguous_dragen_metrics'
-           WHEN pr.code    IS NULL THEN 'no_project_code'
+           WHEN pc.project_code IS NULL THEN 'no_project_code'
            {% if params.excluded_tenants %}
-           WHEN gc.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'
+           WHEN pc.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'
            {% endif %}
            ELSE NULL
        END                             AS exclusion_reason
-FROM germline_case gc
-JOIN candidate cd                             ON cd.case_id = gc.case_id
-JOIN {{ mapping.clinical_family }} f          ON f.case_id = gc.case_id
-JOIN {{ mapping.clinical_patient }} p         ON p.id = f.family_member_id
+FROM {{ mapping.starrocks_pipeline_case }} pc
+JOIN candidate cd                                    ON cd.case_id = pc.case_id
+JOIN {{ mapping.starrocks_case_member }} cm          ON cm.case_id = pc.case_id
 -- LEFT, all of them: a member with no experiment, alignment or CRAM must come back carrying
 -- its reason. Each CTE has at most one row per experiment, so a member comes back once.
-LEFT JOIN current_experiment ce               ON ce.case_id = gc.case_id
-                                             AND ce.patient_id = p.id
-LEFT JOIN current_alignment ca                ON ca.seq_id = ce.seq_id
-LEFT JOIN cram cr                             ON cr.seq_id = ce.seq_id
-LEFT JOIN crai ci                             ON ci.seq_id = ce.seq_id
-LEFT JOIN dragen_metrics dm                   ON dm.seq_id = ce.seq_id
--- On the primary key alone: `project.code` is globally unique and a project's tenant_code
--- need not equal the case's.
-LEFT JOIN {{ mapping.clinical_project }} pr   ON pr.id = gc.project_id
-ORDER BY gc.case_id,
-         CASE f.relationship_to_proband_code
+LEFT JOIN {{ mapping.starrocks_current_experiment }} ce ON ce.case_id = pc.case_id
+                                                    AND ce.patient_id = cm.patient_id
+LEFT JOIN current_alignment ca                       ON ca.seq_id = ce.seq_id
+LEFT JOIN cram cr                                    ON cr.seq_id = ce.seq_id
+LEFT JOIN crai ci                                    ON ci.seq_id = ce.seq_id
+LEFT JOIN dragen_metrics dm                          ON dm.seq_id = ce.seq_id
+WHERE pc.case_type = 'germline'
+ORDER BY pc.case_id,
+         CASE cm.role
               WHEN 'proband' THEN 0
               WHEN 'father'  THEN 1
               WHEN 'mother'  THEN 2
               ELSE 3
          END,
-         p.id
+         cm.patient_id

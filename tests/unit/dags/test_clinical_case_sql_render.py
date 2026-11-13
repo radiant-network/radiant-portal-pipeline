@@ -50,7 +50,7 @@ def test_named_tasks_narrow_candidacy_not_membership():
     sql = _without_comments(_render("pending_annotation_select.sql", {"task_ids": [1], "excluded_tenants": []}))
     assert sql.count("%(task_ids)s") == 1
     # Not split on ")": `%(task_ids)s` carries one, and the naive split truncates on it.
-    candidate_block = sql.split("candidate AS (")[1].split("SELECT gc.case_id")[0]
+    candidate_block = sql.split("candidate AS (")[1].split("SELECT pc.case_id")[0]
     assert "%(task_ids)s" in candidate_block
 
 
@@ -61,7 +61,7 @@ def test_the_tenant_block_list_is_a_reason_not_a_filter():
         _render("pending_annotation_select.sql", {"task_ids": [], "excluded_tenants": ["radiant"]})
     )
     assert "'tenant_excluded'" in sql
-    assert "WHERE gc.tenant_code" not in sql
+    assert "WHERE pc.tenant_code" not in sql
 
 
 @pytest.mark.parametrize("filename", _TEMPLATES)
@@ -75,21 +75,15 @@ def test_no_stray_percent_survives_parameter_binding(filename):
     assert "%" not in without_placeholders
 
 
-def test_one_experiment_per_member_and_one_alignment_per_experiment():
-    """The supersession rule, and the reason it is a rule rather than a preference: the same
-    selection has to feed eligibility and the family, or a discarded experiment keeps its
-    case eligible for ever and the pipeline re-runs it nightly."""
+def test_the_supersession_policy_is_read_from_the_shared_views():
+    """The same selection has to feed eligibility and the family, or a discarded experiment
+    keeps its case eligible for ever and the pipeline re-runs it nightly. Both read the
+    `current_experiment` view (RAD-287), whose rules `test_pipeline_views_sql_render.py` pins;
+    the query ranks nothing itself."""
     sql = _without_comments(_render("pending_annotation_select.sql"))
-    assert "PARTITION BY chse.case_id, s.patient_id" in sql
-    assert "PARTITION BY tc.sequencing_experiment_id" in sql
-    assert sql.count("ORDER BY se.created_on DESC, se.id DESC") == 1
-    assert sql.count("ORDER BY t.created_on DESC, t.id DESC") == 1
-
-
-def test_only_completed_sequencing_is_annotable():
-    """A whitelist, not a `revoke` blacklist: sequencing that is not finished is not a
-    candidate, whatever the reason it is not finished."""
-    assert "se.status_code = 'completed'" in _without_comments(_render("pending_annotation_select.sql"))
+    assert "FROM radiant.current_experiment ce" in sql
+    assert "LEFT JOIN radiant.current_experiment ce" in sql
+    assert "ROW_NUMBER" not in sql
 
 
 def test_the_gvcf_count_is_taken_over_one_alignment_task():
@@ -102,13 +96,12 @@ def test_the_gvcf_count_is_taken_over_one_alignment_task():
     assert "COUNT(DISTINCT d.url) AS matches" in gvcf_block
 
 
-def test_the_alignment_is_reached_through_the_experiment_not_the_case():
-    """Alignment tasks carry a null `task_context.case_id`, so joining on it returns nothing
-    at all -- not an error, just an empty set."""
+def test_the_alignment_is_the_current_germline_one():
+    """The view ranks germline and somatic alignments apart; this query wants the germline one."""
     alignment_block = _without_comments(_render("pending_annotation_select.sql")).split("current_alignment AS (")[1]
     alignment_block = alignment_block.split("gvcf AS (")[0]
-    assert "tc.sequencing_experiment_id" in alignment_block
-    assert "tc.case_id" not in alignment_block
+    assert "FROM radiant.current_alignment" in alignment_block
+    assert "task_type = 'alignment_germline_variant_calling'" in alignment_block
 
 
 def test_the_annotation_anti_join_is_scoped_to_the_case():
@@ -119,46 +112,46 @@ def test_the_annotation_anti_join_is_scoped_to_the_case():
     assert "tc.case_id" in annotated_block
     assert "a.case_id = ce.case_id" in sql
     assert "a.seq_id  = ce.seq_id" in sql
-    assert "WHERE a.seq_id IS NULL" in sql
+    assert "AND a.seq_id IS NULL" in sql
 
 
 def test_members_without_sequencing_come_back_carrying_a_reason():
     """LEFT, all three. A family silently short one member is the one failure mode worth
     more than the rest put together."""
     sql = _without_comments(_render("pending_annotation_select.sql"))
-    assert "LEFT JOIN current_experiment ce" in sql
+    assert "LEFT JOIN radiant.current_experiment ce" in sql
     assert "LEFT JOIN current_alignment ca" in sql
     assert "LEFT JOIN gvcf g" in sql
     assert "'pending_sequencing'" in sql
     assert "'pending_alignment'" in sql
 
 
-def test_revoked_cases_are_never_resurrected():
-    """In the field a revoked case is very often precisely a case left un-annotated on
-    purpose, so admitting it would re-process every one of them nightly."""
+def test_the_cases_and_their_project_come_from_the_pipeline_case_view():
+    """Revoked and draft cases, and the project code, are `pipeline_case`'s (RAD-287): in the
+    field a revoked case is very often one left un-annotated on purpose, so admitting it would
+    re-process every one of them nightly. The query filters no status and joins no project."""
     sql = _without_comments(_render("pending_annotation_select.sql"))
-    assert "c.status_code NOT IN ('draft', 'revoked')" in sql
+    assert "FROM radiant.pipeline_case pc" in sql
+    assert "status_code" not in sql
+    assert "radiant_jdbc.public.project" not in sql
+    assert "WHEN pc.project_code IS NULL THEN 'no_project_code'" in sql
 
 
-def test_the_project_join_is_on_the_primary_key_alone():
-    """`cases.project_id` is a foreign key to `project.id`, so this already resolves to
-    exactly one row. Qualifying it with tenant_code cannot disambiguate anything and does
-    turn a match into a NULL -- `project.code` is globally unique, so a project row carries
-    one tenant_code that need not equal the case's. A null project_code fails the batch."""
-    statement = _without_comments(_render("pending_annotation_select.sql"))
-    assert "ON pr.id = gc.project_id" in statement
-    assert "pr.tenant_code" not in statement
+def test_the_members_come_from_the_case_member_view():
+    sql = _without_comments(_render("pending_annotation_select.sql"))
+    assert "JOIN radiant.case_member cm" in sql
+    assert "radiant_jdbc.public.family" not in sql
 
 
 def test_discovery_returns_the_tenant_it_did_not_ask_for():
     """The batch PATCH is addressed to this, so it has to come back with the rows."""
-    assert "c.tenant_code       AS tenant_code" in _render("pending_annotation_select.sql")
+    assert "pc.tenant_code                  AS tenant_code" in _render("pending_annotation_select.sql")
 
 
 def test_discovery_reads_the_clinical_catalog():
     sql = _render("pending_annotation_select.sql")
-    assert "radiant_jdbc.public.`cases`" in sql
     assert "radiant_jdbc.public.task_has_document" in sql
+    assert "radiant_jdbc.public.task_context" in sql
 
 
 def test_phenotypes_joins_the_shared_hpo_dictionary():
@@ -187,12 +180,16 @@ def test_the_gvcf_is_selected_on_document_type_not_filename():
 
 def test_only_germline_cases_are_returned():
     """The pipeline's `step: genotype` entry point assumes germline joint calling."""
-    assert "c.case_type_code = 'germline'" in _render("pending_annotation_select.sql")
+    sql = _without_comments(_render("pending_annotation_select.sql"))
+    assert "WHERE pc.case_type = 'germline'" in sql
+    assert "WHERE ce.case_type = 'germline'" in sql
 
 
 def test_the_import_view_ignores_the_same_statuses_as_the_discovery_queries():
+    """Both read `pipeline_case`, so they cannot disagree on which cases exist."""
     text = (
         DAGS_DIR / "sql" / "radiant" / "init" / "staging_external_sequencing_experiment_create_table.sql"
     ).read_text()
     sql = jinja2.Template(text, undefined=jinja2.StrictUndefined).render(mapping=get_radiant_mapping(_CONF))
-    assert "c.status_code NOT IN ('draft', 'revoked')" in sql
+    assert "JOIN radiant.pipeline_case pc" in sql
+    assert "status_code" not in sql

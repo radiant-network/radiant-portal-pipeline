@@ -85,8 +85,9 @@ def test_only_somatic_calling_tasks_are_looked_at():
 def test_the_case_is_somatic_active_and_holds_every_experiment_of_the_task():
     """The portal refuses an input document produced by an experiment the case does not hold."""
     case_task = _cte(_without_comments(_render()), "registration_case")
-    assert "c.case_type_code = 'somatic'" in case_task
-    assert "c.status_code NOT IN (" in case_task
+    # Revoked and draft cases are left out by `pipeline_case` (RAD-287).
+    assert "JOIN radiant.pipeline_case pc" in case_task
+    assert "AND pc.case_type = 'somatic'" in case_task
     assert "HAVING COUNT(DISTINCT te.seq_id) = te.task_experiments" in case_task
     assert "case_id IS NOT NULL" not in case_task
 

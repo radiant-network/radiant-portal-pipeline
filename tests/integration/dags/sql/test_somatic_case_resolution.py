@@ -23,6 +23,9 @@ from radiant.tasks.nextflow.somatic.resolve import CaseResolutionError, select_t
 from tests.integration.fixtures_common import execute_clinical
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
+
+# The queries read the RAD-287 views: create them once for the session.
+pytestmark = pytest.mark.usefixtures("pipeline_views")
 DISCOVERY = "pending_somatic_annotation_select.sql"
 
 PENDING_TN_TASK = 75

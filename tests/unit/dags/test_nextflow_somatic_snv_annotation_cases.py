@@ -40,7 +40,7 @@ def test_discovery_uses_the_somatic_query(dag_bag):
     assert "radiant_somatic_annotation" in sql
     assert "'ssnv'" in sql
     assert "'gvcf'" not in sql
-    assert "{{ mapping.clinical_case }}" in sql
+    assert "{{ mapping.starrocks_pipeline_case }}" in sql
 
 
 def test_it_runs_its_own_launcher_not_the_germline_one(dag_bag):

@@ -127,7 +127,7 @@ def test_the_queries_resolve_from_the_sql_search_path(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert dag.render_template_as_native_obj
     # DagBag resolves template files at parse time, so `sql` is already the query itself.
-    assert "{{ mapping.clinical_case }}" in dag.get_task("discover_scope").sql
+    assert "{{ mapping.starrocks_pipeline_case }}" in dag.get_task("discover_scope").sql
     assert "{{ mapping.starrocks_hpo_term }}" in dag.get_task("fetch_phenotypes").sql
     assert set(dag.get_task("discover_scope").parameters) == {"task_ids", "excluded_tenants"}
     assert set(dag.get_task("fetch_phenotypes").parameters) == {"case_ids"}

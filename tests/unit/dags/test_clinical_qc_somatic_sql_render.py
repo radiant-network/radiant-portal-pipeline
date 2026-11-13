@@ -11,7 +11,6 @@ _CLINICAL_SQL = DAGS_DIR / "sql" / "clinical"
 _CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
 _TEMPLATE = "pending_quality_control_somatic_select.sql"
 _GERMLINE_TEMPLATE = "pending_quality_control_select.sql"
-_ANNOTATION_TEMPLATE = "pending_annotation_select.sql"
 _NO_PARAMS = {"task_ids": [], "excluded_tenants": []}
 
 
@@ -29,10 +28,6 @@ def _without_comments(sql: str) -> str:
 
 def _cte(sql: str, name: str) -> str:
     return sql.split(f"{name} AS (")[1].split("\n),\n")[0]
-
-
-def _window(cte: str) -> str:
-    return cte.split("ROW_NUMBER() OVER (")[1].split(") AS rn")[0]
 
 
 def _output_columns(sql: str) -> list[str]:
@@ -53,13 +48,13 @@ def test_discovery_is_unscoped_by_default():
 def test_named_tasks_narrow_the_rows_on_the_alignment_task():
     sql = _without_comments(_render(_TEMPLATE, {"task_ids": [1], "excluded_tenants": []}))
     assert sql.count("%(task_ids)s") == 1
-    assert "AND ca.task_id IN %(task_ids)s" in sql.split("WHERE qc.seq_id IS NULL")[1]
+    assert "AND ca.task_id IN %(task_ids)s" in sql.split("AND qc.seq_id IS NULL")[1]
 
 
 def test_the_tenant_block_list_is_a_reason_not_a_filter():
     sql = _without_comments(_render(_TEMPLATE, {"task_ids": [], "excluded_tenants": ["radiant"]}))
     assert "'tenant_excluded'" in sql
-    assert "WHERE sc.tenant_code" not in sql
+    assert "WHERE pc.tenant_code" not in sql
 
 
 def test_no_stray_percent_survives_parameter_binding():
@@ -72,33 +67,35 @@ def test_the_output_columns_are_the_germline_query_s():
     assert _output_columns(_render(_TEMPLATE)) == _output_columns(_render(_GERMLINE_TEMPLATE))
 
 
-def test_the_supersession_policy_is_the_annotation_query_s():
-    somatic = _without_comments(_render(_TEMPLATE))
-    annotation = _without_comments(_render(_ANNOTATION_TEMPLATE))
-    assert _window(_cte(somatic, "current_experiment")) == _window(_cte(annotation, "current_experiment"))
-    assert _window(_cte(somatic, "current_alignment")) == _window(_cte(annotation, "current_alignment"))
-    assert "WHERE se.status_code = 'completed'" in _cte(somatic, "current_experiment")
+def test_the_supersession_policy_is_read_from_the_shared_views():
+    """The annotation queries' policy, from the same views (RAD-287): nothing is ranked here."""
+    sql = _without_comments(_render(_TEMPLATE))
+    assert "FROM radiant.current_experiment ce" in _cte(sql, "current_tumor")
+    assert "FROM radiant.current_alignment" in _cte(sql, "current_alignment")
+    assert "ROW_NUMBER" not in sql
 
 
 def test_only_somatic_cases_and_never_revoked_ones():
-    cases = _cte(_without_comments(_render(_TEMPLATE)), "somatic_case")
-    assert "c.case_type_code = 'somatic'" in cases
-    assert "c.status_code NOT IN ('draft', 'revoked')" in cases
+    """Revoked and draft cases are left out by `pipeline_case`; the query keeps the somatic ones."""
+    sql = _without_comments(_render(_TEMPLATE))
+    assert "FROM radiant.pipeline_case pc" in sql
+    assert "WHERE pc.case_type = 'somatic'" in sql
+    assert "WHERE ce.case_type = 'somatic'" in _cte(sql, "current_tumor")
+    assert "status_code" not in sql
 
 
 def test_the_member_is_the_proband_s_tumor_experiment_and_a_normal_one_is_ignored():
-    experiment = _cte(_without_comments(_render(_TEMPLATE)), "current_experiment")
-    assert "AND s.patient_id = sc.proband_id" in experiment
-    assert "s.histology_code = 'tumoral'" in experiment
+    """`current_experiment` ranks a somatic case per histology, so filtering the tumor keeps the
+    proband's newest tumor experiment whatever normal the case holds."""
+    experiment = _cte(_without_comments(_render(_TEMPLATE)), "current_tumor")
+    assert "AND pc.proband_id = ce.patient_id" in experiment
+    assert "ce.histology_code = 'tumoral'" in experiment
     assert "'normal'" not in experiment
 
 
-def test_the_alignment_is_the_somatic_one_joined_through_the_experiment():
-    sql = _without_comments(_render(_TEMPLATE))
-    alignment = _cte(sql, "current_alignment")
-    assert "t.task_type_code = 'alignment_somatic_variant_calling'" in alignment
-    assert "tc.sequencing_experiment_id" in alignment
-    assert "tc.case_id" not in alignment
+def test_the_alignment_is_the_somatic_one():
+    alignment = _cte(_without_comments(_render(_TEMPLATE)), "current_alignment")
+    assert "task_type = 'alignment_somatic_variant_calling'" in alignment
 
 
 def test_the_tarball_is_selected_on_type_fields_and_counted():
@@ -129,8 +126,12 @@ def test_a_tumor_s_cram_plays_no_role():
 def test_the_member_is_the_proband_and_the_family_row_only_gives_the_affected_status():
     sql = _without_comments(_render(_TEMPLATE))
     assert "'proband'                                   AS role" in sql
-    assert "COALESCE(f.affected_status_code, 'unknown') AS affected_status" in sql
-    assert re.search(r"LEFT JOIN \S+ f\s+ON f\.case_id = sc\.case_id\s+AND f\.family_member_id = sc\.proband_id", sql)
+    assert "COALESCE(cm.affected_status, 'unknown')     AS affected_status" in sql
+    assert re.search(
+        r"LEFT JOIN radiant\.case_member cm\s+ON cm\.case_id = pc\.case_id\s+AND cm\.patient_id = pc\.proband_id", sql
+    )
+    # The patient itself is read directly: a somatic case can have no family row.
+    assert "JOIN radiant_jdbc.public.patient p" in sql
 
 
 def test_a_tumor_without_a_tarball_is_no_metrics_and_reasons_come_most_specific_first():

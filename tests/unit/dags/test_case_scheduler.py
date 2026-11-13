@@ -119,7 +119,7 @@ def test_the_block_list_defaults_to_the_env_var(dag_bag, monkeypatch):
 def test_discover_cases_reads_every_discovery_and_the_statuses(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert _upstream(dag, "discover_cases") == {*DISCOVERY, "discover_import_cases", "fetch_case_statuses"}
-    assert "{{ mapping.clinical_case }}" in dag.get_task("fetch_case_statuses").sql
+    assert "{{ mapping.starrocks_pipeline_case }}" in dag.get_task("fetch_case_statuses").sql
 
 
 def test_status_changes_are_mapped_once_per_tenant(dag_bag):
