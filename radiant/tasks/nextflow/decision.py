@@ -365,6 +365,36 @@ def _render(sql_file: str, conf: dict | None, folder: str = "radiant", **variabl
     return jinja2.Template(text).render(mapping=get_radiant_mapping(conf or {}), **variables)
 
 
+def read_rows(folder: str, sql_file: str, conf: dict | None = None, parameters: dict | None = None, **variables):
+    """The rows of `sql/<folder>/<sql_file>`, as dicts keyed by column name."""
+    sql = _render(sql_file, conf, folder, **variables)
+    with _starrocks_cursor() as cursor:
+        cursor.execute(sql, parameters)
+        columns = [d[0] for d in cursor.description]
+        return [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
+
+
+# What the case scheduler reads to decide every pipeline: each "from Cases" DAG's fact queries, and
+# what the import still has to load.
+DISCOVERY_QUERIES = {
+    GERMLINE_SNV: [("clinical", "germline_snv_facts_select.sql")],
+    GERMLINE_CNV: [("clinical", "germline_cnv_facts_select.sql")],
+    SOMATIC_SNV: [("clinical", "somatic_snv_facts_select.sql")],
+    QC: [("clinical", "qc_germline_facts_select.sql"), ("clinical", "qc_somatic_facts_select.sql")],
+    IMPORT: [("radiant", "import_pending_case_select.sql")],
+}
+
+
+def read_discovery(conf: dict | None = None) -> dict[str, list[dict]]:
+    """The rows each pipeline decides on, every case of its type. QC reads two queries, one per case type."""
+    rows = {
+        pipeline: [row for folder, sql_file in queries for row in read_rows(folder, sql_file, conf)]
+        for pipeline, queries in DISCOVERY_QUERIES.items()
+    }
+    LOGGER.info("discovery rows: %s", ", ".join(f"{p} {len(r)}" for p, r in rows.items()))
+    return rows
+
+
 def read_facts(sql_file: str, pipeline: str, conf: dict | None = None) -> list[dict]:
     """The fact rows a "from Cases" DAG decides on. Triggered by the case scheduler
     (`decision_run_id` in its conf), only the cases that run decided `run`; run by hand, every case."""
@@ -375,11 +405,7 @@ def read_facts(sql_file: str, pipeline: str, conf: dict | None = None) -> list[d
         if not case_ids:
             LOGGER.info("no case decided run for %s by %s", pipeline, conf["decision_run_id"])
             return []
-    sql = _render(sql_file, conf, "clinical", case_ids=case_ids)
-    with _starrocks_cursor() as cursor:
-        cursor.execute(sql, {"case_ids": case_ids} if case_ids else None)
-        columns = [d[0] for d in cursor.description]
-        rows = [dict(zip(columns, row, strict=False)) for row in cursor.fetchall()]
+    rows = read_rows("clinical", sql_file, conf, {"case_ids": case_ids} if case_ids else None, case_ids=case_ids)
     LOGGER.info("%d fact row(s) read for %s", len(rows), pipeline)
     return rows
 

@@ -2,8 +2,6 @@ from airflow.sdk.definitions.mappedoperator import MappedOperator
 from airflow.sdk.definitions.taskgroup import MappedTaskGroup
 from airflow.utils.trigger_rule import TriggerRule
 
-from radiant.dags import DAGS_DIR
-
 DAG_ID = "radiant-case-scheduler"
 
 CASES_DAG_IDS = {
@@ -12,14 +10,7 @@ CASES_DAG_IDS = {
     "trigger_somatic_snv_annotation": "radiant-nextflow-somatic-snv-annotation-cases",
     "trigger_quality_control": "radiant-nextflow-quality-control-cases",
 }
-# Each discovery task: the fact query the cases DAG reads too (from Python, narrowed to the decided cases).
-FACT_QUERIES = {
-    "discover_germline_snv_cases": "germline_snv_facts_select.sql",
-    "discover_germline_cnv_cases": "germline_cnv_facts_select.sql",
-    "discover_somatic_snv_cases": "somatic_snv_facts_select.sql",
-    "discover_qc_cases": "qc_germline_facts_select.sql",
-    "discover_qc_somatic_cases": "qc_somatic_facts_select.sql",
-}
+PIPELINE_TASKS = (*CASES_DAG_IDS, "trigger_import")
 
 
 def _upstream(dag, task_id):
@@ -34,13 +25,6 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
-        "discover_germline_snv_cases",
-        "discover_germline_cnv_cases",
-        "discover_somatic_snv_cases",
-        "discover_qc_cases",
-        "discover_qc_somatic_cases",
-        "discover_import_cases",
-        "fetch_case_statuses",
         "discover_cases",
         "set_processing",
         "trigger_germline_snv_postprocessing",
@@ -48,13 +32,6 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "trigger_somatic_snv_annotation",
         "trigger_quality_control",
         "trigger_import",
-        "rediscover_germline_snv_cases",
-        "rediscover_germline_cnv_cases",
-        "rediscover_somatic_snv_cases",
-        "rediscover_qc_cases",
-        "rediscover_qc_somatic_cases",
-        "rediscover_import_cases",
-        "refresh_case_statuses",
         "select_ready_cases",
         "evaluate_cases.set_in_progress",
         "evaluate_cases.create_case_group",
@@ -80,18 +57,17 @@ def test_the_cases_dags_have_no_schedule_of_their_own(dag_bag):
         assert dag_bag.get_dag(dag_id).schedule is None
 
 
-def test_discovery_reads_each_cases_dag_facts(dag_bag):
-    """Only count what the DAG would actually run: the same fact query, decided by the same Python.
-    A fact query takes no parameter: the run's block list is applied in Python."""
+def test_the_pipelines_are_one_group(dag_bag):
+    """Folded in the graph: the four "from Cases" DAGs, then the import."""
+    group = dag_bag.get_dag(DAG_ID).task_group_dict["pipelines"]
+    assert set(group.children) == set(PIPELINE_TASKS)
+
+
+def test_both_passes_read_the_facts_themselves(dag_bag):
+    """No SQL task left: each pass reads every pipeline's facts and the statuses in Python."""
     dag = dag_bag.get_dag(DAG_ID)
-    for task_id, sql_file in FACT_QUERIES.items():
-        discover = dag.get_task(task_id)
-        assert discover.sql.strip() == (DAGS_DIR / "sql" / "clinical" / sql_file).read_text().strip()
-        assert not discover.parameters
-    import_sql = dag.get_task("discover_import_cases").sql
-    assert "staging_sequencing_experiment_delta" in import_sql
-    # A row leaves the delta once inserted: the ones `import_part` has not loaded are still pending.
-    assert "se.updated_at >= COALESCE(se.ingested_at, '1970-01-01 00:00:00') OR se.deleted" in import_sql
+    assert _upstream(dag, "discover_cases") == set()
+    assert not [t for t in dag.tasks if hasattr(t, "sql")]
 
 
 def test_the_cases_dags_are_given_the_run_s_block_list(dag_bag):
@@ -117,12 +93,6 @@ def test_the_block_list_defaults_to_the_env_var(dag_bag, monkeypatch):
     assert excluded_tenants_from_env() == []
     for dag_id in (DAG_ID, *CASES_DAG_IDS.values()):
         assert dag_bag.get_dag(dag_id).params["excluded_tenants"] == []
-
-
-def test_discover_cases_reads_every_discovery_and_the_statuses(dag_bag):
-    dag = dag_bag.get_dag(DAG_ID)
-    assert _upstream(dag, "discover_cases") == {*FACT_QUERIES, "discover_import_cases", "fetch_case_statuses"}
-    assert "{{ mapping.starrocks_pipeline_case }}" in dag.get_task("fetch_case_statuses").sql
 
 
 def test_status_changes_are_mapped_once_per_tenant(dag_bag):
@@ -173,37 +143,20 @@ def test_evaluation_waits_for_every_pipeline_and_stops_if_one_failed(dag_bag):
     """A failed import, CNV post-processing or quality control leaves the second pass, and so the
     status changes and the emails after it, upstream_failed."""
     dag = dag_bag.get_dag(DAG_ID)
-    second_pass = ["refresh_case_statuses", *(f"re{task_id}" for task_id in FACT_QUERIES), "rediscover_import_cases"]
-    for task_id in second_pass:
-        assert dag.get_task(task_id).trigger_rule == TriggerRule.NONE_FAILED
-        assert _upstream(dag, task_id) == {
-            "trigger_import",
-            "trigger_germline_cnv_postprocessing",
-            "trigger_quality_control",
-        }
-    # The statuses are read again: the pipelines and the import have run since the first read.
-    assert dag.get_task("refresh_case_statuses").sql == dag.get_task("fetch_case_statuses").sql
-    assert _upstream(dag, "select_ready_cases") == set(second_pass)
-    evaluation = ("set_in_progress", "create_case_group", "notify_labs")
-    for task_id in ("select_ready_cases", *(f"evaluate_cases.{name}" for name in evaluation)):
-        assert dag.get_task(task_id).trigger_rule == TriggerRule.ALL_SUCCESS
-
-
-def test_evaluation_asks_the_same_work_waiting_question_as_discovery(dag_bag):
-    """A case still pending anywhere after the pipelines stays processing; the two passes must
-    not drift, or a case would be moved on with a pipeline left to run, or never at all."""
-    dag = dag_bag.get_dag(DAG_ID)
-    for name in ("germline_snv", "germline_cnv", "somatic_snv", "qc", "qc_somatic", "import"):
-        first, second = dag.get_task(f"discover_{name}_cases"), dag.get_task(f"rediscover_{name}_cases")
-        assert second.sql == first.sql
-        assert second.params == first.params
-        assert second.parameters == first.parameters
+    assert dag.get_task("select_ready_cases").trigger_rule == TriggerRule.NONE_FAILED
+    assert _upstream(dag, "select_ready_cases") == {
+        "trigger_import",
+        "trigger_germline_cnv_postprocessing",
+        "trigger_quality_control",
+    }
+    for name in ("set_in_progress", "create_case_group", "notify_labs"):
+        assert dag.get_task(f"evaluate_cases.{name}").trigger_rule == TriggerRule.ALL_SUCCESS
 
 
 def test_every_child_run_is_waited_for_and_pinned_to_this_run(dag_bag):
     """A retry resets the same child run, so Nextflow's `-resume` finds its launch dir."""
     dag = dag_bag.get_dag(DAG_ID)
-    for task_id in (*CASES_DAG_IDS, "trigger_import"):
+    for task_id in PIPELINE_TASKS:
         trigger = dag.get_task(task_id)
         assert trigger.wait_for_completion
         assert trigger.reset_dag_run
@@ -224,14 +177,15 @@ def test_a_failed_step_fails_the_run(dag_bag):
     watcher = dag.get_task("watcher")
     assert watcher.trigger_rule == TriggerRule.ONE_FAILED
     assert watcher.downstream_list == []
+    # Every pipeline, not only the group's last ones: the import runs `all_done` over a failed one.
     # The tenant chains reach it through their last task: a failure earlier in a chain leaves
     # `notify_labs` upstream_failed, which `one_failed` counts.
-    assert _upstream(dag, "watcher") == set(dag.task_ids) - {
-        "watcher",
+    assert _upstream(dag, "watcher") == {
         "discover_cases",
+        "set_processing",
+        *PIPELINE_TASKS,
         "select_ready_cases",
-        "evaluate_cases.set_in_progress",
-        "evaluate_cases.create_case_group",
+        "evaluate_cases.notify_labs",
     }
 
 
@@ -252,6 +206,14 @@ def _context(task_instance) -> dict:
         "run_id": RUN_ID,
         "dag_run": SimpleNamespace(conf={}),
     }
+
+
+def _feed(monkeypatch, status_rows, **rows):
+    """What both passes read, without StarRocks: the discovery rows by pipeline (`germline_snv`,
+    `germline_cnv`, `somatic_snv`, `qc`, `import`) and the case statuses."""
+    discovery = {p: rows.get(p, []) for p in ("germline_snv", "germline_cnv", "somatic_snv", "qc", "import")}
+    monkeypatch.setattr("radiant.tasks.nextflow.decision.read_discovery", lambda conf=None: discovery)
+    monkeypatch.setattr("radiant.tasks.nextflow.decision.read_rows", lambda *args, **kwargs: status_rows)
 
 
 def _record_writes(monkeypatch) -> list:
@@ -311,15 +273,8 @@ def _run_select_ready_cases(dag, monkeypatch, cases_with_work):
         {"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True},
         {"case_id": 2, "tenant_code": "radiant", "status_code": "in_progress", "has_variants": True},
     ]
-    batches = dag.get_task("select_ready_cases").python_callable(
-        germline_snv_rows=[],
-        germline_cnv_rows=[],
-        somatic_snv_rows=[],
-        qc_rows=[],
-        qc_somatic_rows=[],
-        import_rows=[],
-        status_rows=status_rows,
-    )
+    _feed(monkeypatch, status_rows)
+    batches = dag.get_task("select_ready_cases").python_callable()
     assert pulls == [("discover_cases", case_scheduler.CASES_WITH_WORK_KEY)]
     return batches
 
@@ -354,21 +309,16 @@ def test_somatic_candidates_count_as_work_in_both_passes(dag_bag, monkeypatch):
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
     written = _record_writes(monkeypatch)
     dag = dag_bag.get_dag(DAG_ID)
-    inputs = {
-        "germline_snv_rows": [],
-        "germline_cnv_rows": [],
-        "somatic_snv_rows": calling_task_rows(case_id=23),
-        "qc_rows": [],
-        "qc_somatic_rows": [],
-        "import_rows": [],
-    }
+    somatic_rows = calling_task_rows(case_id=23)
 
     submitted = [{"case_id": 23, "tenant_code": "radiant", "status_code": "submitted", "has_variants": False}]
-    batches = dag.get_task("discover_cases").python_callable(**inputs, status_rows=submitted)
+    _feed(monkeypatch, submitted, somatic_snv=somatic_rows)
+    batches = dag.get_task("discover_cases").python_callable()
     assert batches == [{"tenant": "radiant", "case_ids": [23]}]
 
     processing = [{"case_id": 23, "tenant_code": "radiant", "status_code": "processing", "has_variants": True}]
-    assert dag.get_task("select_ready_cases").python_callable(**inputs, status_rows=processing) == []
+    _feed(monkeypatch, processing, somatic_snv=somatic_rows)
+    assert dag.get_task("select_ready_cases").python_callable() == []
 
     # Both passes are logged under the run, the calling task as the unit.
     assert [(run_id, stage) for run_id, stage, _ in written] == [(RUN_TAG, "discover"), (RUN_TAG, "after")]
@@ -393,16 +343,9 @@ def test_germline_and_somatic_quality_control_rows_both_count_as_work(dag_bag, m
         {"case_id": case_id, "tenant_code": "radiant", "status_code": "submitted", "has_variants": False}
         for case_id in (3, 23)
     ]
-    discover = dag_bag.get_dag(DAG_ID).get_task("discover_cases")
-    batches = discover.python_callable(
-        germline_snv_rows=[],
-        germline_cnv_rows=[],
-        somatic_snv_rows=[],
-        qc_rows=[member_row(case_id=3)],
-        qc_somatic_rows=[member_row(case_id=23, case_type="somatic", affected_status="unknown")],
-        import_rows=[],
-        status_rows=submitted,
-    )
+    qc_rows = [member_row(case_id=3), member_row(case_id=23, case_type="somatic", affected_status="unknown")]
+    _feed(monkeypatch, submitted, qc=qc_rows)
+    batches = dag_bag.get_dag(DAG_ID).get_task("discover_cases").python_callable()
     assert batches == [{"tenant": "radiant", "case_ids": [3, 23]}]
 
 
@@ -422,16 +365,15 @@ def test_a_settled_case_is_logged_once_and_the_run_s_case_on_each_change(dag_bag
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
     written = _record_writes(monkeypatch)
     dag = dag_bag.get_dag(DAG_ID)
-    empty = {"germline_cnv_rows": [], "somatic_snv_rows": [], "qc_rows": [], "qc_somatic_rows": [], "import_rows": []}
     annotated_elsewhere = member_row(case_id=2, patient_id=200, seq_id=600, annotated=True)
 
     submitted = [{"case_id": 1, "tenant_code": "radiant", "status_code": "submitted", "has_variants": False}]
-    rows = [member_row(case_id=1), annotated_elsewhere]
-    dag.get_task("discover_cases").python_callable(germline_snv_rows=rows, **empty, status_rows=submitted)
+    _feed(monkeypatch, submitted, germline_snv=[member_row(case_id=1), annotated_elsewhere])
+    dag.get_task("discover_cases").python_callable()
 
     processing = [{"case_id": 1, "tenant_code": "radiant", "status_code": "processing", "has_variants": True}]
-    rows = [member_row(case_id=1, annotated=True), annotated_elsewhere]
-    dag.get_task("select_ready_cases").python_callable(germline_snv_rows=rows, **empty, status_rows=processing)
+    _feed(monkeypatch, processing, germline_snv=[member_row(case_id=1, annotated=True), annotated_elsewhere])
+    dag.get_task("select_ready_cases").python_callable()
 
     dag.get_task("select_ready_cases").python_callable(germline_snv_rows=rows, **empty, status_rows=processing)
 
