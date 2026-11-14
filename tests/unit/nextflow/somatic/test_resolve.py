@@ -1,5 +1,6 @@
 import pytest
 
+from radiant.tasks.decision import from_query
 from radiant.tasks.nextflow.somatic.resolve import CaseResolutionError, select_tasks
 from tests.unit.nextflow.somatic.conftest import calling_task_rows, row, vcf_url
 
@@ -45,8 +46,8 @@ def test_a_task_level_reason_excludes_the_task_from_every_case(reason):
     assert selection.tasks == []
     assert selection.case_ids == []
     [excluded] = selection.excluded
-    assert (excluded.task_id, excluded.case_ids, excluded.reason) == (70, [23, 24], reason)
-    assert "calling task 70" in excluded.detail
+    assert (excluded.task_id, excluded.case_ids, excluded.reason) == (70, [23, 24], from_query(reason))
+    assert "calling task 70" in excluded.message
 
 
 @pytest.mark.parametrize("reason", ["no_project_code", "tenant_excluded"])
@@ -55,13 +56,13 @@ def test_a_case_level_reason_drops_that_case_only(reason):
     selection = select_tasks(rows)
     assert [c.case_id for c in selection.tasks[0].cases] == [23]
     [excluded] = selection.excluded
-    assert (excluded.case_ids, excluded.reason) == ([24], reason)
+    assert (excluded.case_ids, excluded.reason.code) == ([24], reason)
 
 
 def test_a_task_with_its_only_case_dropped_does_not_run():
     selection = select_tasks(calling_task_rows(exclusion_reason="tenant_excluded"))
     assert selection.tasks == []
-    assert selection.excluded[0].reason == "tenant_excluded"
+    assert selection.excluded[0].reason.code == "tenant_excluded"
 
 
 def test_an_alignment_call_is_always_tumor_only():
@@ -76,7 +77,7 @@ def test_an_alignment_call_with_two_aliquots_is_excluded():
         row(task_id=76, task_type="alignment_somatic_variant_calling"),
         row(task_id=76, task_type="alignment_somatic_variant_calling", seq_id=63, aliquot="N", histology="normal"),
     ]
-    assert select_tasks(rows).excluded[0].reason == "unsupported_samples"
+    assert select_tasks(rows).excluded[0].reason.code == "unsupported_samples"
 
 
 @pytest.mark.parametrize(
@@ -85,16 +86,16 @@ def test_an_alignment_call_with_two_aliquots_is_excluded():
 )
 def test_anything_but_one_tumor_plus_at_most_one_normal_is_excluded(histologies):
     rows = [row(seq_id=60 + i, aliquot=f"A{i}", histology=h) for i, h in enumerate(histologies)]
-    assert select_tasks(rows).excluded[0].reason == "unsupported_samples"
+    assert select_tasks(rows).excluded[0].reason.code == "unsupported_samples"
 
 
 def test_a_missing_aliquot_is_excluded():
-    assert select_tasks(calling_task_rows(aliquot=None)).excluded[0].reason == "missing_aliquot"
+    assert select_tasks(calling_task_rows(aliquot=None)).excluded[0].reason.code == "missing_aliquot"
 
 
 @pytest.mark.parametrize("strategy", ["rna", None])
 def test_an_unsupported_strategy_is_excluded(strategy):
-    assert select_tasks(calling_task_rows(strategy=strategy)).excluded[0].reason == "unsupported_strategy"
+    assert select_tasks(calling_task_rows(strategy=strategy)).excluded[0].reason.code == "unsupported_strategy"
 
 
 def test_lenient_mode_runs_the_rest():
