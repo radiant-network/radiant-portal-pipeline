@@ -74,6 +74,9 @@ wait, blocked or skip, with all the reasons), and `journal_germline_snv` writes 
 - `run` is written on every pass. Any other decision is written only when it, or its reasons, differ from the
   case's last row (view `pipeline_state`).
 - When a case has several reasons, skip wins over blocked, and blocked over wait.
+- A member other than the proband not sequenced or not aligned yet does not block: the case runs with the
+  members present as long as one of them is not annotated, with the absent member's reason on the `run` row.
+  Once they are all annotated, the case waits for the absent member, and runs again when it arrives.
 - A reason about one member names it (`patient_id`): two members waiting are two reasons. The reasons about
   the case (project, tenant, proband count, strategy) name no one.
 - The germline SNV "from Cases" DAG runs the cases decided `run`: `decide_germline_snv` hands them over as

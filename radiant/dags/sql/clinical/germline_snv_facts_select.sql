@@ -67,7 +67,8 @@ SELECT pc.case_id                      AS case_id,
        g.task_id                       AS alignment_task_id,
        g.url                           AS gvcf_url,
        COALESCE(g.matches, 0)          AS gvcf_matches,
-       ca.task_id                      AS current_alignment_task_id
+       ca.task_id                      AS current_alignment_task_id,
+       an.seq_id IS NOT NULL           AS annotated
 FROM {{ mapping.starrocks_pipeline_case }} pc
 JOIN candidate cd                                    ON cd.case_id = pc.case_id
 JOIN {{ mapping.starrocks_case_member }} cm          ON cm.case_id = pc.case_id
@@ -76,6 +77,8 @@ LEFT JOIN {{ mapping.starrocks_current_experiment }} ce ON ce.case_id = pc.case_
                                                     AND ce.patient_id = cm.patient_id
 LEFT JOIN current_alignment ca                       ON ca.seq_id = ce.seq_id
 LEFT JOIN gvcf g                                     ON g.seq_id = ce.seq_id
+LEFT JOIN annotated an                               ON an.case_id = pc.case_id
+                                                    AND an.seq_id  = ce.seq_id
 WHERE pc.case_type = 'germline'
 {% if params.get('case_ids') %}
   AND pc.case_id IN %(case_ids)s

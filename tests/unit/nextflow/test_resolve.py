@@ -214,9 +214,51 @@ def test_a_ready_trio_runs_without_a_reason(trio_rows):
     assert _decided([_facts(r) for r in trio_rows]) == {1072: (Decision.RUN, ())}
 
 
-def test_a_member_awaiting_sequencing_makes_the_decision_wait(trio_rows):
+def test_a_parent_not_sequenced_yet_does_not_hold_the_proband_back(trio_rows):
     rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.RUN, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))}
+
+
+def test_a_parent_not_aligned_yet_does_not_hold_the_proband_back(trio_rows):
+    pending_alignment = {"alignment_task_id": None, "current_alignment_task_id": None, "gvcf_matches": 0}
+    rows = [_facts(r, **pending_alignment) if r["role"] == "mother" else _facts(r) for r in trio_rows]
+    assert _decided(rows)[1072][0] == Decision.RUN
+
+
+def test_after_the_partial_run_the_case_waits_for_the_absent_parent(trio_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r, annotated=True) for r in trio_rows]
     assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))}
+
+
+def test_the_case_runs_again_once_the_parent_arrives(trio_rows):
+    rows = [_facts(r) if r["role"] == "father" else _facts(r, annotated=True) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.RUN, ())}
+
+
+def test_an_absent_proband_still_makes_the_case_wait(trio_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "proband" else _facts(r) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=100),))}
+
+
+def test_a_parent_with_wrong_data_still_blocks(trio_rows):
+    rows = [_facts(r, **NO_GVCF) if r["role"] == "father" else _facts(r) for r in trio_rows]
+    assert _decided(rows)[1072] == (
+        Decision.BLOCKED,
+        (Reason(code=ReasonCode.MISSING_INPUT, detail="gvcf", patient_id=101),),
+    )
+
+
+def test_a_case_annotated_for_every_member_is_not_decided(trio_rows):
+    assert _decided([_facts(r, annotated=True) for r in trio_rows]) == {}
+
+
+def test_the_family_is_built_from_the_members_present(trio_rows, phenotype_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r) for r in trio_rows]
+    selection = select_run_cases(rows, [])
+    assert selection.case_ids == [1072]
+    (family,) = resolve_families([m.model_dump() for m in selection.members], phenotype_rows)
+    assert [m.role for m in family.members] == ["proband", "mother"]
+    assert family.father is None
 
 
 def test_a_blocking_reason_wins_over_a_waiting_one_and_both_are_kept(trio_rows):

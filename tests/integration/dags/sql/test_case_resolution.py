@@ -415,7 +415,7 @@ FACTS = "germline_snv_facts_select.sql"
 
 @pytest.mark.usefixtures("supersession_fixtures")
 def test_the_facts_cover_every_pending_candidate_and_run_the_same_cases(starrocks_session, radiant_mapping):
-    """The scheduler decides on the facts; the "from Cases" DAG still selects on the pending query."""
+    """The scheduler runs what the pending query selects, plus the cases a parent not sequenced yet held back."""
     from radiant.tasks.decision import Decision
     from radiant.tasks.nextflow.resolve import decide_cases, select_cases
 
@@ -424,8 +424,25 @@ def test_the_facts_cover_every_pending_candidate_and_run_the_same_cases(starrock
     assert {r["case_id"] for r in pending} <= {r["case_id"] for r in facts}
 
     ran = {e.case_id for e in decide_cases(facts, []) if e.decision == Decision.RUN}
-    assert ran == set(select_cases(pending, strict=False).case_ids)
+    assert ran == set(select_cases(pending, strict=False).case_ids) | {PENDING_CASE}
     assert TRIO_CASE_ID in ran
+
+
+@pytest.mark.usefixtures("supersession_fixtures")
+def test_a_father_not_sequenced_yet_leaves_a_duo_to_run(starrocks_session, radiant_mapping):
+    from radiant.tasks.nextflow.resolve import select_run_cases
+
+    facts = _run(
+        starrocks_session,
+        radiant_mapping,
+        FACTS,
+        parameters={"case_ids": [PENDING_CASE]},
+        params={"case_ids": [PENDING_CASE]},
+    )
+    assert {r["role"]: bool(r["annotated"]) for r in facts} == {"proband": False, "father": False}
+    selection = select_run_cases(facts, [])
+    assert selection.case_ids == [PENDING_CASE]
+    assert [m.role for m in selection.members] == ["proband"]
 
 
 def test_an_annotated_case_is_not_a_fact_candidate(postgres_clinical_seeds, starrocks_session, radiant_mapping):

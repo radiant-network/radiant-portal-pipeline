@@ -283,6 +283,16 @@ Do the first pass by hand, in tranches, with explicit **task_ids** — then let
 
 ---
 
+## A member not sequenced yet does not hold the case back
+
+On a scheduler run (**case_ids** set), a member other than the proband who is not sequenced or not aligned yet
+is left out of the family: the pipeline runs with the members present, and the case is annotated for them. Once
+the member arrives, the case runs again with the whole family. Both annotations are kept, and the laboratory is
+emailed each time. The proband is never left out: without it the case waits.
+
+A member present with wrong data (no gVCF, two gVCFs, no aliquot) still blocks the case. A manual run that names
+no case keeps the old rule and excludes the whole family.
+
 ## Out of scope: cases without gVCFs
 
 Not every germline case has per-sample gVCFs. Some were joint-called upstream: their
