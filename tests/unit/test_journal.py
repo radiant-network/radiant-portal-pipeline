@@ -146,7 +146,7 @@ def test_record_writes_only_what_changed_and_commits(monkeypatch):
     unchanged, new = entry(Decision.WAIT, ALIGNMENT), entry(Decision.RUN, case_id=9)
     assert record([unchanged, new], "scheduled__x") == [new]
     [(_, rows)] = connection.cursor_.calls
-    assert [row[0] for row in rows] == [9]
+    assert [row["case_id"] for row in rows] == [9]
     assert connection.committed
 
 
