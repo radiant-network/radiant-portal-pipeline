@@ -6,6 +6,7 @@ from radiant.tasks.nextflow.resolve import (
     decide_cases,
     resolve_families,
     select_cases,
+    select_run_cases,
     tenants_of,
 )
 from tests.unit.nextflow.conftest import member_row
@@ -213,9 +214,51 @@ def test_a_ready_trio_runs_without_a_reason(trio_rows):
     assert _decided([_facts(r) for r in trio_rows]) == {1072: (Decision.RUN, ())}
 
 
-def test_a_member_awaiting_sequencing_makes_the_decision_wait(trio_rows):
+def test_a_parent_not_sequenced_yet_does_not_hold_the_proband_back(trio_rows):
     rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.RUN, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))}
+
+
+def test_a_parent_not_aligned_yet_does_not_hold_the_proband_back(trio_rows):
+    pending_alignment = {"alignment_task_id": None, "current_alignment_task_id": None, "gvcf_matches": 0}
+    rows = [_facts(r, **pending_alignment) if r["role"] == "mother" else _facts(r) for r in trio_rows]
+    assert _decided(rows)[1072][0] == Decision.RUN
+
+
+def test_after_the_partial_run_the_case_waits_for_the_absent_parent(trio_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r, annotated=True) for r in trio_rows]
     assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))}
+
+
+def test_the_case_runs_again_once_the_parent_arrives(trio_rows):
+    rows = [_facts(r) if r["role"] == "father" else _facts(r, annotated=True) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.RUN, ())}
+
+
+def test_an_absent_proband_still_makes_the_case_wait(trio_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "proband" else _facts(r) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=100),))}
+
+
+def test_a_parent_with_wrong_data_still_blocks(trio_rows):
+    rows = [_facts(r, **NO_GVCF) if r["role"] == "father" else _facts(r) for r in trio_rows]
+    assert _decided(rows)[1072] == (
+        Decision.BLOCKED,
+        (Reason(code=ReasonCode.MISSING_INPUT, detail="gvcf", patient_id=101),),
+    )
+
+
+def test_a_case_annotated_for_every_member_is_not_decided(trio_rows):
+    assert _decided([_facts(r, annotated=True) for r in trio_rows]) == {}
+
+
+def test_the_family_is_built_from_the_members_present(trio_rows, phenotype_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r) for r in trio_rows]
+    selection = select_run_cases(rows, [])
+    assert selection.case_ids == [1072]
+    (family,) = resolve_families([m.model_dump() for m in selection.members], phenotype_rows)
+    assert [m.role for m in family.members] == ["proband", "mother"]
+    assert family.father is None
 
 
 def test_a_blocking_reason_wins_over_a_waiting_one_and_both_are_kept(trio_rows):
@@ -287,3 +330,38 @@ def test_two_members_waiting_are_two_reasons(trio_rows):
 def test_a_case_level_reason_names_no_member(trio_rows):
     rows = [_facts(r, project_code=None) for r in trio_rows]
     assert _decided(rows)[1072] == (Decision.BLOCKED, (Reason(code=ReasonCode.NO_PROJECT_CODE),))
+
+
+def test_the_child_selects_from_the_facts_like_the_scheduler_decides():
+    facts = [
+        _facts(member_row(case_id=case_id, **{k: v for k, v in o.items() if k != "current_alignment_task_id"}), **o)
+        for case_id, (o, _) in enumerate(SCENARIOS, start=1)
+    ]
+    selected = select_run_cases(facts, ["excluded"])
+    ran = {case_id for case_id, (decision, _) in _decided(facts, ["excluded"]).items() if decision == Decision.RUN}
+    assert set(selected.case_ids) == ran == {1}
+    assert {e.case_id for e in selected.excluded} == set(range(2, len(SCENARIOS) + 1))
+
+
+def _member(row, **overrides):
+    """A row of `germline_snv_case_members_select.sql`: no reason, no current alignment of its own."""
+    return {k: v for k, v in row.items() if k != "exclusion_reason"} | overrides
+
+
+def test_the_child_leaves_out_a_parent_with_no_gvcf_yet(trio_rows):
+    rows = [_member(r, **NO_GVCF) if r["role"] == "father" else _member(r) for r in trio_rows]
+    selection = select_run_cases(rows, [])
+    assert selection.case_ids == [1072]
+    assert sorted(m.role for m in selection.members) == ["mother", "proband"]
+
+
+def test_the_child_excludes_a_case_whose_proband_has_no_gvcf(trio_rows):
+    rows = [_member(r, **NO_GVCF) if r["role"] == "proband" else _member(r) for r in trio_rows]
+    selection = select_run_cases(rows, [])
+    assert selection.case_ids == []
+    assert [e.case_id for e in selection.excluded] == [1072]
+
+
+def test_the_child_excludes_a_case_with_two_gvcfs_for_a_member(trio_rows):
+    rows = [_member(r, gvcf_matches=2) if r["role"] == "mother" else _member(r) for r in trio_rows]
+    assert select_run_cases(rows, []).case_ids == []

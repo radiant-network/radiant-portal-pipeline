@@ -1,10 +1,16 @@
 actions:
   - when: after
     do: >-
-      Run radiant-init-starrocks-base-tables. It creates the pipeline_journal table and the pipeline_state
-      view. Nothing writes to them yet.
+      Run radiant-init-starrocks-base-tables before the next radiant-case-scheduler run. It creates the
+      current_germline_gvcf view, which the germline SNV queries of the case scheduler and of the germline SNV
+      post-processing read, and the pipeline_journal table and pipeline_state view, where the case scheduler writes
+      its germline SNV decisions.
+    preconditions:
+      - radiant-case-scheduler is paused, or its next run is after this step. Without the view, its germline SNV
+        discovery fails, and no germline SNV case runs.
     refs:
       - radiant-init-starrocks-base-tables
+      - radiant/dags/sql/radiant/init/current_germline_gvcf_create_table.sql
       - radiant/dags/sql/radiant/init/pipeline_journal_create_table.sql
       - radiant/dags/sql/radiant/init/pipeline_state_create_table.sql
-    check: SELECT count(*) FROM pipeline_state runs in the base database and returns 0.
+    check: SELECT count(*) FROM current_germline_gvcf and SELECT count(*) FROM pipeline_state run in the base database.

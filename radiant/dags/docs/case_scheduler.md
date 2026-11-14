@@ -48,7 +48,9 @@ The union of:
   `select_cases` (`select_tasks` for somatic annotation, whose unit is the calling task: its cases
   count), with the run's `excluded_tenants` (the list that DAG is given). A case that DAG would exclude
   (sequencing pending, no gVCF, tenant not granted, two DRAGEN metrics tarballs...) is **not** counted: it
-  would sit in `processing` with nothing running for it, and never reach `in_progress`;
+  would sit in `processing` with nothing running for it, and never reach `in_progress`. Germline SNV is the
+  exception: the cases `decide_cases` decides `run` for, from `germline_snv_facts_select.sql`, the same cases its
+  DAG is given (below);
 - the cases the import still has work for (`sql/radiant/import_pending_case_select.sql`): those in
   the delta view, `staging_sequencing_experiment_delta`, and those already inserted into
   `staging_sequencing_experiment` but not loaded by `import_part` yet, with the import's own
@@ -66,18 +68,23 @@ nothing is pending for them.
 
 ## Journal
 
-`facts_germline_snv` reads the facts of the germline SNV candidates (`sql/clinical/germline_snv_facts_select.sql`).
+`discover_germline_snv_cases` reads the facts of the germline SNV candidates (`sql/clinical/germline_snv_facts_select.sql`).
 A candidate is a germline case with no experiment yet, or with a member's current experiment not yet annotated,
-whether its documents are there or not. `journal_germline_snv` decides each case in Python (`decide_cases`: run,
-wait, blocked or skip, with all the reasons) and writes it to `pipeline_journal`.
+whether its documents are there or not. `decide_germline_snv` decides each case in Python (`decide_cases`: run,
+wait, blocked or skip, with all the reasons), and `journal_germline_snv` writes it to `pipeline_journal`.
 
 - `run` is written on every pass. Any other decision is written only when it, or its reasons, differ from the
   case's last row (view `pipeline_state`).
 - When a case has several reasons, skip wins over blocked, and blocked over wait.
+- A member other than the proband not sequenced or not aligned yet does not block: the case runs with the
+  members present as long as one of them is not annotated, with the absent member's reason on the `run` row.
+  Once they are all annotated, the case waits for the absent member, and runs again when it arrives.
 - A reason about one member names it (`patient_id`): two members waiting are two reasons. The reasons about
   the case (project, tenant, proband count, strategy) name no one.
-- The journal decides nothing yet: the "from Cases" DAG still selects its own cases, and the same ones. Nothing
-  waits for these two tasks; if they fail, `watcher` turns the run red.
+- The germline SNV "from Cases" DAG runs the cases decided `run`: `decide_germline_snv` hands them over as
+  `case_ids` in the child's conf, and the trigger waits for it. If deciding fails, no case is named and the child
+  runs nothing. The journal is written beside (`journal_germline_snv`): nothing waits for it, and
+  if it fails `watcher` turns the run red. The other pipelines still select their own cases.
 
 ## Variant data
 
