@@ -81,10 +81,10 @@ A candidate that cannot be run is dropped with a reason and the rest continues.
 |---|---|---|
 | `pending_sequencing` | a member has no `completed` sequencing experiment yet | yes |
 | `pending_alignment` | a member's current experiment has no alignment task yet | yes |
-| `no_gcnv` | the current alignment published no germline CNV VCF | no |
-| `ambiguous_gcnv` | more than one `gcnv`/`vcf` on one alignment task -- a mistyped document | no, fix the data |
-| `unsupported_caller` | the alignment's `pipeline_name` is not DRAGEN; the pipeline only implements DRAGEN CNV conventions | no |
-| `unknown_caller` | the alignment task has no `pipeline_name`, so `caller=DRAGEN` cannot be asserted | no, record the caller on the task |
+| `missing_input:gcnv` | the current alignment published no germline CNV VCF | no |
+| `ambiguous_input:gcnv` | more than one `gcnv`/`vcf` on one alignment task -- a mistyped document | no, fix the data |
+| `unsupported_caller:<caller>` | the alignment's `pipeline_name` is not DRAGEN; the pipeline only implements DRAGEN CNV conventions | no |
+| `unsupported_caller:unknown` | the alignment task has no `pipeline_name`, so `caller=DRAGEN` cannot be asserted | no, record the caller on the task |
 | `missing_aliquot` | a member's sequencing experiment has no aliquot, the id the samplesheet, PED, phenopacket and the Exomiser report names are built from | no, fix the data |
 | `proband_count` | two different patients are marked proband on the case | no, fix the data |
 | `unsupported_strategy` | a strategy outside `{wgs, wxs, wes}`, or members spanning several | no |

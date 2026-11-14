@@ -1,5 +1,6 @@
 import pytest
 
+from radiant.tasks.decision import Reason, ReasonCode
 from radiant.tasks.nextflow.resolve import (
     CaseResolutionError,
     resolve_families,
@@ -55,15 +56,17 @@ def test_a_discovered_case_that_cannot_run_is_excluded_not_raised(trio_rows, sin
     trio_rows[0]["exclusion_reason"] = "no_gvcf"
     selection = select_cases(trio_rows + singleton_rows)
     assert selection.case_ids == [8]
-    assert [(e.case_id, e.reason) for e in selection.excluded] == [(1072, "no_gvcf")]
+    assert [(e.case_id, e.reason) for e in selection.excluded] == [
+        (1072, Reason(code=ReasonCode.MISSING_INPUT, detail="gvcf"))
+    ]
 
 
 def test_the_exclusion_carries_a_sentence_not_only_a_code(trio_rows):
     """The report is read by someone who does not have the SQL open."""
     trio_rows[0]["exclusion_reason"] = "ambiguous_gvcf"
     (excluded,) = select_cases(trio_rows).excluded
-    assert "mistyped at the source" in excluded.detail
-    assert "index recorded with format_code 'gvcf'" in excluded.detail
+    assert "mistyped at the source" in excluded.message
+    assert "more than one gvcf document" in excluded.message
 
 
 def test_one_bad_member_excludes_the_whole_case(trio_rows):
@@ -81,8 +84,8 @@ def test_a_member_awaiting_sequencing_makes_the_case_wait(trio_rows):
     trio_rows[1].update(seq_id=None, sample_id=None, aliquot=None, strategy=None, gvcf_url=None)
     trio_rows[1]["exclusion_reason"] = "pending_sequencing"
     (excluded,) = select_cases(trio_rows).excluded
-    assert excluded.reason == "pending_sequencing"
-    assert "no completed sequencing experiment yet" in excluded.detail
+    assert excluded.reason.code == "pending_sequencing"
+    assert "no completed sequencing experiment yet" in excluded.message
 
 
 def test_a_case_without_exactly_one_proband_is_excluded(trio_rows):
@@ -90,8 +93,8 @@ def test_a_case_without_exactly_one_proband_is_excluded(trio_rows):
     patients marked proband -- which is what the message now says."""
     trio_rows.append(member_row(role="proband", patient_id=103, sample_id="S12000", aliquot="NA12000"))
     (excluded,) = select_cases(trio_rows).excluded
-    assert excluded.reason == "proband_count"
-    assert "two different patients are marked proband" in excluded.detail
+    assert excluded.reason.code == "proband_count"
+    assert "two different patients are marked proband" in excluded.message
 
 
 def test_a_member_without_an_aliquot_is_excluded_by_name(trio_rows):
@@ -100,21 +103,21 @@ def test_a_member_without_an_aliquot_is_excluded_by_name(trio_rows):
     the PED and failing in Exomiser."""
     trio_rows[1]["aliquot"] = None
     (excluded,) = select_cases(trio_rows).excluded
-    assert excluded.reason == "missing_aliquot"
-    assert "patient 101" in excluded.detail
+    assert excluded.reason.code == "missing_aliquot"
+    assert "patient 101" in excluded.message
 
 
 def test_an_unsupported_strategy_is_excluded(singleton_rows):
     singleton_rows[0]["strategy"] = "rnaseq"
     (excluded,) = select_cases(singleton_rows).excluded
-    assert excluded.reason == "unsupported_strategy"
+    assert excluded.reason.code == "unsupported_strategy"
 
 
 def test_members_spanning_several_strategies_are_excluded(trio_rows):
     """A member whose newest experiment is a different strategy is not a re-sequencing."""
     trio_rows[0]["strategy"] = "wxs"
     (excluded,) = select_cases(trio_rows).excluded
-    assert "span several strategies" in excluded.detail
+    assert "span several strategies" in excluded.message
 
 
 # --- strict: an operator named the tasks -------------------------------------------------
@@ -123,7 +126,7 @@ def test_members_spanning_several_strategies_are_excluded(trio_rows):
 def test_a_named_task_that_cannot_run_raises(trio_rows):
     """An operator asked for this specific work, so silence would be the wrong answer."""
     trio_rows[0]["exclusion_reason"] = "no_gvcf"
-    with pytest.raises(CaseResolutionError, match="joint-called upstream"):
+    with pytest.raises(CaseResolutionError, match="published no gvcf document"):
         select_cases(trio_rows, [900, 901, 902])
 
 
@@ -142,7 +145,7 @@ def test_strict_reports_every_problem_at_once(trio_rows, singleton_rows):
     with pytest.raises(CaseResolutionError) as excinfo:
         select_cases(trio_rows + singleton_rows, [900, 901, 902, 910, 999])
     message = str(excinfo.value)
-    assert "joint-called upstream" in message
+    assert "published no gvcf document" in message
     assert "unsupported experimental strategy" in message
     assert "[999]" in message
 
@@ -182,5 +185,5 @@ def test_an_excluded_tenant_is_left_out_before_the_pipeline_runs(singleton_rows)
     """Reported with its reason, so the log says why the case never ran."""
     singleton_rows[0]["exclusion_reason"] = "tenant_excluded"
     (excluded,) = select_cases(singleton_rows).excluded
-    assert excluded.reason == "tenant_excluded"
-    assert "RADIANT_ETL_EXCLUDED_TENANTS" in excluded.detail
+    assert excluded.reason.code == "tenant_excluded"
+    assert "RADIANT_ETL_EXCLUDED_TENANTS" in excluded.message

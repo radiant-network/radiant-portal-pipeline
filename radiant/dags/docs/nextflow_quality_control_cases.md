@@ -80,7 +80,7 @@ the pipeline reads them instead of recomputing BAM_QC and VCF_QC for that sample
 - **Otherwise, the CRAM's directory**, for a germline member only. This fallback is not
   checked before the run. **generate_inputs** logs a warning for each such member, with the
   directory; grep for "no DRAGEN metrics tarball". A tumor without a tarball is excluded as
-  **no_metrics** instead.
+  **missing_input:metrics** instead.
 
 > **dragenMetrics is never empty.** An empty value makes the pipeline recompute BAM_QC and
 > VCF_QC for that sample, hours of worker pods nobody asked for.
@@ -140,10 +140,10 @@ A candidate that cannot be run is dropped with a reason and the rest continues.
 |:--|:--|:--|
 | **pending_sequencing** | A member has no completed sequencing experiment yet | Yes |
 | **pending_alignment** | A member's current experiment has no alignment task yet | Yes |
-| **no_cram** | A germline member's current alignment published no CRAM, and somalier needs one | No |
-| **ambiguous_cram** | More than one CRAM on one germline alignment task — a mistyped document | No, fix the data |
-| **ambiguous_dragen_metrics** | More than one ssup / tgz tarball on one alignment task | No, fix the data |
-| **no_metrics** | A tumor's current alignment published no ssup / tgz tarball (its CRAM does not count): it has no CRAM-directory fallback | No, fix the data |
+| **missing_input:cram** | A germline member's current alignment published no CRAM, and somalier needs one | No |
+| **ambiguous_input:cram** | More than one CRAM on one germline alignment task — a mistyped document | No, fix the data |
+| **ambiguous_input:metrics** | More than one ssup / tgz tarball on one alignment task | No, fix the data |
+| **missing_input:metrics** | A tumor's current alignment published no ssup / tgz tarball (its CRAM does not count): it has no CRAM-directory fallback | No, fix the data |
 | **proband_count** | Two different patients are marked proband on the case | No, fix the data |
 | **unsupported_strategy** | A strategy outside {wgs, wxs, wes} | No |
 | **no_project_code** | cases.project_id did not resolve, and the batch PATCH needs it | No |

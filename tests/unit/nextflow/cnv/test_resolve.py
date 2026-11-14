@@ -1,5 +1,6 @@
 import pytest
 
+from radiant.tasks.decision import Reason, ReasonCode
 from radiant.tasks.nextflow.cnv.resolve import (
     CaseResolutionError,
     resolve_families,
@@ -70,14 +71,16 @@ def test_a_discovered_case_that_cannot_run_is_excluded_not_raised(trio_rows, sin
     trio_rows[0]["exclusion_reason"] = "no_gcnv"
     selection = select_cases(trio_rows + singleton_rows)
     assert selection.case_ids == [8]
-    assert [(e.case_id, e.reason) for e in selection.excluded] == [(1072, "no_gcnv")]
+    assert [(e.case_id, e.reason) for e in selection.excluded] == [
+        (1072, Reason(code=ReasonCode.MISSING_INPUT, detail="gcnv"))
+    ]
 
 
 def test_the_exclusion_carries_a_sentence_not_only_a_code(trio_rows):
     trio_rows[0]["exclusion_reason"] = "ambiguous_gcnv"
     (excluded,) = select_cases(trio_rows).excluded
-    assert "mistyped at the source" in excluded.detail
-    assert "format_code 'vcf' instead of 'tbi'" in excluded.detail
+    assert "mistyped at the source" in excluded.message
+    assert "more than one gcnv document" in excluded.message
 
 
 def test_one_bad_member_excludes_the_whole_case(trio_rows):
@@ -92,8 +95,8 @@ def test_a_non_dragen_alignment_is_excluded_before_the_pipeline_runs(trio_rows):
     process -- after the driver pod has been scheduled and the inputs staged."""
     trio_rows[2]["alignment_pipeline"] = "GATK"
     (excluded,) = select_cases(trio_rows).excluded
-    assert excluded.reason == "unsupported_caller"
-    assert "'GATK'" in excluded.detail
+    assert excluded.reason.code == "unsupported_caller"
+    assert excluded.reason == Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="GATK")
 
 
 def test_dragen_is_matched_loosely(trio_rows):
@@ -107,8 +110,8 @@ def test_an_alignment_without_a_pipeline_name_is_excluded_not_assumed_dragen(tri
     alignment that does not say what produced it fails closed, with its own reason."""
     trio_rows[1]["alignment_pipeline"] = None
     (excluded,) = select_cases(trio_rows).excluded
-    assert excluded.reason == "unknown_caller"
-    assert "no pipeline_name" in excluded.detail
+    assert excluded.reason == Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="unknown")
+    assert "no pipeline_name" in excluded.message
 
 
 def test_a_member_still_awaiting_alignment_is_not_also_reported_as_unknown_caller(trio_rows):
@@ -116,7 +119,7 @@ def test_a_member_still_awaiting_alignment_is_not_also_reported_as_unknown_calle
     trio_rows[1].update(alignment_task_id=None, alignment_pipeline=None, gcnv_url=None, gcnv_matches=0)
     trio_rows[1]["exclusion_reason"] = "pending_alignment"
     selection = select_cases(trio_rows)
-    assert [e.reason for e in selection.excluded] == ["pending_alignment"]
+    assert [e.reason.code for e in selection.excluded] == ["pending_alignment"]
 
 
 def test_a_member_without_an_aliquot_is_excluded(trio_rows):
@@ -124,21 +127,21 @@ def test_a_member_without_an_aliquot_is_excluded(trio_rows):
     names: a missing one is reported here, not found as `None` in the samplesheet hours later."""
     trio_rows[1]["aliquot"] = None
     (excluded,) = select_cases(trio_rows).excluded
-    assert excluded.reason == "missing_aliquot"
-    assert "patient 101" in excluded.detail
+    assert excluded.reason.code == "missing_aliquot"
+    assert "patient 101" in excluded.message
 
 
 def test_a_case_without_exactly_one_proband_is_excluded(trio_rows):
     trio_rows.append(member_row(role="proband", patient_id=103, aliquot="NA12000"))
     (excluded,) = select_cases(trio_rows).excluded
-    assert excluded.reason == "proband_count"
+    assert excluded.reason.code == "proband_count"
 
 
 def test_members_spanning_several_strategies_are_excluded(trio_rows):
     """The Exomiser analysis file is picked per family from `sequencingType`."""
     trio_rows[0]["strategy"] = "wxs"
     (excluded,) = select_cases(trio_rows).excluded
-    assert "span several strategies" in excluded.detail
+    assert "span several strategies" in excluded.message
 
 
 # --- strict: an operator named the tasks -------------------------------------------------
@@ -146,7 +149,7 @@ def test_members_spanning_several_strategies_are_excluded(trio_rows):
 
 def test_a_named_task_that_cannot_run_raises(trio_rows):
     trio_rows[0]["exclusion_reason"] = "no_gcnv"
-    with pytest.raises(CaseResolutionError, match="no germline CNV VCF"):
+    with pytest.raises(CaseResolutionError, match="published no gcnv document"):
         select_cases(trio_rows, [900, 901, 902])
 
 
@@ -176,5 +179,5 @@ def test_a_run_may_span_several_tenants(trio_rows, singleton_rows):
 def test_an_excluded_tenant_is_left_out_before_the_pipeline_runs(singleton_rows):
     singleton_rows[0]["exclusion_reason"] = "tenant_excluded"
     (excluded,) = select_cases(singleton_rows).excluded
-    assert excluded.reason == "tenant_excluded"
-    assert "RADIANT_ETL_EXCLUDED_TENANTS" in excluded.detail
+    assert excluded.reason.code == "tenant_excluded"
+    assert "RADIANT_ETL_EXCLUDED_TENANTS" in excluded.message

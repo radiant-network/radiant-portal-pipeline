@@ -84,8 +84,8 @@ A candidate that cannot be run is dropped with a reason, and the rest continues.
 | Reason | Meaning | Scope |
 |:--|:--|:--|
 | **pending_sequencing** | an experiment of the task is not **completed** yet (transient) | the task |
-| **no_ssnv** | the task published no **ssnv** VCF. Only reported for a task named in **task_ids** | the task |
-| **ambiguous_ssnv** | more than one **ssnv** VCF on one task: a mistyped document | the task |
+| **missing_input:ssnv** | the task published no **ssnv** VCF. Only reported for a task named in **task_ids** | the task |
+| **ambiguous_input:ssnv** | more than one **ssnv** VCF on one task: a mistyped document | the task |
 | **missing_aliquot** | an experiment of the task has no aliquot | the task |
 | **unsupported_samples** | not one tumoral sample plus at most one normal one, or more than one aliquot on an **alignment_somatic_variant_calling** | the task |
 | **unsupported_strategy** | a strategy outside wgs, wxs, wes, or experiments spanning several | the task |

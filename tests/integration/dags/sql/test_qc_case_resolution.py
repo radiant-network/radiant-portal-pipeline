@@ -164,7 +164,7 @@ def test_two_tarballs_exclude_the_case(proband_two_tarballs, starrocks_session, 
     assert len(rows) == 3
     selection = select_cases(rows)
     assert selection.case_ids == []
-    assert [e.reason for e in selection.excluded] == ["ambiguous_dragen_metrics"]
+    assert [e.reason.detail for e in selection.excluded] == ["metrics"]
 
 
 def test_the_rows_select_cleanly(postgres_clinical_seeds, starrocks_session, radiant_mapping):
@@ -443,7 +443,7 @@ def test_a_tumor_with_a_cram_and_no_tarball_comes_back_as_no_metrics(
     assert row["exclusion_reason"] == "no_metrics"
     selection = select_cases([row])
     assert selection.case_ids == []
-    assert [e.reason for e in selection.excluded] == ["no_metrics"]
+    assert [e.reason.code for e in selection.excluded] == ["missing_input"]
 
 
 def test_a_tumor_with_two_tarballs_comes_back_as_ambiguous(
@@ -452,7 +452,7 @@ def test_a_tumor_with_two_tarballs_comes_back_as_ambiguous(
     [row] = _discover_somatic(starrocks_session, radiant_mapping, TUMOR_ONLY_CASE_ID)
     assert row["dragen_metrics_matches"] == 2
     assert row["exclusion_reason"] == "ambiguous_dragen_metrics"
-    assert [e.reason for e in select_cases([row]).excluded] == ["ambiguous_dragen_metrics"]
+    assert [e.reason.code for e in select_cases([row]).excluded] == ["ambiguous_input"]
 
 
 def test_a_superseded_somatic_alignment_is_not_selected(tumor_realigned, starrocks_session, radiant_mapping):
