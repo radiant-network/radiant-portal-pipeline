@@ -4,6 +4,7 @@ from radiant.tasks.decision import Decision, Reason, ReasonCode
 from radiant.tasks.nextflow.resolve import (
     CaseResolutionError,
     decide_cases,
+    outcome_entries,
     resolve_families,
     select_cases,
     select_run_cases,
@@ -365,3 +366,22 @@ def test_the_child_excludes_a_case_whose_proband_has_no_gvcf(trio_rows):
 def test_the_child_excludes_a_case_with_two_gvcfs_for_a_member(trio_rows):
     rows = [_member(r, gvcf_matches=2) if r["role"] == "mother" else _member(r) for r in trio_rows]
     assert select_run_cases(rows, []).case_ids == []
+
+
+def test_outcomes_follow_the_registration_of_each_tenant():
+    selection = {
+        "case_ids": [1, 2],
+        "members": [{"case_id": 1, "tenant_code": "a"}, {"case_id": 2, "tenant_code": "b"}],
+        "excluded": [
+            {"case_id": 3, "reason": {"code": "ambiguous_input", "detail": "gvcf", "patient_id": 7}, "message": "x"}
+        ],
+    }
+    assert [(e.case_id, e.decision, e.reasons) for e in outcome_entries(selection, {"a"})] == [
+        (1, Decision.SUCCEEDED, ()),
+        (2, Decision.FAILED, ()),
+        (3, Decision.FAILED, (Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="gvcf", patient_id=7),)),
+    ]
+
+
+def test_no_selection_journals_nothing():
+    assert outcome_entries({}, set()) == []

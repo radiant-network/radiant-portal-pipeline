@@ -27,6 +27,7 @@ Full analysis: `design/SJRA-1698-nextflow-postprocessing-automation.md`, which b
 `design/SJRA-1843-nextflow-postprocessing-from-cases.md`.
 """
 
+import datetime
 import logging
 import os
 from typing import Any
@@ -55,6 +56,13 @@ OUTPUT_POLL_ATTEMPTS = max(1, int(os.getenv("NEXTFLOW_OUTPUT_POLL_ATTEMPTS", "10
 OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "30"))
 
 PORTAL_CONN_ID = "radiant_api_conn"
+
+# `select_cases` XCom: what it selected and left out, read back by `journal_outcomes`.
+SELECTION_KEY = "selection"
+
+# The journal write is idempotent (an unchanged marker is not written twice), so a retry is safe.
+JOURNAL_RETRIES = 2
+JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
 
 # Under the shared roots, apart from quality control (`qc-runs/`, `qc/`).
 INPUTS_SUBDIR = "snv-runs"
@@ -94,6 +102,14 @@ dag_params = {
         ),
     ),
 }
+
+
+def _selection_payload(selection) -> dict:
+    return {
+        "case_ids": selection.case_ids,
+        "members": [m.model_dump() for m in selection.members],
+        "excluded": [e.model_dump(mode="json") for e in selection.excluded],
+    }
 
 
 def _workspace_env() -> dict[str, str]:
@@ -157,7 +173,10 @@ def nextflow_snv_postprocessing_cases():
 
         from radiant.tasks.nextflow.resolve import select_run_cases
 
-        selection = select_run_cases(member_rows, get_current_context()["params"]["excluded_tenants"])
+        context = get_current_context()
+        selection = select_run_cases(member_rows, context["params"]["excluded_tenants"])
+        # Kept apart from the return value, so the outcomes are journaled even when nothing runs.
+        context["ti"].xcom_push(key=SELECTION_KEY, value=_selection_payload(selection))
         if not selection.case_ids:
             raise AirflowSkipException(f"nothing to run: {len(selection.excluded)} named case(s), all excluded")
 
@@ -167,11 +186,7 @@ def nextflow_snv_postprocessing_cases():
             ", ".join(selection.tenants),
             ", ".join(str(case_id) for case_id in selection.case_ids),
         )
-        return {
-            "case_ids": selection.case_ids,
-            "members": [m.model_dump() for m in selection.members],
-            "excluded": [e.model_dump() for e in selection.excluded],
-        }
+        return _selection_payload(selection)
 
     has_cases() >> fetch_case_members
     selection = select_cases(fetch_case_members.output)
@@ -363,7 +378,31 @@ def nextflow_snv_postprocessing_cases():
         LOGGER.info("batch report:\n%s", json.dumps(report, indent=2, default=str)[:8000])
         if str(report.get("status", "")).lower() not in ("success", "succeeded", "completed", "done"):
             raise AirflowFailException(f"batch {batch_id} did not succeed: status={report.get('status')}")
-        return report
+        return {"tenant": tenant, "report": report}
+
+    # Retried: the run's state ignores this teardown, so a failed write is only seen on its own task.
+    @task(
+        task_id="journal_outcomes",
+        task_display_name="[PyOp] Journal what the run did with its cases",
+        retries=JOURNAL_RETRIES,
+        retry_delay=JOURNAL_RETRY_DELAY,
+    )
+    def journal_outcomes() -> int:
+        """`succeeded` for the cases of the tenants registered, `failed` for the others and the cases left out."""
+        from airflow.exceptions import AirflowSkipException
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.journal import record
+        from radiant.tasks.nextflow.resolve import outcome_entries
+
+        context = get_current_context()
+        if context["params"]["dry_run"]:
+            raise AirflowSkipException("dry run: nothing registered, nothing to journal")
+        selection = context["ti"].xcom_pull(task_ids="select_cases", key=SELECTION_KEY) or {}
+        registered = {r["tenant"] for r in (context["ti"].xcom_pull(task_ids="register_tasks") or []) if r}
+        written = record(outcome_entries(selection, registered), context["run_id"])
+        LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
+        return len(written)
 
     families = resolve_cases(selection, fetch_phenotypes.output)
     paths = generate_inputs(families)
@@ -389,7 +428,10 @@ def nextflow_snv_postprocessing_cases():
     collected = collect_outputs(families, paths)
     # The laboratories are emailed by `radiant-case-scheduler`, once the cases reach
     # `in_progress` with every pipeline's results registered, not by this DAG.
-    register_tasks.partial(families=families, collected=collected).expand(tenant=list_tenants(families))
+    registered = register_tasks.partial(families=families, collected=collected).expand(tenant=list_tenants(families))
+    # A teardown: it runs whatever happened before it, and the run's state ignores it, so a failed pipeline or
+    # registration still fails the run.
+    [selection, registered] >> journal_outcomes().as_teardown()
 
     selection >> fetch_phenotypes
     paths >> run_pipeline >> collected
