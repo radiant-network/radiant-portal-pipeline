@@ -103,7 +103,7 @@ def _changed(entry: Entry, last: Entry | None) -> bool:
 
 
 def _dump_reasons(reasons: tuple[Reason, ...]) -> str | None:
-    return json.dumps([r.model_dump(mode="json") for r in reasons]) if reasons else None
+    return json.dumps([r.model_dump(mode="json", exclude_none=True) for r in reasons]) if reasons else None
 
 
 def _load_reasons(text: str | None) -> tuple[Reason, ...]:

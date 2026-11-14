@@ -197,7 +197,7 @@ def _validate(case_id: int, members: list[CaseMember]) -> list[tuple[Reason, str
     # Reasons the query already worked out. It sees the supersession rules; this does not.
     for member in members:
         if member.exclusion_reason:
-            reason = from_query(member.exclusion_reason)
+            reason = from_query(member.exclusion_reason).about(member.patient_id)
             problems.append((reason, f"case {case_id}, patient {member.patient_id}: {reason.text}"))
 
     # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket) because it is
@@ -206,7 +206,7 @@ def _validate(case_id: int, members: list[CaseMember]) -> list[tuple[Reason, str
     for member in members:
         if not member.exclusion_reason and not member.aliquot:
             message = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
-            problems.append((Reason(code=ReasonCode.MISSING_ALIQUOT), message))
+            problems.append((Reason(code=ReasonCode.MISSING_ALIQUOT, patient_id=member.patient_id), message))
 
     probands = [m for m in members if m.role == "proband"]
     if len(probands) != 1:

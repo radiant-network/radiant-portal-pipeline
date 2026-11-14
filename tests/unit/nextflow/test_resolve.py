@@ -58,7 +58,7 @@ def test_a_discovered_case_that_cannot_run_is_excluded_not_raised(trio_rows, sin
     selection = select_cases(trio_rows + singleton_rows)
     assert selection.case_ids == [8]
     assert [(e.case_id, e.reason) for e in selection.excluded] == [
-        (1072, Reason(code=ReasonCode.MISSING_INPUT, detail="gvcf"))
+        (1072, Reason(code=ReasonCode.MISSING_INPUT, detail="gvcf", patient_id=102))
     ]
 
 
@@ -215,7 +215,7 @@ def test_a_ready_trio_runs_without_a_reason(trio_rows):
 
 def test_a_member_awaiting_sequencing_makes_the_decision_wait(trio_rows):
     rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r) for r in trio_rows]
-    assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING),))}
+    assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))}
 
 
 def test_a_blocking_reason_wins_over_a_waiting_one_and_both_are_kept(trio_rows):
@@ -224,7 +224,10 @@ def test_a_blocking_reason_wins_over_a_waiting_one_and_both_are_kept(trio_rows):
     assert _decided(rows) == {
         1072: (
             Decision.BLOCKED,
-            (Reason(code=ReasonCode.MISSING_INPUT, detail="gvcf"), Reason(code=ReasonCode.PENDING_SEQUENCING)),
+            (
+                Reason(code=ReasonCode.MISSING_INPUT, detail="gvcf", patient_id=100),
+                Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),
+            ),
         )
     }
 
@@ -233,17 +236,20 @@ def test_an_excluded_tenant_is_a_skip_even_while_a_member_waits(trio_rows):
     rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r) for r in trio_rows]
     decision, reasons = _decided(rows, ["radiant"])[1072]
     assert decision == Decision.SKIP
-    assert set(reasons) == {Reason(code=ReasonCode.PENDING_SEQUENCING), Reason(code=ReasonCode.TENANT_EXCLUDED)}
+    assert set(reasons) == {
+        Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),
+        Reason(code=ReasonCode.TENANT_EXCLUDED),
+    }
 
 
 def test_a_member_without_an_aliquot_blocks_the_case(trio_rows):
     rows = [_facts(r, aliquot=None) if r["role"] == "mother" else _facts(r) for r in trio_rows]
-    assert _decided(rows)[1072] == (Decision.BLOCKED, (Reason(code=ReasonCode.MISSING_ALIQUOT),))
+    assert _decided(rows)[1072] == (Decision.BLOCKED, (Reason(code=ReasonCode.MISSING_ALIQUOT, patient_id=102),))
 
 
 def test_a_case_with_no_experiment_yet_waits(singleton_rows):
     rows = [_facts(r, **PENDING_SEQUENCING) for r in singleton_rows]
-    assert _decided(rows)[rows[0]["case_id"]] == (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING),))
+    assert _decided(rows)[8] == (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=200),))
 
 
 # Each case: what the facts say, and the reason the pending query gives the same member.
@@ -268,3 +274,16 @@ def test_the_facts_run_exactly_the_cases_the_pending_query_selects():
         pending.append(row | {"exclusion_reason": query_reason})
     ran = {case_id for case_id, (decision, _) in _decided(facts, ["excluded"]).items() if decision == Decision.RUN}
     assert ran == set(select_cases(pending, strict=False).case_ids) == {1}
+
+
+def test_two_members_waiting_are_two_reasons(trio_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] != "proband" else _facts(r) for r in trio_rows]
+    assert set(_decided(rows)[1072][1]) == {
+        Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),
+        Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=102),
+    }
+
+
+def test_a_case_level_reason_names_no_member(trio_rows):
+    rows = [_facts(r, project_code=None) for r in trio_rows]
+    assert _decided(rows)[1072] == (Decision.BLOCKED, (Reason(code=ReasonCode.NO_PROJECT_CODE),))

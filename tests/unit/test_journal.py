@@ -66,7 +66,7 @@ def test_items_are_independent():
 
 
 def test_reasons_round_trip_through_json():
-    reasons = (NO_GVCF, Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="it's GATK"))
+    reasons = (NO_GVCF, Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="it's GATK", patient_id=101))
     assert _load_reasons(_dump_reasons(reasons)) == reasons
     assert _dump_reasons(()) is None
     assert _load_reasons(None) == ()
@@ -148,3 +148,16 @@ def test_record_writes_only_what_changed_and_commits(monkeypatch):
     [(_, rows)] = connection.cursor_.calls
     assert [row[0] for row in rows] == [9]
     assert connection.committed
+
+
+def test_the_member_is_in_the_json_only_when_named():
+    assert _dump_reasons((Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101), NO_GVCF)) == (
+        '[{"code": "pending_sequencing", "detail": "", "patient_id": 101}, '
+        '{"code": "missing_input", "detail": "gvcf"}]'
+    )
+
+
+def test_the_same_code_for_another_member_is_a_change():
+    last = state(entry(Decision.WAIT, Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101)))
+    mother = entry(Decision.WAIT, Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=102))
+    assert to_write([mother], last) == [mother]

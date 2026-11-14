@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_pipeline_journal }} (
     decided_at  DATETIME     NOT NULL COMMENT "UTC, to the microsecond; one value per write",
     run_id      VARCHAR(250) NOT NULL COMMENT "The Airflow run that wrote the row",
     decision    VARCHAR(16)  NOT NULL COMMENT "run, wait, blocked, skip (scheduler); succeeded, failed (pipeline)",
-    reasons     JSON         NULL     COMMENT "List of {code, detail}; NULL when there is none"
+    reasons     JSON         NULL     COMMENT "List of {code, detail, patient_id}; patient_id only on a reason about one member; NULL when none"
 ) ENGINE=OLAP
 DUPLICATE KEY(case_id, pipeline, item_key, decided_at)
 PARTITION BY date_trunc('month', decided_at)
