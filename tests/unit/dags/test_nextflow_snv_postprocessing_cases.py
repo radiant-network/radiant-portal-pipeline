@@ -14,7 +14,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
     assert set(dag.task_ids) == {
         "choose_scope",
         "discover_scope",
-        "read_journal",
+        "fetch_case_facts",
         "select_cases",
         "fetch_phenotypes",
         "resolve_cases",
@@ -73,15 +73,15 @@ def test_it_does_not_email_the_laboratories(dag_bag):
     assert not {"create_case_group", "notify_labs"} & set(dag.task_ids)
 
 
-def test_a_scheduler_run_reads_the_journal_a_manual_run_discovers(dag_bag):
-    """The scheduler passes its run: the cases come from the journal. Without it, the DAG discovers its own."""
+def test_named_cases_are_run_otherwise_the_dag_discovers(dag_bag):
+    """The scheduler names the cases it decided `run` for; with none named, the DAG discovers its own."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert dag.params["journal_run_id"] == ""
-    assert {t.task_id for t in dag.get_task("choose_scope").downstream_list} == {"discover_scope", "read_journal"}
-    assert "{{ mapping.starrocks_pipeline_journal }}" in dag.get_task("read_journal").sql
-    assert set(dag.get_task("read_journal").parameters) == {"journal_run_id"}
+    assert dag.params["case_ids"] is None
+    assert {t.task_id for t in dag.get_task("choose_scope").downstream_list} == {"discover_scope", "fetch_case_facts"}
+    assert "%(case_ids)s" in dag.get_task("fetch_case_facts").sql
+    assert set(dag.get_task("fetch_case_facts").parameters) == {"case_ids"}
     select = dag.get_task("select_cases")
-    assert {t.task_id for t in select.upstream_list} == {"discover_scope", "read_journal"}
+    assert {t.task_id for t in select.upstream_list} == {"discover_scope", "fetch_case_facts"}
     assert select.trigger_rule == "none_failed_min_one_success"
 
 
@@ -91,7 +91,7 @@ def test_dag_asks_for_nothing_it_can_work_out_itself(dag_bag):
     schema, so the tenant is read off the cases. What is left is intent: which tasks (none,
     normally), where writes are permitted, and whether to write at all."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert set(dag.params) == {"task_ids", "excluded_tenants", "journal_run_id", "dry_run"}
+    assert set(dag.params) == {"task_ids", "case_ids", "excluded_tenants", "dry_run"}
 
 
 def test_a_scheduled_run_actually_writes(dag_bag):

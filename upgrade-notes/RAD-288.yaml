@@ -1,12 +1,9 @@
 actions:
   - when: after
     do: >-
-      Run radiant-init-starrocks-base-tables before the next radiant-case-scheduler run. It creates the
-      pipeline_journal table and the pipeline_state view: the case scheduler writes its germline SNV decisions there,
-      and the germline SNV post-processing it starts reads its cases from them.
-    preconditions:
-      - radiant-case-scheduler is paused, or its next run is after this step. Without the table, the run fails and
-        the germline SNV post-processing runs no case.
+      Run radiant-init-starrocks-base-tables. It creates the pipeline_journal table and the pipeline_state view,
+      where the case scheduler writes its germline SNV decisions. Until then, the scheduler's journal_germline_snv
+      task fails and turns the run red; the pipelines run all the same.
     refs:
       - radiant-init-starrocks-base-tables
       - radiant/dags/sql/radiant/init/pipeline_journal_create_table.sql

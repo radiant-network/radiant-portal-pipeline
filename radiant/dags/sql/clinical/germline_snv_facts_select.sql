@@ -1,8 +1,8 @@
 -- One row per (candidate germline case, family member): the facts the case scheduler decides on, with no
 -- decision in SQL. `decide_cases` (radiant/tasks/nextflow/resolve.py) turns them into a decision and its reasons.
 --
--- Same views and CTEs as `pending_annotation_select.sql`. With `params.journal_run_id`, the cases are narrowed to
--- the ones the scheduler run decided `run` for: what the "from Cases" DAG runs on.
+-- Same views and CTEs as `pending_annotation_select.sql`. With `params.case_ids`, the cases are narrowed to those:
+-- the cases the scheduler decided `run` for, that the "from Cases" DAG runs on.
 WITH current_alignment AS (
     -- The current germline alignment of each experiment (view `current_alignment`, RAD-287).
     SELECT seq_id, task_id
@@ -77,14 +77,8 @@ LEFT JOIN {{ mapping.starrocks_current_experiment }} ce ON ce.case_id = pc.case_
 LEFT JOIN current_alignment ca                       ON ca.seq_id = ce.seq_id
 LEFT JOIN gvcf g                                     ON g.seq_id = ce.seq_id
 WHERE pc.case_type = 'germline'
-{% if params.get('journal_run_id') %}
-  AND pc.case_id IN (
-      SELECT case_id
-      FROM {{ mapping.starrocks_pipeline_journal }}
-      WHERE run_id   = %(journal_run_id)s
-        AND pipeline = 'germline_snv'
-        AND decision = 'run'
-  )
+{% if params.get('case_ids') %}
+  AND pc.case_id IN %(case_ids)s
 {% endif %}
 ORDER BY pc.case_id,
          CASE cm.role

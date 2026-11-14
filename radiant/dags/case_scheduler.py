@@ -220,22 +220,34 @@ def case_scheduler():
         do_xcom_push=True,
     )
 
-    @task(task_id="journal_germline_snv", task_display_name="[PyOp] Decide and journal germline SNV")
-    def journal_germline_snv(fact_rows: Any) -> dict:
-        """Writes the journal only: the "from Cases" DAG still selects its own cases."""
+    @task(task_id="decide_germline_snv", task_display_name="[PyOp] Decide germline SNV")
+    def decide_germline_snv(fact_rows: Any) -> dict:
+        """The decision of each candidate, and the cases to run, handed to the child DAG."""
         from collections import Counter
 
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.journal import record
+        from radiant.tasks.decision import Decision
         from radiant.tasks.nextflow.resolve import decide_cases
 
-        context = get_current_context()
-        entries = decide_cases(fact_rows, context["params"]["excluded_tenants"])
-        written = record(entries, context["run_id"])
+        entries = decide_cases(fact_rows, get_current_context()["params"]["excluded_tenants"])
         counts = dict(Counter(str(e.decision) for e in entries))
-        LOGGER.info("germline_snv: %d item(s) %s, %d row(s) written", len(entries), counts, len(written))
-        return {"decisions": counts, "written": len(written)}
+        LOGGER.info("germline_snv: %d item(s) %s", len(entries), counts)
+        return {
+            "entries": [e.model_dump(mode="json") for e in entries],
+            "run_case_ids": [e.case_id for e in entries if e.decision == Decision.RUN],
+        }
+
+    @task(task_id="journal_germline_snv", task_display_name="[PyOp] Journal germline SNV")
+    def journal_germline_snv(decided: dict) -> int:
+        """Writes the journal only: no pipeline waits for it."""
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.journal import Entry, record
+
+        written = record([Entry(**e) for e in decided["entries"]], get_current_context()["run_id"])
+        LOGGER.info("germline_snv: %d row(s) written", len(written))
+        return len(written)
 
     @task(
         task_id="set_processing",
@@ -341,7 +353,8 @@ def case_scheduler():
     def watcher() -> None:
         raise AirflowFailException("a step of this run failed, see the failed task(s) and the child runs")
 
-    journaled_germline_snv = journal_germline_snv(facts_germline_snv.output)
+    decided_germline_snv = decide_germline_snv(facts_germline_snv.output)
+    journaled_germline_snv = journal_germline_snv(decided_germline_snv)
     batches = discover_cases(*(query.output for query in discovered), fetch_case_statuses.output)
     processing = set_processing.expand(batch=batches)
 
@@ -349,8 +362,9 @@ def case_scheduler():
         "trigger_germline_snv_postprocessing",
         "[DAG] Nextflow SNV Post-processing (from Cases)",
         GERMLINE_SNV_CASES_DAG_ID,
-        # The child runs the cases this run journaled `run` for.
-        EXCLUDED_TENANTS_CONF | {"journal_run_id": "{{ run_id }}"},
+        # The cases this run decided `run` for. If deciding failed: none named, so the child discovers its own.
+        EXCLUDED_TENANTS_CONF
+        | {"case_ids": "{{ (ti.xcom_pull(task_ids='decide_germline_snv') or {}).get('run_case_ids') }}"},
     )
     trigger_germline_cnv = _trigger(
         "trigger_germline_cnv_postprocessing",
@@ -374,7 +388,7 @@ def case_scheduler():
     # post-processing (the slivar VCF, RAD-206) registered, so it waits for the three, success or not.
     trigger_import = _trigger("trigger_import", "[DAG] Scheduled Import", IMPORT_DAG_ID)
 
-    journaled_germline_snv >> trigger_germline_snv
+    decided_germline_snv >> trigger_germline_snv
     processing >> [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv, trigger_qc]
     [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv] >> trigger_import
     # Asked again once the import, CNV post-processing and quality control have succeeded: a case
@@ -391,6 +405,7 @@ def case_scheduler():
     [
         *discovered,
         facts_germline_snv,
+        decided_germline_snv,
         journaled_germline_snv,
         fetch_case_statuses,
         processing,

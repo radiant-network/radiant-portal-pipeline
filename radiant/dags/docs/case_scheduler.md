@@ -76,9 +76,10 @@ wait, blocked or skip, with all the reasons) and writes it to `pipeline_journal`
 - When a case has several reasons, skip wins over blocked, and blocked over wait.
 - A reason about one member names it (`patient_id`): two members waiting are two reasons. The reasons about
   the case (project, tenant, proband count, strategy) name no one.
-- The germline SNV "from Cases" DAG runs the cases this run journaled `run` for: the scheduler passes it
-  `journal_run_id`, and its trigger waits for `journal_germline_snv`. If the journal fails, the child finds no
-  case to run, and `watcher` turns the run red. The other pipelines still select their own cases.
+- The germline SNV "from Cases" DAG runs the cases decided `run`: `decide_germline_snv` hands them over as
+  `case_ids` in the child's conf, and the trigger waits for it. If deciding fails, no case is named and the child
+  discovers its own, as before. The journal is written beside (`journal_germline_snv`): nothing waits for it, and
+  if it fails `watcher` turns the run red. The other pipelines still select their own cases.
 
 ## Variant data
 

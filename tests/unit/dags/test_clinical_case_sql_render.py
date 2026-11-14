@@ -195,11 +195,7 @@ def test_the_import_view_ignores_the_same_statuses_as_the_discovery_queries():
     assert "status_code" not in sql
 
 
-def test_the_facts_are_narrowed_to_the_journal_only_for_a_scheduler_run():
+def test_the_facts_are_narrowed_to_the_named_cases_only():
     facts = "germline_snv_facts_select.sql"
-    scheduler = _without_comments(_render(facts, {}))
-    child = _without_comments(_render(facts, {"journal_run_id": "scheduled__2026-11-13"}))
-    assert "pipeline_journal" not in scheduler
-    assert "pipeline_journal" in child
-    assert "run_id   = %(journal_run_id)s" in child
-    assert "decision = 'run'" in child
+    assert "%(case_ids)s" not in _without_comments(_render(facts, {}))
+    assert "AND pc.case_id IN %(case_ids)s" in _without_comments(_render(facts, {"case_ids": [16]}))

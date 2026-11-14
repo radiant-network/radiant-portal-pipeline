@@ -93,13 +93,14 @@ dag_params = {
             "The case scheduler passes its own."
         ),
     ),
-    "journal_run_id": Param(
-        "",
-        type="string",
-        title="Case scheduler run",
+    "case_ids": Param(
+        None,
+        type=["null", "array"],
+        items={"type": "integer"},
+        title="Case ids",
         description=(
-            "Set by `radiant-case-scheduler`: run the cases its run decided `run` for in the pipeline journal. "
-            "Leave empty on a manual run, which discovers its own cases."
+            "The cases to run: `radiant-case-scheduler` passes the ones it decided `run` for, and an operator can "
+            "name cases to rerun. Leave empty (null) to discover the cases; an empty list runs nothing."
         ),
     ),
     "dry_run": Param(
@@ -165,28 +166,34 @@ def nextflow_snv_postprocessing_cases():
         do_xcom_push=True,
     )
 
-    # Started by the case scheduler: the journal holds the cases to run.
-    read_journal = RadiantStarRocksOperator(
-        task_id="read_journal",
-        task_display_name="[StarRocks] Read the cases the scheduler decided to run",
+    # Named cases, by the case scheduler or an operator: their facts.
+    fetch_case_facts = RadiantStarRocksOperator(
+        task_id="fetch_case_facts",
+        task_display_name="[StarRocks] Fetch the facts of the named cases",
         sql="./sql/clinical/germline_snv_facts_select.sql",
-        parameters={"journal_run_id": "{{ params.journal_run_id }}"},
+        parameters={"case_ids": "{{ params.case_ids }}"},
         output_processor=rows_output_processor,
         do_xcom_push=True,
     )
 
-    @task.branch(task_id="choose_scope", task_display_name="[PyOp] Journal or own discovery")
+    @task.branch(task_id="choose_scope", task_display_name="[PyOp] Named cases or own discovery")
     def choose_scope() -> str:
+        from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
-        return "read_journal" if get_current_context()["params"]["journal_run_id"] else "discover_scope"
+        case_ids = get_current_context()["params"]["case_ids"]
+        if case_ids is None:
+            return "discover_scope"
+        if not case_ids:
+            raise AirflowSkipException("nothing to run: no case named")
+        return "fetch_case_facts"
 
     @task(
         task_id="select_cases",
         task_display_name="[PyOp] Select the cases that can run",
         trigger_rule=TriggerRule.NONE_FAILED_MIN_ONE_SUCCESS,
     )
-    def select_cases(member_rows: Any, journal_rows: Any) -> Any:
+    def select_cases(member_rows: Any, fact_rows: Any) -> Any:
         """Keep what can run, report what cannot, and skip the run if nothing can."""
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
@@ -196,8 +203,8 @@ def nextflow_snv_postprocessing_cases():
 
         context = get_current_context()
         requested = list(context["params"]["task_ids"] or [])
-        if context["params"]["journal_run_id"]:
-            selection = select_run_cases(journal_rows or [], context["params"]["excluded_tenants"])
+        if context["params"]["case_ids"]:
+            selection = select_run_cases(fact_rows or [], context["params"]["excluded_tenants"])
         else:
             # Named tasks are an operator's request, so a case that cannot be resolved is an
             # error. A discovered scope is the job's own doing, so it is a line in a report.
@@ -220,8 +227,8 @@ def nextflow_snv_postprocessing_cases():
             "excluded": [e.model_dump() for e in selection.excluded],
         }
 
-    choose_scope() >> [discover_scope, read_journal]
-    selection = select_cases(discover_scope.output, read_journal.output)
+    choose_scope() >> [discover_scope, fetch_case_facts]
+    selection = select_cases(discover_scope.output, fetch_case_facts.output)
 
     fetch_phenotypes = RadiantStarRocksOperator(
         task_id="fetch_phenotypes",
