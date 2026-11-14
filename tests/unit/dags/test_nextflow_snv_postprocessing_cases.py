@@ -82,6 +82,8 @@ def test_the_outcomes_do_not_decide_the_run_state(dag_bag):
     assert outcomes.is_teardown
     assert not outcomes.on_failure_fail_dagrun
     assert outcomes.trigger_rule == "all_done_setup_success"
+    # Its failure does not fail the run: retried, for a passing outage of StarRocks.
+    assert outcomes.retries == 2
 
 
 def test_it_does_not_email_the_laboratories(dag_bag):

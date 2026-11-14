@@ -27,6 +27,7 @@ Full analysis: `design/SJRA-1698-nextflow-postprocessing-automation.md`, which b
 `design/SJRA-1843-nextflow-postprocessing-from-cases.md`.
 """
 
+import datetime
 import logging
 import os
 from typing import Any
@@ -58,6 +59,10 @@ PORTAL_CONN_ID = "radiant_api_conn"
 
 # `select_cases` XCom: what it selected and left out, read back by `journal_outcomes`.
 SELECTION_KEY = "selection"
+
+# The journal write is idempotent (an unchanged marker is not written twice), so a retry is safe.
+JOURNAL_RETRIES = 2
+JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
 
 # Under the shared roots, apart from quality control (`qc-runs/`, `qc/`).
 INPUTS_SUBDIR = "snv-runs"
@@ -375,7 +380,13 @@ def nextflow_snv_postprocessing_cases():
             raise AirflowFailException(f"batch {batch_id} did not succeed: status={report.get('status')}")
         return {"tenant": tenant, "report": report}
 
-    @task(task_id="journal_outcomes", task_display_name="[PyOp] Journal what the run did with its cases")
+    # Retried: the run's state ignores this teardown, so a failed write is only seen on its own task.
+    @task(
+        task_id="journal_outcomes",
+        task_display_name="[PyOp] Journal what the run did with its cases",
+        retries=JOURNAL_RETRIES,
+        retry_delay=JOURNAL_RETRY_DELAY,
+    )
     def journal_outcomes() -> int:
         """`succeeded` for the cases of the tenants registered, `failed` for the others and the cases left out."""
         from airflow.exceptions import AirflowSkipException

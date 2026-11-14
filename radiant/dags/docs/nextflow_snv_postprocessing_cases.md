@@ -304,6 +304,9 @@ the run's state ignores it, so a failed pipeline or registration still fails the
 
 A dry run writes nothing. A `failed` case runs again on the next scheduler run, its facts unchanged.
 
+If the write fails, the run stays green (the teardown does not count) and only **journal_outcomes** is red. It is
+retried twice; past that, the case's `run` row stays open. The data is not affected: the batch is registered.
+
 ## Out of scope: cases without gVCFs
 
 Not every germline case has per-sample gVCFs. Some were joint-called upstream: their
