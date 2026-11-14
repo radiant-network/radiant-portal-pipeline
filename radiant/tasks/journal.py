@@ -56,7 +56,16 @@ def write(cursor, mapping: dict, entries: list[Entry], run_id: str, decided_at: 
         return
     decided_at = decided_at or datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
     rows = [
-        (e.case_id, e.pipeline, e.item_key, decided_at, run_id, e.decision, _dump_reasons(e.reasons)) for e in entries
+        {
+            "case_id": e.case_id,
+            "pipeline": str(e.pipeline),
+            "item_key": e.item_key,
+            "decided_at": decided_at,
+            "run_id": run_id,
+            "decision": str(e.decision),
+            "reasons": _dump_reasons(e.reasons),
+        }
+        for e in entries
     ]
     cursor.executemany(_render("pipeline_journal_insert.sql", mapping), rows)
 
