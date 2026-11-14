@@ -44,6 +44,7 @@ _MOCK_PARAMS = {
     "ingested_at": None,
     "tenants": ["chusj", "radiant"],
     "tenant_code": "chusj",
+    "pipeline": "germline_snv",
 }
 
 # `open_data_release_insert.sql` builds its VALUES from a row list; with none it renders `VALUES ;`.
