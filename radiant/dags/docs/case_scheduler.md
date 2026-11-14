@@ -64,6 +64,19 @@ before this DAG saw the case (a manual rerun, data imported before the statuses 
 otherwise leave it `submitted` for ever. The same run's `evaluate_cases` moves them on once
 nothing is pending for them.
 
+## Journal
+
+`facts_germline_snv` reads the facts of the germline SNV candidates (`sql/clinical/germline_snv_facts_select.sql`).
+A candidate is a germline case with no experiment yet, or with a member's current experiment not yet annotated,
+whether its documents are there or not. `journal_germline_snv` decides each case in Python (`decide_cases`: run,
+wait, blocked or skip, with all the reasons) and writes it to `pipeline_journal`.
+
+- `run` is written on every pass. Any other decision is written only when it, or its reasons, differ from the
+  case's last row (view `pipeline_state`).
+- When a case has several reasons, skip wins over blocked, and blocked over wait.
+- The journal decides nothing yet: the "from Cases" DAG still selects its own cases, and the same ones. Nothing
+  waits for these two tasks; if they fail, `watcher` turns the run red.
+
 ## Variant data
 
 `has_variants`, in `sql/clinical/case_status_select.sql`: at least one experiment of the case

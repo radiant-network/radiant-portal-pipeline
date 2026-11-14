@@ -93,6 +93,16 @@ class Reason(BaseModel):
         return f"{self.code}:{self.detail}" if self.detail else str(self.code)
 
 
+# When an item has several reasons, the decision of the first of these that applies.
+_PRECEDENCE = (Decision.SKIP, Decision.BLOCKED, Decision.WAIT)
+
+
+def decision_of(reasons) -> Decision:
+    """`run` without a reason; otherwise skip, then blocked, then wait."""
+    decisions = {r.decision for r in reasons}
+    return next((d for d in _PRECEDENCE if d in decisions), Decision.RUN)
+
+
 # The fact queries still return one code per document kind; each maps to a shared code.
 _QUERY_CODES = {
     "no_gvcf": (ReasonCode.MISSING_INPUT, "gvcf"),

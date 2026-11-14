@@ -1,7 +1,7 @@
 import datetime
 
 from radiant.tasks.decision import Decision, Reason, ReasonCode
-from radiant.tasks.journal import Entry, Pipeline, _dump_reasons, _load_reasons, to_write, write
+from radiant.tasks.journal import Entry, Pipeline, _dump_reasons, _load_reasons, record, to_write, write
 
 ALIGNMENT = Reason(code=ReasonCode.PENDING_ALIGNMENT)
 NO_GVCF = Reason(code=ReasonCode.MISSING_INPUT, detail="gvcf")
@@ -102,3 +102,49 @@ def test_nothing_to_write_sends_nothing():
     cursor = _Cursor()
     write(cursor, {}, [], "scheduled__x")
     assert cursor.calls == []
+
+
+class _Connection:
+    def __init__(self, state_rows):
+        self.cursor_ = _StateCursor(state_rows)
+        self.committed = False
+
+    def cursor(self):
+        return self.cursor_
+
+    def commit(self):
+        self.committed = True
+
+
+class _StateCursor(_Cursor):
+    description = [("case_id",), ("pipeline",), ("item_key",), ("decision",), ("reasons",)]
+
+    def __init__(self, state_rows):
+        super().__init__()
+        self.state_rows = state_rows
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        return False
+
+    def execute(self, sql, params):
+        assert params == {"pipeline": "germline_snv"}
+
+    def fetchall(self):
+        return self.state_rows
+
+
+def test_record_writes_only_what_changed_and_commits(monkeypatch):
+    from airflow.hooks.base import BaseHook
+
+    connection = _Connection([(812, "germline_snv", "", "wait", '[{"code": "pending_alignment", "detail": ""}]')])
+    hook = type("Hook", (), {"get_conn": lambda self: connection})()
+    monkeypatch.setattr(BaseHook, "get_connection", lambda conn_id: type("C", (), {"get_hook": lambda self: hook})())
+
+    unchanged, new = entry(Decision.WAIT, ALIGNMENT), entry(Decision.RUN, case_id=9)
+    assert record([unchanged, new], "scheduled__x") == [new]
+    [(_, rows)] = connection.cursor_.calls
+    assert [row[0] for row in rows] == [9]
+    assert connection.committed

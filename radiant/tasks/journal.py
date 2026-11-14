@@ -79,6 +79,24 @@ def read_state(cursor, mapping: dict, pipeline: Pipeline) -> dict[ItemKey, Entry
     return state
 
 
+def record(entries: list[Entry], run_id: str, conf: dict | None = None) -> list[Entry]:
+    """Write to the journal what changed in `entries`, over the Airflow StarRocks connection; return it."""
+    from airflow.hooks.base import BaseHook
+
+    from radiant.tasks.data.radiant_tables import get_radiant_mapping
+
+    mapping = get_radiant_mapping(conf)
+    connection = BaseHook.get_connection("starrocks_conn").get_hook().get_conn()
+    with connection.cursor() as cursor:
+        state = {}
+        for pipeline in {e.pipeline for e in entries}:
+            state |= read_state(cursor, mapping, pipeline)
+        changed = to_write(entries, state)
+        write(cursor, mapping, changed, run_id)
+    connection.commit()
+    return changed
+
+
 def _changed(entry: Entry, last: Entry | None) -> bool:
     # Reasons are compared as a set: their order carries no meaning.
     return last is None or (entry.decision, set(entry.reasons)) != (last.decision, set(last.reasons))

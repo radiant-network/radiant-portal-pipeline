@@ -22,7 +22,8 @@ import logging
 
 from pydantic import BaseModel
 
-from radiant.tasks.decision import Reason, ReasonCode, from_query
+from radiant.tasks.decision import Reason, ReasonCode, decision_of, from_query
+from radiant.tasks.journal import Entry, Pipeline
 from radiant.tasks.nextflow.model import CaseMember, Family, Phenotype, family_id
 
 LOGGER = logging.getLogger(__name__)
@@ -116,6 +117,31 @@ def select_cases(
     return selection
 
 
+def decide_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Entry]:
+    """One journal entry per case of `germline_snv_facts_select.sql`: the decision and all its reasons.
+
+    Same checks as `select_cases`, so a case runs here exactly when it would be selected there.
+    """
+    members = [CaseMember(**row) for row in fact_rows]
+    for member in members:
+        member.exclusion_reason = _query_reason(member, excluded_tenants)
+
+    entries = []
+    for case_id, case_members in sorted(_group_by_case(members).items()):
+        reasons = [reason for reason, _ in _validate(case_id, case_members)]
+        # Case-level reasons count even when a member already has one: a tenant left out is a skip.
+        first = case_members[0]
+        if first.project_code is None:
+            reasons.append(Reason(code=ReasonCode.NO_PROJECT_CODE))
+        if first.tenant_code in excluded_tenants:
+            reasons.append(Reason(code=ReasonCode.TENANT_EXCLUDED))
+        reasons = tuple(dict.fromkeys(reasons))
+        entries.append(
+            Entry(case_id=case_id, pipeline=Pipeline.GERMLINE_SNV, decision=decision_of(reasons), reasons=reasons)
+        )
+    return entries
+
+
 def resolve_families(member_rows: list[dict], phenotype_rows: list[dict]) -> list[Family]:
     """Build one `Family` per case. `select_cases` has already validated these rows."""
     members = [CaseMember(**row) for row in member_rows]
@@ -143,6 +169,23 @@ def _group_by_case(members: list[CaseMember]) -> dict[int, list[CaseMember]]:
     for case_members in by_case.values():
         case_members.sort(key=lambda m: (REL_ORDER.get(m.role, 9), m.patient_id))
     return by_case
+
+
+def _query_reason(member: CaseMember, excluded_tenants: list[str]) -> str | None:
+    """The code `pending_annotation_select.sql` gives this member, from the facts: most specific first."""
+    if member.seq_id is None:
+        return "pending_sequencing"
+    if member.current_alignment_task_id is None:
+        return "pending_alignment"
+    if member.gvcf_matches == 0:
+        return "no_gvcf"
+    if member.gvcf_matches > 1:
+        return "ambiguous_gvcf"
+    if member.project_code is None:
+        return "no_project_code"
+    if member.tenant_code in excluded_tenants:
+        return "tenant_excluded"
+    return None
 
 
 def _validate(case_id: int, members: list[CaseMember]) -> list[tuple[Reason, str]]:
