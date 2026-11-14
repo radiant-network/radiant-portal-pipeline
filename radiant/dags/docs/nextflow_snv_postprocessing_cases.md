@@ -20,6 +20,7 @@ clinical model, and turning its outputs into portal tasks.
 | 7 | **collect_outputs** | Lists what the pipeline published |
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 | 9 | **journal_outcomes** | Writes `succeeded` or `failed` for each named case to the pipeline journal, whatever happened |
+| 10 | **watcher** | Fails the run if a step failed: **journal_outcomes** ends green whatever happened |
 
 It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
 daily with its own `excluded_tenants`, and moves the case statuses around it. Run

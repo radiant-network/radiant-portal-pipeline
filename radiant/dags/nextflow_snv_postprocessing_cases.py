@@ -184,7 +184,8 @@ def nextflow_snv_postprocessing_cases():
         )
         return _selection_payload(selection)
 
-    has_cases() >> fetch_case_members
+    named = has_cases()
+    named >> fetch_case_members
     selection = select_cases(fetch_case_members.output)
 
     fetch_phenotypes = RadiantStarRocksOperator(
@@ -422,8 +423,35 @@ def nextflow_snv_postprocessing_cases():
     collected = collect_outputs(families, paths)
     # The laboratories are emailed by `radiant-case-scheduler`, once the cases reach
     # `in_progress` with every pipeline's results registered, not by this DAG.
-    registered = register_tasks.partial(families=families, collected=collected).expand(tenant=list_tenants(families))
-    [selection, registered] >> journal_outcomes()
+    tenants = list_tenants(families)
+    registered = register_tasks.partial(families=families, collected=collected).expand(tenant=tenants)
+    outcomes = journal_outcomes()
+    [selection, registered] >> outcomes
+
+    @task(
+        task_id="watcher",
+        task_display_name="[PyOp] Fail the run if a step failed",
+        trigger_rule=TriggerRule.ONE_FAILED,
+    )
+    def watcher() -> None:
+        """`journal_outcomes` runs whatever happened and ends green: without this, a failed run would too."""
+        from airflow.exceptions import AirflowFailException
+
+        raise AirflowFailException("a step of this run failed, see the failed task(s)")
+
+    [
+        named,
+        fetch_case_members,
+        selection,
+        fetch_phenotypes,
+        families,
+        tenants,
+        paths,
+        run_pipeline,
+        collected,
+        registered,
+        outcomes,
+    ] >> watcher()
 
     selection >> fetch_phenotypes
     paths >> run_pipeline >> collected
