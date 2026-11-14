@@ -19,6 +19,7 @@ clinical model, and turning its outputs into portal tasks.
 | 6 | **run_pipeline** | Triggers the pipeline DAG and waits |
 | 7 | **collect_outputs** | Lists what the pipeline published |
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
+| 9 | **journal_outcomes** | Writes `succeeded` or `failed` for each named case to the pipeline journal, whatever happened |
 
 It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
 daily with its own `excluded_tenants`, and moves the case statuses around it. Run
@@ -289,6 +290,18 @@ emailed each time. The proband is never left out: without it the case waits.
 A member present with wrong data (two gVCFs, no aliquot) still blocks the case. Here, a member other than the
 proband with no gVCF is left out; the scheduler has already told "not aligned yet" from "aligned without a gVCF"
 (**blocked**).
+
+## The journal: succeeded or failed
+
+**journal_outcomes** runs last, whatever happened before it, and writes a marker per named case to
+**pipeline_journal**, under this run's id. It closes the `run` row the scheduler wrote.
+
+- **succeeded**: the case's tenant batch is registered.
+- **failed**: the pipeline, the output collection or the case's tenant batch failed. A failure is always the whole
+  run or a whole tenant's batch, so the marker carries no reason: the task logs say why.
+- **failed**, with its reason: a named case the check left out (the data moved since the scheduler decided).
+
+A dry run writes nothing. A `failed` case runs again on the next scheduler run, its facts unchanged.
 
 ## Out of scope: cases without gVCFs
 
