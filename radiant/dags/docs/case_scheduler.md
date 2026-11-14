@@ -68,8 +68,8 @@ nothing is pending for them.
 
 `facts_germline_snv` reads the facts of the germline SNV candidates (`sql/clinical/germline_snv_facts_select.sql`).
 A candidate is a germline case with no experiment yet, or with a member's current experiment not yet annotated,
-whether its documents are there or not. `journal_germline_snv` decides each case in Python (`decide_cases`: run,
-wait, blocked or skip, with all the reasons) and writes it to `pipeline_journal`.
+whether its documents are there or not. `decide_germline_snv` decides each case in Python (`decide_cases`: run,
+wait, blocked or skip, with all the reasons), and `journal_germline_snv` writes it to `pipeline_journal`.
 
 - `run` is written on every pass. Any other decision is written only when it, or its reasons, differ from the
   case's last row (view `pipeline_state`).
