@@ -2,6 +2,7 @@ import logging
 
 import pytest
 
+from radiant.tasks.decision import Reason, ReasonCode
 from radiant.tasks.nextflow.qc.resolve import CaseResolutionError, resolve_cases, select_cases, tenants_of
 
 from .conftest import member_row
@@ -29,7 +30,7 @@ def test_a_member_without_documents_still_comes_back(trio_rows):
     ]
     selection = select_cases(rows)
     assert selection.case_ids == []
-    assert [e.reason for e in selection.excluded] == ["pending_sequencing"]
+    assert [e.reason.code for e in selection.excluded] == ["pending_sequencing"]
 
 
 def test_members_come_out_proband_first(trio_rows):
@@ -50,8 +51,8 @@ def test_two_tarballs_exclude_the_case(trio_rows, singleton_rows):
     rows = [r | ambiguous if r["role"] == "father" else r for r in trio_rows]
     selection = select_cases(rows + singleton_rows)
     assert selection.case_ids == [8]
-    assert [e.reason for e in selection.excluded] == ["ambiguous_dragen_metrics"]
-    assert "more than one DRAGEN metrics tarball" in selection.excluded[0].detail
+    assert [e.reason for e in selection.excluded] == [Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="metrics")]
+    assert "more than one metrics document" in selection.excluded[0].message
 
 
 def test_a_case_with_an_excluded_member_is_dropped_whole_in_lenient_mode(trio_rows, singleton_rows):
@@ -69,7 +70,7 @@ def test_a_case_with_an_excluded_member_is_dropped_whole_in_lenient_mode(trio_ro
     ]
     selection = select_cases(rows)
     assert selection.case_ids == [8]
-    assert [e.reason for e in selection.excluded] == ["pending_alignment"]
+    assert [e.reason.code for e in selection.excluded] == ["pending_alignment"]
 
 
 def test_strict_mode_raises_instead(trio_rows):
@@ -84,7 +85,7 @@ def test_strict_mode_raises_instead(trio_rows):
             documents=False,
         )
     ]
-    with pytest.raises(CaseResolutionError, match="published no CRAM"):
+    with pytest.raises(CaseResolutionError, match="published no cram document"):
         select_cases(rows, [900], strict=True)
 
 
@@ -105,12 +106,12 @@ def test_an_unknown_strategy_excludes(trio_rows):
     rows = [r | {"strategy": "rnas"} if r["role"] == "father" else r for r in trio_rows]
     selection = select_cases(rows)
     assert selection.case_ids == []
-    assert selection.excluded[0].reason == "unsupported_strategy"
+    assert selection.excluded[0].reason.code == "unsupported_strategy"
 
 
 def test_two_probands_exclude(trio_rows):
     rows = [r | {"role": "proband"} if r["role"] == "father" else r for r in trio_rows]
-    assert select_cases(rows).excluded[0].reason == "proband_count"
+    assert select_cases(rows).excluded[0].reason.code == "proband_count"
 
 
 def test_resolve_builds_one_case_with_a_ca_family_id(trio_rows, singleton_rows):
@@ -144,14 +145,16 @@ def test_a_germline_member_without_a_cram_is_still_excluded(trio_rows):
     ]
     selection = select_cases(rows)
     assert selection.case_ids == []
-    assert {e.reason for e in selection.excluded} == {"no_cram"}
+    assert {e.reason for e in selection.excluded} == {Reason(code=ReasonCode.MISSING_INPUT, detail="cram")}
 
 
 def test_a_tumor_with_two_tarballs_is_excluded_as_ambiguous(tumor_rows):
     rows = [r | {"dragen_metrics_matches": 2, "exclusion_reason": "ambiguous_dragen_metrics"} for r in tumor_rows]
     selection = select_cases(rows)
     assert selection.case_ids == []
-    assert [(e.case_id, e.reason) for e in selection.excluded] == [(23, "ambiguous_dragen_metrics")]
+    assert [(e.case_id, e.reason) for e in selection.excluded] == [
+        (23, Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="metrics"))
+    ]
 
 
 def test_a_tumor_without_a_tarball_is_excluded_as_no_metrics(tumor_rows, trio_rows, caplog):
@@ -160,14 +163,16 @@ def test_a_tumor_without_a_tarball_is_excluded_as_no_metrics(tumor_rows, trio_ro
     with caplog.at_level(logging.WARNING):
         selection = select_cases(rows + trio_rows)
     assert selection.case_ids == [1072]
-    assert [(e.case_id, e.reason) for e in selection.excluded] == [(23, "no_metrics")]
-    assert "case 23 excluded (no_metrics)" in caplog.text
-    assert "no DRAGEN metrics tarball" in caplog.text
+    assert [(e.case_id, e.reason) for e in selection.excluded] == [
+        (23, Reason(code=ReasonCode.MISSING_INPUT, detail="metrics"))
+    ]
+    assert "case 23 excluded (missing_input:metrics)" in caplog.text
+    assert "published no metrics document" in caplog.text
 
 
 def test_a_targeted_rerun_of_a_tumor_without_a_tarball_fails(tumor_rows):
     rows = [r | {"dragen_metrics_url": None, "exclusion_reason": "no_metrics"} for r in tumor_rows]
-    with pytest.raises(CaseResolutionError, match="no CRAM-directory fallback"):
+    with pytest.raises(CaseResolutionError, match="published no metrics document"):
         select_cases(rows, [76])
 
 

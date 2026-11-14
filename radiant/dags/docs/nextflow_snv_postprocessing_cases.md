@@ -84,8 +84,8 @@ one; grep its task log for "excluded".
 |:--|:--|:--|
 | **pending_sequencing** | A member has no completed sequencing experiment yet | Yes |
 | **pending_alignment** | A member's current experiment has no alignment task yet | Yes |
-| **no_gvcf** | The current alignment published no gVCF — joint-called upstream, out of scope | No |
-| **ambiguous_gvcf** | The current alignment published more than one gVCF. One task cannot legitimately do that, so a document is mistyped at the source — typically an index recorded with format_code 'gvcf' | No, fix the data |
+| **missing_input:gvcf** | The current alignment published no gVCF — joint-called upstream, out of scope | No |
+| **ambiguous_input:gvcf** | The current alignment published more than one gVCF. One task cannot legitimately do that, so a document is mistyped at the source — typically an index recorded with format_code 'gvcf' | No, fix the data |
 | **proband_count** | Two different patients are marked proband on the case | No, fix the data |
 | **unsupported_strategy** | A strategy outside {wgs, wxs, wes}, or several within one case | No |
 | **no_project_code** | cases.project_id did not resolve, and the batch PATCH needs it to look the case up | No |

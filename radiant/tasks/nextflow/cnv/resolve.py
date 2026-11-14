@@ -11,6 +11,7 @@ import logging
 
 from pydantic import BaseModel
 
+from radiant.tasks.decision import Reason, ReasonCode, from_query
 from radiant.tasks.nextflow.cnv.model import CnvFamily, CnvMember, family_id
 from radiant.tasks.nextflow.model import Phenotype
 from radiant.tasks.nextflow.resolve import REL_ORDER, SEQUENCING_TYPES, CaseResolutionError, ExcludedCase
@@ -20,36 +21,6 @@ LOGGER = logging.getLogger(__name__)
 # What the pipeline's samplesheet `caller` column accepts for a per-sample VCF. Matched
 # case-insensitively as a prefix against `task.pipeline_name` ("Dragen", "DRAGEN 4.2", ...).
 SUPPORTED_CALLER_PREFIX = "dragen"
-
-REASON_TEXT = {
-    "pending_sequencing": "has no completed sequencing experiment yet",
-    "pending_alignment": "its current sequencing experiment has no alignment task yet",
-    "no_gcnv": (
-        "its current alignment published no germline CNV VCF (`gcnv`/`vcf`) -- either the case was "
-        "joint-called upstream, or CNV calling was not run, and there is nothing to post-process"
-    ),
-    "ambiguous_gcnv": (
-        "its current alignment published more than one germline CNV VCF. One alignment task "
-        "cannot legitimately produce two, so a document is mistyped at the source -- typically an "
-        "index recorded with format_code 'vcf' instead of 'tbi'"
-    ),
-    "no_project_code": (
-        "the case has no project_code -- `cases.project_id` did not resolve to a row in "
-        "`project`, and the batch PATCH requires it to look the case up"
-    ),
-    "tenant_excluded": (
-        "its tenant is in `excluded_tenants` (`$RADIANT_ETL_EXCLUDED_TENANTS`), which the ETL "
-        "leaves out of case processing"
-    ),
-    "unsupported_caller": (
-        "its alignment was not produced by DRAGEN, and the pipeline's normalization step only "
-        "implements DRAGEN's CNV VCF conventions -- it would fail on the first process"
-    ),
-    "unknown_caller": (
-        "its alignment task has no pipeline_name, so the `caller=DRAGEN` the samplesheet requires "
-        "cannot be asserted -- record the caller on the alignment task"
-    ),
-}
 
 __all__ = ["CaseResolutionError", "ExcludedCase", "Selection", "select_cases", "resolve_families", "tenants_of"]
 
@@ -96,9 +67,9 @@ def select_cases(
         case_members = by_case[case_id]
         case_problems = _validate(case_id, case_members)
         if case_problems:
-            reason, detail = case_problems[0]
-            selection.excluded.append(ExcludedCase(case_id=case_id, reason=reason, detail=detail))
-            problems += [detail for _, detail in case_problems]
+            reason, message = case_problems[0]
+            selection.excluded.append(ExcludedCase(case_id=case_id, reason=reason, message=message))
+            problems += [message for _, message in case_problems]
             continue
         selection.members += case_members
         selection.case_ids.append(case_id)
@@ -107,7 +78,7 @@ def select_cases(
         raise CaseResolutionError("\n".join(problems))
 
     for excluded in selection.excluded:
-        LOGGER.warning("case %d excluded (%s): %s", excluded.case_id, excluded.reason, excluded.detail)
+        LOGGER.warning("case %d excluded (%s): %s", excluded.case_id, excluded.reason, excluded.message)
     if problems and not strict:
         LOGGER.warning("%d candidate case(s) excluded, %d kept", len(selection.excluded), len(selection.case_ids))
     return selection
@@ -135,23 +106,23 @@ def _group_by_case(members: list[CnvMember]) -> dict[int, list[CnvMember]]:
     return by_case
 
 
-def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[str, str]]:
-    """`(reason, detail)` pairs. Exclusion is at case granularity: the pipeline merges and
+def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[Reason, str]]:
+    """`(reason, message)` pairs. Exclusion is at case granularity: the pipeline merges and
     classifies whole families, so a family short one member is a different job."""
-    problems: list[tuple[str, str]] = []
+    problems: list[tuple[Reason, str]] = []
 
     for member in members:
         if member.exclusion_reason:
-            text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
-            problems.append((member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}"))
+            reason = from_query(member.exclusion_reason)
+            problems.append((reason, f"case {case_id}, patient {member.patient_id}: {reason.text}"))
 
     # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket), and the
     # `<proband>` segment of the Exomiser report names `collect_outputs` expects. The query
     # does not filter on it; this names the failure instead of a `None` in the samplesheet.
     for member in members:
         if not member.exclusion_reason and not member.aliquot:
-            detail = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
-            problems.append(("missing_aliquot", detail))
+            message = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
+            problems.append((Reason(code=ReasonCode.MISSING_ALIQUOT), message))
 
     # Fails closed: the samplesheet states `caller=DRAGEN` as a fact, and `task.pipeline_name`
     # is nullable. An alignment that does not say what produced it is excluded and reported
@@ -161,23 +132,17 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[str, str]]:
             continue  # already reported by the query (`pending_alignment`)
         pipeline = (member.alignment_pipeline or "").strip().lower()
         if not pipeline:
-            problems.append(
-                ("unknown_caller", f"case {case_id}, patient {member.patient_id}: {REASON_TEXT['unknown_caller']}")
-            )
+            reason = Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="unknown")
+            problems.append((reason, f"case {case_id}, patient {member.patient_id}: {reason.text}"))
         elif not pipeline.startswith(SUPPORTED_CALLER_PREFIX):
-            problems.append(
-                (
-                    "unsupported_caller",
-                    f"case {case_id}, patient {member.patient_id}: {REASON_TEXT['unsupported_caller']} "
-                    f"(alignment pipeline: {member.alignment_pipeline!r})",
-                )
-            )
+            reason = Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail=member.alignment_pipeline)
+            problems.append((reason, f"case {case_id}, patient {member.patient_id}: {reason.text}"))
 
     probands = [m for m in members if m.role == "proband"]
     if len(probands) != 1:
         problems.append(
             (
-                "proband_count",
+                Reason(code=ReasonCode.PROBAND_COUNT),
                 f"case {case_id}: expected exactly 1 proband, found {len(probands)} -- two "
                 f"different patients are marked proband on this case",
             )
@@ -187,13 +152,19 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[str, str]]:
     unknown = {s for s in strategies if s.lower() not in SEQUENCING_TYPES}
     if unknown:
         problems.append(
-            ("unsupported_strategy", f"case {case_id}: unsupported experimental strategy {sorted(unknown)}")
+            (
+                Reason(code=ReasonCode.UNSUPPORTED_STRATEGY, detail=",".join(sorted(unknown))),
+                f"case {case_id}: unsupported experimental strategy {sorted(unknown)}",
+            )
         )
     elif len(strategies) > 1:
         # The samplesheet carries `sequencingType` per row, but Exomiser's analysis file is
         # chosen per family from it, so mixed strategies would be silently mis-analysed.
         problems.append(
-            ("unsupported_strategy", f"case {case_id}: members span several strategies {sorted(strategies)}")
+            (
+                Reason(code=ReasonCode.UNSUPPORTED_STRATEGY, detail=",".join(sorted(strategies))),
+                f"case {case_id}: members span several strategies {sorted(strategies)}",
+            )
         )
 
     return problems

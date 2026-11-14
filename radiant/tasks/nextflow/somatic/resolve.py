@@ -16,6 +16,7 @@ from collections import defaultdict
 
 from pydantic import BaseModel
 
+from radiant.tasks.decision import Reason, ReasonCode, from_query
 from radiant.tasks.nextflow.resolve import SEQUENCING_TYPES, CaseResolutionError
 from radiant.tasks.nextflow.somatic.model import NORMAL, TUMORAL, CallingTask, CallingTaskRow, SomaticCase
 
@@ -27,29 +28,8 @@ __all__ = ["CaseResolutionError", "ExcludedTask", "Selection", "select_tasks", "
 # always tumor-only.
 SINGLE_ALIQUOT_TASK_TYPE = "alignment_somatic_variant_calling"
 
-TASK_REASON_TEXT = {
-    "pending_sequencing": "one of its sequencing experiments is not `completed` yet",
-    "no_ssnv": (
-        "it published no somatic SNV VCF (`ssnv`/`vcf`) -- either the VCF is typed otherwise at the "
-        "source, or the task was sent the old way, with its annotation from QLIN"
-    ),
-    "ambiguous_ssnv": (
-        "it published more than one somatic SNV VCF. One calling task cannot legitimately produce "
-        "two, so a document is mistyped at the source -- typically an index recorded with format_code "
-        "'vcf' instead of 'tbi'"
-    ),
-}
-
-CASE_REASON_TEXT = {
-    "no_project_code": (
-        "the case has no project_code -- `cases.project_id` did not resolve to a row in `project`, "
-        "and the batch PATCH requires it to look the case up"
-    ),
-    "tenant_excluded": (
-        "its tenant is in `excluded_tenants` (`$RADIANT_ETL_EXCLUDED_TENANTS`), which the ETL leaves "
-        "out of case processing"
-    ),
-}
+# Reasons about the task itself: they exclude it from every case it belongs to.
+TASK_REASONS = {ReasonCode.PENDING_SEQUENCING, ReasonCode.MISSING_INPUT, ReasonCode.AMBIGUOUS_INPUT}
 
 
 class ExcludedTask(BaseModel):
@@ -57,8 +37,8 @@ class ExcludedTask(BaseModel):
 
     task_id: int
     case_ids: list[int]
-    reason: str
-    detail: str
+    reason: Reason
+    message: str
 
 
 class Selection(BaseModel):
@@ -110,7 +90,7 @@ def select_tasks(
     for task_id in sorted(by_task):
         task, excluded = _resolve(task_id, by_task[task_id])
         selection.excluded += excluded
-        problems += [e.detail for e in excluded]
+        problems += [e.message for e in excluded]
         if task:
             selection.tasks.append(task)
 
@@ -123,7 +103,7 @@ def select_tasks(
             excluded.task_id,
             excluded.case_ids,
             excluded.reason,
-            excluded.detail,
+            excluded.message,
         )
     if problems and not strict:
         LOGGER.warning(
@@ -146,18 +126,18 @@ def _resolve(
 
     task_problems = _validate_task(task_id, rows)
     if task_problems:
-        reason, detail = task_problems[0]
-        detail = "\n".join(d for _, d in task_problems)
-        return None, [ExcludedTask(task_id=task_id, case_ids=case_ids, reason=reason, detail=detail)]
+        reason = task_problems[0][0]
+        message = "\n".join(m for _, m in task_problems)
+        return None, [ExcludedTask(task_id=task_id, case_ids=case_ids, reason=reason, message=message)]
 
     cases, excluded = [], []
     for case_id in case_ids:
         case_rows = rows_by_case[case_id]
-        reason = next((r.exclusion_reason for r in case_rows if r.exclusion_reason), None)
-        if reason:
-            text = CASE_REASON_TEXT.get(reason, "is not usable")
-            detail = f"calling task {task_id}, case {case_id}: {text}"
-            excluded.append(ExcludedTask(task_id=task_id, case_ids=[case_id], reason=reason, detail=detail))
+        code = next((r.exclusion_reason for r in case_rows if r.exclusion_reason), None)
+        if code:
+            reason = from_query(code)
+            message = f"calling task {task_id}, case {case_id}: {reason.text}"
+            excluded.append(ExcludedTask(task_id=task_id, case_ids=[case_id], reason=reason, message=message))
             continue
         first = case_rows[0]
         cases.append(
@@ -185,19 +165,23 @@ def _resolve(
     return task, excluded
 
 
-def _validate_task(task_id: int, rows: list[CallingTaskRow]) -> list[tuple[str, str]]:
-    """`(reason, detail)` pairs about the task itself, whichever case frames it."""
-    problems: list[tuple[str, str]] = []
+def _validate_task(task_id: int, rows: list[CallingTaskRow]) -> list[tuple[Reason, str]]:
+    """`(reason, message)` pairs about the task itself, whichever case frames it."""
+    problems: list[tuple[Reason, str]] = []
 
-    for reason in dict.fromkeys(r.exclusion_reason for r in rows if r.exclusion_reason in TASK_REASON_TEXT):
-        problems.append((reason, f"calling task {task_id}: {TASK_REASON_TEXT[reason]}"))
+    reasons = [from_query(r.exclusion_reason) for r in rows if r.exclusion_reason]
+    for reason in dict.fromkeys(r for r in reasons if r.code in TASK_REASONS):
+        problems.append((reason, f"calling task {task_id}: {reason.text}"))
     if problems:
         return problems
 
     for row in rows:
         if not row.aliquot:
             problems.append(
-                ("missing_aliquot", f"calling task {task_id}: sequencing experiment {row.seq_id} has no aliquot")
+                (
+                    Reason(code=ReasonCode.MISSING_ALIQUOT),
+                    f"calling task {task_id}: sequencing experiment {row.seq_id} has no aliquot",
+                )
             )
 
     # The annotation task copies these aliquots, and the portal and the import classify it TO or
@@ -207,7 +191,7 @@ def _validate_task(task_id: int, rows: list[CallingTaskRow]) -> list[tuple[str, 
     if histologies not in ([TUMORAL], sorted([NORMAL, TUMORAL])):
         problems.append(
             (
-                "unsupported_samples",
+                Reason(code=ReasonCode.UNSUPPORTED_SAMPLES),
                 f"calling task {task_id}: expected one tumoral sample, plus at most one normal one, "
                 f"found {histologies}",
             )
@@ -215,7 +199,7 @@ def _validate_task(task_id: int, rows: list[CallingTaskRow]) -> list[tuple[str, 
     elif rows[0].calling_task_type == SINGLE_ALIQUOT_TASK_TYPE and len(rows) != 1:
         problems.append(
             (
-                "unsupported_samples",
+                Reason(code=ReasonCode.UNSUPPORTED_SAMPLES),
                 f"calling task {task_id}: a `{SINGLE_ALIQUOT_TASK_TYPE}` has exactly one aliquot, found {len(rows)}",
             )
         )
@@ -224,12 +208,15 @@ def _validate_task(task_id: int, rows: list[CallingTaskRow]) -> list[tuple[str, 
     unknown = sorted(s for s in strategies if s.lower() not in SEQUENCING_TYPES)
     if unknown or not strategies:
         problems.append(
-            ("unsupported_strategy", f"calling task {task_id}: unsupported experimental strategy {unknown}")
+            (
+                Reason(code=ReasonCode.UNSUPPORTED_STRATEGY, detail=",".join(unknown)),
+                f"calling task {task_id}: unsupported experimental strategy {unknown}",
+            )
         )
     elif len({SEQUENCING_TYPES[s.lower()] for s in strategies}) > 1:
         problems.append(
             (
-                "unsupported_strategy",
+                Reason(code=ReasonCode.UNSUPPORTED_STRATEGY, detail=",".join(sorted(strategies))),
                 f"calling task {task_id}: its experiments span several strategies {sorted(strategies)}",
             )
         )
