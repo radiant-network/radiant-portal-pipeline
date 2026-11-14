@@ -22,6 +22,7 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "run_pipeline",
         "collect_outputs",
         "register_tasks",
+        "journal_outcomes",
     }
     assert dag.validate() is None
 
@@ -61,8 +62,17 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     register = dag.get_task("register_tasks")
     assert {t.task_id for t in register.upstream_list} == {"resolve_cases", "collect_outputs", "list_tenants"}
-    assert register.downstream_list == []
+    assert {t.task_id for t in register.downstream_list} == {"journal_outcomes"}
     assert isinstance(register, MappedOperator)
+
+
+def test_the_outcomes_are_journaled_last_whatever_happened(dag_bag):
+    """A failed pipeline or registration is a `failed` marker, not a missing one."""
+    dag = dag_bag.get_dag(DAG_ID)
+    outcomes = dag.get_task("journal_outcomes")
+    assert outcomes.trigger_rule == "all_done"
+    assert {t.task_id for t in outcomes.upstream_list} == {"select_cases", "register_tasks"}
+    assert outcomes.downstream_list == []
 
 
 def test_it_does_not_email_the_laboratories(dag_bag):
