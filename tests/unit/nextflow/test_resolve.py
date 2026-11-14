@@ -341,3 +341,27 @@ def test_the_child_selects_from_the_facts_like_the_scheduler_decides():
     ran = {case_id for case_id, (decision, _) in _decided(facts, ["excluded"]).items() if decision == Decision.RUN}
     assert set(selected.case_ids) == ran == {1}
     assert {e.case_id for e in selected.excluded} == set(range(2, len(SCENARIOS) + 1))
+
+
+def _member(row, **overrides):
+    """A row of `germline_snv_case_members_select.sql`: no reason, no current alignment of its own."""
+    return {k: v for k, v in row.items() if k != "exclusion_reason"} | overrides
+
+
+def test_the_child_leaves_out_a_parent_with_no_gvcf_yet(trio_rows):
+    rows = [_member(r, **NO_GVCF) if r["role"] == "father" else _member(r) for r in trio_rows]
+    selection = select_run_cases(rows, [])
+    assert selection.case_ids == [1072]
+    assert sorted(m.role for m in selection.members) == ["mother", "proband"]
+
+
+def test_the_child_excludes_a_case_whose_proband_has_no_gvcf(trio_rows):
+    rows = [_member(r, **NO_GVCF) if r["role"] == "proband" else _member(r) for r in trio_rows]
+    selection = select_run_cases(rows, [])
+    assert selection.case_ids == []
+    assert [e.case_id for e in selection.excluded] == [1072]
+
+
+def test_the_child_excludes_a_case_with_two_gvcfs_for_a_member(trio_rows):
+    rows = [_member(r, gvcf_matches=2) if r["role"] == "mother" else _member(r) for r in trio_rows]
+    assert select_run_cases(rows, []).case_ids == []

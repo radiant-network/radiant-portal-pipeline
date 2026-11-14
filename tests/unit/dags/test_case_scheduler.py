@@ -12,7 +12,6 @@ CASES_DAG_IDS = {
 }
 # Each discovery task: the cases DAG and the task of it that runs the same query.
 DISCOVERY = {
-    "discover_germline_snv_cases": ("radiant-nextflow-snv-postprocessing-cases", "discover_scope"),
     "discover_germline_cnv_cases": ("radiant-nextflow-cnv-postprocessing-cases", "discover_scope"),
     "discover_somatic_snv_cases": ("radiant-nextflow-somatic-snv-annotation-cases", "discover_scope"),
     "discover_qc_cases": ("radiant-nextflow-quality-control-cases", "discover_germline"),
@@ -38,7 +37,6 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "discover_qc_cases",
         "discover_qc_somatic_cases",
         "discover_import_cases",
-        "facts_germline_snv",
         "decide_germline_snv",
         "journal_germline_snv",
         "fetch_case_statuses",
@@ -91,6 +89,9 @@ def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
         # Inherited from the DAG, not set per task: a run conf `excluded_tenants` must reach it.
         assert discover.params["excluded_tenants"] == dag.params["excluded_tenants"]
         assert discover.params["task_ids"] == []
+    # Germline SNV: the scheduler decides on the facts, and names the cases to its child.
+    germline_snv = dag.get_task("discover_germline_snv_cases")
+    assert germline_snv.sql.startswith("-- One row per (candidate germline case, family member)")
     import_sql = dag.get_task("discover_import_cases").sql
     assert "staging_sequencing_experiment_delta" in import_sql
     # A row leaves the delta once inserted: the ones `import_part` has not loaded are still pending.
@@ -104,7 +105,7 @@ def test_the_cases_dags_are_given_the_run_s_block_list(dag_bag):
     for task_id, cases_dag_id in CASES_DAG_IDS.items():
         expected = {"excluded_tenants": "{{ params.excluded_tenants }}"}
         if task_id == "trigger_germline_snv_postprocessing":
-            expected["case_ids"] = "{{ (ti.xcom_pull(task_ids='decide_germline_snv') or {}).get('run_case_ids') }}"
+            expected["case_ids"] = "{{ (ti.xcom_pull(task_ids='decide_germline_snv') or {}).get('run_case_ids', []) }}"
         assert dag.get_task(task_id).conf == expected
         assert "excluded_tenants" in dag_bag.get_dag(cases_dag_id).params
     assert not dag.get_task("trigger_import").conf
@@ -124,7 +125,12 @@ def test_the_block_list_defaults_to_the_env_var(dag_bag, monkeypatch):
 
 def test_discover_cases_reads_every_discovery_and_the_statuses(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
-    assert _upstream(dag, "discover_cases") == {*DISCOVERY, "discover_import_cases", "fetch_case_statuses"}
+    assert _upstream(dag, "discover_cases") == {
+        *DISCOVERY,
+        "discover_germline_snv_cases",
+        "discover_import_cases",
+        "fetch_case_statuses",
+    }
     assert "{{ mapping.starrocks_pipeline_case }}" in dag.get_task("fetch_case_statuses").sql
 
 
@@ -178,7 +184,12 @@ def test_evaluation_waits_for_every_pipeline_and_stops_if_one_failed(dag_bag):
     """A failed import, CNV post-processing or quality control leaves the second pass, and so the
     status changes and the emails after it, upstream_failed."""
     dag = dag_bag.get_dag(DAG_ID)
-    second_pass = ["refresh_case_statuses", *(f"re{task_id}" for task_id in DISCOVERY), "rediscover_import_cases"]
+    second_pass = [
+        "refresh_case_statuses",
+        *(f"re{task_id}" for task_id in DISCOVERY),
+        "rediscover_germline_snv_cases",
+        "rediscover_import_cases",
+    ]
     for task_id in second_pass:
         assert dag.get_task(task_id).trigger_rule == TriggerRule.NONE_FAILED
         assert _upstream(dag, task_id) == {
@@ -226,17 +237,13 @@ def test_the_pinned_run_id_is_not_a_reserved_scheduled_id(dag_bag):
 def test_the_germline_snv_child_waits_for_the_decisions_not_the_journal(dag_bag):
     """It runs the cases decided `run`; writing the journal holds nothing back."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert {t.task_id for t in dag.get_task("facts_germline_snv").downstream_list} == {
-        "decide_germline_snv",
-        "watcher",
-    }
+    assert "decide_germline_snv" in {t.task_id for t in dag.get_task("discover_germline_snv_cases").downstream_list}
     assert {t.task_id for t in dag.get_task("decide_germline_snv").downstream_list} == {
         "journal_germline_snv",
         "trigger_germline_snv_postprocessing",
         "watcher",
     }
     assert {t.task_id for t in dag.get_task("journal_germline_snv").downstream_list} == {"watcher"}
-    assert dag.get_task("facts_germline_snv").sql.startswith("-- One row per (candidate germline case")
 
 
 def test_a_failed_step_fails_the_run(dag_bag):

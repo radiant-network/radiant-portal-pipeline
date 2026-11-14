@@ -130,8 +130,8 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
     return [
         query(
             "germline_snv",
-            "Cases pending germline SNV post-processing",
-            "./sql/clinical/pending_annotation_select.sql",
+            "Facts of the germline SNV candidates",
+            "./sql/clinical/germline_snv_facts_select.sql",
         ),
         query(
             "germline_cnv",
@@ -160,9 +160,14 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
 def _cases_with_work(
     germline_snv_rows: Any, germline_cnv_rows: Any, somatic_snv_rows: Any, qc_rows: Any, import_rows: Any
 ) -> set[int]:
+    from airflow.sdk import get_current_context
+
     from radiant.tasks.nextflow.case_status import cases_with_work
 
-    return cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
+    excluded_tenants = get_current_context()["params"]["excluded_tenants"]
+    return cases_with_work(
+        germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows, excluded_tenants
+    )
 
 
 @dag(
@@ -211,14 +216,6 @@ def case_scheduler():
         waiting = _cases_with_work(germline_snv_rows, germline_cnv_rows, somatic_snv_rows, qc_rows, import_rows)
         context["ti"].xcom_push(key=CASES_WITH_WORK_KEY, value=sorted(waiting))
         return plan_processing(status_rows, waiting, context["params"]["excluded_tenants"])
-
-    facts_germline_snv = RadiantStarRocksOperator(
-        task_id="facts_germline_snv",
-        task_display_name="[StarRocks] Facts of the germline SNV candidates",
-        sql="./sql/clinical/germline_snv_facts_select.sql",
-        output_processor=rows_output_processor,
-        do_xcom_push=True,
-    )
 
     @task(task_id="decide_germline_snv", task_display_name="[PyOp] Decide germline SNV")
     def decide_germline_snv(fact_rows: Any) -> dict:
@@ -353,7 +350,7 @@ def case_scheduler():
     def watcher() -> None:
         raise AirflowFailException("a step of this run failed, see the failed task(s) and the child runs")
 
-    decided_germline_snv = decide_germline_snv(facts_germline_snv.output)
+    decided_germline_snv = decide_germline_snv(discovered[0].output)
     journaled_germline_snv = journal_germline_snv(decided_germline_snv)
     batches = discover_cases(*(query.output for query in discovered), fetch_case_statuses.output)
     processing = set_processing.expand(batch=batches)
@@ -362,9 +359,9 @@ def case_scheduler():
         "trigger_germline_snv_postprocessing",
         "[DAG] Nextflow SNV Post-processing (from Cases)",
         GERMLINE_SNV_CASES_DAG_ID,
-        # The cases this run decided `run` for. If deciding failed: none named, so the child discovers its own.
+        # The cases this run decided `run` for; none if deciding failed, and `watcher` turns the run red.
         EXCLUDED_TENANTS_CONF
-        | {"case_ids": "{{ (ti.xcom_pull(task_ids='decide_germline_snv') or {}).get('run_case_ids') }}"},
+        | {"case_ids": "{{ (ti.xcom_pull(task_ids='decide_germline_snv') or {}).get('run_case_ids', []) }}"},
     )
     trigger_germline_cnv = _trigger(
         "trigger_germline_cnv_postprocessing",
@@ -404,7 +401,6 @@ def case_scheduler():
 
     [
         *discovered,
-        facts_germline_snv,
         decided_germline_snv,
         journaled_germline_snv,
         fetch_case_statuses,

@@ -27,7 +27,7 @@ def case_id_of(fam_id: str) -> int:
 
 
 class CaseMember(BaseModel):
-    """One row of `sql/clinical/pending_annotation_select.sql`.
+    """One member row of `sql/clinical/germline_snv_facts_select.sql` or `germline_snv_case_members_select.sql`.
 
     Everything describing the member's sequencing is optional, because the query returns a
     member that has none rather than dropping it. A family silently short one person is a
@@ -49,8 +49,7 @@ class CaseMember(BaseModel):
     seq_id: int | None = None
     aliquot: str | None = None
     strategy: str | None = None
-    # The alignment task the gVCF hangs off -- the newest one for this experiment. Carried
-    # so a targeted `task_ids` run can report a task that produced no candidate case.
+    # The alignment task the gVCF hangs off -- the newest one for this experiment.
     alignment_task_id: int | None = None
     gvcf_url: str | None = None
     gvcf_matches: int = 0

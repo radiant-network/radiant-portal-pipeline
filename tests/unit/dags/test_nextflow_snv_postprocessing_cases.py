@@ -12,9 +12,8 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
-        "choose_scope",
-        "discover_scope",
-        "fetch_case_facts",
+        "has_cases",
+        "fetch_case_members",
         "select_cases",
         "fetch_phenotypes",
         "resolve_cases",
@@ -33,9 +32,9 @@ def test_it_finds_its_own_work(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
     assert dag.schedule is None
-    assert {t.task_id for t in dag.get_task("discover_scope").upstream_list} == {"choose_scope"}
+    assert {t.task_id for t in dag.get_task("fetch_case_members").upstream_list} == {"has_cases"}
     # No default would make a scheduled run fail validation at trigger time.
-    assert dag.params["task_ids"] == []
+    assert dag.params["case_ids"] == []
 
 
 def test_phenotypes_are_fetched_for_the_selected_cases_only(dag_bag):
@@ -73,16 +72,13 @@ def test_it_does_not_email_the_laboratories(dag_bag):
     assert not {"create_case_group", "notify_labs"} & set(dag.task_ids)
 
 
-def test_named_cases_are_run_otherwise_the_dag_discovers(dag_bag):
-    """The scheduler names the cases it decided `run` for; with none named, the DAG discovers its own."""
+def test_it_runs_the_named_cases_and_decides_nothing(dag_bag):
+    """The scheduler names the cases it decided `run` for; none named runs nothing."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert dag.params["case_ids"] is None
-    assert {t.task_id for t in dag.get_task("choose_scope").downstream_list} == {"discover_scope", "fetch_case_facts"}
-    assert "%(case_ids)s" in dag.get_task("fetch_case_facts").sql
-    assert set(dag.get_task("fetch_case_facts").parameters) == {"case_ids"}
-    select = dag.get_task("select_cases")
-    assert {t.task_id for t in select.upstream_list} == {"discover_scope", "fetch_case_facts"}
-    assert select.trigger_rule == "none_failed_min_one_success"
+    assert "%(case_ids)s" in dag.get_task("fetch_case_members").sql
+    assert "annotated" not in dag.get_task("fetch_case_members").sql
+    assert set(dag.get_task("fetch_case_members").parameters) == {"case_ids"}
+    assert {t.task_id for t in dag.get_task("select_cases").upstream_list} == {"fetch_case_members"}
 
 
 def test_dag_asks_for_nothing_it_can_work_out_itself(dag_bag):
@@ -91,7 +87,7 @@ def test_dag_asks_for_nothing_it_can_work_out_itself(dag_bag):
     schema, so the tenant is read off the cases. What is left is intent: which tasks (none,
     normally), where writes are permitted, and whether to write at all."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert set(dag.params) == {"task_ids", "case_ids", "excluded_tenants", "dry_run"}
+    assert set(dag.params) == {"case_ids", "excluded_tenants", "dry_run"}
 
 
 def test_a_scheduled_run_actually_writes(dag_bag):
@@ -141,7 +137,7 @@ def test_the_queries_resolve_from_the_sql_search_path(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert dag.render_template_as_native_obj
     # DagBag resolves template files at parse time, so `sql` is already the query itself.
-    assert "{{ mapping.starrocks_pipeline_case }}" in dag.get_task("discover_scope").sql
+    assert "{{ mapping.starrocks_pipeline_case }}" in dag.get_task("fetch_case_members").sql
     assert "{{ mapping.starrocks_hpo_term }}" in dag.get_task("fetch_phenotypes").sql
-    assert set(dag.get_task("discover_scope").parameters) == {"task_ids", "excluded_tenants"}
+    assert set(dag.get_task("fetch_case_members").parameters) == {"case_ids"}
     assert set(dag.get_task("fetch_phenotypes").parameters) == {"case_ids"}

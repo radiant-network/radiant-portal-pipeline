@@ -1,4 +1,4 @@
-"""Row fixtures shaped like what `sql/clinical/pending_annotation_select.sql` returns."""
+"""Germline SNV member rows, with the reason the scheduler decides from their facts (`exclusion_reason`)."""
 
 import pytest
 

@@ -121,10 +121,13 @@ def select_cases(
 _ABSENT = {"pending_sequencing", "pending_alignment"}
 
 
-def select_run_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> Selection:
-    """`select_cases` over the facts of the cases to run, lenient. A member absent but the proband is left out:
-    the family runs with the members present."""
-    members = _with_reasons(fact_rows, excluded_tenants)
+def select_run_cases(member_rows: list[dict], excluded_tenants: list[str]) -> Selection:
+    """The families of the cases the scheduler decided `run` for (`germline_snv_case_members_select.sql`), checked
+    again, lenient: the data may have moved since the decision. A member other than the proband with no gVCF yet is
+    left out, and the family runs with the members present."""
+    # The members query has the gVCF's alignment only: a member without one is not aligned, as far as it can tell.
+    rows = [{"current_alignment_task_id": row.get("alignment_task_id")} | row for row in member_rows]
+    members = _with_reasons(rows, excluded_tenants)
     present = [m for m in members if not _absent(m)]
     return select_cases([m.model_dump() for m in present], strict=False)
 
@@ -202,7 +205,7 @@ def _group_by_case(members: list[CaseMember]) -> dict[int, list[CaseMember]]:
 
 
 def _query_reason(member: CaseMember, excluded_tenants: list[str]) -> str | None:
-    """The code `pending_annotation_select.sql` gives this member, from the facts: most specific first."""
+    """Why this member cannot run, from its facts: most specific first."""
     if member.seq_id is None:
         return "pending_sequencing"
     if member.current_alignment_task_id is None:

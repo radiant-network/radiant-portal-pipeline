@@ -594,7 +594,7 @@ def radiant_mapping(mapping_conf):
 
 # RAD-287: the case filter and the supersession policy that the pending queries and the staging view read. In
 # dependency order, as the Init StarRocks Base Tables DAG creates them.
-PIPELINE_VIEWS = ("pipeline_case", "current_experiment", "current_alignment", "case_member")
+PIPELINE_VIEWS = ("pipeline_case", "current_experiment", "current_alignment", "current_germline_gvcf", "case_member")
 
 
 @pytest.fixture(scope="session")
