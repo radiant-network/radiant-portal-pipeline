@@ -30,6 +30,9 @@ _BASE_TABLES = [
     "germline_snv_staging_variant_frequency",
     "somatic_snv_staging_variant_frequency",
     "open_data_release",
+    # The view reads the table, so it comes after it.
+    "pipeline_journal",
+    "pipeline_state",
 ]
 
 
