@@ -54,6 +54,8 @@ class CaseMember(BaseModel):
     alignment_task_id: int | None = None
     gvcf_url: str | None = None
     gvcf_matches: int = 0
+    # The current alignment, with or without a gVCF: tells "no alignment" from "no gVCF" in the facts query.
+    current_alignment_task_id: int | None = None
     # Set by the query when this member is why the case cannot run. None means usable.
     exclusion_reason: str | None = None
 

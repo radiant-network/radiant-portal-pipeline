@@ -406,3 +406,28 @@ def test_an_hpo_code_the_dictionary_does_not_know_keeps_its_row(
     # The dictionary is empty in this fixture, so every label is null and every row survives.
     assert rows
     assert all(r["hpo_label"] is None for r in rows)
+
+
+# --- the case scheduler's facts ----------------------------------------------------------
+
+FACTS = "germline_snv_facts_select.sql"
+
+
+@pytest.mark.usefixtures("supersession_fixtures")
+def test_the_facts_cover_every_pending_candidate_and_run_the_same_cases(starrocks_session, radiant_mapping):
+    """The scheduler decides on the facts; the "from Cases" DAG still selects on the pending query."""
+    from radiant.tasks.decision import Decision
+    from radiant.tasks.nextflow.resolve import decide_cases, select_cases
+
+    pending = _discover(starrocks_session, radiant_mapping)
+    facts = _run(starrocks_session, radiant_mapping, FACTS)
+    assert {r["case_id"] for r in pending} <= {r["case_id"] for r in facts}
+
+    ran = {e.case_id for e in decide_cases(facts, []) if e.decision == Decision.RUN}
+    assert ran == set(select_cases(pending, strict=False).case_ids)
+    assert TRIO_CASE_ID in ran
+
+
+def test_an_annotated_case_is_not_a_fact_candidate(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+    facts = _run(starrocks_session, radiant_mapping, FACTS)
+    assert ANNOTATED_CASE_ID not in {r["case_id"] for r in facts}
