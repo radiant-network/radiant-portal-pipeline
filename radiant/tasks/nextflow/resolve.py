@@ -117,6 +117,12 @@ def select_cases(
     return selection
 
 
+def select_run_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> Selection:
+    """`select_cases` over the facts of the cases the journal says to run, lenient: the checks are the same."""
+    rows = [row | {"exclusion_reason": _query_reason(CaseMember(**row), excluded_tenants)} for row in fact_rows]
+    return select_cases(rows, strict=False)
+
+
 def decide_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Entry]:
     """One journal entry per case of `germline_snv_facts_select.sql`: the decision and all its reasons.
 

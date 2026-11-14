@@ -431,3 +431,32 @@ def test_the_facts_cover_every_pending_candidate_and_run_the_same_cases(starrock
 def test_an_annotated_case_is_not_a_fact_candidate(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     facts = _run(starrocks_session, radiant_mapping, FACTS)
     assert ANNOTATED_CASE_ID not in {r["case_id"] for r in facts}
+
+
+def test_a_scheduler_run_narrows_the_facts_to_its_journal(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+    """The child reads the facts of the cases the scheduler run journaled `run` for, and those only."""
+    from radiant.tasks.decision import Decision
+    from radiant.tasks.journal import Entry, Pipeline, write
+
+    run_id = "scheduled__2026-11-13T00:00:00+00:00"
+    init = os.path.join(DAGS_DIR, "sql", "radiant", "init")
+    with starrocks_session.cursor() as cursor:
+        for name in ("pipeline_journal", "pipeline_state"):
+            cursor.execute(_render(os.path.join(init, f"{name}_create_table.sql"), radiant_mapping))
+        cursor.execute(f"TRUNCATE TABLE {radiant_mapping['starrocks_pipeline_journal']}")
+        entries = [
+            Entry(case_id=TRIO_CASE_ID, pipeline=Pipeline.GERMLINE_SNV, decision=Decision.RUN),
+            Entry(case_id=ANNOTATED_CASE_ID, pipeline=Pipeline.GERMLINE_SNV, decision=Decision.WAIT),
+        ]
+        write(cursor, radiant_mapping, entries, run_id)
+        try:
+            rows = _run(
+                starrocks_session,
+                radiant_mapping,
+                FACTS,
+                parameters={"journal_run_id": run_id},
+                params={"journal_run_id": run_id},
+            )
+            assert {r["case_id"] for r in rows} == {TRIO_CASE_ID}
+        finally:
+            cursor.execute(f"TRUNCATE TABLE {radiant_mapping['starrocks_pipeline_journal']}")

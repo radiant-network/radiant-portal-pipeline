@@ -6,6 +6,7 @@ from radiant.tasks.nextflow.resolve import (
     decide_cases,
     resolve_families,
     select_cases,
+    select_run_cases,
     tenants_of,
 )
 from tests.unit.nextflow.conftest import member_row
@@ -287,3 +288,14 @@ def test_two_members_waiting_are_two_reasons(trio_rows):
 def test_a_case_level_reason_names_no_member(trio_rows):
     rows = [_facts(r, project_code=None) for r in trio_rows]
     assert _decided(rows)[1072] == (Decision.BLOCKED, (Reason(code=ReasonCode.NO_PROJECT_CODE),))
+
+
+def test_the_child_selects_from_the_facts_like_the_scheduler_decides():
+    facts = [
+        _facts(member_row(case_id=case_id, **{k: v for k, v in o.items() if k != "current_alignment_task_id"}), **o)
+        for case_id, (o, _) in enumerate(SCENARIOS, start=1)
+    ]
+    selected = select_run_cases(facts, ["excluded"])
+    ran = {case_id for case_id, (decision, _) in _decided(facts, ["excluded"]).items() if decision == Decision.RUN}
+    assert set(selected.case_ids) == ran == {1}
+    assert {e.case_id for e in selected.excluded} == set(range(2, len(SCENARIOS) + 1))

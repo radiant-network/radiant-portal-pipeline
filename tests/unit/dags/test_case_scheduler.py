@@ -101,7 +101,10 @@ def test_the_cases_dags_are_given_the_run_s_block_list(dag_bag):
     DAG excluded would sit in `processing` with nothing running for it."""
     dag = dag_bag.get_dag(DAG_ID)
     for task_id, cases_dag_id in CASES_DAG_IDS.items():
-        assert dag.get_task(task_id).conf == {"excluded_tenants": "{{ params.excluded_tenants }}"}
+        expected = {"excluded_tenants": "{{ params.excluded_tenants }}"}
+        if task_id == "trigger_germline_snv_postprocessing":
+            expected["journal_run_id"] = "{{ run_id }}"
+        assert dag.get_task(task_id).conf == expected
         assert "excluded_tenants" in dag_bag.get_dag(cases_dag_id).params
     assert not dag.get_task("trigger_import").conf
 
@@ -151,7 +154,9 @@ def test_the_pipelines_run_in_parallel_even_if_setting_statuses_failed(dag_bag):
         trigger = dag.get_task(task_id)
         assert trigger.trigger_dag_id == cases_dag_id
         assert trigger.trigger_rule == TriggerRule.ALL_DONE
-        assert _upstream(dag, task_id) == {"set_processing"}
+        # Germline SNV also waits for its journal, the cases it runs.
+        journal = {"journal_germline_snv"} if task_id == "trigger_germline_snv_postprocessing" else set()
+        assert _upstream(dag, task_id) == {"set_processing", *journal}
 
 
 def test_the_import_follows_post_processing_whatever_its_outcome(dag_bag):
@@ -217,14 +222,17 @@ def test_the_pinned_run_id_is_not_a_reserved_scheduled_id(dag_bag):
     assert not sanitize("scheduled__2026-10-08T00:00:00+00:00").startswith("scheduled__")
 
 
-def test_the_journal_holds_nothing_back(dag_bag):
-    """It only writes the journal: no pipeline, status change or email waits for it."""
+def test_only_germline_snv_waits_for_the_journal(dag_bag):
+    """The germline SNV child runs the cases the journal says to run; nothing else waits for it."""
     dag = dag_bag.get_dag(DAG_ID)
     assert {t.task_id for t in dag.get_task("facts_germline_snv").downstream_list} == {
         "journal_germline_snv",
         "watcher",
     }
-    assert {t.task_id for t in dag.get_task("journal_germline_snv").downstream_list} == {"watcher"}
+    assert {t.task_id for t in dag.get_task("journal_germline_snv").downstream_list} == {
+        "watcher",
+        "trigger_germline_snv_postprocessing",
+    }
     assert dag.get_task("facts_germline_snv").sql.startswith("-- One row per (candidate germline case")
 
 

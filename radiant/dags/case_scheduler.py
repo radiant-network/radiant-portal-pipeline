@@ -349,7 +349,8 @@ def case_scheduler():
         "trigger_germline_snv_postprocessing",
         "[DAG] Nextflow SNV Post-processing (from Cases)",
         GERMLINE_SNV_CASES_DAG_ID,
-        EXCLUDED_TENANTS_CONF,
+        # The child runs the cases this run journaled `run` for.
+        EXCLUDED_TENANTS_CONF | {"journal_run_id": "{{ run_id }}"},
     )
     trigger_germline_cnv = _trigger(
         "trigger_germline_cnv_postprocessing",
@@ -373,6 +374,7 @@ def case_scheduler():
     # post-processing (the slivar VCF, RAD-206) registered, so it waits for the three, success or not.
     trigger_import = _trigger("trigger_import", "[DAG] Scheduled Import", IMPORT_DAG_ID)
 
+    journaled_germline_snv >> trigger_germline_snv
     processing >> [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv, trigger_qc]
     [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv] >> trigger_import
     # Asked again once the import, CNV post-processing and quality control have succeeded: a case

@@ -10,7 +10,9 @@ clinical model, and turning its outputs into portal tasks.
 
 | # | Task | Does |
 |:--|:--|:--|
-| 1 | **discover_scope** | Establishes what this run is allowed to look at |
+| 1 | **choose_scope** | Reads the journal on a scheduler run, discovers otherwise |
+| 1a | **read_journal** | The facts of the cases the scheduler run decided `run` for (pipeline journal) |
+| 1b | **discover_scope** | Establishes what this run is allowed to look at, on a manual run |
 | 2 | **select_cases** | Finds eligible cases, excludes the rest with a reason |
 | 3 | **fetch_phenotypes** | Pulls each family's phenotypes |
 | 4 | **resolve_cases** | Builds the families |
@@ -32,6 +34,7 @@ parameters below exist for targeted reruns and for configuration, not for normal
 |:--|:--|:--|
 | **task_ids** | empty | alignment_germline_variant_calling task ids, for a targeted rerun. Empty means "find everything" |
 | **excluded_tenants** | $RADIANT_ETL_EXCLUDED_TENANTS | Tenants left out of case processing, reported as **tenant_excluded**. Empty excludes none |
+| **journal_run_id** | empty | Set by **radiant-case-scheduler**: the run whose `run` decisions, in **pipeline_journal**, are the cases to run. Empty on a manual run, which discovers its own cases |
 | **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing |
 
 > **dry_run on a scheduled run is a trap.** A dry run registers nothing, so every case stays

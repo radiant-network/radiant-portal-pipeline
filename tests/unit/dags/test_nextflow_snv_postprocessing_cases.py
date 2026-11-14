@@ -12,7 +12,9 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
+        "choose_scope",
         "discover_scope",
+        "read_journal",
         "select_cases",
         "fetch_phenotypes",
         "resolve_cases",
@@ -31,7 +33,7 @@ def test_it_finds_its_own_work(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
     assert dag.schedule is None
-    assert dag.get_task("discover_scope").upstream_list == []
+    assert {t.task_id for t in dag.get_task("discover_scope").upstream_list} == {"choose_scope"}
     # No default would make a scheduled run fail validation at trigger time.
     assert dag.params["task_ids"] == []
 
@@ -71,13 +73,25 @@ def test_it_does_not_email_the_laboratories(dag_bag):
     assert not {"create_case_group", "notify_labs"} & set(dag.task_ids)
 
 
+def test_a_scheduler_run_reads_the_journal_a_manual_run_discovers(dag_bag):
+    """The scheduler passes its run: the cases come from the journal. Without it, the DAG discovers its own."""
+    dag = dag_bag.get_dag(DAG_ID)
+    assert dag.params["journal_run_id"] == ""
+    assert {t.task_id for t in dag.get_task("choose_scope").downstream_list} == {"discover_scope", "read_journal"}
+    assert "{{ mapping.starrocks_pipeline_journal }}" in dag.get_task("read_journal").sql
+    assert set(dag.get_task("read_journal").parameters) == {"journal_run_id"}
+    select = dag.get_task("select_cases")
+    assert {t.task_id for t in select.upstream_list} == {"discover_scope", "read_journal"}
+    assert select.trigger_rule == "none_failed_min_one_success"
+
+
 def test_dag_asks_for_nothing_it_can_work_out_itself(dag_bag):
     """Guards against param creep. Storage roots are environment and working paths are
     derived from the run; `cases.id` is a single-column primary key over one shared clinical
     schema, so the tenant is read off the cases. What is left is intent: which tasks (none,
     normally), where writes are permitted, and whether to write at all."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert set(dag.params) == {"task_ids", "excluded_tenants", "dry_run"}
+    assert set(dag.params) == {"task_ids", "excluded_tenants", "journal_run_id", "dry_run"}
 
 
 def test_a_scheduled_run_actually_writes(dag_bag):
