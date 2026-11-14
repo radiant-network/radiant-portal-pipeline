@@ -23,7 +23,6 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "collect_outputs",
         "register_tasks",
         "journal_outcomes",
-        "watcher",
     }
     assert dag.validate() is None
 
@@ -63,7 +62,7 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     register = dag.get_task("register_tasks")
     assert {t.task_id for t in register.upstream_list} == {"resolve_cases", "collect_outputs", "list_tenants"}
-    assert {t.task_id for t in register.downstream_list} == {"journal_outcomes", "watcher"}
+    assert {t.task_id for t in register.downstream_list} == {"journal_outcomes"}
     assert isinstance(register, MappedOperator)
 
 
@@ -71,19 +70,18 @@ def test_the_outcomes_are_journaled_last_whatever_happened(dag_bag):
     """A failed pipeline or registration is a `failed` marker, not a missing one."""
     dag = dag_bag.get_dag(DAG_ID)
     outcomes = dag.get_task("journal_outcomes")
-    assert outcomes.trigger_rule == "all_done"
     assert {t.task_id for t in outcomes.upstream_list} == {"select_cases", "register_tasks"}
-    assert {t.task_id for t in outcomes.downstream_list} == {"watcher"}
+    assert outcomes.downstream_list == []
 
 
-def test_a_failed_step_still_fails_the_run(dag_bag):
-    """`journal_outcomes` ends green whatever happened: the watcher keeps a failed pipeline or registration red, so
-    the case scheduler sees it."""
-    dag = dag_bag.get_dag(DAG_ID)
-    watcher = dag.get_task("watcher")
-    assert watcher.trigger_rule == "one_failed"
-    assert watcher.downstream_list == []
-    assert {t.task_id for t in watcher.upstream_list} == set(dag.task_ids) - {"watcher"}
+def test_the_outcomes_do_not_decide_the_run_state(dag_bag):
+    """A teardown runs whatever happened and the run's state ignores it: a failed pipeline or registration still
+    fails the run, so the case scheduler sees it. `on_failure_fail_dagrun` must stay off: on, the teardown alone
+    decides the run's state, and a failure upstream of it ends green."""
+    outcomes = dag_bag.get_dag(DAG_ID).get_task("journal_outcomes")
+    assert outcomes.is_teardown
+    assert not outcomes.on_failure_fail_dagrun
+    assert outcomes.trigger_rule == "all_done_setup_success"
 
 
 def test_it_does_not_email_the_laboratories(dag_bag):

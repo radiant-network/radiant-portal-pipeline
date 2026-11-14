@@ -20,7 +20,6 @@ clinical model, and turning its outputs into portal tasks.
 | 7 | **collect_outputs** | Lists what the pipeline published |
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 | 9 | **journal_outcomes** | Writes `succeeded` or `failed` for each named case to the pipeline journal, whatever happened |
-| 10 | **watcher** | Fails the run if a step failed: **journal_outcomes** ends green whatever happened |
 
 It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
 daily with its own `excluded_tenants`, and moves the case statuses around it. Run
@@ -295,7 +294,8 @@ proband with no gVCF is left out; the scheduler has already told "not aligned ye
 ## The journal: succeeded or failed
 
 **journal_outcomes** runs last, whatever happened before it, and writes a marker per named case to
-**pipeline_journal**, under this run's id. It closes the `run` row the scheduler wrote.
+**pipeline_journal**, under this run's id. It closes the `run` row the scheduler wrote. It is an Airflow teardown:
+the run's state ignores it, so a failed pipeline or registration still fails the run.
 
 - **succeeded**: the case's tenant batch is registered.
 - **failed**: the pipeline, the output collection or the case's tenant batch failed. A failure is always the whole

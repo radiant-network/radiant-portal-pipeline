@@ -35,7 +35,6 @@ import pendulum
 from airflow.decorators import dag, task
 from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
-from airflow.utils.trigger_rule import TriggerRule
 
 from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
@@ -184,8 +183,7 @@ def nextflow_snv_postprocessing_cases():
         )
         return _selection_payload(selection)
 
-    named = has_cases()
-    named >> fetch_case_members
+    has_cases() >> fetch_case_members
     selection = select_cases(fetch_case_members.output)
 
     fetch_phenotypes = RadiantStarRocksOperator(
@@ -377,11 +375,7 @@ def nextflow_snv_postprocessing_cases():
             raise AirflowFailException(f"batch {batch_id} did not succeed: status={report.get('status')}")
         return {"tenant": tenant, "report": report}
 
-    @task(
-        task_id="journal_outcomes",
-        task_display_name="[PyOp] Journal what the run did with its cases",
-        trigger_rule=TriggerRule.ALL_DONE,
-    )
+    @task(task_id="journal_outcomes", task_display_name="[PyOp] Journal what the run did with its cases")
     def journal_outcomes() -> int:
         """`succeeded` for the cases of the tenants registered, `failed` for the others and the cases left out."""
         from airflow.exceptions import AirflowSkipException
@@ -423,35 +417,10 @@ def nextflow_snv_postprocessing_cases():
     collected = collect_outputs(families, paths)
     # The laboratories are emailed by `radiant-case-scheduler`, once the cases reach
     # `in_progress` with every pipeline's results registered, not by this DAG.
-    tenants = list_tenants(families)
-    registered = register_tasks.partial(families=families, collected=collected).expand(tenant=tenants)
-    outcomes = journal_outcomes()
-    [selection, registered] >> outcomes
-
-    @task(
-        task_id="watcher",
-        task_display_name="[PyOp] Fail the run if a step failed",
-        trigger_rule=TriggerRule.ONE_FAILED,
-    )
-    def watcher() -> None:
-        """`journal_outcomes` runs whatever happened and ends green: without this, a failed run would too."""
-        from airflow.exceptions import AirflowFailException
-
-        raise AirflowFailException("a step of this run failed, see the failed task(s)")
-
-    [
-        named,
-        fetch_case_members,
-        selection,
-        fetch_phenotypes,
-        families,
-        tenants,
-        paths,
-        run_pipeline,
-        collected,
-        registered,
-        outcomes,
-    ] >> watcher()
+    registered = register_tasks.partial(families=families, collected=collected).expand(tenant=list_tenants(families))
+    # A teardown: it runs whatever happened before it, and the run's state ignores it, so a failed pipeline or
+    # registration still fails the run.
+    [selection, registered] >> journal_outcomes().as_teardown()
 
     selection >> fetch_phenotypes
     paths >> run_pipeline >> collected
