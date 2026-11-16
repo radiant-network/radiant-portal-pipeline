@@ -1,0 +1,14 @@
+actions:
+  - when: before
+    do: >-
+      Update the cnv-post-processing Nextflow config to pipeline revision 6e3be8d. The nextflow-cnv-cfg ConfigMap must
+      give the pysam container to FILL_CN_FROM_SEGMENTS and FILTER_CNV_CARRIERS, which this revision adds: without it,
+      their pods pull from quay.io directly. The nextflow-cnv-params ConfigMap must drop exomiser_start_from_vep,
+      which the revision removes, and set cnv_pass_only, get_cn_by_computing_ratio and cn_from_segment_overlap.
+      cnv_pass_only false keeps the CNVs no carrier passes, flagged in FILTER.
+    refs:
+      - Dockerfile.nextflow.launcher
+      - radiant-nextflow-cnv-postprocessing
+    check: >-
+      The nextflow-cnv-cfg ConfigMap names FILL_CN_FROM_SEGMENTS and FILTER_CNV_CARRIERS, and nextflow-cnv-params has
+      no exomiser_start_from_vep.
