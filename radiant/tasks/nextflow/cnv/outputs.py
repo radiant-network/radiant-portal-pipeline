@@ -1,9 +1,8 @@
 """Find what a CNV post-processing run published, and refuse to register a partial one.
 
 Every case runs the pipeline's family route (see `inputs`), so every output is named after
-`familyId` and maps back to a case by arithmetic. The Exomiser reports add the proband's
-aliquot when Exomiser ran on the proband VCF (`<familyId>.<proband>.exomiser.*`); see
-`expected_keys`.
+`familyId` and maps back to a case by arithmetic. The outputs add the proband's aliquot when the
+pipeline built them from the proband VCF (`<familyId>.<proband>.*`); see `expected_keys`.
 
 Sizes come from the S3 listing, as for post-processing: the batch API compares `size`
 against any existing document with the same URL and raises DOCUMENT-006 on a mismatch.
@@ -20,8 +19,8 @@ EXOMISER_DIR = "exomiser"
 
 # logical name -> (relative key template, data_type_code, format_code)
 #
-# `{prefix}` is the family id, or `<family id>.<proband aliquot>` for the Exomiser reports of
-# a family run on its proband VCF (see `expected_keys`).
+# `{prefix}` is `<family id>.<proband aliquot>` for a family run on its proband VCF, or the
+# family id alone (see `expected_keys`).
 #
 # The slivar VCF is the final artefact -- VEP CSQ plus the mode-of-inheritance INFO tags --
 # and is declared `gcnv`/`vcf`, the CNV analogue of the annotation DAG's `snv`/`vcf`.
@@ -53,21 +52,20 @@ def expected_keys(family_id: str, proband: str) -> dict[str, list[str]]:
     """Relative keys, under the run's outdir, of everything one family must produce: for each
     output, the keys one of which must exist, the preferred one first.
 
-    The slivar VCF is named after the family. An Exomiser report has two possible names
-    (cnv-post-processing `docs/output.md`): `<familyId>.<proband>.exomiser.*` when
-    Exomiser ran on the proband VCF of the phenopacket's `proband.subject.id` -- `proband` is
-    that id, the proband's aliquot as `inputs.build_phenopacket` writes it -- and
-    `<familyId>.exomiser.*` when it ran on the family VCF instead, which the pipeline does for
-    a phenopacket proband who is not one of the PED's sequenced affected children. Which route
-    a family took is the pipeline's call, read off the listing rather than predicted here. A
-    family gets one family-mode Exomiser run, so the two names never coexist; the proband one
-    is preferred all the same, so the choice is deterministic.
+    Every output has two possible names (cnv-post-processing `docs/output.md`):
+    `<familyId>.<proband>.*` when the pipeline built it from the proband VCF -- `proband` is the
+    phenopacket's `proband.subject.id`, the proband's aliquot as `inputs.build_phenopacket` writes
+    it -- and `<familyId>.*` when it used the family VCF, which the pipeline does for a family
+    whose proband is not an affected child with a parent in the PED (a singleton, or an unaffected
+    proband). Which route a family took is the pipeline's call, read off the listing rather than
+    predicted here. Another affected
+    child gets its own `<familyId>.<child>.*` slivar VCF, which is not this case's. The proband
+    name is preferred, so the choice is deterministic.
     """
-    keys = {}
-    for name, (template, _, _) in OUTPUT_SPEC.items():
-        prefixes = [f"{family_id}.{proband}", family_id] if name in EXOMISER_OUTPUTS else [family_id]
-        keys[name] = [template.format(prefix=prefix) for prefix in prefixes]
-    return keys
+    prefixes = [f"{family_id}.{proband}", family_id]
+    return {
+        name: [template.format(prefix=prefix) for prefix in prefixes] for name, (template, _, _) in OUTPUT_SPEC.items()
+    }
 
 
 def collect(families: list[CnvFamily], listing: dict[str, int], outdir_s3: str) -> dict[str, dict]:

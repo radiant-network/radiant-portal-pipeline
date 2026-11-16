@@ -38,12 +38,11 @@ ARG PIPELINE_REV=0df1ac09dd8c44364cc7fdd2c4ba072f9b7717d9
 ARG QC_PIPELINE_REPO=Ferlab-Ste-Justine/quality-control-pipeline
 ARG QC_PIPELINE_REV=77d819e5cc141b9920511d16ba6f03010e6cf527
 
-# Same `-r` story (manifest says `master`). Pinned to a commit of the
-# feat/BIOINFO-214-expand-CNV-post-processing branch until the expanded pipeline
-# is tagged; `radiant/tasks/nextflow/cnv/batch.py::ANNOTATION_PIPELINE` records
+# Same `-r` story (manifest says `master`). Pinned to a commit of `main` until
+# the expanded pipeline is tagged; `radiant/tasks/nextflow/cnv/batch.py::ANNOTATION_PIPELINE` records
 # the same revision on every task it registers -- bump both together.
 ARG CNV_PIPELINE_REPO=Ferlab-Ste-Justine/cnv-post-processing
-ARG CNV_PIPELINE_REV=c9e7768d411c954edf005bba4d994b14cd5484b1
+ARG CNV_PIPELINE_REV=6e3be8d4c3921649c7b6f6a7db05fa742b1c00b8
 
 # Keep in sync with each pipeline's own `plugins` block: snv-post-processing
 # (v3.0.0 through the pinned commit) declares nf-schema@2.1.0 (v2.11.0 declared
