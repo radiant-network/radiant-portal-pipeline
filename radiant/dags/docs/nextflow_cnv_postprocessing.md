@@ -67,8 +67,9 @@ Per family, under `outdir`:
 
 Each CNV's FILTER is set from its carriers' `FORMAT/FT`: PASS when at least one carrier passes
 the caller's filters. QA sets `cnv_pass_only` to false (pipeline default: true), so the non-PASS
-CNVs are kept, flagged in FILTER, and loaded with it into `germline_cnv_occurrence.filter`.
-Exomiser skips them.
+CNVs are kept, flagged in FILTER. Exomiser skips them. The import does not load this FILTER: a
+proband row's **filter** is the proband's own **FORMAT/FT**, so a call DRAGEN rejected for the
+proband is not PASS because a parent's call passes. A VCF without **FORMAT/FT** keeps the record's FILTER.
 
 ## Retries and resume
 

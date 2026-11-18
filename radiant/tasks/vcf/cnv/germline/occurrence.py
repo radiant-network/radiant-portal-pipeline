@@ -113,6 +113,21 @@ def original_id(record: Variant, sample_idx: int) -> str | None:
     return None if value in ("", ".") else unquote(value)
 
 
+# Each sample's own caller filters (`PASS`, or `;`-separated names such as `cnvLength;cnvQual`): DRAGEN's in a
+# jointly-called VCF, its call's FILTER on the per-sample route (cnv-post-processing `bin/add_sample_filter.awk`).
+SAMPLE_FILTER_FORMAT = "FT"
+
+
+def sample_filter(record: Variant, sample_idx: int) -> str | None:
+    """The sample's own filters, from `FORMAT/FT`. None when the VCF predates it (cnv-post-processing 6e3be8d, the
+    header does not declare it) or the sample has none."""
+    values = format_array(record, SAMPLE_FILTER_FORMAT)
+    if values is None:
+        return None
+    value = str(values[sample_idx])
+    return None if value in ("", ".") else value
+
+
 def is_carrier(calls: list[int]) -> bool:
     """At least one ALT allele: `0/1`, `1/1`, `./1` or a haploid `1`. `0/0`, `./.` and `0/.` are not."""
     return any(c > 0 for c in calls)
@@ -211,6 +226,7 @@ def process_slivar_occurrence(
     """
     occurrence = process_occurrence(record, part, seq_id, tenant_code, task_id, aliquot, sample_idx)
     occurrence["name"] = original_id(record, sample_idx) or record.ID
+    occurrence["filter"] = sample_filter(record, sample_idx) or occurrence["filter"]
     occurrence["parental_origin"] = slivar_parental_origin(record, aliquot)
     occurrence["transmission_mode"] = slivar_cnv_transmission_mode(record, aliquot, occurrence["parental_origin"])
     for role, idx in (("mother", mother_idx), ("father", father_idx)):
