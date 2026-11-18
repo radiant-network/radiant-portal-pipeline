@@ -62,7 +62,6 @@ TENANT_QA_SHAPES = {
     "radiant": {"reference": True},
     "onekg_dragen_4_4_7": {"absent_tables": _NO_SOMATIC},
     "pragmatiq": {"absent_tables": _NO_SOMATIC},
-    "qlin": {"absent_tables": _NO_SOMATIC},
 }
 
 # Tenants left out of the per-tenant passes: their genomics rows are injected straight into
