@@ -4,10 +4,16 @@ actions:
       Create the gene coverage tables. Run section 1 of the migration file in the base database, then section 2 in
       every <tenant>_tenant database (the base database for a single-tenant deployment). Without raw_gene_coverage,
       the gene coverage load fails in every radiant-import-part run. There is no backfill: the coverage of an
-      alignment loads at the next import of its sequencing experiment.
+      alignment loads at the next import of its sequencing experiment (a case re-submitted by hand).
     preconditions:
-      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).    refs:
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
+      - >-
+        StarRocks can read the buckets of the covgene documents (the DRAGEN outputs) with the S3 credentials of its
+        broker loads: it reads both the header and the file. Without the access, each covgene file is a bad file and
+        every radiant-import-part run that has one fails at check_gene_coverage_files.
+    refs:
       - radiant/dags/sql/radiant/migrations/RAD-315_gene_coverage_create_tables.sql
+      - radiant/tasks/starrocks/operator.py
     check: >-
       SHOW TABLES LIKE 'raw_gene_coverage' gives one row in the base database, and SHOW TABLES LIKE 'gene_coverage'
-      gives one row in each tenant database.
+      gives one row in each <tenant>_tenant database.
