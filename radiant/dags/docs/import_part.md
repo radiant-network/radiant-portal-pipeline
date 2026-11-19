@@ -164,16 +164,22 @@ Loads the DRAGEN coverage_by_gene CSV (**covgene** document) of each alignment i
 - Gene name rule: a **\_chrX** / **\_chrY** suffix gives the symbol without it and the chromosome X / Y;
   an **ENSG** name gives the **ensembl_gene** name of that id, else the id; a plain symbol stays, with
   its **ensembl_gene** chromosome (the first by chromosome when the name is on more than one).
-  **gene** keeps the raw name.
+  **gene** keeps the raw name. The mitochondrial chromosome is **M**, as in the variant tables
+  (**ensembl_gene** says **MT**).
 - The copy steps are keyed on the experiment, not the task: the run replaces the coverage of every
   experiment of the delta, so a re-alignment replaces the old alignment's coverage.
 - An alignment without **covgene** gets no row, and the run stays green.
-- A bad file does not stop the others. The part gets the rows of every file that loaded, and the
-  bad file's experiment has no rows until a later import loads it.
+- A bad file (missing or unreadable on S3, unknown header, load cancelled or timed out) does not stop
+  the others. The part gets the rows of every file that loaded, and the bad file's experiment keeps
+  the rows an earlier import loaded (none if it never loaded). The experiment is marked imported all
+  the same, so its file loads again only when the experiment is re-submitted by hand.
+- StarRocks reads the header (a **FILES()** query) and the file (a broker load) with the same S3
+  credentials: the Airflow worker never reads the bucket.
 
 > A bad file never fails the load: the load returns its errors, and only **check_gene_coverage_files**
-> fails, which no task waits on. So a bad file blocks no other data, and still fails the run. A failure
-> of the load or the insert themselves (StarRocks down, missing table) stops the chain, as for Exomiser.
+> fails, which no task waits on. So a bad file blocks no other data, and still fails the run. Any other
+> error of the load (StarRocks down, lost connection, missing table) fails it before the swap, so the
+> task retries and the loaded coverage stays; as for Exomiser, it stops the chain.
 
 See radiant-hub docs/features/RAD-315-gene-coverage-germline-somatic-alignments.md.
 

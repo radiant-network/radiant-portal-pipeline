@@ -689,8 +689,23 @@ GENE_COVERAGE_FORMATS = {
     "old": (", ".join(_GENE_COVERAGE_TABLE_COLUMNS), "'CDS'"),
     "new": (", ".join(["gene", "type", *_GENE_COVERAGE_TABLE_COLUMNS[1:]]), "type"),
 }
-# Enough for the header line of either format, a few hundred bytes.
-_GENE_COVERAGE_HEADER_BYTES = 4096
+# The header line of a `covgene` file, read by StarRocks with the credentials of its broker loads, so that the Airflow
+# worker needs no access to the bucket. A column separator the file never holds gives one string column per line, `$1`
+# (`FILES()` CSV schema detection, `auto_detect_types` off; the `schema` parameter needs 4.1.2). The header is the line
+# with the `average_coverage` column, which no data line holds: `LIMIT 1` alone would not say which line comes first.
+# `%%` is a literal `%` for the DB-API parameters; `\\\\x01` reaches StarRocks as `\x01` (FILES() docs, separator).
+_GENE_COVERAGE_HEADER_SQL = """
+SELECT $1
+FROM FILES(
+    'path' = %(filepath)s,
+    'format' = 'csv',
+    'csv.column_separator' = '\\\\x01',
+    'auto_detect_types' = 'false',
+    {broker_configuration}
+)
+WHERE $1 LIKE '%%average_coverage%%'
+LIMIT 2
+"""
 
 
 def parse_gene_coverage_header(line: str) -> str:
@@ -712,25 +727,24 @@ def parse_gene_coverage_header(line: str) -> str:
     )
 
 
-def read_s3_first_line(s3_path: str, max_bytes: int = _GENE_COVERAGE_HEADER_BYTES) -> str:
-    """Read the first line of an S3 object, with a ranged GET of its first `max_bytes` bytes."""
-    from urllib.parse import urlparse
+def is_client_error(error: Exception) -> bool:
+    """True for a MySQL client error (lost connection, timeout, ...: errno 2000-2999), which says nothing of the file.
 
-    import boto3
-
-    parsed = urlparse(s3_path)
-    if parsed.scheme not in ("s3", "s3a") or not parsed.netloc:
-        raise ValueError(f"Not an S3 path: {s3_path!r}")
-    body = (
-        boto3.client("s3")
-        .get_object(Bucket=parsed.netloc, Key=parsed.path.lstrip("/"), Range=f"bytes=0-{max_bytes - 1}")["Body"]
-        .read()
-    )
-    return body.decode("utf-8").splitlines()[0] if body else ""
+    pymysql and mysqlclient both put the errno first in the exception's args. An error with no errno counts as a
+    client error, so that it fails the task.
+    """
+    errno = error.args[0] if error.args else None
+    return not isinstance(errno, int) or 2000 <= errno < 3000
 
 
 class GeneCoverageLoadError(AirflowException):
     """Raised by the gene coverage check when one or more `covgene` files could not be loaded."""
+
+
+class GeneCoverageFileError(Exception):
+    """One `covgene` file that cannot be loaded: missing or unreadable for StarRocks, an unknown header, or a load
+    that StarRocks cancelled or did not finish in time. Any other error (lost connection) is not a file error: it fails
+    the task before the swap, so that Airflow retries it and the loaded coverage stays."""
 
 
 class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):
@@ -739,9 +753,10 @@ class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):
     `files` is the output of `gene_coverage_file_select.sql`: one row per alignment task (seq_id, task_id, tenant_code,
     filepath). The copy step of the partition swap keeps the rows of the experiments the run does not reload.
 
-    One bad file does not stop the others: its error (S3 path + message) is kept, the next file loads, and the
-    partition is swapped with the rows of every file that loaded. The operator returns the errors (XCom), and a later
-    task fails the run with them, after the per-tenant inserts.
+    One bad file (`GeneCoverageFileError`) does not stop the others: its error (S3 path + message) is kept, the next
+    file loads, and the rows already loaded for the bad file's experiment are copied back into the temporary partition,
+    so that the swap keeps them. The operator returns the errors (XCom), and a later task fails the run with them,
+    after the per-tenant inserts. Any other error fails the task before the swap.
     """
 
     template_fields = RadiantStarrocksLoadBaseOperator.template_fields + ("sql", "files")
@@ -772,20 +787,69 @@ class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):
         super().execute(context)
         return self.errors
 
+    # Polls (2 s each) to wait for the load's row in information_schema.loads before the load counts as lost.
+    _LOAD_ROW_POLLS = 30
+
     def wait_for_load(self, cursor, label: str) -> None:
-        """Wait for the load `label`; raise with StarRocks' error message if it is cancelled."""
-        for _ in range(self.broker_load_timeout):
+        """Wait for the load `label`. A cancelled or timed-out load is a `GeneCoverageFileError` (a timed-out load is
+        cancelled first, so that it cannot write after the swap). A load that never shows up is not a file error."""
+        for i in range(self.broker_load_timeout):
             cursor.execute(
                 "SELECT STATE, ERROR_MSG FROM information_schema.loads WHERE LABEL = %(label)s", {"label": label}
             )
             row = cursor.fetchone()
             self.log.info(f"Load state for label {label}: {row}")
-            if not row or row[0] == "FINISHED":
+            if row and row[0] == "FINISHED":
                 return
-            if row[0] == "CANCELLED":
-                raise RuntimeError(f"Load {label} was cancelled: {row[1]}")
+            if row and row[0] == "CANCELLED":
+                raise GeneCoverageFileError(f"Load {label} was cancelled: {row[1]}")
+            if not row and i >= self._LOAD_ROW_POLLS:
+                raise RuntimeError(f"Load {label} is not in information_schema.loads.")
             time.sleep(2)
-        raise TimeoutError(f"Load {label} did not finish in time.")
+        database_name = self.table.split(".")[0]
+        cursor.execute(f"CANCEL LOAD FROM {database_name} WHERE LABEL = %(label)s", {"label": label})
+        raise GeneCoverageFileError(f"Load {label} did not finish in time; it was cancelled.")
+
+    def read_format(self, cursor, filepath: str) -> str:
+        """The format of a `covgene` file, from its header line read by StarRocks (`_GENE_COVERAGE_HEADER_SQL`).
+
+        A StarRocks error (no such file or bucket, access denied) or a missing or unknown header is a file error; a
+        client error is not.
+        """
+        try:
+            cursor.execute(
+                _GENE_COVERAGE_HEADER_SQL.format(broker_configuration=self.broker_configuration),
+                {"filepath": filepath},
+            )
+            rows = cursor.fetchall()
+        except Exception as e:
+            if is_client_error(e):
+                raise
+            raise GeneCoverageFileError(f"StarRocks cannot read the file: {e}") from e
+        if len(rows) != 1:
+            raise GeneCoverageFileError(f"Expected one coverage_by_gene header line, found {len(rows)}.")
+        try:
+            return parse_gene_coverage_header(rows[0][0] or "")
+        except ValueError as e:
+            raise GeneCoverageFileError(str(e)) from e
+
+    def restore_failed_experiments(self, hook, failed_seq_ids: set, loaded_task_ids: set) -> None:
+        """Copy back, into the temporary partition, the rows already loaded for the experiments of the bad files.
+
+        The copy step dropped every experiment of the delta, so without this the swap would delete the coverage an
+        earlier run loaded, and the experiment, imported all the same, would never be reloaded. The rows of a task
+        loaded by this run are left out, or they would be there twice.
+        """
+        self.log.info(f"Keeping the loaded coverage of the experiments of the bad files: {sorted(failed_seq_ids)}")
+        hook.run(
+            sql=f"""
+                INSERT INTO {self.table} TEMPORARY PARTITION ({self.temp_partition})
+                SELECT * FROM {self.table} PARTITION (p{self.partition})
+                WHERE seq_id IN %(seq_ids)s AND task_id NOT IN %(task_ids)s
+            """,
+            autocommit=True,
+            parameters={"seq_ids": sorted(failed_seq_ids), "task_ids": sorted(loaded_task_ids) or [-1]},
+        )
 
     def run_insert(self, context, partition_exists):
         files = [f for f in (self.files or []) if f.get("filepath")]
@@ -794,11 +858,12 @@ class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):
 
         hook = self.get_db_hook()
         _temporary_partition_clause = f"TEMPORARY PARTITION ({self.temp_partition})" if partition_exists else ""
+        failed_seq_ids, loaded_task_ids = set(), set()
         with hook.get_conn().cursor() as cursor:
             for file in files:
                 filepath = file["filepath"]
                 try:
-                    _format = parse_gene_coverage_header(read_s3_first_line(filepath))
+                    _format = self.read_format(cursor, filepath)
                     file_columns, type_value = GENE_COVERAGE_FORMATS[_format]
                     load_label = f"load_gene_coverage_{file['task_id']}_{file['seq_id']}_{uuid.uuid4().hex}"
                     self.log.info(f"Loading {_format}-format coverage_by_gene file {filepath}...")
@@ -823,13 +888,17 @@ class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):
                         },
                     )
                     self.wait_for_load(cursor, load_label)
-                except Exception as e:
+                    loaded_task_ids.add(file["task_id"])
+                except GeneCoverageFileError as e:
                     # A cancelled load writes no row: the other files of the part still load.
                     self.log.exception(f"Could not load coverage_by_gene file {filepath}")
                     self.errors.append({"filepath": filepath, "task_id": file["task_id"], "error": str(e)})
+                    failed_seq_ids.add(file["seq_id"])
 
         # Swap all the same: the copy step has already dropped the rows of the experiments this run reloads.
         if partition_exists and self.is_swap:
+            if failed_seq_ids:
+                self.restore_failed_experiments(hook, failed_seq_ids, loaded_task_ids)
             self.swap_partitions()
 
 

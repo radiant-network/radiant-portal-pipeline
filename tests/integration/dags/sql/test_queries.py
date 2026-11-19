@@ -24,6 +24,7 @@ _MOCK_PARAMS = {
     "seq_ids": [1, 2, 3],
     "task_ids": [1, 2, 3],
     "deleted_task_ids": [4, 5, 6],
+    "deleted_seq_ids": [4, 5, 6],
     "family_id": 1,
     "task_type": "radiant_germline_annotation",
     "task_id": 1,
@@ -115,6 +116,7 @@ def _explain_insert(starrocks_session, sql_dir):
                 or "exomiser_copy_partition" in sql_file.lower()
                 or "exomiser_cnv_copy_partition" in sql_file.lower()
                 or "comphet_copy_partition" in sql_file.lower()
+                or "gene_coverage_copy_partition" in sql_file.lower()
                 or "exomiser_insert_partition_delta" in sql_file.lower()
                 or "open_data_release_annotate" in sql_file.lower()
             ):
@@ -256,6 +258,8 @@ def test_queries_are_valid(
             "germline_cnv_variant_frequency",
             "somatic_cnv_variant_frequency",
             "open_data_release",
+            "staging_gene_coverage",
+            "gene_coverage",
         ],
         views=[
             # RAD-287: read by the staging view, so created before it.
@@ -282,6 +286,7 @@ def test_queries_are_valid(
             ("starrocks_exomiser", "exomiser_insert_partition_delta.sql"),
             ("starrocks_exomiser_cnv", "exomiser_cnv_insert_partition_delta.sql"),
             ("starrocks_germline_snv_occurrence", "germline_snv_occurrence_insert_partition_delta.sql"),
+            ("starrocks_gene_coverage", "gene_coverage_insert_partition_delta.sql"),
         ],
     )
 

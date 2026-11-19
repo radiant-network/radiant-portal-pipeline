@@ -6,8 +6,7 @@ actions:
       the gene coverage load fails in every radiant-import-part run. There is no backfill: the coverage of an
       alignment loads at the next import of its sequencing experiment.
     preconditions:
-      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
-    refs:
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).    refs:
       - radiant/dags/sql/radiant/migrations/RAD-315_gene_coverage_create_tables.sql
     check: >-
       SHOW TABLES LIKE 'raw_gene_coverage' gives one row in the base database, and SHOW TABLES LIKE 'gene_coverage'

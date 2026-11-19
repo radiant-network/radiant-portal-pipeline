@@ -1,13 +1,13 @@
 """RAD-315: the gene coverage of the current alignments, end to end on StarRocks, MinIO and the clinical seeds.
 
 The import is driven the way import_part drives it: the discovery query (gene_coverage_file_select.sql), then the real
-RadiantLoadGeneCoverageOperator (header read from S3, one broker load per file, partition swap) and the real
+RadiantLoadGeneCoverageOperator (header read by StarRocks FILES(), one broker load per file, partition swap), the real
 RadiantStarRocksPartitionSwapOperator with the per-tenant insert. A thin hook runs their SQL on the test session.
 
 Seeds: the proband of case 1 (experiment 1, alignment task 1) has an old-format file, the tumor-only alignment of
 case 23 (experiment 64, task 76) a new-format one. The other shapes are test-local, on ids 99xx, removed after each
 test: the normal of the tumor-normal case 22 (experiment 63) with an alignment, a re-alignment of experiment 1, a
-broken file on experiment 3, a `covgene` on the tumor-normal calling task 73.
+broken file on experiment 3 or on the alignment of experiment 1, a `covgene` on the tumor-normal calling task 73.
 """
 
 import os
@@ -20,7 +20,6 @@ from radiant.tasks.starrocks.operator import (
     RadiantLoadGeneCoverageOperator,
     RadiantStarRocksPartitionSwapOperator,
     SwapPartition,
-    read_s3_first_line,
 )
 from tests.integration.conftest import RESOURCES_DIR
 from tests.integration.fixtures_common import execute_clinical
@@ -56,6 +55,8 @@ _ENSEMBL_GENES = [
     # A name on two chromosomes: the first by chromosome is kept ('11' < '2').
     ("ENSGMOCK0000001", "2", "MOCKDUP"),
     ("ENSGMOCK0000002", "11", "MOCKDUP"),
+    # Ensembl says MT; the table says M, as the variant tables.
+    ("ENSGMOCKMT00001", "MT", "MT-CO1"),
 ]
 
 _COLUMNS = ("seq_id", "task_id", "symbol", "chromosome", "gene", "ensembl_gene_id", "size", "average_coverage")
@@ -113,19 +114,6 @@ def empty_part(starrocks_session, radiant_mapping, gene_coverage_tables):
             cursor.execute(f"DELETE FROM {radiant_mapping[key]} WHERE part = %(part)s", {"part": _PART})
 
 
-@pytest.fixture
-def s3_reads(s3_fs, monkeypatch):
-    """The operator reads the header with boto3; the test reads it from MinIO through s3_fs."""
-
-    def first_line(path):
-        if not s3_fs.exists(path):
-            raise FileNotFoundError(f"NoSuchKey: {path}")
-        with s3_fs.open(path, "rb") as f:
-            return f.readline().decode("utf-8")
-
-    monkeypatch.setattr("radiant.tasks.starrocks.operator.read_s3_first_line", first_line)
-
-
 def _discover(starrocks_session, radiant_mapping, seq_ids, deleted_seq_ids=(-1,)):
     with starrocks_session.cursor() as cursor:
         cursor.execute(
@@ -144,6 +132,13 @@ def _import(starrocks_session, radiant_mapping, minio_instance, seq_ids, deleted
 
     raw = radiant_mapping["starrocks_staging_gene_coverage"]
     database_name, table_name = raw.split(".")
+    broker_configuration = f"""
+        'aws.s3.region' = 'us-east-1',
+        'aws.s3.endpoint' = 'http://radiant-minio:9000',
+        'aws.s3.enable_path_style_access' = 'true',
+        'aws.s3.access_key' = '{minio_instance.access_key}',
+        'aws.s3.secret_key' = '{minio_instance.secret_key}'
+    """
     load = RadiantLoadGeneCoverageOperator(
         task_id="load_gene_coverage_files",
         table=raw,
@@ -158,13 +153,7 @@ def _import(starrocks_session, radiant_mapping, minio_instance, seq_ids, deleted
             database_name=database_name,
             table_name=table_name,
             broker_load_timeout=600,
-            broker_configuration=f"""
-                'aws.s3.region' = 'us-east-1',
-                'aws.s3.endpoint' = 'http://radiant-minio:9000',
-                'aws.s3.enable_path_style_access' = 'true',
-                'aws.s3.access_key' = '{minio_instance.access_key}',
-                'aws.s3.secret_key' = '{minio_instance.secret_key}'
-            """,
+            broker_configuration=broker_configuration,
             load_label="{{load_label}}",
             temporary_partition_clause="{{temporary_partition_clause}}",
             file_columns="{{file_columns}}",
@@ -172,6 +161,8 @@ def _import(starrocks_session, radiant_mapping, minio_instance, seq_ids, deleted
         ),
     )
     load.get_db_hook = lambda: hook
+    # The header query reads the file with the same credentials as the broker load.
+    load.broker_configuration = broker_configuration
     errors = load.execute(context={})
 
     target = radiant_mapping["starrocks_gene_coverage"]
@@ -273,15 +264,18 @@ def tumor_normal_coverage(postgres_clinical_seeds, postgres_instance):
 
 @pytest.fixture
 def realignment(postgres_clinical_seeds, postgres_instance):
-    """A newer alignment of experiment 1 (case 1's proband), with its own `covgene`."""
-    _add_clinical(
-        postgres_instance,
-        tasks=[(9911, "alignment_germline_variant_calling", "2022-01-01 00:00:00")],
-        contexts=[(9911, 1)],
-        documents=[(9911, REALIGNED_URL)],
-        links=[(9911, 9911)],
-    )
-    yield
+    """Adds, when called, a newer alignment of experiment 1 (case 1's proband), with its own `covgene`."""
+
+    def add():
+        _add_clinical(
+            postgres_instance,
+            tasks=[(9911, "alignment_germline_variant_calling", "2022-01-01 00:00:00")],
+            contexts=[(9911, 1)],
+            documents=[(9911, REALIGNED_URL)],
+            links=[(9911, 9911)],
+        )
+
+    yield add
     _remove_clinical(postgres_instance, task_ids=[9911], document_ids=[9911])
 
 
@@ -294,6 +288,17 @@ def broken_file(postgres_clinical_seeds, postgres_instance):
 
 
 @pytest.fixture
+def broken_new_file(postgres_clinical_seeds, postgres_instance):
+    """Adds, when called, a newer `covgene` to the alignment of experiment 1 (task 1) whose header is broken."""
+
+    def add():
+        _add_clinical(postgres_instance, documents=[(9931, BROKEN_URL)], links=[(1, 9931)])
+
+    yield add
+    _remove_clinical(postgres_instance, document_ids=[9931])
+
+
+@pytest.fixture
 def shared_experiment(postgres_clinical_seeds, postgres_instance):
     """Experiment 1 in a second case (case 16), so its alignment is shared by two cases."""
     _add_clinical(postgres_instance, cases=[(16, 1)])
@@ -302,7 +307,7 @@ def shared_experiment(postgres_clinical_seeds, postgres_instance):
 
 
 def test_old_format_germline_alignment_loads_one_row_per_gene_with_the_gene_name_rule(
-    starrocks_session, radiant_mapping, minio_instance, empty_part, s3_reads
+    starrocks_session, radiant_mapping, minio_instance, empty_part
 ):
     """AC1, AC4, AC5, AC6. The proband of case 1: the staging view hides its alignment task behind the slivar VCF,
     the coverage still loads."""
@@ -318,6 +323,8 @@ def test_old_format_germline_alignment_loads_one_row_per_gene_with_the_gene_name
         "ENSG00000999999",
         "MOCKDUP",
         "NOTINENSEMBL",
+        "MT-CO1",
+        "ENSG00000141510.7",
     }
     assert {r["task_id"] for r in rows.values()} == {1}
 
@@ -332,6 +339,9 @@ def test_old_format_germline_alignment_loads_one_row_per_gene_with_the_gene_name
     # Ensembl ids: the symbol of the id, else the id itself.
     assert key("ENSG00000100101") == ("MOCKSYM1", "22", "ENSG00000100101")
     assert key("ENSG00000999999") == ("ENSG00000999999", None, "ENSG00000999999")
+    # A versioned id resolves on the id without its version.
+    assert key("ENSG00000141510.7") == ("TP53", "17", "ENSG00000141510")
+    assert key("MT-CO1") == ("MT-CO1", "M", "ENSGMOCKMT00001")
     # A name on two chromosomes keeps one row, the first by chromosome.
     assert key("MOCKDUP") == ("MOCKDUP", "11", "ENSGMOCK0000002")
     assert key("NOTINENSEMBL") == ("NOTINENSEMBL", None, None)
@@ -348,7 +358,7 @@ def test_old_format_germline_alignment_loads_one_row_per_gene_with_the_gene_name
 
 
 def test_new_format_tumor_only_alignment_loads_its_cds_rows_only(
-    starrocks_session, radiant_mapping, minio_instance, empty_part, s3_reads
+    starrocks_session, radiant_mapping, minio_instance, empty_part
 ):
     """AC2, AC4: the UTR, clinvar and lncRNA rows of the new format are not loaded."""
     errors = _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[64])
@@ -363,10 +373,17 @@ def test_new_format_tumor_only_alignment_loads_its_cds_rows_only(
         (64, 76, "TP53", "17", "TP53"),
     ]
     assert _by_gene(rows)["BRCA1"]["average_coverage"] == 140.25
+    # The load keeps the CDS rows only: the staging table never holds the others.
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(
+            f"SELECT DISTINCT type FROM {radiant_mapping['starrocks_staging_gene_coverage']} WHERE part = %(part)s",
+            {"part": _PART},
+        )
+        assert cursor.fetchall() == (("CDS",),)
 
 
 def test_tumor_normal_loads_the_normal_only(
-    starrocks_session, radiant_mapping, minio_instance, empty_part, s3_reads, tumor_normal_coverage
+    starrocks_session, radiant_mapping, minio_instance, empty_part, tumor_normal_coverage
 ):
     """AC3: the tumor (62) has no alignment of the two types; the calling task's `covgene` is never read."""
     files = _discover(starrocks_session, radiant_mapping, seq_ids=[62, 63])
@@ -379,7 +396,7 @@ def test_tumor_normal_loads_the_normal_only(
 
 
 def test_an_alignment_shared_by_two_cases_or_loaded_twice_is_not_duplicated(
-    starrocks_session, radiant_mapping, minio_instance, empty_part, s3_reads, shared_experiment
+    starrocks_session, radiant_mapping, minio_instance, empty_part, shared_experiment
 ):
     """AC7."""
     assert len(_discover(starrocks_session, radiant_mapping, seq_ids=[1])) == 1
@@ -389,23 +406,27 @@ def test_an_alignment_shared_by_two_cases_or_loaded_twice_is_not_duplicated(
     _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 64])
     second = _rows(starrocks_session, radiant_mapping)
 
-    assert len(first) == 12
+    assert len(first) == 14
     assert second == first
 
 
 def test_an_import_keeps_the_experiments_it_does_not_reload(
-    starrocks_session, radiant_mapping, minio_instance, empty_part, s3_reads
+    starrocks_session, radiant_mapping, minio_instance, empty_part
 ):
     _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 64])
     _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[64])
 
     assert {r["seq_id"] for r in _rows(starrocks_session, radiant_mapping)} == {1, 64}
-    assert len(_rows(starrocks_session, radiant_mapping, seq_id=1)) == 7
+    assert len(_rows(starrocks_session, radiant_mapping, seq_id=1)) == 9
 
 
 def test_a_realignment_replaces_the_coverage_of_the_old_alignment(
-    starrocks_session, radiant_mapping, minio_instance, empty_part, s3_reads, realignment
+    starrocks_session, radiant_mapping, minio_instance, empty_part, realignment
 ):
+    _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1])
+    assert {r["task_id"] for r in _rows(starrocks_session, radiant_mapping)} == {1}
+
+    realignment()
     _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1])
 
     rows = _rows(starrocks_session, radiant_mapping)
@@ -413,7 +434,7 @@ def test_a_realignment_replaces_the_coverage_of_the_old_alignment(
 
 
 def test_an_alignment_without_covgene_gives_no_row_and_no_error(
-    starrocks_session, radiant_mapping, minio_instance, empty_part, s3_reads
+    starrocks_session, radiant_mapping, minio_instance, empty_part
 ):
     """AC8. Experiment 2 (case 1's mother) has an alignment and no `covgene`."""
     assert _discover(starrocks_session, radiant_mapping, seq_ids=[2]) == []
@@ -425,10 +446,10 @@ def test_an_alignment_without_covgene_gives_no_row_and_no_error(
 
 
 def test_a_broken_file_is_reported_and_the_good_files_still_load(
-    starrocks_session, radiant_mapping, minio_instance, empty_part, s3_reads, broken_file
+    starrocks_session, radiant_mapping, minio_instance, empty_part, broken_file
 ):
-    """AC8. The good file of the part loads; the bad one is reported with its S3 path, and its alignment has no
-    rows until a later run loads it."""
+    """AC8. The good file of the part loads; the bad one is reported with its S3 path, and its alignment, never
+    loaded, has no rows."""
     errors = _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 3])
 
     assert [(e["filepath"], e["task_id"]) for e in errors] == [(BROKEN_URL, 3)]
@@ -436,11 +457,15 @@ def test_a_broken_file_is_reported_and_the_good_files_still_load(
     assert {r["seq_id"] for r in _rows(starrocks_session, radiant_mapping)} == {1}
 
 
-def test_the_operator_reads_the_header_from_s3(s3_fs, minio_instance, monkeypatch, gene_coverage_tables):
-    """`read_s3_first_line` itself, with boto3 on MinIO."""
-    monkeypatch.setenv("AWS_ENDPOINT_URL", minio_instance.endpoint)
-    monkeypatch.setenv("AWS_ACCESS_KEY_ID", minio_instance.access_key)
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", minio_instance.secret_key)
-    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+def test_a_bad_file_keeps_the_coverage_an_earlier_import_loaded(
+    starrocks_session, radiant_mapping, minio_instance, empty_part, broken_new_file
+):
+    """The copy steps drop the experiment; the load copies its loaded rows back, so the swap does not delete them."""
+    _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 64])
+    before = _rows(starrocks_session, radiant_mapping)
 
-    assert read_s3_first_line(NEW_FORMAT_URL).startswith("#gene,type,size,")
+    broken_new_file()
+    errors = _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 64])
+
+    assert [(e["filepath"], e["task_id"]) for e in errors] == [(BROKEN_URL, 1)]
+    assert _rows(starrocks_session, radiant_mapping) == before

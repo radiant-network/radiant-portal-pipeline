@@ -16,6 +16,7 @@ FROM (
     JOIN {{ mapping.clinical_task_has_document }} thd ON thd.task_id = ca.task_id AND thd.type = 'output'
     JOIN {{ mapping.clinical_document }} d ON d.id = thd.document_id
     WHERE d.data_type_code = 'covgene'
+      AND d.format_code = 'csv'
       AND (ca.seq_id IN %(seq_ids)s OR ca.seq_id IN %(deleted_seq_ids)s)
 ) covgene
 WHERE rn = 1
