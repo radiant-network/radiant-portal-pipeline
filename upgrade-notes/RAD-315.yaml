@@ -1,0 +1,14 @@
+actions:
+  - when: before
+    do: >-
+      Create the gene coverage tables. Run section 1 of the migration file in the base database, then section 2 in
+      every <tenant>_tenant database (the base database for a single-tenant deployment). Without raw_gene_coverage,
+      the gene coverage load fails in every radiant-import-part run. There is no backfill: the coverage of an
+      alignment loads at the next import of its sequencing experiment.
+    preconditions:
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
+    refs:
+      - radiant/dags/sql/radiant/migrations/RAD-315_gene_coverage_create_tables.sql
+    check: >-
+      SHOW TABLES LIKE 'raw_gene_coverage' gives one row in the base database, and SHOW TABLES LIKE 'gene_coverage'
+      gives one row in each tenant database.

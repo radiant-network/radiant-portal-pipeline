@@ -142,6 +142,43 @@ See radiant-hub docs/features/RAD-169-cnv-post-processing.md.
 
 ---
 
+## Gene coverage
+
+Loads the DRAGEN coverage_by_gene CSV (**covgene** document) of each alignment into the tenant's
+**gene_coverage** table: one row per CDS gene (RAD-315). It runs in Phase 3, like Exomiser.
+
+| Task | Job |
+|:--|:--|
+| **extract_seq_ids** | The sequencing experiments of the part's delta, all tenants, deleted tasks included |
+| **fetch_gene_coverage_files** | For each experiment, the newest alignment of each type in **current_alignment** and its **covgene** file |
+| **load_gene_coverage_files** | After the Exomiser loads: one broker load per file into the shared **raw_gene_coverage**, tagged with the tenant |
+| **insert_gene_coverage** | After **insert_exomiser**, per tenant: the CDS rows, with the gene name rule |
+| **check_gene_coverage_files** | A leaf: fails the run with the S3 path and the error of each file that did not load |
+
+- The alignments are **alignment_germline_variant_calling** and **alignment_somatic_variant_calling**
+  (tumor-only). In a tumor-normal case only the normal has one: the tumor has no rows.
+- The file is found from the experiment, not from the staging rows: the proband of a case with a
+  slivar VCF keeps its coverage. An alignment shared by two cases is loaded once.
+- Two formats, told apart by the header: the new one has a **type** column, and only its **CDS**
+  rows are kept; in the old one every row is CDS. Any other header is a bad file.
+- Gene name rule: a **\_chrX** / **\_chrY** suffix gives the symbol without it and the chromosome X / Y;
+  an **ENSG** name gives the **ensembl_gene** name of that id, else the id; a plain symbol stays, with
+  its **ensembl_gene** chromosome (the first by chromosome when the name is on more than one).
+  **gene** keeps the raw name.
+- The copy steps are keyed on the experiment, not the task: the run replaces the coverage of every
+  experiment of the delta, so a re-alignment replaces the old alignment's coverage.
+- An alignment without **covgene** gets no row, and the run stays green.
+- A bad file does not stop the others. The part gets the rows of every file that loaded, and the
+  bad file's experiment has no rows until a later import loads it.
+
+> A bad file never fails the load: the load returns its errors, and only **check_gene_coverage_files**
+> fails, which no task waits on. So a bad file blocks no other data, and still fails the run. A failure
+> of the load or the insert themselves (StarRocks down, missing table) stops the chain, as for Exomiser.
+
+See radiant-hub docs/features/RAD-315-gene-coverage-germline-somatic-alignments.md.
+
+---
+
 ## CNV frequencies
 
 **aggregate_germline_cnv_variant_freq** and **aggregate_somatic_cnv_variant_freq** run after
