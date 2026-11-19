@@ -13,6 +13,7 @@ import logging
 
 from pydantic import BaseModel
 
+from radiant.tasks.decision import Reason, ReasonCode, from_query
 from radiant.tasks.nextflow.qc.model import QcCase, QcMember, family_id
 from radiant.tasks.nextflow.resolve import REL_ORDER, CaseResolutionError, ExcludedCase
 
@@ -21,33 +22,6 @@ LOGGER = logging.getLogger(__name__)
 # The pipeline's `experimentalStrategy` enum. `wxs` and `wes` are the same thing under two
 # dictionaries; the pipeline spells it WXS.
 STRATEGIES = {"wgs": "WGS", "wxs": "WXS", "wes": "WXS"}
-
-REASON_TEXT = {
-    "pending_sequencing": "has no completed sequencing experiment yet",
-    "pending_alignment": "its current sequencing experiment has no alignment task yet",
-    "no_cram": "its current germline alignment published no CRAM, and somalier needs one",
-    "ambiguous_cram": (
-        "its current alignment published more than one CRAM. One alignment task cannot "
-        "legitimately produce two, so a document is mistyped at the source -- typically an "
-        "index recorded with format_code 'cram' instead of 'crai'"
-    ),
-    "no_project_code": (
-        "the case has no project_code -- `cases.project_id` did not resolve to a row in "
-        "`project`, and the batch PATCH requires it to look the case up"
-    ),
-    "tenant_excluded": (
-        "its tenant is in `excluded_tenants` (`$RADIANT_ETL_EXCLUDED_TENANTS`), which the ETL "
-        "leaves out of case processing"
-    ),
-    "ambiguous_dragen_metrics": (
-        "its current alignment published more than one DRAGEN metrics tarball (`ssup`/`tgz`), "
-        "and the samplesheet takes exactly one per sample"
-    ),
-    "no_metrics": (
-        "its current somatic alignment published no DRAGEN metrics tarball (`ssup`/`tgz`). A tumor "
-        "row has no CRAM-directory fallback: the pipeline would give a green run with an empty report"
-    ),
-}
 
 __all__ = ["CaseResolutionError", "ExcludedCase", "Selection", "select_cases", "resolve_cases", "tenants_of"]
 
@@ -95,9 +69,9 @@ def select_cases(
         case_members = by_case[case_id]
         case_problems = _validate(case_id, case_members)
         if case_problems:
-            reason, detail = case_problems[0]
-            selection.excluded.append(ExcludedCase(case_id=case_id, reason=reason, detail=detail))
-            problems += [detail for _, detail in case_problems]
+            reason, message = case_problems[0]
+            selection.excluded.append(ExcludedCase(case_id=case_id, reason=reason, message=message))
+            problems += [message for _, message in case_problems]
             continue
         selection.members += case_members
         selection.case_ids.append(case_id)
@@ -106,7 +80,7 @@ def select_cases(
         raise CaseResolutionError("\n".join(problems))
 
     for excluded in selection.excluded:
-        LOGGER.warning("case %d excluded (%s): %s", excluded.case_id, excluded.reason, excluded.detail)
+        LOGGER.warning("case %d excluded (%s): %s", excluded.case_id, excluded.reason, excluded.message)
     if problems and not strict:
         LOGGER.warning("%d candidate case(s) excluded, %d kept", len(selection.excluded), len(selection.case_ids))
     return selection
@@ -137,21 +111,21 @@ def _group_by_case(members: list[QcMember]) -> dict[int, list[QcMember]]:
     return by_case
 
 
-def _validate(case_id: int, members: list[QcMember]) -> list[tuple[str, str]]:
-    """`(reason, detail)` pairs. Exclusion is at case granularity: the report is per family,
+def _validate(case_id: int, members: list[QcMember]) -> list[tuple[Reason, str]]:
+    """`(reason, message)` pairs. Exclusion is at case granularity: the report is per family,
     and a family short one member is a different report, not a smaller one."""
-    problems: list[tuple[str, str]] = []
+    problems: list[tuple[Reason, str]] = []
 
     for member in members:
         if member.exclusion_reason:
-            text = REASON_TEXT.get(member.exclusion_reason, "is not usable")
-            problems.append((member.exclusion_reason, f"case {case_id}, patient {member.patient_id}: {text}"))
+            reason = from_query(member.exclusion_reason)
+            problems.append((reason, f"case {case_id}, patient {member.patient_id}: {reason.text}"))
 
     probands = [m for m in members if m.role == "proband"]
     if len(probands) != 1:
         problems.append(
             (
-                "proband_count",
+                Reason(code=ReasonCode.PROBAND_COUNT),
                 f"case {case_id}: expected exactly 1 proband, found {len(probands)} -- the pedigree "
                 f"the pipeline derives needs exactly one",
             )
@@ -159,7 +133,12 @@ def _validate(case_id: int, members: list[QcMember]) -> list[tuple[str, str]]:
 
     unknown = sorted({m.strategy for m in members if m.strategy and m.strategy.lower() not in STRATEGIES})
     if unknown:
-        problems.append(("unsupported_strategy", f"case {case_id}: unsupported experimental strategy {unknown}"))
+        problems.append(
+            (
+                Reason(code=ReasonCode.UNSUPPORTED_STRATEGY, detail=",".join(unknown)),
+                f"case {case_id}: unsupported experimental strategy {unknown}",
+            )
+        )
 
     return problems
 
