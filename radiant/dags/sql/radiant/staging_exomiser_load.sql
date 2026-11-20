@@ -1,6 +1,14 @@
+{#- The SNV Exomiser reports (`variants.tsv`) of a batch of `radiant_germline_annotation` tasks, in one load job: one
+    `data_desc` per report. The report has no task_id, seq_id nor tenant_code: each data_desc adds its task's values
+    in its SET. One job per batch, not one per task: a broker load has a fixed cost (FE scheduling, the cluster's
+    shared load queue, its own transaction) that made the load grow with the task count. The data_descs of one table
+    make one atomic job (starrocks docs BROKER_LOAD.md, `data_desc`): a bad report cancels the whole batch.
+    The `raw` block is rendered at the second render only (per job, in run_insert), with `file_count`, `table_name`
+    and `temporary_partition_clause`. #}
 LOAD LABEL {{ database_name }}.{{ load_label }}
 (
-    DATA INFILE(%(tsv_filepath)s)
+{% raw %}{% for i in range(file_count) %}
+    DATA INFILE(%(filepath_{{ i }})s)
     INTO TABLE {{ table_name }} {{ temporary_partition_clause }}
     COLUMNS TERMINATED BY "\t"
     FORMAT AS "CSV"
@@ -16,9 +24,9 @@ LOAD LABEL {{ database_name }}.{{ load_label }}
     SET
     (
         part = %(part)s,
-        seq_id = %(seq_id)s,
-        task_id = %(task_id)s,
-        tenant_code = %(tenant_code)s,
+        seq_id = %(seq_id_{{ i }})s,
+        task_id = %(task_id_{{ i }})s,
+        tenant_code = %(tenant_code_{{ i }})s,
         id = id,
         rank = rank,
         symbol = gene_symbol,
@@ -34,13 +42,14 @@ LOAD LABEL {{ database_name }}.{{ load_label }}
         alternate = alternate,
         acmg_classification = lower(acmg_classification),
         acmg_evidence = IF(acmg_evidence = "", NULL, split(acmg_evidence, ","))
-     )
-     where contributing_variant=1
- )
- WITH BROKER
- (
-        {{ broker_configuration }}
- )
+    )
+    WHERE contributing_variant = 1{{ "," if not loop.last }}
+{% endfor %}{% endraw %}
+)
+WITH BROKER
+(
+    {{ broker_configuration }}
+)
 PROPERTIES
 (
     'timeout' = '{{ broker_load_timeout }}'
