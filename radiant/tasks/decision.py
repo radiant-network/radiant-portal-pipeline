@@ -73,13 +73,32 @@ class ReasonCode(StrEnum):
     )
 
 
+# The codes about one member of the case: their reason names that member.
+MEMBER_CODES = frozenset(
+    {
+        ReasonCode.PENDING_SEQUENCING,
+        ReasonCode.PENDING_ALIGNMENT,
+        ReasonCode.MISSING_INPUT,
+        ReasonCode.AMBIGUOUS_INPUT,
+        ReasonCode.MISSING_ALIQUOT,
+        ReasonCode.UNSUPPORTED_CALLER,
+    }
+)
+
+
 class Reason(BaseModel):
-    """A reason code, and what it is about (`gvcf`, a caller name...) when the code is shared."""
+    """A reason code, what it is about (`gvcf`, a caller name...) when the code is shared, and the member it
+    concerns, when it concerns one."""
 
     model_config = ConfigDict(frozen=True)
 
     code: ReasonCode
     detail: str = ""
+    patient_id: int | None = None
+
+    def about(self, patient_id: int) -> "Reason":
+        """This reason, naming `patient_id` if its code is about a member."""
+        return self.model_copy(update={"patient_id": patient_id}) if self.code in MEMBER_CODES else self
 
     @property
     def decision(self) -> Decision:
@@ -91,6 +110,16 @@ class Reason(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.code}:{self.detail}" if self.detail else str(self.code)
+
+
+# When an item has several reasons, the decision of the first of these that applies.
+_PRECEDENCE = (Decision.SKIP, Decision.BLOCKED, Decision.WAIT)
+
+
+def decision_of(reasons) -> Decision:
+    """`run` without a reason; otherwise skip, then blocked, then wait."""
+    decisions = {r.decision for r in reasons}
+    return next((d for d in _PRECEDENCE if d in decisions), Decision.RUN)
 
 
 # The fact queries still return one code per document kind; each maps to a shared code.

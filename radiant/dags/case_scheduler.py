@@ -212,6 +212,31 @@ def case_scheduler():
         context["ti"].xcom_push(key=CASES_WITH_WORK_KEY, value=sorted(waiting))
         return plan_processing(status_rows, waiting, context["params"]["excluded_tenants"])
 
+    facts_germline_snv = RadiantStarRocksOperator(
+        task_id="facts_germline_snv",
+        task_display_name="[StarRocks] Facts of the germline SNV candidates",
+        sql="./sql/clinical/germline_snv_facts_select.sql",
+        output_processor=rows_output_processor,
+        do_xcom_push=True,
+    )
+
+    @task(task_id="journal_germline_snv", task_display_name="[PyOp] Decide and journal germline SNV")
+    def journal_germline_snv(fact_rows: Any) -> dict:
+        """Writes the journal only: the "from Cases" DAG still selects its own cases."""
+        from collections import Counter
+
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.journal import record
+        from radiant.tasks.nextflow.resolve import decide_cases
+
+        context = get_current_context()
+        entries = decide_cases(fact_rows, context["params"]["excluded_tenants"])
+        written = record(entries, context["run_id"])
+        counts = dict(Counter(str(e.decision) for e in entries))
+        LOGGER.info("germline_snv: %d item(s) %s, %d row(s) written", len(entries), counts, len(written))
+        return {"decisions": counts, "written": len(written)}
+
     @task(
         task_id="set_processing",
         task_display_name="[PyOp] Move cases to processing",
@@ -316,6 +341,7 @@ def case_scheduler():
     def watcher() -> None:
         raise AirflowFailException("a step of this run failed, see the failed task(s) and the child runs")
 
+    journaled_germline_snv = journal_germline_snv(facts_germline_snv.output)
     batches = discover_cases(*(query.output for query in discovered), fetch_case_statuses.output)
     processing = set_processing.expand(batch=batches)
 
@@ -362,6 +388,8 @@ def case_scheduler():
 
     [
         *discovered,
+        facts_germline_snv,
+        journaled_germline_snv,
         fetch_case_statuses,
         processing,
         trigger_germline_snv,
