@@ -32,7 +32,7 @@ NEW_HEADER = (
         (OLD_HEADER, "old"),
         (NEW_HEADER, "new"),
         (OLD_HEADER.lstrip("#"), "old"),
-        (f"﻿{NEW_HEADER}\r", "new"),
+        (f"{NEW_HEADER}\r", "new"),
         (NEW_HEADER.replace(",", ", "), "new"),
     ],
 )

@@ -703,7 +703,7 @@ def parse_gene_coverage_header(line: str) -> str:
     DRAGEN writes the first column as `#gene`. Raises ValueError for any other header: a positional load of an unknown
     column order would put the values in the wrong columns.
     """
-    columns = [c.strip() for c in line.lstrip("﻿").strip().split(",")]
+    columns = [c.strip() for c in line.strip().split(",")]
     if columns and columns[0].startswith("#"):
         columns[0] = columns[0][1:]
     if columns == GENE_COVERAGE_OLD_HEADER:
@@ -750,7 +750,8 @@ def read_gene_coverage_header_line(s3_client, filepath: str) -> str:
         if code not in _GENE_COVERAGE_FILE_ERROR_CODES:
             raise
         raise GeneCoverageFileError(f"S3 cannot read the file ({code}): {e}") from e
-    text = data.decode("utf-8", errors="replace")
+    # utf-8-sig drops a leading byte order mark, if any: the first column stays `#gene`.
+    text = data.decode("utf-8-sig", errors="replace")
     line, newline, _ = text.partition("\n")
     if not newline and len(data) >= GENE_COVERAGE_HEADER_BYTES:
         raise GeneCoverageFileError(f"No header line in the first {GENE_COVERAGE_HEADER_BYTES} bytes of the file.")
@@ -763,8 +764,10 @@ class GeneCoverageLoadError(AirflowException):
 
 class GeneCoverageFileError(Exception):
     """One `covgene` file that cannot be loaded: missing, empty or with no access, an unknown header, or a load
-    that StarRocks cancelled or did not finish in time. Any other error (lost connection, BE down) is not a file error:
-    it fails the task before the swap, so that Airflow retries it and the loaded coverage stays."""
+    that StarRocks cancelled or did not finish in time. A cancelled load counts as a file error whatever its cause (bad
+    data, missing file, BE lost, timeout): the operator reads the cause in the error that `check_gene_coverage_files`
+    gives. Any other error (lost connection, SQL error) is not a file error: it fails the task before the swap, so that
+    Airflow retries it and the loaded coverage stays."""
 
 
 class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):

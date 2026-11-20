@@ -171,7 +171,8 @@ Loads the DRAGEN coverage_by_gene CSV (**covgene** document) of each alignment i
   experiment of the delta, so a re-alignment replaces the old alignment's coverage.
 - An alignment without **covgene** gets no row, and the run stays green.
 - A bad file (missing or unreadable on S3, unknown header, load cancelled or timed out) does not stop
-  the others. The part gets the rows of every file that loaded, and the bad file's experiment keeps
+  the others. A cancelled load is a bad file whatever its cause: bad data, but also a BE lost during the
+  load or the load timeout. Read the cause in the error of **check_gene_coverage_files**. The part gets the rows of every file that loaded, and the bad file's experiment keeps
   the rows an earlier import loaded (none if it never loaded). The experiment is marked imported all
   the same, so its file loads again only when the experiment is re-submitted by hand.
 - The Airflow worker reads the header: the first 4 KiB of each file (an S3 ranged GET), with its own
@@ -180,7 +181,7 @@ Loads the DRAGEN coverage_by_gene CSV (**covgene** document) of each alignment i
 
 > A bad file never fails the load: the load returns its errors, and only **check_gene_coverage_files**
 > fails, which no task waits on. So a bad file blocks no other data, and still fails the run. Any other
-> error of the load (StarRocks down, lost connection, missing table) fails it before the swap, so the
+> error of the load (StarRocks unreachable, lost connection, missing table) fails it before the swap, so the
 > task retries and the loaded coverage stays; as for Exomiser, it stops the chain.
 
 See radiant-hub docs/features/RAD-315-gene-coverage-germline-somatic-alignments.md.
