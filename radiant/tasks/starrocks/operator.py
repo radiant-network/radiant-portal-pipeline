@@ -1,3 +1,4 @@
+import itertools
 import os
 import time
 import uuid
@@ -6,6 +7,7 @@ from collections.abc import MutableMapping, Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlparse
 
 from airflow.exceptions import AirflowException, AirflowSkipException
 from airflow.providers.common.sql.operators.sql import BaseSQLOperator, SQLExecuteQueryOperator
@@ -660,3 +662,310 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
                 self.verify_load_status(_params["load_label"])
         if partition_exists and self.is_swap:
             self.swap_partitions()
+
+
+# RAD-315. The two DRAGEN `coverage_by_gene` CSV formats, told apart by their header (as QLIN does, clin-variant-etl
+# `normalized/CoverageByGene.scala`). The broker load is positional, so the header must be exactly one of the two.
+GENE_COVERAGE_COVERAGE_COLUMNS = [
+    "coverage5",
+    "coverage15",
+    "coverage30",
+    "coverage50",
+    "coverage100",
+    "coverage200",
+    "coverage300",
+    "coverage400",
+    "coverage500",
+    "coverage1000",
+]
+GENE_COVERAGE_OLD_HEADER = ["gene", "size", "average_coverage", *GENE_COVERAGE_COVERAGE_COLUMNS]
+GENE_COVERAGE_NEW_HEADER = ["gene", "type", "size", "average_coverage", *GENE_COVERAGE_COVERAGE_COLUMNS]
+_GENE_COVERAGE_TABLE_COLUMNS = [
+    "gene",
+    "size",
+    "average_coverage",
+    *[f"{c.replace('coverage', 'coverage_')}x" for c in GENE_COVERAGE_COVERAGE_COLUMNS],
+]
+# Per format: the column list of the broker load, and the value of `type` (the new format's own column, else CDS).
+GENE_COVERAGE_FORMATS = {
+    "old": (", ".join(_GENE_COVERAGE_TABLE_COLUMNS), "'CDS'"),
+    "new": (", ".join(["gene", "type", *_GENE_COVERAGE_TABLE_COLUMNS[1:]]), "type"),
+}
+# The header line of a `covgene` file is its first line, read from S3 by the Airflow worker: a ranged GET of the first
+# bytes (S3 API GetObject, `Range`), not a scan of the file. The broker load's `skip_header = 1` takes the same first
+# line as the header. A DRAGEN header is about 170 bytes.
+GENE_COVERAGE_HEADER_BYTES = 4096
+
+
+def parse_gene_coverage_header(line: str) -> str:
+    """Return the format (`old` or `new`) of a `coverage_by_gene` CSV from its header line.
+
+    DRAGEN writes the first column as `#gene`. Raises ValueError for any other header: a positional load of an unknown
+    column order would put the values in the wrong columns.
+    """
+    columns = [c.strip() for c in line.strip().split(",")]
+    if columns and columns[0].startswith("#"):
+        columns[0] = columns[0][1:]
+    if columns == GENE_COVERAGE_OLD_HEADER:
+        return "old"
+    if columns == GENE_COVERAGE_NEW_HEADER:
+        return "new"
+    raise ValueError(
+        f"Unexpected coverage_by_gene header {line.strip()[:300]!r}: expected the columns {GENE_COVERAGE_OLD_HEADER} "
+        f"or {GENE_COVERAGE_NEW_HEADER}."
+    )
+
+
+# The files of one load job (one `data_desc` each). A WXS part (up to 1000 experiments) loads in about 10 jobs, not
+# 1000, and a job a bad file cancels reloads at most this many files one by one.
+GENE_COVERAGE_FILES_PER_LOAD = 100
+
+# The S3 error codes of a file that cannot be read for good: missing, no access, or empty (a range on an empty object
+# is `InvalidRange`). Any other error (throttling, network, 5xx) is not a bad file, so that the task fails.
+_GENE_COVERAGE_FILE_ERROR_CODES = frozenset(
+    {"NoSuchKey", "NoSuchBucket", "AccessDenied", "InvalidRange", "404", "403"}
+)
+
+
+def read_gene_coverage_header_line(s3_client, filepath: str) -> str:
+    """The first line of a `covgene` file, from a ranged GET of its first `GENE_COVERAGE_HEADER_BYTES` bytes.
+
+    Raises `GeneCoverageFileError` for a file S3 says cannot be read for good, and for a first line that does not end
+    within the range; any other error is raised as is.
+    """
+    from botocore.exceptions import ClientError
+
+    parsed = urlparse(filepath)
+    if parsed.scheme not in ("s3", "s3a") or not parsed.netloc or not parsed.path.strip("/"):
+        raise GeneCoverageFileError(f"Not an S3 object path: {filepath!r}.")
+    try:
+        response = s3_client.get_object(
+            Bucket=parsed.netloc,
+            Key=parsed.path.lstrip("/"),
+            Range=f"bytes=0-{GENE_COVERAGE_HEADER_BYTES - 1}",
+        )
+        data = response["Body"].read()
+    except ClientError as e:
+        code = str(e.response.get("Error", {}).get("Code", ""))
+        if code not in _GENE_COVERAGE_FILE_ERROR_CODES:
+            raise
+        raise GeneCoverageFileError(f"S3 cannot read the file ({code}): {e}") from e
+    # utf-8-sig drops a leading byte order mark, if any: the first column stays `#gene`.
+    text = data.decode("utf-8-sig", errors="replace")
+    line, newline, _ = text.partition("\n")
+    if not newline and len(data) >= GENE_COVERAGE_HEADER_BYTES:
+        raise GeneCoverageFileError(f"No header line in the first {GENE_COVERAGE_HEADER_BYTES} bytes of the file.")
+    return line
+
+
+class GeneCoverageLoadError(AirflowException):
+    """Raised by the gene coverage check when one or more `covgene` files could not be loaded."""
+
+
+class GeneCoverageFileError(Exception):
+    """One `covgene` file that cannot be loaded: missing, empty or with no access, an unknown header, or a load
+    that StarRocks cancelled or did not finish in time. A cancelled load counts as a file error whatever its cause (bad
+    data, missing file, BE lost, timeout): the operator reads the cause in the error that `check_gene_coverage_files`
+    gives. Any other error (lost connection, SQL error) is not a file error: it fails the task before the swap, so that
+    Airflow retries it and the loaded coverage stays."""
+
+
+class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):
+    """RAD-315. Broker-load the `covgene` CSV of each current alignment into the shared `raw_gene_coverage`.
+
+    `files` is the output of `gene_coverage_file_select.sql`: one row per alignment task (seq_id, task_id, tenant_code,
+    filepath). The copy step of the partition swap keeps the rows of the experiments the run does not reload.
+
+    The header of each file is read first, then the files of one format load together: one load job per
+    `files_per_load` files (one `data_desc` per file), so that a part pays the overhead of a job per batch, not per
+    file. A job is atomic: a bad file cancels it, and its files then load one by one, so that only the bad file is
+    lost.
+
+    One bad file (`GeneCoverageFileError`) does not stop the others: its error (S3 path + message) is kept, the other
+    files load, and the rows already loaded for the bad file's experiment are copied back into the temporary partition,
+    so that the swap keeps them. The operator returns the errors (XCom), and a later task fails the run with them,
+    after the per-tenant inserts. Any other error fails the task before the swap.
+    """
+
+    template_fields = RadiantStarrocksLoadBaseOperator.template_fields + ("sql", "files")
+    template_ext = (".sql", ".json")
+    template_fields_renderers = {**RadiantStarrocksLoadBaseOperator.template_fields_renderers, "sql": "sql"}
+
+    def __init__(
+        self,
+        files: list[dict],
+        *args,
+        sql: str = "sql/radiant/staging_gene_coverage_load.sql",
+        files_per_load: int = GENE_COVERAGE_FILES_PER_LOAD,
+        **kwargs,
+    ):
+        if files_per_load < 1:
+            raise ValueError(f"files_per_load must be at least 1, got {files_per_load}.")
+        self.files = files
+        self.sql = sql
+        self.files_per_load = files_per_load
+        self.errors: list[dict] = []
+        super().__init__(*args, **kwargs)
+
+    def render_template_fields(self, context, jinja_env=None):
+        super().render_template_fields(context, jinja_env)
+        self.files = self.render_template(self.files, context, jinja_env)
+        _context = super().prepare_load_context(context)
+        # Filled per load job in load_files; the data_desc loop is a `raw` block of the SQL, rendered there too.
+        _sql_context = {**_context, "load_label": "{{load_label}}"}
+        self.sql = self.render_template(self.sql, _sql_context, jinja_env)
+
+    def execute(self, context):
+        self.errors = []
+        super().execute(context)
+        return self.errors
+
+    # Polls (2 s each) to wait for the load's row in information_schema.loads before the load counts as lost.
+    _LOAD_ROW_POLLS = 30
+
+    def wait_for_load(self, cursor, label: str) -> None:
+        """Wait for the load `label`. A cancelled or timed-out load is a `GeneCoverageFileError` (a timed-out load is
+        cancelled first, so that it cannot write after the swap). A load that never shows up is not a file error."""
+        for i in range(self.broker_load_timeout):
+            cursor.execute(
+                "SELECT STATE, ERROR_MSG FROM information_schema.loads WHERE LABEL = %(label)s", {"label": label}
+            )
+            row = cursor.fetchone()
+            self.log.info(f"Load state for label {label}: {row}")
+            if row and row[0] == "FINISHED":
+                return
+            if row and row[0] == "CANCELLED":
+                raise GeneCoverageFileError(f"Load {label} was cancelled: {row[1]}")
+            if not row and i >= self._LOAD_ROW_POLLS:
+                raise RuntimeError(f"Load {label} is not in information_schema.loads.")
+            time.sleep(2)
+        database_name = self.table.split(".")[0]
+        cursor.execute(f"CANCEL LOAD FROM {database_name} WHERE LABEL = %(label)s", {"label": label})
+        raise GeneCoverageFileError(f"Load {label} did not finish in time; it was cancelled.")
+
+    def get_s3_client(self):
+        """The S3 client of the header reads: the worker's default credential chain, as the import lock
+        (`radiant/tasks/locking.py`); `AWS_ENDPOINT_URL` points it at the local S3 store."""
+        import boto3
+
+        return boto3.client("s3")
+
+    def read_format(self, s3_client, filepath: str) -> str:
+        """The format of a `covgene` file, from its first line (`read_gene_coverage_header_line`).
+
+        A file S3 cannot read for good, or a missing or unknown header, is a file error; any other error is raised as
+        is.
+        """
+        line = read_gene_coverage_header_line(s3_client, filepath)
+        try:
+            return parse_gene_coverage_header(line)
+        except ValueError as e:
+            raise GeneCoverageFileError(str(e)) from e
+
+    def restore_failed_experiments(self, hook, failed_seq_ids: set, loaded_task_ids: set) -> None:
+        """Copy back, into the temporary partition, the rows already loaded for the experiments of the bad files.
+
+        The copy step dropped every experiment of the delta, so without this the swap would delete the coverage an
+        earlier run loaded, and the experiment, imported all the same, would never be reloaded. The rows of a task
+        loaded by this run are left out, or they would be there twice.
+        """
+        self.log.info(f"Keeping the loaded coverage of the experiments of the bad files: {sorted(failed_seq_ids)}")
+        hook.run(
+            sql=f"""
+                INSERT INTO {self.table} TEMPORARY PARTITION ({self.temp_partition})
+                SELECT * FROM {self.table} PARTITION (p{self.partition})
+                WHERE seq_id IN %(seq_ids)s AND task_id NOT IN %(task_ids)s
+            """,
+            autocommit=True,
+            parameters={"seq_ids": sorted(failed_seq_ids), "task_ids": sorted(loaded_task_ids) or [-1]},
+        )
+
+    def load_files(self, cursor, files: list[dict], _format: str, temporary_partition_clause: str) -> None:
+        """Load the files of one format in one load job, one `data_desc` per file, and wait for it.
+
+        The job is atomic: when it is cancelled (`GeneCoverageFileError`), none of its files wrote a row.
+        """
+        file_columns, type_value = GENE_COVERAGE_FORMATS[_format]
+        first = files[0]
+        load_label = f"load_gene_coverage_{first['task_id']}_{first['seq_id']}_{len(files)}_{uuid.uuid4().hex}"
+        self.log.info(f"Loading {len(files)} {_format}-format coverage_by_gene file(s) in load {load_label}...")
+        _sql = self.render_template(
+            self.sql,
+            {
+                "load_label": load_label,
+                "file_count": len(files),
+                "table_name": self.table.split(".")[1],
+                "temporary_partition_clause": temporary_partition_clause,
+                "file_columns": file_columns,
+                "type_value": type_value,
+            },
+            None,
+        )
+        _parameters = {"part": self.partition}
+        for i, file in enumerate(files):
+            _parameters.update(
+                {
+                    f"filepath_{i}": file["filepath"],
+                    f"seq_id_{i}": file["seq_id"],
+                    f"task_id_{i}": file["task_id"],
+                    f"tenant_code_{i}": file["tenant_code"],
+                }
+            )
+        cursor.execute(_sql, _parameters)
+        self.wait_for_load(cursor, load_label)
+
+    def run_insert(self, context, partition_exists):
+        files = [f for f in (self.files or []) if f.get("filepath")]
+        if not files:
+            self.log.info("No coverage_by_gene file to load.")
+
+        hook = self.get_db_hook()
+        _temporary_partition_clause = f"TEMPORARY PARTITION ({self.temp_partition})" if partition_exists else ""
+        failed_seq_ids, loaded_task_ids = set(), set()
+
+        def fail(file: dict, error: GeneCoverageFileError) -> None:
+            self.log.error(f"Could not load coverage_by_gene file {file['filepath']}: {error}")
+            self.errors.append({"filepath": file["filepath"], "task_id": file["task_id"], "error": str(error)})
+            failed_seq_ids.add(file["seq_id"])
+
+        files_by_format: dict[str, list[dict]] = {_format: [] for _format in GENE_COVERAGE_FORMATS}
+        s3_client = self.get_s3_client() if files else None
+        for file in files:
+            try:
+                files_by_format[self.read_format(s3_client, file["filepath"])].append(file)
+            except GeneCoverageFileError as e:
+                fail(file, e)
+
+        with hook.get_conn().cursor() as cursor:
+
+            def load(batch: list[dict], _format: str) -> None:
+                try:
+                    self.load_files(cursor, batch, _format, _temporary_partition_clause)
+                except GeneCoverageFileError as e:
+                    if len(batch) == 1:
+                        fail(batch[0], e)
+                        return
+                    # The job wrote no row: load its files one by one, to keep the good ones.
+                    self.log.warning(f"The load of {len(batch)} files failed, loading them one by one: {e}")
+                    for file in batch:
+                        load([file], _format)
+                else:
+                    loaded_task_ids.update(file["task_id"] for file in batch)
+
+            for _format, format_files in files_by_format.items():
+                for batch in itertools.batched(format_files, self.files_per_load):
+                    load(list(batch), _format)
+
+        # Swap all the same: the copy step has already dropped the rows of the experiments this run reloads.
+        if partition_exists and self.is_swap:
+            if failed_seq_ids:
+                self.restore_failed_experiments(hook, failed_seq_ids, loaded_task_ids)
+            self.swap_partitions()
+
+
+def raise_gene_coverage_errors(errors: list[dict] | None) -> None:
+    """Fail with the S3 path and the error of each `covgene` file that could not be loaded."""
+    if not errors:
+        return
+    lines = "\n".join(f"- {e['filepath']} (task {e['task_id']}): {e['error']}" for e in errors)
+    raise GeneCoverageLoadError(f"{len(errors)} coverage_by_gene file(s) could not be loaded:\n{lines}")
