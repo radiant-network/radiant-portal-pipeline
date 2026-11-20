@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.0](https://github.com/radiant-network/radiant-portal-pipeline/compare/v1.2.0...v1.3.0) (2026-11-20)
+
+
+### Features
+
+* RAD-288 germline SNV runs the cases the scheduler decided, a missing parent no longer blocks ([#362](https://github.com/radiant-network/radiant-portal-pipeline/issues/362)) ([26910c4](https://github.com/radiant-network/radiant-portal-pipeline/commit/26910c4dc584cea0009edc95fd2779a7c83709e3))
+* RAD-288 the case scheduler journals its germline SNV decisions ([#361](https://github.com/radiant-network/radiant-portal-pipeline/issues/361)) ([281a39c](https://github.com/radiant-network/radiant-portal-pipeline/commit/281a39cbe4d64dea3f2888d5143a5f3b13a3714e))
+* RAD-288 the pipeline journal table and its write rule ([#360](https://github.com/radiant-network/radiant-portal-pipeline/issues/360)) ([55f8c30](https://github.com/radiant-network/radiant-portal-pipeline/commit/55f8c3033e226efc13802cb0353e00252a2c2aa3))
+
 ## [1.2.0](https://github.com/radiant-network/radiant-portal-pipeline/compare/v1.1.32...v1.2.0) (2026-11-18)
 
 
