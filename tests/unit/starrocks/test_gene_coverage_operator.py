@@ -1,10 +1,13 @@
+import io
 from unittest.mock import MagicMock, patch
 
 import pymysql
 import pytest
+from botocore.exceptions import ClientError, EndpointConnectionError
 
 from radiant.tasks.starrocks.operator import (
     GENE_COVERAGE_FORMATS,
+    GENE_COVERAGE_HEADER_BYTES,
     GeneCoverageFileError,
     GeneCoverageLoadError,
     RadiantLoadGeneCoverageOperator,
@@ -63,83 +66,107 @@ def test_gene_coverage_formats_load_the_new_format_type_column_and_set_cds_on_th
     assert (old_type, new_type) == ("'CDS'", "type")
 
 
-def _header_operator(rows=None, error=None):
-    op = RadiantLoadGeneCoverageOperator(
+def _client_error(code, operation="GetObject"):
+    return ClientError({"Error": {"Code": code, "Message": f"mock {code}"}}, operation)
+
+
+class _FakeS3:
+    """`get_object` of boto3's S3 client: each path's content (bytes or str), or the error it raises."""
+
+    def __init__(self, contents):
+        self.contents = contents
+        self.calls = []
+
+    def get_object(self, Bucket, Key, Range):  # noqa: N803 (boto3 argument names)
+        self.calls.append((Bucket, Key, Range))
+        content = self.contents[f"s3://{Bucket}/{Key}"]
+        if isinstance(content, Exception):
+            raise content
+        data = content.encode() if isinstance(content, str) else content
+        first, last = (int(b) for b in Range.removeprefix("bytes=").split("-"))
+        return {"Body": io.BytesIO(data[first : last + 1])}
+
+
+def _with_row(header):
+    return f"{header}\nBRCA1,5589,136.5,1.0,1.0,0.99,0.98,0.9,0.5,0.2,0.1,0.05,0.0\n"
+
+
+def _operator():
+    return RadiantLoadGeneCoverageOperator(
         task_id="t",
         table="radiant.raw_gene_coverage",
         swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
         files=[],
     )
-    op.broker_configuration = "'aws.s3.region' = 'mock-region'"
-    cursor = MagicMock()
-    cursor.execute.side_effect = error
-    cursor.fetchall.return_value = rows or []
-    return op, cursor
 
 
-def test_read_format_reads_the_header_line_with_starrocks():
-    op, cursor = _header_operator(rows=[(NEW_HEADER,)])
+def test_read_format_reads_the_first_bytes_of_the_file_only():
+    s3 = _FakeS3({"s3://mock-bucket/tests/a.csv": _with_row(NEW_HEADER) * 1000})
 
-    assert op.read_format(cursor, "s3://mock-bucket/tests/a.csv") == "new"
-    sql, params = cursor.execute.call_args.args
-    assert "FROM FILES(" in sql
-    assert "'aws.s3.region' = 'mock-region'" in sql
-    assert "WHERE $1 LIKE '%%average_coverage%%'" in sql
-    assert params == {"filepath": "s3://mock-bucket/tests/a.csv"}
+    assert _operator().read_format(s3, "s3://mock-bucket/tests/a.csv") == "new"
+    assert s3.calls == [("mock-bucket", "tests/a.csv", f"bytes=0-{GENE_COVERAGE_HEADER_BYTES - 1}")]
 
 
 @pytest.mark.parametrize(
-    "rows, message",
+    "content, expected",
     [
-        ([], "found 0"),
-        ([(OLD_HEADER,), (OLD_HEADER,)], "found 2"),
-        ([("gene;size;average_coverage",)], "Unexpected coverage_by_gene header"),
+        (_with_row(OLD_HEADER), "old"),
+        # A file of its header alone, with or without the end of line.
+        (OLD_HEADER, "old"),
+        (f"{NEW_HEADER}\r\n", "new"),
+        # A UTF-8 byte order mark.
+        (b"\xef\xbb\xbf" + _with_row(NEW_HEADER).encode(), "new"),
     ],
 )
-def test_read_format_makes_a_missing_or_unknown_header_a_file_error(rows, message):
-    op, cursor = _header_operator(rows=rows)
+def test_read_format_takes_the_first_line_as_the_header(content, expected):
+    s3 = _FakeS3({"s3://mock-bucket/a.csv": content})
+    assert _operator().read_format(s3, "s3://mock-bucket/a.csv") == expected
+
+
+@pytest.mark.parametrize(
+    "content, message",
+    [
+        # The header must be the first line: the broker load skips the first line only.
+        (f"BRCA1,5589,136.5\n{OLD_HEADER}\n", "Unexpected coverage_by_gene header"),
+        ("gene;size;average_coverage\n", "Unexpected coverage_by_gene header"),
+        ("x" * (GENE_COVERAGE_HEADER_BYTES + 10), "No header line in the first"),
+        (_client_error("InvalidRange"), "InvalidRange"),
+    ],
+)
+def test_read_format_makes_a_missing_or_unknown_header_a_file_error(content, message):
+    s3 = _FakeS3({"s3://mock-bucket/a.csv": content})
     with pytest.raises(GeneCoverageFileError, match=message):
-        op.read_format(cursor, "s3://mock-bucket/tests/a.csv")
+        _operator().read_format(s3, "s3://mock-bucket/a.csv")
 
 
-# The messages of StarRocks 4.0.13 (sandbox) for a missing file and a missing bucket, and the S3 access-denied code.
-MISSING_FILE = pymysql.err.OperationalError(
-    5600,
-    "Access storage error. Error message: No files were found matching the pattern(s) or path(s): "
-    "'s3://mock-bucket/tests/missing.csv'.",
-)
+@pytest.mark.parametrize("code", ["NoSuchKey", "NoSuchBucket", "AccessDenied", "404", "403"])
+def test_read_format_makes_a_file_s3_cannot_read_a_file_error(code):
+    s3 = _FakeS3({"s3://mock-bucket/missing.csv": _client_error(code)})
+    with pytest.raises(GeneCoverageFileError, match=f"S3 cannot read the file \\({code}\\)"):
+        _operator().read_format(s3, "s3://mock-bucket/missing.csv")
 
 
-@pytest.mark.parametrize(
-    "error",
-    [
-        MISSING_FILE,
-        pymysql.err.ProgrammingError(
-            1064, "Access storage error. Error code: NoSuchBucket. Error message: The specified bucket does not exist"
-        ),
-        pymysql.err.ProgrammingError(1064, "Access storage error. Error code: AccessDenied. Error message: Denied"),
-    ],
-)
-def test_read_format_makes_a_file_starrocks_cannot_read_a_file_error(error):
-    op, cursor = _header_operator(error=error)
-    with pytest.raises(GeneCoverageFileError, match="StarRocks cannot read the file"):
-        op.read_format(cursor, "s3://mock-bucket/tests/missing.csv")
+@pytest.mark.parametrize("path", ["/mock/a.csv", "s3://mock-bucket", "s3://mock-bucket/", "gs://mock-bucket/a.csv"])
+def test_read_format_makes_a_path_that_is_no_s3_object_a_file_error(path):
+    with pytest.raises(GeneCoverageFileError, match="Not an S3 object path"):
+        _operator().read_format(_FakeS3({}), path)
 
 
 @pytest.mark.parametrize(
     "error",
     [
-        pymysql.err.OperationalError(2013, "Lost connection to MySQL server during query"),
-        # A temporary server error has the same errno as a missing bucket: it must not count as a bad file.
-        pymysql.err.ProgrammingError(1064, "Backend node not found. Check if any backend node is down."),
-        pymysql.err.ProgrammingError(1064, "Access storage error. Error code: SlowDown. Error message: Reduce rate"),
+        # Throttling and server errors are temporary: never a bad file.
+        _client_error("SlowDown"),
+        _client_error("InternalError"),
+        _client_error("503"),
+        EndpointConnectionError(endpoint_url="https://mock-endpoint"),
         RuntimeError("boom"),
     ],
 )
 def test_read_format_raises_any_other_error_as_is(error):
-    op, cursor = _header_operator(error=error)
+    s3 = _FakeS3({"s3://mock-bucket/a.csv": error})
     with pytest.raises(type(error)):
-        op.read_format(cursor, "s3://mock-bucket/tests/a.csv")
+        _operator().read_format(s3, "s3://mock-bucket/a.csv")
 
 
 def _file(task_id, seq_id, filepath, tenant_code="test"):
@@ -152,32 +179,39 @@ def _file(task_id, seq_id, filepath, tenant_code="test"):
     }
 
 
-def _run_load(files, headers, *, partition_exists=True, cancelled=(), failing=()):
-    """Run the load with the given header per file; a load whose path is in `cancelled` ends CANCELLED, and the
-    statement of a load whose path is in `failing` raises a database error."""
+def _paths(params):
+    """The S3 paths of one load job, in data_desc order."""
+    return [params[f"filepath_{i}"] for i in range(len([k for k in params if k.startswith("filepath_")]))]
+
+
+def _run_load(files, headers, *, partition_exists=True, cancelled=(), failing=(), files_per_load=100):
+    """Run the load with the given header per file (or the S3 error of its read); a load job holding a path of
+    `cancelled` ends CANCELLED (and writes nothing), and the statement of a job holding a path of `failing` raises a
+    database error."""
     op = RadiantLoadGeneCoverageOperator(
         task_id="t",
         table="radiant.raw_gene_coverage",
         swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
         parameters={"seq_ids": [1], "deleted_seq_ids": [-1]},
         files=files,
-        sql="LOAD {{ file_columns }} SET type = {{ type_value }} {{ temporary_partition_clause }}",
+        sql="LOAD {{ file_count }} {{ table_name }} {{ file_columns }} SET type = {{ type_value }} "
+        "{{ temporary_partition_clause }}",
+        files_per_load=files_per_load,
     )
     hook = MagicMock()
     cursor = hook.get_conn.return_value.cursor.return_value.__enter__.return_value
     loads = []
 
+    s3 = _FakeS3(
+        {path: header if isinstance(header, Exception) else _with_row(header) for path, header in headers.items()}
+    )
+
     def execute(sql, params=None):
-        if "FROM FILES(" in sql:
-            header = headers[params["filepath"]]
-            if isinstance(header, Exception):
-                raise header
-            cursor.fetchall.return_value = [(header,)]
-        elif "information_schema.loads" in sql:
-            path = loads[-1][1]["filepath"]
-            cursor.fetchone.return_value = ("CANCELLED", "bad value") if path in cancelled else ("FINISHED", None)
+        if "information_schema.loads" in sql:
+            bad = set(_paths(loads[-1][1])) & set(cancelled)
+            cursor.fetchone.return_value = ("CANCELLED", f"bad value in {sorted(bad)}") if bad else ("FINISHED", None)
         else:
-            if params and params.get("filepath") in failing:
+            if params and set(_paths(params)) & set(failing):
                 raise pymysql.err.OperationalError(2013, "Lost connection to StarRocks")
             loads.append((sql, params))
 
@@ -187,6 +221,7 @@ def _run_load(files, headers, *, partition_exists=True, cancelled=(), failing=()
 
     with (
         patch.object(op, "get_db_hook", return_value=hook),
+        patch.object(op, "get_s3_client", return_value=s3),
         patch.object(op, "render_template", side_effect=lambda content, ctx, *_: jinja2.Template(content).render(ctx)),
         patch.object(op, "swap_partitions") as swap,
     ):
@@ -203,13 +238,74 @@ def test_gene_coverage_load_picks_the_column_list_of_each_file_format():
 
     assert errors == []
     assert [sql for sql, _ in loads] == [
-        f"LOAD {GENE_COVERAGE_FORMATS['old'][0]} SET type = 'CDS' TEMPORARY PARTITION (tp5)",
-        f"LOAD {GENE_COVERAGE_FORMATS['new'][0]} SET type = type TEMPORARY PARTITION (tp5)",
+        f"LOAD 1 raw_gene_coverage {GENE_COVERAGE_FORMATS['old'][0]} SET type = 'CDS' TEMPORARY PARTITION (tp5)",
+        f"LOAD 1 raw_gene_coverage {GENE_COVERAGE_FORMATS['new'][0]} SET type = type TEMPORARY PARTITION (tp5)",
     ]
     assert [params for _, params in loads] == [
-        {"part": "5", "seq_id": 10, "task_id": 1, "tenant_code": "test", "filepath": "s3://mock/old.csv"},
-        {"part": "5", "seq_id": 20, "task_id": 2, "tenant_code": "other", "filepath": "s3://mock/new.csv"},
+        {"part": "5", "seq_id_0": 10, "task_id_0": 1, "tenant_code_0": "test", "filepath_0": "s3://mock/old.csv"},
+        {"part": "5", "seq_id_0": 20, "task_id_0": 2, "tenant_code_0": "other", "filepath_0": "s3://mock/new.csv"},
     ]
+    swap.assert_called_once()
+
+
+def test_gene_coverage_load_puts_the_files_of_one_format_in_one_load_job():
+    """One job per format, each file with its own experiment, task and tenant."""
+    loads, errors, _ = _run_load(
+        [
+            _file(1, 10, "s3://mock/old-1.csv"),
+            _file(2, 20, "s3://mock/new-1.csv"),
+            _file(3, 30, "s3://mock/old-2.csv", tenant_code="other"),
+            _file(4, 40, "s3://mock/new-2.csv"),
+        ],
+        {
+            "s3://mock/old-1.csv": OLD_HEADER,
+            "s3://mock/new-1.csv": NEW_HEADER,
+            "s3://mock/old-2.csv": OLD_HEADER,
+            "s3://mock/new-2.csv": NEW_HEADER,
+        },
+    )
+
+    assert errors == []
+    assert [sql.split()[1] for sql, _ in loads] == ["2", "2"]
+    assert [_paths(params) for _, params in loads] == [
+        ["s3://mock/old-1.csv", "s3://mock/old-2.csv"],
+        ["s3://mock/new-1.csv", "s3://mock/new-2.csv"],
+    ]
+    old = loads[0][1]
+    assert (old["seq_id_1"], old["task_id_1"], old["tenant_code_1"]) == (30, 3, "other")
+
+
+def test_gene_coverage_load_splits_a_format_into_jobs_of_files_per_load_files():
+    files = [_file(i, i * 10, f"s3://mock/old-{i}.csv") for i in range(1, 6)]
+    loads, errors, _ = _run_load(files, dict.fromkeys((f["filepath"] for f in files), OLD_HEADER), files_per_load=2)
+
+    assert errors == []
+    assert [len(_paths(params)) for _, params in loads] == [2, 2, 1]
+
+
+def test_gene_coverage_load_reloads_the_files_of_a_cancelled_job_one_by_one():
+    """The cancelled job wrote nothing: each of its files loads alone, so that only the bad one is lost."""
+    loads, errors, swap = _run_load(
+        [
+            _file(1, 10, "s3://mock/good-1.csv"),
+            _file(2, 20, "s3://mock/bad.csv"),
+            _file(3, 30, "s3://mock/good-2.csv"),
+        ],
+        {"s3://mock/good-1.csv": OLD_HEADER, "s3://mock/bad.csv": OLD_HEADER, "s3://mock/good-2.csv": OLD_HEADER},
+        cancelled=("s3://mock/bad.csv",),
+    )
+
+    assert [_paths(params) for _, params in loads] == [
+        ["s3://mock/good-1.csv", "s3://mock/bad.csv", "s3://mock/good-2.csv"],
+        ["s3://mock/good-1.csv"],
+        ["s3://mock/bad.csv"],
+        ["s3://mock/good-2.csv"],
+    ]
+    assert [(e["filepath"], e["task_id"]) for e in errors] == [("s3://mock/bad.csv", 2)]
+    assert "bad value" in errors[0]["error"]
+    # The bad file's experiment gets its loaded rows back; the two good tasks are not copied back.
+    restore = _run_load.hook.run.call_args
+    assert restore.kwargs["parameters"] == {"seq_ids": [20], "task_ids": [1, 3]}
     swap.assert_called_once()
 
 
@@ -229,7 +325,7 @@ def test_gene_coverage_load_goes_on_after_a_bad_file_and_keeps_its_error():
         cancelled=("s3://mock/cancelled.csv",),
     )
 
-    assert [params["filepath"] for _, params in loads] == ["s3://mock/cancelled.csv", "s3://mock/good.csv"]
+    assert [_paths(params) for _, params in loads] == [["s3://mock/cancelled.csv"], ["s3://mock/good.csv"]]
     assert [(e["filepath"], e["task_id"]) for e in errors] == [
         ("s3://mock/broken.csv", 1),
         ("s3://mock/cancelled.csv", 2),
@@ -242,11 +338,11 @@ def test_gene_coverage_load_goes_on_after_a_bad_file_and_keeps_its_error():
 def test_gene_coverage_load_keeps_an_unreadable_file_error():
     loads, errors, _ = _run_load(
         [_file(1, 10, "s3://mock/missing.csv")],
-        {"s3://mock/missing.csv": MISSING_FILE},
+        {"s3://mock/missing.csv": _client_error("NoSuchKey")},
     )
     assert loads == []
     assert [(e["filepath"], e["task_id"]) for e in errors] == [("s3://mock/missing.csv", 1)]
-    assert "No files were found" in errors[0]["error"]
+    assert "S3 cannot read the file (NoSuchKey)" in errors[0]["error"]
 
 
 def test_gene_coverage_load_without_files_still_swaps_the_copied_partition():
@@ -359,3 +455,45 @@ def test_wait_for_load_fails_when_the_load_never_shows_up(_sleep):
     op.broker_load_timeout = 100
     with pytest.raises(RuntimeError, match="not in information_schema.loads"):
         op.wait_for_load(cursor, "label_1")
+
+
+def test_gene_coverage_load_sql_has_one_data_desc_per_file_after_the_second_render():
+    """The data_desc loop is a `raw` block: the first render (task fields) keeps it, the second (per job) runs it."""
+    import os
+
+    import jinja2
+
+    from radiant.dags import DAGS_DIR
+
+    with open(os.path.join(DAGS_DIR, "sql", "radiant", "staging_gene_coverage_load.sql")) as f_in:
+        first = jinja2.Template(f_in.read()).render(
+            database_name="radiant",
+            load_label="{{load_label}}",
+            broker_configuration="'aws.s3.region' = 'mock-region'",
+            broker_load_timeout=600,
+        )
+    assert "{% for i in range(file_count) %}" in first
+
+    second = jinja2.Template(first).render(
+        load_label="mock_label",
+        file_count=2,
+        table_name="raw_gene_coverage",
+        temporary_partition_clause="TEMPORARY PARTITION (tp5)",
+        file_columns=GENE_COVERAGE_FORMATS["old"][0],
+        type_value=GENE_COVERAGE_FORMATS["old"][1],
+    )
+    assert "LOAD LABEL radiant.mock_label" in second
+    assert second.count("INTO TABLE raw_gene_coverage TEMPORARY PARTITION (tp5)") == 2
+    for i in (0, 1):
+        assert f"DATA INFILE(%(filepath_{i})s)" in second
+        assert f"seq_id = %(seq_id_{i})s" in second
+        assert f"tenant_code = %(tenant_code_{i})s" in second
+    # A comma between the two data_descs, none after the last.
+    assert second.count("WHERE type = 'CDS',") == 1
+    assert second.count("WHERE type = 'CDS'") == 2
+    assert "'timeout' = '600'" in second
+
+
+def test_gene_coverage_load_needs_at_least_one_file_per_load():
+    with pytest.raises(ValueError, match="files_per_load"):
+        RadiantLoadGeneCoverageOperator(task_id="t", table="radiant.raw_gene_coverage", files=[], files_per_load=0)

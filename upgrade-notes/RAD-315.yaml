@@ -9,8 +9,9 @@ actions:
       - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
       - >-
         StarRocks can read the buckets of the covgene documents (the DRAGEN outputs) with the S3 credentials of its
-        broker loads: it reads both the header and the file. Without the access, each covgene file is a bad file and
-        every radiant-import-part run that has one fails at check_gene_coverage_files.
+        broker loads (it loads the file), and the Airflow workers can too, with s3:GetObject on their own AWS identity
+        (they read the first bytes of each file for its header). Without either access, each covgene file is a bad
+        file and every radiant-import-part run that has one fails at check_gene_coverage_files.
     refs:
       - radiant/dags/sql/radiant/migrations/RAD-315_gene_coverage_create_tables.sql
       - radiant/tasks/starrocks/operator.py

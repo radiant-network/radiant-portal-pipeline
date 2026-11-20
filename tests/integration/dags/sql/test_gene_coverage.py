@@ -1,17 +1,20 @@
 """RAD-315: the gene coverage of the current alignments, end to end on StarRocks, MinIO and the clinical seeds.
 
 The import is driven the way import_part drives it: the discovery query (gene_coverage_file_select.sql), then the real
-RadiantLoadGeneCoverageOperator (header read by StarRocks FILES(), one broker load per file, partition swap), the real
-RadiantStarRocksPartitionSwapOperator with the per-tenant insert. A thin hook runs their SQL on the test session.
+RadiantLoadGeneCoverageOperator (header read from the first bytes on S3, one broker load per format, partition swap),
+the real RadiantStarRocksPartitionSwapOperator with the per-tenant insert. A thin hook runs their SQL on the test
+session.
 
 Seeds: the proband of case 1 (experiment 1, alignment task 1) has an old-format file, the tumor-only alignment of
 case 23 (experiment 64, task 76) a new-format one. The other shapes are test-local, on ids 99xx, removed after each
 test: the normal of the tumor-normal case 22 (experiment 63) with an alignment, a re-alignment of experiment 1, a
-broken file on experiment 3 or on the alignment of experiment 1, a `covgene` on the tumor-normal calling task 73.
+broken file on experiment 3 or on the alignment of experiment 1, a `covgene` on the tumor-normal calling task 73, a
+file with a broken data row or an empty file on experiment 3.
 """
 
 import os
 
+import boto3
 import jinja2
 import pytest
 
@@ -36,6 +39,10 @@ NORMAL_URL = "s3://test-vcf/gene_coverage/normal.coverage_by_gene.csv"
 REALIGNED_URL = "s3://test-vcf/gene_coverage/realigned.coverage_by_gene.csv"
 BROKEN_URL = "s3://test-vcf/gene_coverage/broken_header.coverage_by_gene.csv"
 TUMOR_CALLING_URL = "s3://test-vcf/gene_coverage/tumor_normal_calling.coverage_by_gene.csv"
+# A DRAGEN header, then a row with too few columns: StarRocks cancels the load job that holds it.
+BAD_ROW_URL = "s3://test-vcf/gene_coverage/bad_row.coverage_by_gene.csv"
+# Zero bytes: S3 refuses a byte range on it.
+EMPTY_URL = "s3://test-vcf/gene_coverage/empty.coverage_by_gene.csv"
 # Never uploaded: a `covgene` document whose file is not on S3.
 MISSING_URL = "s3://test-vcf/gene_coverage/missing.coverage_by_gene.csv"
 
@@ -46,6 +53,8 @@ _FILES = {
     REALIGNED_URL: "realigned.coverage_by_gene.csv",
     BROKEN_URL: "broken_header.coverage_by_gene.csv",
     TUMOR_CALLING_URL: "new_format.coverage_by_gene.csv",
+    BAD_ROW_URL: "bad_row.coverage_by_gene.csv",
+    EMPTY_URL: "empty.coverage_by_gene.csv",
 }
 
 # gene_id, chromosome, name. Mock rows, removed after the module.
@@ -157,14 +166,18 @@ def _import(starrocks_session, radiant_mapping, minio_instance, seq_ids, deleted
             broker_load_timeout=600,
             broker_configuration=broker_configuration,
             load_label="{{load_label}}",
-            temporary_partition_clause="{{temporary_partition_clause}}",
-            file_columns="{{file_columns}}",
-            type_value="{{type_value}}",
         ),
     )
     load.get_db_hook = lambda: hook
-    # The header query reads the file with the same credentials as the broker load.
     load.broker_configuration = broker_configuration
+    # The header is read by the worker (here, the test) from the local S3 store.
+    load.get_s3_client = lambda: boto3.client(
+        "s3",
+        endpoint_url=minio_instance.endpoint,
+        aws_access_key_id=minio_instance.access_key,
+        aws_secret_access_key=minio_instance.secret_key,
+        region_name="us-east-1",
+    )
     errors = load.execute(context={})
 
     target = radiant_mapping["starrocks_gene_coverage"]
@@ -295,6 +308,22 @@ def missing_file(postgres_clinical_seeds, postgres_instance):
     _add_clinical(postgres_instance, documents=[(9941, MISSING_URL)], links=[(3, 9941)])
     yield
     _remove_clinical(postgres_instance, document_ids=[9941])
+
+
+@pytest.fixture
+def bad_row_file(postgres_clinical_seeds, postgres_instance):
+    """Experiment 3 (case 1's father): an old-format `covgene` with a broken data row."""
+    _add_clinical(postgres_instance, documents=[(9951, BAD_ROW_URL)], links=[(3, 9951)])
+    yield
+    _remove_clinical(postgres_instance, document_ids=[9951])
+
+
+@pytest.fixture
+def empty_file(postgres_clinical_seeds, postgres_instance):
+    """Experiment 3 (case 1's father): an empty `covgene` file."""
+    _add_clinical(postgres_instance, documents=[(9961, EMPTY_URL)], links=[(3, 9961)])
+    yield
+    _remove_clinical(postgres_instance, document_ids=[9961])
 
 
 @pytest.fixture
@@ -490,9 +519,46 @@ def test_a_bad_file_keeps_the_coverage_an_earlier_import_loaded(
 def test_a_missing_file_is_a_bad_file_and_the_good_files_still_load(
     starrocks_session, radiant_mapping, minio_instance, empty_part, missing_file
 ):
-    """StarRocks' error for a missing file is read as a bad file, not as a database error that fails the task."""
+    """S3's error for a missing file is read as a bad file, not as an error that fails the task."""
     errors = _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 3])
 
     assert [(e["filepath"], e["task_id"]) for e in errors] == [(MISSING_URL, 3)]
-    assert "StarRocks cannot read the file" in errors[0]["error"]
+    assert "S3 cannot read the file (NoSuchKey)" in errors[0]["error"]
+    assert {r["seq_id"] for r in _rows(starrocks_session, radiant_mapping)} == {1}
+
+
+def test_the_files_of_one_format_load_in_one_job_each_with_its_own_experiment(
+    starrocks_session, radiant_mapping, minio_instance, empty_part, tumor_normal_coverage
+):
+    """Experiments 1 and 63: two old-format files, one load job (two data_descs), each row tagged with its own
+    experiment and task."""
+    errors = _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 63])
+
+    assert errors == []
+    rows = _rows(starrocks_session, radiant_mapping)
+    assert {(r["seq_id"], r["task_id"]) for r in rows} == {(1, 1), (63, 9901)}
+    assert len(_rows(starrocks_session, radiant_mapping, seq_id=1)) == 11
+    assert len(_rows(starrocks_session, radiant_mapping, seq_id=63)) == 11
+
+
+def test_a_bad_row_cancels_its_job_and_the_other_files_of_the_job_still_load(
+    starrocks_session, radiant_mapping, minio_instance, empty_part, bad_row_file
+):
+    """Experiments 1 and 3: two old-format files in one job; the bad row cancels it, the files then load one by one,
+    and only the bad file is lost."""
+    errors = _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 3])
+
+    assert [(e["filepath"], e["task_id"]) for e in errors] == [(BAD_ROW_URL, 3)]
+    assert "was cancelled" in errors[0]["error"]
+    assert {r["seq_id"] for r in _rows(starrocks_session, radiant_mapping)} == {1}
+    assert len(_rows(starrocks_session, radiant_mapping, seq_id=1)) == 11
+
+
+def test_an_empty_file_is_a_bad_file_and_the_good_files_still_load(
+    starrocks_session, radiant_mapping, minio_instance, empty_part, empty_file
+):
+    errors = _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 3])
+
+    assert [(e["filepath"], e["task_id"]) for e in errors] == [(EMPTY_URL, 3)]
+    assert "S3 cannot read the file (InvalidRange)" in errors[0]["error"]
     assert {r["seq_id"] for r in _rows(starrocks_session, radiant_mapping)} == {1}

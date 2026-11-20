@@ -151,7 +151,7 @@ Loads the DRAGEN coverage_by_gene CSV (**covgene** document) of each alignment i
 |:--|:--|
 | **extract_seq_ids** | The sequencing experiments of the part's delta, all tenants, deleted tasks included |
 | **fetch_gene_coverage_files** | For each experiment, the newest alignment of each type in **current_alignment** and its **covgene** file |
-| **load_gene_coverage_files** | After the Exomiser loads: one broker load per file into the shared **raw_gene_coverage**, tagged with the tenant |
+| **load_gene_coverage_files** | After the Exomiser loads: one broker load per file format (up to 100 files each) into the shared **raw_gene_coverage**, tagged with the tenant; a load that a bad file cancels is done again file by file |
 | **insert_gene_coverage** | After **insert_exomiser**, per tenant: the CDS rows, with the gene name rule |
 | **check_gene_coverage_files** | A leaf: fails the run with the S3 path and the error of each file that did not load |
 
@@ -174,8 +174,9 @@ Loads the DRAGEN coverage_by_gene CSV (**covgene** document) of each alignment i
   the others. The part gets the rows of every file that loaded, and the bad file's experiment keeps
   the rows an earlier import loaded (none if it never loaded). The experiment is marked imported all
   the same, so its file loads again only when the experiment is re-submitted by hand.
-- StarRocks reads the header (a **FILES()** query) and the file (a broker load) with the same S3
-  credentials: the Airflow worker never reads the bucket.
+- The Airflow worker reads the header: the first 4 KiB of each file (an S3 ranged GET), with its own
+  AWS credentials. StarRocks reads the file (a broker load) with the S3 credentials of its broker loads.
+  Both need read access to the bucket of the **covgene** documents.
 
 > A bad file never fails the load: the load returns its errors, and only **check_gene_coverage_files**
 > fails, which no task waits on. So a bad file blocks no other data, and still fails the run. Any other
