@@ -38,6 +38,8 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "discover_qc_cases",
         "discover_qc_somatic_cases",
         "discover_import_cases",
+        "facts_germline_snv",
+        "journal_germline_snv",
         "fetch_case_statuses",
         "discover_cases",
         "set_processing",
@@ -213,6 +215,17 @@ def test_the_pinned_run_id_is_not_a_reserved_scheduled_id(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     sanitize = dag.user_defined_macros["sanitize_run_tag"]
     assert not sanitize("scheduled__2026-10-08T00:00:00+00:00").startswith("scheduled__")
+
+
+def test_the_journal_holds_nothing_back(dag_bag):
+    """It only writes the journal: no pipeline, status change or email waits for it."""
+    dag = dag_bag.get_dag(DAG_ID)
+    assert {t.task_id for t in dag.get_task("facts_germline_snv").downstream_list} == {
+        "journal_germline_snv",
+        "watcher",
+    }
+    assert {t.task_id for t in dag.get_task("journal_germline_snv").downstream_list} == {"watcher"}
+    assert dag.get_task("facts_germline_snv").sql.startswith("-- One row per (candidate germline case")
 
 
 def test_a_failed_step_fails_the_run(dag_bag):
