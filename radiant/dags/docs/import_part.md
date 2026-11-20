@@ -161,7 +161,8 @@ Loads the DRAGEN coverage_by_gene CSV (**covgene** document) of each alignment i
   slivar VCF keeps its coverage. An alignment shared by two cases is loaded once.
 - Two formats, told apart by the header: the new one has a **type** column, and only its **CDS**
   rows are kept; in the old one every row is CDS. Any other header is a bad file.
-- Gene name rule: a **\_chrX** / **\_chrY** suffix gives the symbol without it and the chromosome X / Y;
+- Gene name rule (QLIN's): a **\_chr** suffix (1 to 22, X, Y, M, MT: DRAGEN adds it to a name on more
+  than one contig, e.g. the PAR genes) gives the symbol without it and the chromosome of the suffix;
   an **ENSG** name gives the **ensembl_gene** name of that id, else the id; a plain symbol stays, with
   its **ensembl_gene** chromosome (the first by chromosome when the name is on more than one).
   **gene** keeps the raw name. The mitochondrial chromosome is **M**, as in the variant tables

@@ -325,6 +325,8 @@ def test_old_format_germline_alignment_loads_one_row_per_gene_with_the_gene_name
         "NOTINENSEMBL",
         "MT-CO1",
         "ENSG00000141510.7",
+        "MOCKDUP_chr2",
+        "MOCKMT_chrMT",
     }
     assert {r["task_id"] for r in rows.values()} == {1}
 
@@ -343,6 +345,9 @@ def test_old_format_germline_alignment_loads_one_row_per_gene_with_the_gene_name
     # A versioned id resolves on the id without its version.
     assert key("ENSG00000141510.7") == ("TP53", "17", "ENSG00000141510")
     assert key("MT-CO1") == ("MT-CO1", "M", "ENSGMOCKMT00001")
+    # Any `_chr<contig>` suffix: the chromosome of the suffix, `M` for `MT`; the id of the name's first chromosome.
+    assert key("MOCKDUP_chr2") == ("MOCKDUP", "2", "ENSGMOCK0000002")
+    assert key("MOCKMT_chrMT") == ("MOCKMT", "M", None)
     # A name on two chromosomes keeps one row, the first by chromosome.
     assert key("MOCKDUP") == ("MOCKDUP", "11", "ENSGMOCK0000002")
     assert key("NOTINENSEMBL") == ("NOTINENSEMBL", None, None)
@@ -407,7 +412,7 @@ def test_an_alignment_shared_by_two_cases_or_loaded_twice_is_not_duplicated(
     _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 64])
     second = _rows(starrocks_session, radiant_mapping)
 
-    assert len(first) == 14
+    assert len(first) == 16
     assert second == first
 
 
@@ -418,7 +423,7 @@ def test_an_import_keeps_the_experiments_it_does_not_reload(
     _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[64])
 
     assert {r["seq_id"] for r in _rows(starrocks_session, radiant_mapping)} == {1, 64}
-    assert len(_rows(starrocks_session, radiant_mapping, seq_id=1)) == 9
+    assert len(_rows(starrocks_session, radiant_mapping, seq_id=1)) == 11
 
 
 def test_a_realignment_replaces_the_coverage_of_the_old_alignment(
