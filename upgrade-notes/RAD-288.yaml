@@ -1,0 +1,10 @@
+actions:
+  - when: after
+    do: >-
+      Run radiant-init-starrocks-base-tables. It creates the pipeline_journal table and the pipeline_state
+      view. Nothing writes to them yet.
+    refs:
+      - radiant-init-starrocks-base-tables
+      - radiant/dags/sql/radiant/init/pipeline_journal_create_table.sql
+      - radiant/dags/sql/radiant/init/pipeline_state_create_table.sql
+    check: SELECT count(*) FROM pipeline_state runs in the base database and returns 0.
