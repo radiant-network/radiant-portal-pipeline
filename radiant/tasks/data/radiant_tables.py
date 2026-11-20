@@ -138,6 +138,8 @@ STARROCKS_RADIANT_BASE_MAPPING = {
     "starrocks_staging_sequencing_experiment_delta": "staging_sequencing_experiment_delta",
     "starrocks_variant_lookup": "variant_lookup",
     "starrocks_open_data_release": "open_data_release",
+    "starrocks_pipeline_journal": "pipeline_journal",
+    "starrocks_pipeline_state": "pipeline_state",
     "starrocks_snv_consequence": "snv__consequence",
     "starrocks_snv_consequence_filter": "snv__consequence_filter",
     "starrocks_snv_consequence_filter_partitioned": "snv__consequence_filter_partitioned",
