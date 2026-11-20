@@ -63,7 +63,7 @@ ANY_ORIGIN = None
 
 # The CNV mode tags of cnv-post-processing (`--family-expr` in conf/modules.config, the list in docs/output.md), each
 # with the parental origins (`po_*` values, as PO_TAGS maps them) its TRIO_TABLE rows give the same child
-# (assets/cnv-slivar-functions.js @ c9e7768). One row gives a child both its mode call and its parent of origin, so
+# (assets/cnv-slivar-functions.js @ 6e3be8d). One row gives a child both its mode call and its parent of origin, so
 # they never disagree for that child. `None` in a set: the catch-all row, which has no origin. The X-linked names are
 # renamed `denovo` and `recessive` calls (X_LINKED_CALLS), and keep those rows' origins.
 #
@@ -111,6 +111,21 @@ def original_id(record: Variant, sample_idx: int) -> str | None:
         return None
     value = str(values[sample_idx])
     return None if value in ("", ".") else unquote(value)
+
+
+# Each sample's own caller filters (`PASS`, or `;`-separated names such as `cnvLength;cnvQual`): DRAGEN's in a
+# jointly-called VCF, its call's FILTER on the per-sample route (cnv-post-processing `bin/add_sample_filter.awk`).
+SAMPLE_FILTER_FORMAT = "FT"
+
+
+def sample_filter(record: Variant, sample_idx: int) -> str | None:
+    """The sample's own filters, from `FORMAT/FT`. None when the VCF predates it (cnv-post-processing 6e3be8d, the
+    header does not declare it) or the sample has none."""
+    values = format_array(record, SAMPLE_FILTER_FORMAT)
+    if values is None:
+        return None
+    value = str(values[sample_idx])
+    return None if value in ("", ".") else value
 
 
 def is_carrier(calls: list[int]) -> bool:
@@ -211,6 +226,7 @@ def process_slivar_occurrence(
     """
     occurrence = process_occurrence(record, part, seq_id, tenant_code, task_id, aliquot, sample_idx)
     occurrence["name"] = original_id(record, sample_idx) or record.ID
+    occurrence["filter"] = sample_filter(record, sample_idx) or occurrence["filter"]
     occurrence["parental_origin"] = slivar_parental_origin(record, aliquot)
     occurrence["transmission_mode"] = slivar_cnv_transmission_mode(record, aliquot, occurrence["parental_origin"])
     for role, idx in (("mother", mother_idx), ("father", father_idx)):

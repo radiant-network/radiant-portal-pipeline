@@ -6,7 +6,7 @@ pipeline-shaped.
 
 Every case takes the pipeline's *family* route, singletons included, because every row
 carries `familyPed` and `familyPheno`. That is what keeps the output names keyed by
-`familyId` alone (`slivar/CA<id>.cnv.slivar.vcf.gz`, `exomiser/CA<id>.exomiser.*`); the
+`familyId` and the proband (`slivar/CA<id>.<proband>.cnv.slivar.vcf.gz`, `exomiser/CA<id>.<proband>.exomiser.*`); the
 per-sample `pheno` column, which selects the pipeline's solo route, is deliberately left
 empty.
 

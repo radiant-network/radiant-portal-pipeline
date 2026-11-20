@@ -67,7 +67,9 @@ route) is always empty.
 | `cram` | the alignment's `alignment`/`cram` document — **only when every member of the family has one whose `crai` is registered at `<cram>.crai`**, empty otherwise |
 | `familyPheno`, `familyPed` | written by this DAG, same content as for SNV annotation |
 
-The CRAM rule is all-or-nothing per family on purpose. The pipeline refines a family's
+The pipeline reads the CRAMs only with `--get_cn_by_computing_ratio`, which QA leaves off: it
+fills missing genotypes from each member's own DRAGEN segments instead, from `vcf`. The CRAM rule
+is all-or-nothing per family on purpose. In depth mode, the pipeline refines a family's
 genotypes only when every sample has an alignment, and skips the step with a warning
 otherwise — but a CRAM whose index is not at `<cram>.crai` makes mosdepth fail rather than
 skip. Passing CRAMs only when the whole set is usable turns both cases into a clean skip.
@@ -102,7 +104,7 @@ One task per case, through `PATCH /{tenant}/cases/batch`:
 
 | Task | Aliquots | Inputs | Outputs |
 |---|---|---|---|
-| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`), `exomiser/CA<id>.<proband>.exomiser.{variants.tsv,html,json}` (`exomiser_cnv`/`tsv`,`html`,`json`) |
+| `radiant_germline_cnv_annotation` | every member | each member's `gcnv` VCF, plus CRAM and index when the run used them | `slivar/CA<id>.<proband>.cnv.slivar.vcf.gz{,.tbi}` (`gcnv`/`vcf`,`tbi`), `exomiser/CA<id>.<proband>.exomiser.{variants.tsv,html,json}` (`exomiser_cnv`/`tsv`,`html`,`json`) |
 
 The Exomiser reports are typed `exomiser_cnv`, not `exomiser`: the SNV and CNV
 reports have the same file names, and the data type tells them apart in the portal. The
@@ -136,12 +138,14 @@ registers nothing. PATCH **appends**: a deliberate re-run adds a second task alo
 first.
 
 `<proband>` is the proband's aliquot, the `proband.subject.id` of the phenopacket this DAG
-writes: Exomiser runs on that child's proband VCF and names its reports after both. A family
-with no proband VCF (its proband is not an affected child with a father or mother in the PED:
-a proband without a parent in the case, or an unaffected one) runs on the family VCF and names
-them `exomiser/CA<id>.exomiser.*`. Which of the two a family gets is the pipeline's call, so
-`collect_outputs` accepts either name for each report, the proband one first, and the
-registered document carries the name the run gave the file.
+writes: slivar and Exomiser run on that child's proband VCF and name their outputs after both. A
+family with no proband VCF (its proband is not an affected child with a father or mother in the PED:
+a singleton, or an unaffected proband) runs on the family
+VCF and names them `slivar/CA<id>.cnv.slivar.*` and `exomiser/CA<id>.exomiser.*`. Which of the
+two a family gets is the pipeline's call, so `collect_outputs` accepts either name for each
+output, the proband one first, and the registered document carries the name the run gave the
+file. Another affected child of the case gets its own `CA<id>.<child>` slivar VCF, which is not
+registered.
 
 ## Where things are written
 
@@ -157,7 +161,7 @@ registered document carries the name the run gave the file.
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/samplesheet.csv
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/pedigrees/CA<id>.ped
 {NEXTFLOW_INPUTS_ROOT}/cnv-runs/{run_tag}/phenotypes/CA<id>.yml
-{NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/slivar/CA<id>.cnv.slivar.vcf.gz{,.tbi}
+{NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/slivar/CA<id>.<proband>.cnv.slivar.vcf.gz{,.tbi}   (CA<id>.cnv.slivar.* without a proband VCF)
 {NEXTFLOW_OUTPUTS_ROOT}/cnv/{run_tag}/exomiser/CA<id>.<proband>.exomiser.*   (CA<id>.exomiser.* without a proband VCF)
 ```
 
