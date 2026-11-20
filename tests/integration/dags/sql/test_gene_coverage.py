@@ -335,7 +335,8 @@ def test_old_format_germline_alignment_loads_one_row_per_gene_with_the_gene_name
     assert key("BRCA1") == ("BRCA1", "17", "ENSG00000012048")
     # PAR genes: two rows SHOX, X and Y from the suffix.
     assert key("SHOX_chrX") == ("SHOX", "X", "ENSG00000185960")
-    assert key("SHOX_chrY") == ("SHOX", "Y", None)
+    # Both PAR rows get the Ensembl id of the X gene, as in QLIN.
+    assert key("SHOX_chrY") == ("SHOX", "Y", "ENSG00000185960")
     # Ensembl ids: the symbol of the id, else the id itself.
     assert key("ENSG00000100101") == ("MOCKSYM1", "22", "ENSG00000100101")
     assert key("ENSG00000999999") == ("ENSG00000999999", None, "ENSG00000999999")

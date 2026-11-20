@@ -1,89 +1,36 @@
--- RAD-315. The CDS rows of the files loaded by this run, with the gene name rule (after the QLIN rule, clin-variant-etl
+-- RAD-315. The CDS rows of the files loaded by this run, with the gene name rule of QLIN (clin-variant-etl
 -- `enriched/CoverageByGene.scala`, without the RefSeq coordinates):
 --   `SHOX_chrX` / `SHOX_chrY`   symbol without the suffix, chromosome X / Y from the suffix
---   `ENSG...`                   symbol = ensembl_gene.name matched on gene_id (version dropped), else the ENSG id
---   plain symbol                symbol as is, chromosome from ensembl_gene matched on name
--- `gene` keeps the raw name. `ensembl_gene.chromosome` has no `chr` prefix. A name on more than one chromosome in
--- ensembl_gene keeps one row, the first by chromosome in string order ('11' < '2'), so that the join never multiplies
--- a gene. Two differences with QLIN: a `_chrY` row gets the Ensembl id of the Y gene (QLIN gives it the id of the
--- X gene), and the mitochondrial chromosome is `M` (ensembl_gene says `MT`), as in the variant tables (`chrM` without
--- `chr`) and the portal's chromosome facet.
--- The column order is the one of `gene_coverage`: the insert is positional.
+--   `ENSG...`                   symbol = ensembl_gene.name of the id (version dropped), else the raw name
+--   plain symbol                symbol as is, chromosome from ensembl_gene
+-- The Ensembl id of a name is the one of its first chromosome in string order ('11' < '2', 'X' < 'Y'): one row per
+-- name, so the join never multiplies a gene, and both PAR rows get the X gene's id, as in QLIN. The mitochondrial
+-- chromosome is `M` (ensembl_gene says `MT`), as in the variant tables. The insert is positional: the column order is
+-- the one of `gene_coverage`.
 WITH coverage AS (
-    SELECT part,
-           seq_id,
-           task_id,
-           gene,
-           CASE WHEN gene REGEXP '_chr[XY]$' THEN RIGHT(gene, 1) END                AS suffix_chromosome,
-           CASE WHEN gene REGEXP '_chr[XY]$' THEN LEFT(gene, LENGTH(gene) - 5) END AS suffix_symbol,
-           CASE WHEN gene REGEXP '^ENSG[0-9]+([.][0-9]+)?$' THEN SPLIT_PART(gene, '.', 1) END AS ensembl_id,
-           size,
-           average_coverage,
-           coverage_5x,
-           coverage_15x,
-           coverage_30x,
-           coverage_50x,
-           coverage_100x,
-           coverage_200x,
-           coverage_300x,
-           coverage_400x,
-           coverage_500x,
-           coverage_1000x
+    SELECT *,
+           IF(gene REGEXP '_chr[XY]$', LEFT(gene, LENGTH(gene) - 5), gene)                AS name,
+           IF(gene REGEXP '_chr[XY]$', RIGHT(gene, 1), NULL)                              AS par_chromosome,
+           IF(gene REGEXP '^ENSG[0-9]+([.][0-9]+)?$', SPLIT_PART(gene, '.', 1), NULL)     AS ensembl_id
     FROM {{ mapping.starrocks_staging_gene_coverage }}
     WHERE part = {{ partition }}
       AND tenant_code = %(tenant_code)s
       AND (seq_id IN %(seq_ids)s OR seq_id IN %(deleted_seq_ids)s)
       AND type = 'CDS'
 ),
-gene_by_name AS (
-    SELECT name, chromosome, gene_id
-    FROM (
-        SELECT name, IF(chromosome = 'MT', 'M', chromosome) AS chromosome, gene_id,
-               ROW_NUMBER() OVER (PARTITION BY name ORDER BY chromosome, gene_id) AS rn
-        FROM {{ mapping.starrocks_ensembl_gene }}
-        WHERE name IS NOT NULL
-    ) g
-    WHERE rn = 1
-),
-gene_by_name_chromosome AS (
-    SELECT name, chromosome, gene_id
-    FROM (
-        SELECT name, chromosome, gene_id,
-               ROW_NUMBER() OVER (PARTITION BY name, chromosome ORDER BY gene_id) AS rn
-        FROM {{ mapping.starrocks_ensembl_gene }}
-        WHERE name IS NOT NULL AND chromosome IN ('X', 'Y')
-    ) g
-    WHERE rn = 1
-),
-gene_by_id AS (
-    SELECT gene_id, name, chromosome
-    FROM (
-        SELECT gene_id, name, IF(chromosome = 'MT', 'M', chromosome) AS chromosome,
-               ROW_NUMBER() OVER (PARTITION BY gene_id ORDER BY chromosome) AS rn
-        FROM {{ mapping.starrocks_ensembl_gene }}
-        WHERE gene_id IS NOT NULL
-    ) g
-    WHERE rn = 1
+ensembl AS (
+    SELECT gene_id, name, IF(chromosome = 'MT', 'M', chromosome) AS chromosome,
+           ROW_NUMBER() OVER (PARTITION BY name ORDER BY chromosome, gene_id) AS name_rank
+    FROM {{ mapping.starrocks_ensembl_gene }}
+    WHERE name IS NOT NULL
 )
 SELECT c.part,
        c.seq_id,
        c.task_id,
-       CASE
-           WHEN c.suffix_chromosome IS NOT NULL THEN c.suffix_symbol
-           WHEN c.ensembl_id IS NOT NULL THEN COALESCE(gi.name, c.gene)
-           ELSE c.gene
-       END AS symbol,
-       CASE
-           WHEN c.suffix_chromosome IS NOT NULL THEN c.suffix_chromosome
-           WHEN c.ensembl_id IS NOT NULL THEN gi.chromosome
-           ELSE gn.chromosome
-       END AS chromosome,
+       COALESCE(by_id.name, c.name)                                AS symbol,
+       COALESCE(c.par_chromosome, by_id.chromosome, by_name.chromosome) AS chromosome,
        c.gene,
-       CASE
-           WHEN c.suffix_chromosome IS NOT NULL THEN gnc.gene_id
-           WHEN c.ensembl_id IS NOT NULL THEN c.ensembl_id
-           ELSE gn.gene_id
-       END AS ensembl_gene_id,
+       COALESCE(c.ensembl_id, by_name.gene_id)                     AS ensembl_gene_id,
        c.size,
        c.average_coverage,
        c.coverage_5x,
@@ -96,8 +43,6 @@ SELECT c.part,
        c.coverage_400x,
        c.coverage_500x,
        c.coverage_1000x
--- Each lookup has one row per key (rn = 1), so no join multiplies a row; the CASE above picks the lookup of the case.
 FROM coverage c
-LEFT JOIN gene_by_id gi ON gi.gene_id = c.ensembl_id
-LEFT JOIN gene_by_name gn ON gn.name = c.gene
-LEFT JOIN gene_by_name_chromosome gnc ON gnc.name = c.suffix_symbol AND gnc.chromosome = c.suffix_chromosome;
+LEFT JOIN ensembl by_id ON by_id.gene_id = c.ensembl_id
+LEFT JOIN ensembl by_name ON by_name.name = c.name AND by_name.name_rank = 1;
