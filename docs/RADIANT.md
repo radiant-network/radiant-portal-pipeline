@@ -52,10 +52,35 @@ The assigner follows these rules to ensure consistency and efficiency:
 
 ### Data Flow
 
-1.  **Fetch Delta**: `[StarRocks] Get Sequencing Experiment Delta` fetches new or updated sequencing experiments from the staging delta table.
+1.  **Fetch Delta**: `[StarRocks] Get Sequencing Experiment Delta` fetches the new (case, sequencing experiment, task) keys from the staging delta view: a row already in staging is never fetched again (RAD-377).
 2.  **Assign Partitions**: `[PyOp] Assign Partitions` processes the experiments through `SequencingExperimentPartitionAssigner`.
 3.  **Insert/Update**: `[PyOp] Insert New Sequencing Experiments` saves the experiments with their newly assigned `part` IDs back to the StarRocks `sequencing_experiment` table.
 4.  **Trigger Import**: The `radiant-import` DAG then uses these partitions to trigger the `import-part` DAG for each partition in order of priority.
+
+### How to re-import
+
+Since RAD-377, no change in the clinical model makes the import load a row again: a case status change, a case `PUT` that changes the family (`family_role`, `affected_status`, `family_id`) or a corrected document on the same task is not seen. Only a new (case, sequencing experiment, task) key is. A re-import is an operator action, on the base database, with no import running (`radiant-import`, `radiant-import-part`, `radiant-reannotate-open-data`).
+
+A row of `staging_sequencing_experiment` is loaded when `updated_at >= COALESCE(ingested_at, '1970-01-01')` or `deleted` (`sequencing_experiment_select.sql`, `sequencing_experiment_partition_select.sql`). `import_part` reads the file paths and the pedigree fields from this row, not from the clinical model.
+
+| Need | Action |
+|---|---|
+| Reload the same data (a failed or bad load, a code fix) | Set `ingested_at` back to the epoch, then wait for the next `radiant-import` (or `radiant-case-scheduler`), or trigger it. The rows keep their `part`. |
+| Reload one partition at once | Set `ingested_at` back to the epoch, then trigger `radiant-import-part` with conf `{"part": <part>}`. Without the reset, the run finds no row and stops at `sanity_check_tasks`. |
+| Take a clinical correction (new path, family role, affected status, family) | Delete the staging rows of the key, then wait for or trigger `radiant-import`: the delta view selects the key again from the clinical model, and the assigner gives it a part (the part of the patient, sequencing, case or family if one of their rows stays in staging, else a new one). |
+
+```sql
+-- Reload: one case (or filter on seq_id, task_id or part)
+UPDATE staging_sequencing_experiment
+SET ingested_at = '1970-01-01 00:00:00'
+WHERE case_id = <case_id>;
+
+-- Clinical correction: one key
+DELETE FROM staging_sequencing_experiment
+WHERE case_id = <case_id> AND seq_id = <seq_id> AND task_id = <task_id>;
+```
+
+> Before a delete, note the `part` of the rows. If no other row of the same patient, sequencing, case or family stays in staging, the key can get a new part, and the data already loaded under the old part is not removed by this procedure.
 
 ## How we determine what is imported on DAG runs ? 
 

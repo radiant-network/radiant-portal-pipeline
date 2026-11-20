@@ -1,0 +1,14 @@
+actions:
+  - when: after
+    do: >-
+      Re-create the two staging views. In the base database, run section 1 of the migration file (drop the views),
+      then run the Radiant - Init StarRocks Base Tables DAG. Without this step, the deployed views keep the old
+      definition and a case status change still makes the next radiant-import reload the case. No re-import: the
+      rows already in staging_sequencing_experiment are never selected again.
+    preconditions:
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
+    refs:
+      - radiant/dags/sql/radiant/migrations/RAD-377_staging_delta_on_task_key.sql
+      - radiant-init-starrocks-base-tables
+    check: >-
+      SHOW CREATE VIEW staging_sequencing_experiment_delta shows no updated_at condition in the LEFT ANTI JOIN.

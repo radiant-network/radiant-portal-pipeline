@@ -779,11 +779,12 @@ def test_sequencing_experiment_existing_wgs_task_partition(
     assert len(result_df) == 17
 
 
-def test_sequencing_experiment_with_recently_updated_task(
-    postgres_instance, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+def test_case_status_change_does_not_reimport_case(
+    postgres_instance, starrocks_session, radiant_mapping, sequencing_experiment_tables, sequencing_delta_columns
 ):
     """
-    Test computing the delta when an existing sequencing experiment gets an update
+    RAD-377: a case status change (PATCH /cases/batch bumps cases.updated_on) brings no data to import. Once the
+    case's rows are imported, the change must not put them back in the delta nor make the case pending.
     """
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
@@ -810,18 +811,16 @@ def test_sequencing_experiment_with_recently_updated_task(
                               histology_type,
                               created_at,
                               updated_at,
-                              '1970-01-01 00:00:00' AS ingested_at,
+                              UTC_TIMESTAMP()       AS ingested_at,
                               false as deleted
                        FROM staging_external_sequencing_experiment
-                       WHERE seq_id = 22
-                         AND task_id = 65
+                       WHERE case_id = 8
                        """)
-        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
-        results = cursor.fetchall()
+        cursor.execute("SELECT COUNT(*) FROM staging_sequencing_experiment;")
+        assert cursor.fetchone()[0] > 0
 
-    result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    # The 18-row baseline less task 65, which was just inserted into staging_sequencing_experiment.
-    assert len(result_df) == 17
+    pending_sql = os.path.join(_RADIANT_SQL_PATH, "import_pending_case_select.sql")
+    assert 8 not in {row[0] for row in _run_radiant_sql(starrocks_session, radiant_mapping, pending_sql)}
 
     with (
         psycopg2.connect(
@@ -834,20 +833,23 @@ def test_sequencing_experiment_with_recently_updated_task(
         pg_conn.cursor() as pg_cursor,
     ):
         pg_cursor.execute(f"SET search_path TO {postgres_instance.radiant_db_schema};")
-        pg_cursor.execute("""
-                          UPDATE cases
-                          SET updated_on = NOW()
-                          WHERE id = 8
-                          """)
+        pg_cursor.execute("SELECT status_code, updated_on FROM cases WHERE id = 8")
+        status_code, updated_on = pg_cursor.fetchone()
+        pg_cursor.execute("UPDATE cases SET status_code = 'in_progress', updated_on = NOW() WHERE id = 8")
         pg_conn.commit()
+        try:
+            with starrocks_session.cursor() as cursor:
+                cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+                result_df = pd.DataFrame(cursor.fetchall(), columns=sequencing_delta_columns)
+            pending = {row[0] for row in _run_radiant_sql(starrocks_session, radiant_mapping, pending_sql)}
+        finally:
+            pg_cursor.execute(
+                "UPDATE cases SET status_code = %s, updated_on = %s WHERE id = 8", (status_code, updated_on)
+            )
+            pg_conn.commit()
 
-    with starrocks_session.cursor() as cursor:
-        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
-        results = cursor.fetchall()
-
-    # Should capture the updated experiment -- task 65 is back, so the full 18-row baseline again.
-    result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
-    assert len(result_df) == 18
+    assert 8 not in set(result_df["case_id"])
+    assert 8 not in pending
 
 
 @pytest.fixture
