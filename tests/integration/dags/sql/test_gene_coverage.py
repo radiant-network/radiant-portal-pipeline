@@ -36,6 +36,8 @@ NORMAL_URL = "s3://test-vcf/gene_coverage/normal.coverage_by_gene.csv"
 REALIGNED_URL = "s3://test-vcf/gene_coverage/realigned.coverage_by_gene.csv"
 BROKEN_URL = "s3://test-vcf/gene_coverage/broken_header.coverage_by_gene.csv"
 TUMOR_CALLING_URL = "s3://test-vcf/gene_coverage/tumor_normal_calling.coverage_by_gene.csv"
+# Never uploaded: a `covgene` document whose file is not on S3.
+MISSING_URL = "s3://test-vcf/gene_coverage/missing.coverage_by_gene.csv"
 
 _FILES = {
     OLD_FORMAT_URL: "old_format.coverage_by_gene.csv",
@@ -288,6 +290,14 @@ def broken_file(postgres_clinical_seeds, postgres_instance):
 
 
 @pytest.fixture
+def missing_file(postgres_clinical_seeds, postgres_instance):
+    """Experiment 3 (case 1's father): a `covgene` document whose file is not on S3."""
+    _add_clinical(postgres_instance, documents=[(9941, MISSING_URL)], links=[(3, 9941)])
+    yield
+    _remove_clinical(postgres_instance, document_ids=[9941])
+
+
+@pytest.fixture
 def broken_new_file(postgres_clinical_seeds, postgres_instance):
     """Adds, when called, a newer `covgene` to the alignment of experiment 1 (task 1) whose header is broken."""
 
@@ -475,3 +485,14 @@ def test_a_bad_file_keeps_the_coverage_an_earlier_import_loaded(
 
     assert [(e["filepath"], e["task_id"]) for e in errors] == [(BROKEN_URL, 1)]
     assert _rows(starrocks_session, radiant_mapping) == before
+
+
+def test_a_missing_file_is_a_bad_file_and_the_good_files_still_load(
+    starrocks_session, radiant_mapping, minio_instance, empty_part, missing_file
+):
+    """StarRocks' error for a missing file is read as a bad file, not as a database error that fails the task."""
+    errors = _import(starrocks_session, radiant_mapping, minio_instance, seq_ids=[1, 3])
+
+    assert [(e["filepath"], e["task_id"]) for e in errors] == [(MISSING_URL, 3)]
+    assert "StarRocks cannot read the file" in errors[0]["error"]
+    assert {r["seq_id"] for r in _rows(starrocks_session, radiant_mapping)} == {1}

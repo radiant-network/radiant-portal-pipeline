@@ -102,14 +102,41 @@ def test_read_format_makes_a_missing_or_unknown_header_a_file_error(rows, messag
         op.read_format(cursor, "s3://mock-bucket/tests/a.csv")
 
 
-def test_read_format_makes_a_starrocks_error_a_file_error():
-    op, cursor = _header_operator(error=pymysql.err.OperationalError(5600, "No files were found"))
-    with pytest.raises(GeneCoverageFileError, match="No files were found"):
+# The messages of StarRocks 4.0.13 (sandbox) for a missing file and a missing bucket, and the S3 access-denied code.
+MISSING_FILE = pymysql.err.OperationalError(
+    5600,
+    "Access storage error. Error message: No files were found matching the pattern(s) or path(s): "
+    "'s3://mock-bucket/tests/missing.csv'.",
+)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        MISSING_FILE,
+        pymysql.err.ProgrammingError(
+            1064, "Access storage error. Error code: NoSuchBucket. Error message: The specified bucket does not exist"
+        ),
+        pymysql.err.ProgrammingError(1064, "Access storage error. Error code: AccessDenied. Error message: Denied"),
+    ],
+)
+def test_read_format_makes_a_file_starrocks_cannot_read_a_file_error(error):
+    op, cursor = _header_operator(error=error)
+    with pytest.raises(GeneCoverageFileError, match="StarRocks cannot read the file"):
         op.read_format(cursor, "s3://mock-bucket/tests/missing.csv")
 
 
-@pytest.mark.parametrize("error", [pymysql.err.OperationalError(2013, "Lost connection"), RuntimeError("boom")])
-def test_read_format_lets_a_client_error_through(error):
+@pytest.mark.parametrize(
+    "error",
+    [
+        pymysql.err.OperationalError(2013, "Lost connection to MySQL server during query"),
+        # A temporary server error has the same errno as a missing bucket: it must not count as a bad file.
+        pymysql.err.ProgrammingError(1064, "Backend node not found. Check if any backend node is down."),
+        pymysql.err.ProgrammingError(1064, "Access storage error. Error code: SlowDown. Error message: Reduce rate"),
+        RuntimeError("boom"),
+    ],
+)
+def test_read_format_raises_any_other_error_as_is(error):
     op, cursor = _header_operator(error=error)
     with pytest.raises(type(error)):
         op.read_format(cursor, "s3://mock-bucket/tests/a.csv")
@@ -215,7 +242,7 @@ def test_gene_coverage_load_goes_on_after_a_bad_file_and_keeps_its_error():
 def test_gene_coverage_load_keeps_an_unreadable_file_error():
     loads, errors, _ = _run_load(
         [_file(1, 10, "s3://mock/missing.csv")],
-        {"s3://mock/missing.csv": pymysql.err.OperationalError(5600, "No files were found")},
+        {"s3://mock/missing.csv": MISSING_FILE},
     )
     assert loads == []
     assert [(e["filepath"], e["task_id"]) for e in errors] == [("s3://mock/missing.csv", 1)]

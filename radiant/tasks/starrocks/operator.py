@@ -727,14 +727,14 @@ def parse_gene_coverage_header(line: str) -> str:
     )
 
 
-def is_client_error(error: Exception) -> bool:
-    """True for a MySQL client error (lost connection, timeout, ...: errno 2000-2999), which says nothing of the file.
+_GENE_COVERAGE_FILE_ERRORS = ("No files were found", "NoSuchKey", "NoSuchBucket", "AccessDenied")
 
-    pymysql and mysqlclient both put the errno first in the exception's args. An error with no errno counts as a
-    client error, so that it fails the task.
-    """
-    errno = error.args[0] if error.args else None
-    return not isinstance(errno, int) or 2000 <= errno < 3000
+
+def is_file_access_error(error: Exception) -> bool:
+    """True when StarRocks says the file cannot be read for good (missing, or no access): a bad file. Any other error
+    (lost connection, BE down, memory limit, S3 throttling) is not, so that the task fails and Airflow retries it."""
+    message = str(error)
+    return "Access storage error" in message and any(m in message for m in _GENE_COVERAGE_FILE_ERRORS)
 
 
 class GeneCoverageLoadError(AirflowException):
@@ -742,9 +742,9 @@ class GeneCoverageLoadError(AirflowException):
 
 
 class GeneCoverageFileError(Exception):
-    """One `covgene` file that cannot be loaded: missing or unreadable for StarRocks, an unknown header, or a load
-    that StarRocks cancelled or did not finish in time. Any other error (lost connection) is not a file error: it fails
-    the task before the swap, so that Airflow retries it and the loaded coverage stays."""
+    """One `covgene` file that cannot be loaded: missing or with no access for StarRocks, an unknown header, or a load
+    that StarRocks cancelled or did not finish in time. Any other error (lost connection, BE down) is not a file error:
+    it fails the task before the swap, so that Airflow retries it and the loaded coverage stays."""
 
 
 class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):
@@ -813,8 +813,8 @@ class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):
     def read_format(self, cursor, filepath: str) -> str:
         """The format of a `covgene` file, from its header line read by StarRocks (`_GENE_COVERAGE_HEADER_SQL`).
 
-        A StarRocks error (no such file or bucket, access denied) or a missing or unknown header is a file error; a
-        client error is not.
+        A file StarRocks cannot read for good (`is_file_access_error`) or a missing or unknown header is a file error;
+        any other error is raised as is.
         """
         try:
             cursor.execute(
@@ -823,7 +823,7 @@ class RadiantLoadGeneCoverageOperator(RadiantStarrocksLoadBaseOperator):
             )
             rows = cursor.fetchall()
         except Exception as e:
-            if is_client_error(e):
+            if not is_file_access_error(e):
                 raise
             raise GeneCoverageFileError(f"StarRocks cannot read the file: {e}") from e
         if len(rows) != 1:
