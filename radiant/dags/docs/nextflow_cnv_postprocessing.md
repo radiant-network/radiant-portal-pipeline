@@ -46,7 +46,7 @@ reason those two are separate: a param referenced from a `-c` config but absent 
 | `sequencingType` | yes | `WGS` or `WES`; selects the Exomiser analysis file. |
 | `caller` | yes | `DRAGEN` (per-sample VCF) or `DRAGEN_JOINT` (one family-level VCF). Only DRAGEN conventions are implemented. |
 | `vcf` | yes | The CNV VCF (`.vcf` / `.vcf.gz`). |
-| `cram` | no | Alignment for depth-based genotype refinement. Its index must exist at `<cram>.crai` (or `.bai`) — resolved by file existence. |
+| `cram` | no | Alignment, read only with `--get_cn_by_computing_ratio` (depth-based genotype fill). By default the pipeline fills missing genotypes from each sample's own DRAGEN segments in `vcf`. Its index must exist at `<cram>.crai` (or `.bai`) — resolved by file existence. |
 | `pheno` | no | Per-sample phenopacket; selects the *solo* route. Left empty by the cases DAG. |
 | `familyPheno` | no | Family phenopacket (proband + pedigree); enables Exomiser (family mode). Identical across a family's rows. |
 | `familyPed` | no | PED file; enables slivar. Identical across a family's rows. |
@@ -60,11 +60,16 @@ Per family, under `outdir`:
 
 | Path | What |
 |---|---|
-| `slivar/<familyId>.cnv.slivar.vcf.gz{,.tbi}` | The final VCF: VEP `CSQ` plus slivar INFO tags, one per mode of inheritance (`denovo`, `inherited_maternal`, `recessive`, `x_linked_denovo`, ...) and one per parent of origin (`po_mother`, `po_father`, `po_denovo`, ...), named as in the SNV pipeline. The full list is in the pipeline's `docs/output.md`. |
-| `ensemblvep/variants.<familyId>.cnv.vep.vcf.gz{,.tbi}` | The VEP-annotated family VCF. |
-| `slivar/<familyId>.<proband>.cnv.proband.vcf.gz{,.tbi}` | One per affected child of the PED with a parent in the case: the slivar records where that child has a call, as the child's own DRAGEN call (`FORMAT/OID`). |
-| `exomiser/<familyId>.<proband>.exomiser.{variants.tsv,genes.tsv,html,json,vcf.gz,vcf.gz.tbi}` | Exomiser (family mode), on the proband VCF of the child the phenopacket names (`proband.subject.id`). A family with no such VCF (its proband is not an affected child with a father or mother in the PED) runs on the family VCF instead and names the reports `exomiser/<familyId>.exomiser.*`. |
-| `merged/`, `truvari/`, `depth_refined/`, `joint/` | Intermediates. |
+| `slivar/<familyId>.<proband>.cnv.slivar.vcf.gz{,.tbi}` | The final VCF, one per affected child with a father or mother in the PED: the child's own VEP-annotated calls (`FORMAT/OID`), with the family's FORMAT, slivar INFO tags, one per mode of inheritance (`denovo`, `inherited_maternal`, `recessive`, `x_linked_denovo`, ...) and one per parent of origin (`po_mother`, `po_father`, `po_denovo`, ...), named as in the SNV pipeline. The full list is in the pipeline's `docs/output.md`. |
+| `slivar/<familyId>.cnv.slivar.vcf.gz{,.tbi}` | The same, on the whole family VCF, for a family without one (a singleton, or an unaffected proband). |
+| `exomiser/<familyId>.<proband>.exomiser.{variants.tsv,genes.tsv,html,json,vcf.gz,vcf.gz.tbi}` | Exomiser (family mode), on the slivar VCF of the child the phenopacket names (`proband.subject.id`). Any other family runs on the family VCF instead and names the reports `exomiser/<familyId>.exomiser.*`. |
+| `cn_filled/`, `merged/`, `truvari/`, `joint/`, `ensemblvep/` | Intermediates (QA disables their publishing). |
+
+Each CNV's FILTER is set from its carriers' `FORMAT/FT`: PASS when at least one carrier passes
+the caller's filters. QA sets `cnv_pass_only` to false (pipeline default: true), so the non-PASS
+CNVs are kept, flagged in FILTER. Exomiser skips them. The import does not load this FILTER: a
+proband row's **filter** is the proband's own **FORMAT/FT**, so a call DRAGEN rejected for the
+proband is not PASS because a parent's call passes. A VCF without **FORMAT/FT** keeps the record's FILTER.
 
 ## Retries and resume
 

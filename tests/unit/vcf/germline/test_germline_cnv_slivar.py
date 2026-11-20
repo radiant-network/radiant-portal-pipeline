@@ -174,6 +174,57 @@ def test_proband_name_falls_back_to_the_record_id_without_an_oid(tmp_path):
     assert (row["name"], row["mother_name"]) == ("DRAGEN:LOSS:chr1:1-2", "DRAGEN:LOSS:chr1:1-2")
 
 
+_FT_HEADER = (
+    "##fileformat=VCFv4.2\n"
+    "##contig=<ID=chr2>\n"
+    '##FILTER=<ID=cnvLength,Description="Length">\n'
+    '##FILTER=<ID=cnvQual,Description="Quality">\n'
+    '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">\n'
+    '##FORMAT=<ID=CN,Number=1,Type=Integer,Description="Copy number">\n'
+    '##FORMAT=<ID=FT,Number=1,Type=String,Description="Sample filter">\n'
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tKID\tMOM\n"
+)
+
+
+@pytest.mark.parametrize(
+    "record_filter, kid_ft, mom_ft, expected",
+    [
+        # QA case 1000027: the proband's call fails, the mother's passes, FILTER_CNV_CARRIERS writes PASS.
+        ("PASS", "cnvLength", "PASS", "cnvLength"),
+        ("PASS", "cnvLength;cnvQual", "PASS", "cnvLength;cnvQual"),
+        ("cnvLength", "PASS", "cnvLength", "PASS"),
+        ("PASS", "PASS", ".", "PASS"),
+        # No FT of the proband's own: the record's FILTER.
+        ("cnvQual", ".", "PASS", "cnvQual"),
+    ],
+)
+def test_filter_is_the_probands_own_ft(tmp_path, record_filter, kid_ft, mom_ft, expected):
+    vcf_path = tmp_path / "ft.vcf"
+    vcf_path.write_text(
+        _FT_HEADER
+        + f"chr2\t129792123\tDRAGEN:LOSS:chr2:129792124-129801200\tN\t<DEL>\t.\t{record_filter}\tEND=129801200\t"
+        + f"GT:CN:FT\t0/1:1:{kid_ft}\t0/1:1:{mom_ft}\n"
+    )
+    record = next(VCF(str(vcf_path)))
+
+    row = process_slivar_occurrence(record, 1, 11, "test", 9701, "KID", 0, mother_idx=1, father_idx=None)
+    assert row["filter"] == expected
+
+
+def test_filter_is_the_records_without_an_ft_header(tmp_path):
+    """A VCF made before cnv-post-processing 6e3be8d has no `FORMAT/FT`: the record's FILTER, as before."""
+    vcf_path = tmp_path / "no_ft.vcf"
+    vcf_path.write_text(
+        _FT_HEADER.replace('##FORMAT=<ID=FT,Number=1,Type=String,Description="Sample filter">\n', "")
+        + "chr2\t129792123\tDRAGEN:LOSS:chr2:129792124-129801200\tN\t<DEL>\t.\tcnvLength;cnvQual\tEND=129801200\t"
+        + "GT:CN\t0/1:1\t0/1:1\n"
+    )
+    record = next(VCF(str(vcf_path)))
+
+    row = process_slivar_occurrence(record, 1, 11, "test", 9701, "KID", 0, mother_idx=1, father_idx=None)
+    assert row["filter"] == "cnvLength;cnvQual"
+
+
 def test_missing_parent_values_are_null(trio_rows):
     """A `./.` parent with empty FORMAT values: calls kept as no-call, every number NULL, never INT32 min."""
     row = trio_rows["DRAGEN:GAIN:chr1:50001-60000"]

@@ -15,23 +15,25 @@ def trio(trio_rows, phenotype_rows):
 
 @pytest.fixture
 def listing(trio):
-    """What a run publishes for a family whose Exomiser ran on the proband VCF: the preferred name of each output."""
+    """What a run publishes for a family with a proband VCF: the preferred name of each output."""
     return {candidates[0]: 4096 for candidates in expected_keys(trio.family_id, trio.proband.aliquot).values()}
 
 
 @pytest.fixture
 def family_vcf_listing(trio):
-    """What a run publishes for a family whose Exomiser ran on the family VCF: reports named after the family alone."""
+    """What a run publishes for a family without a proband VCF: outputs named after the family alone."""
     return {candidates[-1]: 4096 for candidates in expected_keys(trio.family_id, trio.proband.aliquot).values()}
 
 
-def test_the_slivar_vcf_is_keyed_on_the_family_id_and_the_exomiser_reports_on_the_proband_too():
-    """Every case takes the family route, so the slivar VCF is named after the familyId alone. Exomiser
-    runs on the proband VCF and names its reports `<familyId>.<proband>`, after the family VCF's
-    `<familyId>` when the family has no proband VCF: both are accepted, the proband one first."""
+def test_every_output_is_keyed_on_the_family_id_and_the_proband():
+    """Every case takes the family route. The pipeline names the outputs of a proband VCF
+    `<familyId>.<proband>`, those of the family VCF `<familyId>`: both are accepted, the proband one first."""
     keys = expected_keys("CA1072", "NA12878")
-    assert keys["slivar_vcf"] == ["slivar/CA1072.cnv.slivar.vcf.gz"]
-    assert keys["slivar_tbi"] == ["slivar/CA1072.cnv.slivar.vcf.gz.tbi"]
+    assert keys["slivar_vcf"] == ["slivar/CA1072.NA12878.cnv.slivar.vcf.gz", "slivar/CA1072.cnv.slivar.vcf.gz"]
+    assert keys["slivar_tbi"] == [
+        "slivar/CA1072.NA12878.cnv.slivar.vcf.gz.tbi",
+        "slivar/CA1072.cnv.slivar.vcf.gz.tbi",
+    ]
     assert keys["exomiser_tsv"] == [
         "exomiser/CA1072.NA12878.exomiser.variants.tsv",
         "exomiser/CA1072.exomiser.variants.tsv",
@@ -45,9 +47,10 @@ def test_the_proband_segment_is_the_phenopacket_subject(trio):
     `build_phenopacket` writes there, a report named after that very string must be found."""
     subject = yaml.safe_load(build_phenopacket(trio))["proband"]["subject"]["id"]
     listing = {f"exomiser/CA1072.{subject}.exomiser.{ext}": 4096 for ext in ("variants.tsv", "html", "json")}
-    listing |= {"slivar/CA1072.cnv.slivar.vcf.gz": 4096, "slivar/CA1072.cnv.slivar.vcf.gz.tbi": 4096}
+    listing |= {f"slivar/CA1072.{subject}.cnv.slivar.vcf.gz{ext}": 4096 for ext in ("", ".tbi")}
     documents = collect([trio], listing, OUTDIR)["CA1072"]
     assert documents["exomiser_html"]["name"] == f"CA1072.{subject}.exomiser.html"
+    assert documents["slivar_vcf"]["name"] == f"CA1072.{subject}.cnv.slivar.vcf.gz"
 
 
 def test_the_annotated_vcf_is_a_germline_cnv_vcf(trio, listing):
@@ -74,18 +77,19 @@ def test_exomiser_documents_carry_the_exomiser_cnv_data_type(trio, listing):
 
 
 def test_sizes_and_names_come_from_the_listing(trio, listing):
-    listing["slivar/CA1072.cnv.slivar.vcf.gz"] = 123456
+    listing["slivar/CA1072.NA12878.cnv.slivar.vcf.gz"] = 123456
     documents = collect([trio], listing, OUTDIR)["CA1072"]
     assert documents["slivar_vcf"]["size"] == 123456
-    assert documents["slivar_vcf"]["name"] == "CA1072.cnv.slivar.vcf.gz"
-    assert documents["slivar_vcf"]["url"] == f"{OUTDIR}/slivar/CA1072.cnv.slivar.vcf.gz"
+    assert documents["slivar_vcf"]["name"] == "CA1072.NA12878.cnv.slivar.vcf.gz"
+    assert documents["slivar_vcf"]["url"] == f"{OUTDIR}/slivar/CA1072.NA12878.cnv.slivar.vcf.gz"
     assert documents["exomiser_html"]["name"] == "CA1072.NA12878.exomiser.html"
     assert documents["exomiser_html"]["url"] == f"{OUTDIR}/exomiser/CA1072.NA12878.exomiser.html"
 
 
-def test_a_family_run_on_its_family_vcf_registers_the_family_named_reports(trio, family_vcf_listing):
-    """A family without a proband VCF gets `<familyId>.exomiser.*`; it is a complete set all the same."""
+def test_a_family_run_on_its_family_vcf_registers_the_family_named_outputs(trio, family_vcf_listing):
+    """A family without a proband VCF gets `<familyId>.*`; it is a complete set all the same."""
     documents = collect([trio], family_vcf_listing, OUTDIR)["CA1072"]
+    assert documents["slivar_vcf"]["name"] == "CA1072.cnv.slivar.vcf.gz"
     assert documents["exomiser_html"]["name"] == "CA1072.exomiser.html"
     assert documents["exomiser_html"]["url"] == f"{OUTDIR}/exomiser/CA1072.exomiser.html"
     assert documents["exomiser_html"]["data_type_code"] == "exomiser_cnv"
@@ -107,8 +111,16 @@ def test_a_family_missing_one_file_fails_the_whole_collection(trio, listing):
 
 def test_every_missing_file_is_named_at_once(trio, listing):
     del listing["exomiser/CA1072.NA12878.exomiser.html"]
-    del listing["slivar/CA1072.cnv.slivar.vcf.gz"]
+    del listing["slivar/CA1072.NA12878.cnv.slivar.vcf.gz"]
     with pytest.raises(MissingOutputsError) as excinfo:
         collect([trio], listing, OUTDIR)
     assert "CA1072.NA12878.exomiser.html" in str(excinfo.value)
-    assert "CA1072.cnv.slivar.vcf.gz" in str(excinfo.value)
+    assert "CA1072.NA12878.cnv.slivar.vcf.gz" in str(excinfo.value)
+
+
+def test_another_affected_childs_slivar_vcf_is_not_the_cases(trio, listing):
+    """A sibling's `<familyId>.<child>` slivar VCF does not stand in for the proband's."""
+    del listing["slivar/CA1072.NA12878.cnv.slivar.vcf.gz"]
+    listing["slivar/CA1072.SIB01.cnv.slivar.vcf.gz"] = 4096
+    with pytest.raises(MissingOutputsError):
+        collect([trio], listing, OUTDIR)
