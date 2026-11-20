@@ -76,6 +76,7 @@ wait, blocked or skip, with all the reasons), and `journal_germline_snv` writes 
 - `run` is written on every pass. Any other decision is written only when it, or its reasons, differ from the
   case's last row (view `pipeline_state`).
 - When a case has several reasons, skip wins over blocked, and blocked over wait.
+- The germline SNV child closes each `run` row with `succeeded` or `failed` (`journal_outcomes`).
 - A member other than the proband not sequenced or not aligned yet does not block: the case runs with the
   members present as long as one of them is not annotated, with the absent member's reason on the `run` row.
   Once they are all annotated, the case waits for the absent member, and runs again when it arrives.

@@ -132,6 +132,34 @@ def select_run_cases(member_rows: list[dict], excluded_tenants: list[str]) -> Se
     return select_cases([m.model_dump() for m in present], strict=False)
 
 
+def outcome_entries(selection: dict, registered_tenants: set[str]) -> list[Entry]:
+    """What a run of the "from Cases" DAG did with the cases it was given, as journal entries.
+
+    `selection` is what `select_cases` handed on. A selected case `succeeded` once its tenant's batch is
+    registered, and `failed` otherwise: a failure is the whole run or a whole tenant's batch. A case left out by
+    the check is `failed` too, with the reason it was left out for.
+    """
+    tenant_of = {m["case_id"]: m["tenant_code"] for m in selection.get("members", [])}
+    entries = [
+        Entry(
+            case_id=case_id,
+            pipeline=Pipeline.GERMLINE_SNV,
+            decision=Decision.SUCCEEDED if tenant_of[case_id] in registered_tenants else Decision.FAILED,
+        )
+        for case_id in selection.get("case_ids", [])
+    ]
+    entries += [
+        Entry(
+            case_id=e["case_id"],
+            pipeline=Pipeline.GERMLINE_SNV,
+            decision=Decision.FAILED,
+            reasons=(Reason(**e["reason"]),),
+        )
+        for e in selection.get("excluded", [])
+    ]
+    return entries
+
+
 def decide_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Entry]:
     """One journal entry per case of `germline_snv_facts_select.sql`: the decision and all its reasons.
 
