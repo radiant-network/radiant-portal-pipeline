@@ -137,6 +137,10 @@ A sequencing can hold two germline CNV sets, each under its own task:
   each occurrence into **exomiser_cnv**. **insert_germline_cnv_occurrences** copies the best row
   (**variant_rank** 1) into six columns, **exomiser_rank** to **exomiser_acmg_evidence**. The DRAGEN
   set keeps them empty.
+- **load_exomiser_files** (SNV) and **load_exomiser_cnv_files** (CNV) load the reports with one
+  broker load per batch of 100 reports (one file description per report, tagged with its task, the
+  proband's sequencing and the tenant), not one broker load per task. A bad report cancels the
+  batch and fails the task, before the swap: the retry loads the part again.
 
 See radiant-hub docs/features/RAD-169-cnv-post-processing.md.
 

@@ -1,10 +1,11 @@
 """RAD-181 -- the CNV Exomiser result on the germline CNV occurrences.
 
-The CNV Exomiser report of a `radiant_germline_cnv_annotation` task is broker-loaded into `raw_exomiser_cnv`
-(`staging_exomiser_cnv_load.sql`, as `load_exomiser_cnv_files` runs it), matched to the task's occurrences into the
-tenant's `exomiser_cnv` (`exomiser_cnv_insert_partition_delta.sql`, as `insert_exomiser_cnv` runs it), then the
-germline CNV occurrence insert copies the best row (`variant_rank = 1`) of each occurrence. cnv-post-processing
-runs Exomiser on one of two VCFs, and the report's `VCF_ID` follows it:
+The CNV Exomiser report of a `radiant_germline_cnv_annotation` task is loaded into `raw_exomiser_cnv` (the real
+`RadiantLoadExomiserOperator` with `staging_exomiser_cnv_load.sql`, as `load_exomiser_cnv_files` runs it, both reports
+in one batch), matched to the task's occurrences into the tenant's `exomiser_cnv`
+(`exomiser_cnv_insert_partition_delta.sql`, as `insert_exomiser_cnv` runs it), then the germline CNV occurrence insert
+copies the best row (`variant_rank = 1`) of each occurrence. cnv-post-processing runs Exomiser on one of two VCFs, and
+the report's `VCF_ID` follows it:
 
 - the proband VCF (JOIN_PROBAND_CNV): the proband's own call ID, the occurrence's `name` (fixture
   `mock_cnv_proband.exomiser.variants.tsv`, task `_PROBAND_ROUTE_TASK`);
@@ -13,8 +14,6 @@ runs Exomiser on one of two VCFs, and the report's `VCF_ID` follows it:
 """
 
 import os
-import time
-import uuid
 
 import jinja2
 import pyarrow as pa
@@ -22,6 +21,7 @@ import pytest
 from pyiceberg.expressions import In
 
 from tests.integration.dags.sql.test_cnv_nb_snv import _SQL_DIR, _create_cnv_id_udf, _create_table
+from tests.integration.dags.sql.test_exomiser_insert import run_exomiser_load
 
 # Own parts, tasks and sequencings, apart from the other CNV tests, so the rows are addressable for the teardown.
 _PART = 1810
@@ -133,45 +133,28 @@ def _render(path, mapping, **context):
         return jinja2.Template(f_in.read()).render({"mapping": mapping, "partition": _PART, **context})
 
 
-def _broker_load(cursor, mapping, minio_instance, *, seq_id, task_id, s3_key):
-    """The load `RadiantLoadExomiserOperator` runs for a CNV annotation task, with its parameters."""
-    database_name, table_name = mapping["starrocks_staging_exomiser_cnv"].split(".")
-    label = f"test_raw_exomiser_cnv_load_{uuid.uuid4().hex}"
-    sql = _render(
-        "staging_exomiser_cnv_load.sql",
-        mapping,
-        broker_load_timeout=7200,
-        database_name=database_name,
-        table_name=table_name,
-        load_label=label,
-        broker_configuration=f"""
-            'aws.s3.region' = 'us-east-1',
-            'aws.s3.endpoint' = 'http://radiant-minio:9000',
-            'aws.s3.enable_path_style_access' = 'true',
-            'aws.s3.access_key' = '{minio_instance.access_key}',
-            'aws.s3.secret_key' = '{minio_instance.secret_key}'
-        """,
-        temporary_partition_clause="",
-    )
-    cursor.execute(
-        sql,
-        {
-            "part": _PART,
-            "seq_id": seq_id,
-            "task_id": task_id,
-            "tenant_code": _TENANT,
-            "tsv_filepath": f"s3://{s3_key}",
-        },
-    )
-    for _ in range(150):
-        cursor.execute("SELECT STATE FROM information_schema.loads WHERE LABEL = %(label)s", {"label": label})
-        state = cursor.fetchone()
-        if not state or state[0] == "FINISHED":
-            return
-        if state[0] == "CANCELLED":
-            raise RuntimeError(f"Load for label {label} was cancelled.")
-        time.sleep(2)
-    raise TimeoutError(f"Load for label {label} did not finish in time.")
+def _cnv_annotation_task(task_id, seq_id, s3_key):
+    return {
+        "task_id": task_id,
+        "task_type": "radiant_germline_cnv_annotation",
+        "part": _PART,
+        "analysis_type": "germline",
+        "experiments": [
+            {
+                "seq_id": seq_id,
+                "patient_id": seq_id,
+                "aliquot": f"SA{seq_id}",
+                "tenant_code": _TENANT,
+                "family_role": "proband",
+                "affected_status": "affected",
+                "sex": "female",
+                "experimental_strategy": "wgs",
+            }
+        ],
+        "deleted": False,
+        "cnv_vcf_filepath": f"s3://test/{task_id}.cnv.slivar.vcf.gz",
+        "exomiser_filepath": f"s3://{s3_key}",
+    }
 
 
 @pytest.fixture
@@ -203,22 +186,21 @@ def loaded_reports(
     with starrocks_session.cursor() as cursor:
         for table in (raw, tenant_rows, target):
             cursor.execute(f"DELETE FROM {table} WHERE part = %(part)s", {"part": _PART})
-        _broker_load(
-            cursor,
-            radiant_mapping,
-            minio_instance,
-            seq_id=_SEQ_ID,
-            task_id=_PROBAND_ROUTE_TASK,
-            s3_key=sample_cnv_exomiser_tsvs["proband"],
-        )
-        _broker_load(
-            cursor,
-            radiant_mapping,
-            minio_instance,
-            seq_id=_OTHER_SEQ_ID,
-            task_id=_FAMILY_ROUTE_TASK,
-            s3_key=sample_cnv_exomiser_tsvs["family"],
-        )
+    # Both reports in one batch, as `load_exomiser_cnv_files` runs them.
+    run_exomiser_load(
+        starrocks_session,
+        radiant_mapping,
+        minio_instance,
+        table_key="starrocks_staging_exomiser_cnv",
+        sql="staging_exomiser_cnv_load.sql",
+        copy_sql="staging_exomiser_cnv_insert_partition_delta.sql",
+        part=_PART,
+        tasks=[
+            _cnv_annotation_task(_PROBAND_ROUTE_TASK, _SEQ_ID, sample_cnv_exomiser_tsvs["proband"]),
+            _cnv_annotation_task(_FAMILY_ROUTE_TASK, _OTHER_SEQ_ID, sample_cnv_exomiser_tsvs["family"]),
+        ],
+        annotation_task_type="radiant_germline_cnv_annotation",
+    )
 
     iceberg_table = iceberg_client.load_table(f"{setup_iceberg_namespace}.germline_cnv_occurrence")
     # The table's own schema: Iceberg renumbers field ids on create, and the append is validated by id.

@@ -1,8 +1,10 @@
-{#- The CNV Exomiser report (RAD-181) of a `radiant_germline_cnv_annotation` task. The `variants.tsv` columns are
-    the ones of staging_exomiser_load.sql (the same Exomiser report format), `VCF_ID` kept as `vcf_id`. #}
+{#- The CNV Exomiser reports (RAD-181) of a batch of `radiant_germline_cnv_annotation` tasks, in one load job: one
+    `data_desc` per report, as staging_exomiser_load.sql. The `variants.tsv` columns are the ones of
+    staging_exomiser_load.sql (the same Exomiser report format), `VCF_ID` kept as `vcf_id`. #}
 LOAD LABEL {{ database_name }}.{{ load_label }}
 (
-    DATA INFILE(%(tsv_filepath)s)
+{% raw %}{% for i in range(file_count) %}
+    DATA INFILE(%(filepath_{{ i }})s)
     INTO TABLE {{ table_name }} {{ temporary_partition_clause }}
     COLUMNS TERMINATED BY "\t"
     FORMAT AS "CSV"
@@ -18,9 +20,9 @@ LOAD LABEL {{ database_name }}.{{ load_label }}
     SET
     (
         part = %(part)s,
-        seq_id = %(seq_id)s,
-        task_id = %(task_id)s,
-        tenant_code = %(tenant_code)s,
+        seq_id = %(seq_id_{{ i }})s,
+        task_id = %(task_id_{{ i }})s,
+        tenant_code = %(tenant_code_{{ i }})s,
         vcf_id = vcf_id,
         id = id,
         rank = rank,
@@ -37,13 +39,14 @@ LOAD LABEL {{ database_name }}.{{ load_label }}
         alternate = alternate,
         acmg_classification = lower(acmg_classification),
         acmg_evidence = IF(acmg_evidence = "", NULL, split(acmg_evidence, ","))
-     )
-     where contributing_variant=1
- )
- WITH BROKER
- (
-        {{ broker_configuration }}
- )
+    )
+    WHERE contributing_variant = 1{{ "," if not loop.last }}
+{% endfor %}{% endraw %}
+)
+WITH BROKER
+(
+    {{ broker_configuration }}
+)
 PROPERTIES
 (
     'timeout' = '{{ broker_load_timeout }}'
