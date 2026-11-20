@@ -22,7 +22,7 @@ import logging
 
 from pydantic import BaseModel
 
-from radiant.tasks.decision import Reason, ReasonCode, decision_of, from_query
+from radiant.tasks.decision import Decision, Reason, ReasonCode, decision_of, from_query
 from radiant.tasks.journal import Entry, Pipeline
 from radiant.tasks.nextflow.model import CaseMember, Family, Phenotype, family_id
 
@@ -117,29 +117,62 @@ def select_cases(
     return selection
 
 
+# A member not sequenced or not aligned yet: absent from the run, unless it is the proband.
+_ABSENT = {"pending_sequencing", "pending_alignment"}
+
+
+def select_run_cases(member_rows: list[dict], excluded_tenants: list[str]) -> Selection:
+    """The families of the cases the scheduler decided `run` for (`germline_snv_case_members_select.sql`), checked
+    again, lenient: the data may have moved since the decision. A member other than the proband with no gVCF yet is
+    left out, and the family runs with the members present."""
+    # The members query has the gVCF's alignment only: a member without one is not aligned, as far as it can tell.
+    rows = [{"current_alignment_task_id": row.get("alignment_task_id")} | row for row in member_rows]
+    members = _with_reasons(rows, excluded_tenants)
+    present = [m for m in members if not _absent(m)]
+    return select_cases([m.model_dump() for m in present], strict=False)
+
+
 def decide_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Entry]:
     """One journal entry per case of `germline_snv_facts_select.sql`: the decision and all its reasons.
 
-    Same checks as `select_cases`, so a case runs here exactly when it would be selected there.
+    A member absent but the proband does not block: the case runs with the members present, as long as one of
+    them is not annotated yet, and runs again once the absent member arrives. Otherwise it waits for them.
     """
-    members = [CaseMember(**row) for row in fact_rows]
-    for member in members:
-        member.exclusion_reason = _query_reason(member, excluded_tenants)
-
     entries = []
-    for case_id, case_members in sorted(_group_by_case(members).items()):
-        reasons = [reason for reason, _ in _validate(case_id, case_members)]
+    for case_id, case_members in sorted(_group_by_case(_with_reasons(fact_rows, excluded_tenants)).items()):
+        present = [m for m in case_members if not _absent(m)]
+        absent = [from_query(m.exclusion_reason).about(m.patient_id) for m in case_members if _absent(m)]
+        blocking = [reason for reason, _ in _validate(case_id, present)]
         # Case-level reasons count even when a member already has one: a tenant left out is a skip.
         first = case_members[0]
         if first.project_code is None:
-            reasons.append(Reason(code=ReasonCode.NO_PROJECT_CODE))
+            blocking.append(Reason(code=ReasonCode.NO_PROJECT_CODE))
         if first.tenant_code in excluded_tenants:
-            reasons.append(Reason(code=ReasonCode.TENANT_EXCLUDED))
-        reasons = tuple(dict.fromkeys(reasons))
-        entries.append(
-            Entry(case_id=case_id, pipeline=Pipeline.GERMLINE_SNV, decision=decision_of(reasons), reasons=reasons)
-        )
+            blocking.append(Reason(code=ReasonCode.TENANT_EXCLUDED))
+
+        reasons = tuple(dict.fromkeys([*blocking, *absent]))
+        if blocking:
+            decision = decision_of(blocking)
+        elif any(not m.annotated for m in present):
+            decision = Decision.RUN
+        elif absent:
+            decision = Decision.WAIT
+        else:
+            # Every member present is annotated and none is missing: nothing to decide.
+            continue
+        entries.append(Entry(case_id=case_id, pipeline=Pipeline.GERMLINE_SNV, decision=decision, reasons=reasons))
     return entries
+
+
+def _with_reasons(fact_rows: list[dict], excluded_tenants: list[str]) -> list[CaseMember]:
+    members = [CaseMember(**row) for row in fact_rows]
+    for member in members:
+        member.exclusion_reason = _query_reason(member, excluded_tenants)
+    return members
+
+
+def _absent(member: CaseMember) -> bool:
+    return member.role != "proband" and member.exclusion_reason in _ABSENT
 
 
 def resolve_families(member_rows: list[dict], phenotype_rows: list[dict]) -> list[Family]:
@@ -172,7 +205,7 @@ def _group_by_case(members: list[CaseMember]) -> dict[int, list[CaseMember]]:
 
 
 def _query_reason(member: CaseMember, excluded_tenants: list[str]) -> str | None:
-    """The code `pending_annotation_select.sql` gives this member, from the facts: most specific first."""
+    """Why this member cannot run, from its facts: most specific first."""
     if member.seq_id is None:
         return "pending_sequencing"
     if member.current_alignment_task_id is None:

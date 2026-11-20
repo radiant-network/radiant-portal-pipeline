@@ -10,8 +10,9 @@ clinical model, and turning its outputs into portal tasks.
 
 | # | Task | Does |
 |:--|:--|:--|
-| 1 | **discover_scope** | Establishes what this run is allowed to look at |
-| 2 | **select_cases** | Finds eligible cases, excludes the rest with a reason |
+| 0 | **has_cases** | Skips the run when no case is named |
+| 1 | **fetch_case_members** | The members of the named cases, with their current experiment and gVCF |
+| 2 | **select_cases** | Checks the named cases again, excludes the rest with a reason |
 | 3 | **fetch_phenotypes** | Pulls each family's phenotypes |
 | 4 | **resolve_cases** | Builds the families |
 | 5 | **generate_inputs** | Writes the samplesheet, PEDs and phenopackets to S3 |
@@ -30,8 +31,8 @@ parameters below exist for targeted reruns and for configuration, not for normal
 
 | Param | Default | Meaning |
 |:--|:--|:--|
-| **task_ids** | empty | alignment_germline_variant_calling task ids, for a targeted rerun. Empty means "find everything" |
 | **excluded_tenants** | $RADIANT_ETL_EXCLUDED_TENANTS | Tenants left out of case processing, reported as **tenant_excluded**. Empty excludes none |
+| **case_ids** | empty | The cases to run. **radiant-case-scheduler** passes the ones it decided `run` for; an operator names cases to rerun. Empty runs nothing |
 | **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing |
 
 > **dry_run on a scheduled run is a trap.** A dry run registers nothing, so every case stays
@@ -50,9 +51,11 @@ run may span several tenants; registration groups by tenant and sends one batch 
 
 ## What counts as "needs annotating"
 
-A (case, sequencing experiment) pair is eligible when the pair's *current* experiment has an
-alignment publishing a gVCF, and no **radiant_germline_annotation** is scoped to that same
-pair. The whole rule lives in sql/clinical/pending_annotation_select.sql.
+This DAG decides nothing: **radiant-case-scheduler** does (**decide_cases**, on
+sql/clinical/germline_snv_facts_select.sql, written to the pipeline journal). A case runs when no
+**radiant_germline_annotation** is scoped to a (case, current experiment) pair whose member has a gVCF, and nothing
+blocks it. This DAG reads the members of the cases it is given with
+sql/clinical/germline_snv_case_members_select.sql; both queries read the gVCF from the view **current_germline_gvcf**.
 
 Two selections make it work, and both matter more than they look:
 
@@ -70,15 +73,16 @@ re-discovered and the pipeline re-run every night, for ever.
 | A case re-annotated after a member was re-sequenced | The newer experiment became current. The earlier annotation is untouched and stays queryable |
 | A case's parents re-annotated when only the proband changed | A joint call over a different proband sample is a different result for every member. A family is one unit |
 | Two families in one run naming the same gVCF | One experiment linked to two cases. Each is its own family and gets its own annotation task |
-| A case that never appears | It has no gVCFs at all (joint-called upstream, out of scope), it is revoked, it is somatic, or it is already annotated |
+| A case that never runs | It has no gVCFs at all (joint-called upstream: **blocked**, **missing_input:gvcf** in the journal), it is revoked, it is somatic, or it is already annotated |
 
 ---
 
 ## Nothing fails the run any more — it gets excluded
 
-A candidate that cannot be run is dropped with a reason and the rest of the run continues.
-One unfixable case must not block every other case, every night. **select_cases** logs each
-one; grep its task log for "excluded".
+The scheduler only names cases it decided **run** for; why the others do not run is in the pipeline journal.
+**select_cases** checks the named cases again, since the data may have moved since the decision: a case that
+cannot be run is dropped with a reason and the rest of the run continues. It logs each one; grep its task log for
+"excluded".
 
 | Reason | Meaning | Transient? |
 |:--|:--|:--|
@@ -91,17 +95,13 @@ one; grep its task log for "excluded".
 | **no_project_code** | cases.project_id did not resolve, and the batch PATCH needs it to look the case up | No |
 | **tenant_excluded** | The tenant is in **excluded_tenants** | No, by configuration |
 
-The two pending reasons are normal traffic, not errors. A member whose newest experiment has
-no alignment yet makes the case **wait**, rather than run against the superseded one and
-produce an annotation that is obsolete the moment it lands.
+The two pending reasons are normal traffic, not errors. A proband whose newest experiment has no alignment yet
+makes the case **wait**, rather than run against the superseded one and produce an annotation that is obsolete the
+moment it lands. Another member in that state is left out of the family (below).
 
 If every candidate is excluded, **select_cases** skips and the run ends there. A skipped run
 is not a failed one.
 
-> **A targeted rerun behaves differently on purpose.** With **task_ids** set, an unresolvable
-> case raises instead of being excluded — you asked for that specific work, so silence would
-> be the wrong answer. A named task that yields no candidate case is also reported: it does
-> not exist, is not an alignment task, or every case it belongs to is already annotated.
 
 ---
 
@@ -275,18 +275,28 @@ There is no cap on the number of cases per run. The first scheduled run therefor
 every case ever aligned and never annotated, which can be hundreds of families in a single
 samplesheet and a single multi-day Nextflow run whose failure loses all of it.
 
-Do the first pass by hand, in tranches, with explicit **task_ids** — then let
+Do the first pass by hand, in tranches, with explicit **case_ids** — then let
 `radiant-case-scheduler` take over on a steady-state delta.
 
 ---
+
+## A member not sequenced yet does not hold the case back
+
+A member other than the proband who is not sequenced or not aligned yet is left out of the family: the pipeline runs with the members present, and the case is annotated for them. Once
+the member arrives, the case runs again with the whole family. Both annotations are kept, and the laboratory is
+emailed each time. The proband is never left out: without it the case waits.
+
+A member present with wrong data (two gVCFs, no aliquot) still blocks the case. Here, a member other than the
+proband with no gVCF is left out; the scheduler has already told "not aligned yet" from "aligned without a gVCF"
+(**blocked**).
 
 ## Out of scope: cases without gVCFs
 
 Not every germline case has per-sample gVCFs. Some were joint-called upstream: their
 alignment tasks publish only CRAM and CNV, and the variants arrive through a
-**family_variant_calling** task emitting a single joint VCF. These never become candidates —
-with no gVCFs there is nothing for step: genotype to do — and they are absent from the
-exclusion report rather than filling it nightly.
+**family_variant_calling** task emitting a single joint VCF. These never run — with no gVCFs
+there is nothing for step: genotype to do. The scheduler journals them once as **blocked**,
+**missing_input:gvcf**, and writes again only if that changes.
 
 They do have a real need: the same sequencing data re-examined under a different clinical
 framing, with a different primary condition and different affected statuses, which changes
