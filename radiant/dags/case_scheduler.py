@@ -106,6 +106,13 @@ def _trigger(task_id: str, display_name: str, dag_id: str, conf: dict | None = N
     )
 
 
+def _run_conf(pipeline: str) -> dict:
+    # The cases this run decided `run` for; none if deciding failed, and `watcher` turns the run red.
+    return EXCLUDED_TENANTS_CONF | {
+        "case_ids": f"{{{{ (ti.xcom_pull(task_ids='decide_{pipeline}') or {{}}).get('run_case_ids', []) }}}}"
+    }
+
+
 def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksOperator]:
     """The six "work waiting" queries, `{prefix}_{germline_snv,germline_cnv,somatic_snv,qc,qc_somatic,import}_cases`.
 
@@ -135,8 +142,8 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
         ),
         query(
             "germline_cnv",
-            "Cases pending germline CNV post-processing",
-            "./sql/clinical/pending_cnv_annotation_select.sql",
+            "Facts of the germline CNV candidates",
+            "./sql/clinical/germline_cnv_facts_select.sql",
         ),
         query(
             "somatic_snv",
@@ -217,33 +224,33 @@ def case_scheduler():
         context["ti"].xcom_push(key=CASES_WITH_WORK_KEY, value=sorted(waiting))
         return plan_processing(status_rows, waiting, context["params"]["excluded_tenants"])
 
-    @task(task_id="decide_germline_snv", task_display_name="[PyOp] Decide germline SNV")
-    def decide_germline_snv(fact_rows: Any) -> dict:
+    @task
+    def decide(fact_rows: Any, pipeline: str) -> dict:
         """The decision of each candidate, and the cases to run, handed to the child DAG."""
         from collections import Counter
 
         from airflow.sdk import get_current_context
 
         from radiant.tasks.decision import Decision
-        from radiant.tasks.nextflow.resolve import decide_cases
+        from radiant.tasks.nextflow.case_status import DECIDE
 
-        entries = decide_cases(fact_rows, get_current_context()["params"]["excluded_tenants"])
+        entries = DECIDE[pipeline](fact_rows, get_current_context()["params"]["excluded_tenants"])
         counts = dict(Counter(str(e.decision) for e in entries))
-        LOGGER.info("germline_snv: %d item(s) %s", len(entries), counts)
+        LOGGER.info("%s: %d item(s) %s", pipeline, len(entries), counts)
         return {
             "entries": [e.model_dump(mode="json") for e in entries],
             "run_case_ids": [e.case_id for e in entries if e.decision == Decision.RUN],
         }
 
-    @task(task_id="journal_germline_snv", task_display_name="[PyOp] Journal germline SNV")
-    def journal_germline_snv(decided: dict) -> int:
+    @task
+    def journal(decided: dict, pipeline: str) -> int:
         """Writes the journal only: no pipeline waits for it."""
         from airflow.sdk import get_current_context
 
         from radiant.tasks.journal import Entry, record
 
         written = record([Entry(**e) for e in decided["entries"]], get_current_context()["run_id"])
-        LOGGER.info("germline_snv: %d row(s) written", len(written))
+        LOGGER.info("%s: %d row(s) written", pipeline, len(written))
         return len(written)
 
     @task(
@@ -350,8 +357,18 @@ def case_scheduler():
     def watcher() -> None:
         raise AirflowFailException("a step of this run failed, see the failed task(s) and the child runs")
 
-    decided_germline_snv = decide_germline_snv(discovered[0].output)
-    journaled_germline_snv = journal_germline_snv(decided_germline_snv)
+    decided, journaled = {}, {}
+    # Germline SNV and CNV are decided on their facts, the first two discovery queries.
+    for pipeline, label, facts in (
+        ("germline_snv", "germline SNV", discovered[0]),
+        ("germline_cnv", "germline CNV", discovered[1]),
+    ):
+        decided[pipeline] = decide.override(task_id=f"decide_{pipeline}", task_display_name=f"[PyOp] Decide {label}")(
+            facts.output, pipeline
+        )
+        journaled[pipeline] = journal.override(
+            task_id=f"journal_{pipeline}", task_display_name=f"[PyOp] Journal {label}"
+        )(decided[pipeline], pipeline)
     batches = discover_cases(*(query.output for query in discovered), fetch_case_statuses.output)
     processing = set_processing.expand(batch=batches)
 
@@ -359,15 +376,13 @@ def case_scheduler():
         "trigger_germline_snv_postprocessing",
         "[DAG] Nextflow SNV Post-processing (from Cases)",
         GERMLINE_SNV_CASES_DAG_ID,
-        # The cases this run decided `run` for; none if deciding failed, and `watcher` turns the run red.
-        EXCLUDED_TENANTS_CONF
-        | {"case_ids": "{{ (ti.xcom_pull(task_ids='decide_germline_snv') or {}).get('run_case_ids', []) }}"},
+        _run_conf("germline_snv"),
     )
     trigger_germline_cnv = _trigger(
         "trigger_germline_cnv_postprocessing",
         "[DAG] Nextflow CNV Post-processing (from Cases)",
         GERMLINE_CNV_CASES_DAG_ID,
-        EXCLUDED_TENANTS_CONF,
+        _run_conf("germline_cnv"),
     )
     trigger_somatic_snv = _trigger(
         "trigger_somatic_snv_annotation",
@@ -385,7 +400,8 @@ def case_scheduler():
     # post-processing (the slivar VCF, RAD-206) registered, so it waits for the three, success or not.
     trigger_import = _trigger("trigger_import", "[DAG] Scheduled Import", IMPORT_DAG_ID)
 
-    decided_germline_snv >> trigger_germline_snv
+    decided["germline_snv"] >> trigger_germline_snv
+    decided["germline_cnv"] >> trigger_germline_cnv
     processing >> [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv, trigger_qc]
     [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv] >> trigger_import
     # Asked again once the import, CNV post-processing and quality control have succeeded: a case
@@ -401,8 +417,8 @@ def case_scheduler():
 
     [
         *discovered,
-        decided_germline_snv,
-        journaled_germline_snv,
+        *decided.values(),
+        *journaled.values(),
         fetch_case_statuses,
         processing,
         trigger_germline_snv,

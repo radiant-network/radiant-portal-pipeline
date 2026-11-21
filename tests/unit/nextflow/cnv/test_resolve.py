@@ -1,12 +1,16 @@
 import pytest
 
-from radiant.tasks.decision import Reason, ReasonCode
+from radiant.tasks.decision import Decision, Reason, ReasonCode
+from radiant.tasks.journal import Pipeline
 from radiant.tasks.nextflow.cnv.resolve import (
     CaseResolutionError,
+    decide_cases,
     resolve_families,
     select_cases,
+    select_run_cases,
     tenants_of,
 )
+from radiant.tasks.nextflow.inputs import build_ped
 from tests.unit.nextflow.cnv.conftest import member_row
 
 
@@ -72,7 +76,7 @@ def test_a_discovered_case_that_cannot_run_is_excluded_not_raised(trio_rows, sin
     selection = select_cases(trio_rows + singleton_rows)
     assert selection.case_ids == [8]
     assert [(e.case_id, e.reason) for e in selection.excluded] == [
-        (1072, Reason(code=ReasonCode.MISSING_INPUT, detail="gcnv"))
+        (1072, Reason(code=ReasonCode.MISSING_INPUT, detail="gcnv", patient_id=102))
     ]
 
 
@@ -96,7 +100,7 @@ def test_a_non_dragen_alignment_is_excluded_before_the_pipeline_runs(trio_rows):
     trio_rows[2]["alignment_pipeline"] = "GATK"
     (excluded,) = select_cases(trio_rows).excluded
     assert excluded.reason.code == "unsupported_caller"
-    assert excluded.reason == Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="GATK")
+    assert excluded.reason == Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="GATK", patient_id=100)
 
 
 def test_dragen_is_matched_loosely(trio_rows):
@@ -110,13 +114,15 @@ def test_an_alignment_without_a_pipeline_name_is_excluded_not_assumed_dragen(tri
     alignment that does not say what produced it fails closed, with its own reason."""
     trio_rows[1]["alignment_pipeline"] = None
     (excluded,) = select_cases(trio_rows).excluded
-    assert excluded.reason == Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="unknown")
+    assert excluded.reason == Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="unknown", patient_id=101)
     assert "no pipeline_name" in excluded.message
 
 
 def test_a_member_still_awaiting_alignment_is_not_also_reported_as_unknown_caller(trio_rows):
     """One reason per cause: the query already says `pending_alignment`."""
-    trio_rows[1].update(alignment_task_id=None, alignment_pipeline=None, gcnv_url=None, gcnv_matches=0)
+    trio_rows[1].update(
+        alignment_task_id=None, current_alignment_task_id=None, alignment_pipeline=None, gcnv_url=None, gcnv_matches=0
+    )
     trio_rows[1]["exclusion_reason"] = "pending_alignment"
     selection = select_cases(trio_rows)
     assert [e.reason.code for e in selection.excluded] == ["pending_alignment"]
@@ -181,3 +187,84 @@ def test_an_excluded_tenant_is_left_out_before_the_pipeline_runs(singleton_rows)
     (excluded,) = select_cases(singleton_rows).excluded
     assert excluded.reason.code == "tenant_excluded"
     assert "RADIANT_ETL_EXCLUDED_TENANTS" in excluded.message
+
+
+# --- the scheduler's decision, on the facts --------------------------------------------------
+
+# The father's facts once he is not sequenced yet.
+_NOT_SEQUENCED = {"seq_id": None, "aliquot": None, "current_alignment_task_id": None, "gcnv_matches": 0}
+
+
+def _father(rows):
+    return next(row for row in rows if row["role"] == "father")
+
+
+def _decided(rows, excluded_tenants=()):
+    return [(e.case_id, e.decision, e.reasons) for e in decide_cases(rows, list(excluded_tenants))]
+
+
+def test_a_case_with_a_member_not_annotated_runs(trio_rows):
+    (entry,) = decide_cases(trio_rows, [])
+    assert (entry.pipeline, entry.decision, entry.reasons) == (Pipeline.GERMLINE_CNV, Decision.RUN, ())
+
+
+def test_a_parent_not_sequenced_yet_does_not_block_the_proband(trio_rows):
+    """The family runs with the members present; the reason names who is missing."""
+    _father(trio_rows).update(_NOT_SEQUENCED)
+    assert _decided(trio_rows) == [(1072, Decision.RUN, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))]
+
+
+def test_after_the_partial_run_the_case_waits_for_the_absent_parent(trio_rows):
+    _father(trio_rows).update(_NOT_SEQUENCED)
+    for row in trio_rows:
+        row["annotated"] = row["role"] != "father"
+    assert _decided(trio_rows) == [
+        (1072, Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))
+    ]
+
+
+def test_a_case_with_every_member_annotated_is_not_decided(trio_rows):
+    for row in trio_rows:
+        row["annotated"] = True
+    assert decide_cases(trio_rows, []) == []
+
+
+def test_a_non_dragen_alignment_blocks_the_case(trio_rows):
+    _father(trio_rows)["alignment_pipeline"] = "GATK"
+    assert _decided(trio_rows) == [
+        (1072, Decision.BLOCKED, (Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="GATK", patient_id=101),))
+    ]
+
+
+def test_a_member_aligned_without_a_cnv_vcf_blocks_the_case(trio_rows):
+    _father(trio_rows).update(gcnv_url=None, gcnv_matches=0)
+    assert _decided(trio_rows) == [
+        (1072, Decision.BLOCKED, (Reason(code=ReasonCode.MISSING_INPUT, detail="gcnv", patient_id=101),))
+    ]
+
+
+def test_an_excluded_tenant_is_skipped(singleton_rows):
+    (entry,) = decide_cases(singleton_rows, ["radiant"])
+    assert entry.decision == Decision.SKIP
+
+
+# --- the child's check of the named cases ---------------------------------------------------
+
+
+def test_the_child_runs_the_family_without_its_absent_parent(trio_rows):
+    """The pipeline stops on a PED parent missing from the VCFs, so an absent parent is written `0`."""
+    _father(trio_rows).update(_NOT_SEQUENCED, alignment_task_id=None, gcnv_url=None, cram_url=None, crai_url=None)
+    selection = select_run_cases(trio_rows, [])
+    assert selection.case_ids == [1072]
+    assert [m.role for m in selection.members] == ["proband", "mother"]
+    (family,) = resolve_families([m.model_dump() for m in selection.members], [])
+    proband_line = build_ped(family).splitlines()[0].split("\t")
+    assert proband_line[2:4] == ["0", "NA12892"]
+    assert family.crams_complete is True
+
+
+def test_the_child_leaves_out_a_case_whose_proband_is_absent(trio_rows):
+    next(row for row in trio_rows if row["role"] == "proband").update(_NOT_SEQUENCED)
+    selection = select_run_cases(trio_rows, [])
+    assert selection.case_ids == []
+    assert [e.reason.code for e in selection.excluded] == ["pending_sequencing"]

@@ -1,3 +1,4 @@
+import pytest
 from airflow.sdk.definitions.mappedoperator import MappedOperator
 from airflow.sdk.definitions.taskgroup import MappedTaskGroup
 from airflow.utils.trigger_rule import TriggerRule
@@ -10,9 +11,13 @@ CASES_DAG_IDS = {
     "trigger_somatic_snv_annotation": "radiant-nextflow-somatic-snv-annotation-cases",
     "trigger_quality_control": "radiant-nextflow-quality-control-cases",
 }
+# The pipelines the scheduler decides on their facts, and names the cases to run to their child.
+DECIDED = {
+    "germline_snv": "trigger_germline_snv_postprocessing",
+    "germline_cnv": "trigger_germline_cnv_postprocessing",
+}
 # Each discovery task: the cases DAG and the task of it that runs the same query.
 DISCOVERY = {
-    "discover_germline_cnv_cases": ("radiant-nextflow-cnv-postprocessing-cases", "discover_scope"),
     "discover_somatic_snv_cases": ("radiant-nextflow-somatic-snv-annotation-cases", "discover_scope"),
     "discover_qc_cases": ("radiant-nextflow-quality-control-cases", "discover_germline"),
     "discover_qc_somatic_cases": ("radiant-nextflow-quality-control-cases", "discover_somatic"),
@@ -39,6 +44,8 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "discover_import_cases",
         "decide_germline_snv",
         "journal_germline_snv",
+        "decide_germline_cnv",
+        "journal_germline_cnv",
         "fetch_case_statuses",
         "discover_cases",
         "set_processing",
@@ -89,9 +96,11 @@ def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
         # Inherited from the DAG, not set per task: a run conf `excluded_tenants` must reach it.
         assert discover.params["excluded_tenants"] == dag.params["excluded_tenants"]
         assert discover.params["task_ids"] == []
-    # Germline SNV: the scheduler decides on the facts, and names the cases to its child.
-    germline_snv = dag.get_task("discover_germline_snv_cases")
-    assert germline_snv.sql.startswith("-- One row per (candidate germline case, family member)")
+    # Germline SNV and CNV: the scheduler decides on the facts, and names the cases to its child.
+    for pipeline in DECIDED:
+        facts = dag.get_task(f"discover_{pipeline}_cases")
+        assert facts.sql.startswith("-- One row per (candidate germline case, family member)")
+        assert "(`decide_cases`" in facts.sql
     import_sql = dag.get_task("discover_import_cases").sql
     assert "staging_sequencing_experiment_delta" in import_sql
     # A row leaves the delta once inserted: the ones `import_part` has not loaded are still pending.
@@ -104,8 +113,11 @@ def test_the_cases_dags_are_given_the_run_s_block_list(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     for task_id, cases_dag_id in CASES_DAG_IDS.items():
         expected = {"excluded_tenants": "{{ params.excluded_tenants }}"}
-        if task_id == "trigger_germline_snv_postprocessing":
-            expected["case_ids"] = "{{ (ti.xcom_pull(task_ids='decide_germline_snv') or {}).get('run_case_ids', []) }}"
+        decided = {trigger: pipeline for pipeline, trigger in DECIDED.items()}
+        if task_id in decided:
+            expected["case_ids"] = (
+                f"{{{{ (ti.xcom_pull(task_ids='decide_{decided[task_id]}') or {{}}).get('run_case_ids', []) }}}}"
+            )
         assert dag.get_task(task_id).conf == expected
         assert "excluded_tenants" in dag_bag.get_dag(cases_dag_id).params
     assert not dag.get_task("trigger_import").conf
@@ -128,6 +140,7 @@ def test_discover_cases_reads_every_discovery_and_the_statuses(dag_bag):
     assert _upstream(dag, "discover_cases") == {
         *DISCOVERY,
         "discover_germline_snv_cases",
+        "discover_germline_cnv_cases",
         "discover_import_cases",
         "fetch_case_statuses",
     }
@@ -161,8 +174,8 @@ def test_the_pipelines_run_in_parallel_even_if_setting_statuses_failed(dag_bag):
         trigger = dag.get_task(task_id)
         assert trigger.trigger_dag_id == cases_dag_id
         assert trigger.trigger_rule == TriggerRule.ALL_DONE
-        # Germline SNV also waits for its decisions: the cases it runs.
-        decided = {"decide_germline_snv"} if task_id == "trigger_germline_snv_postprocessing" else set()
+        # Germline SNV and CNV also wait for their decisions: the cases they run.
+        decided = {f"decide_{p}" for p, trigger in DECIDED.items() if trigger == task_id}
         assert _upstream(dag, task_id) == {"set_processing", *decided}
 
 
@@ -188,6 +201,7 @@ def test_evaluation_waits_for_every_pipeline_and_stops_if_one_failed(dag_bag):
         "refresh_case_statuses",
         *(f"re{task_id}" for task_id in DISCOVERY),
         "rediscover_germline_snv_cases",
+        "rediscover_germline_cnv_cases",
         "rediscover_import_cases",
     ]
     for task_id in second_pass:
@@ -234,16 +248,17 @@ def test_the_pinned_run_id_is_not_a_reserved_scheduled_id(dag_bag):
     assert not sanitize("scheduled__2026-10-08T00:00:00+00:00").startswith("scheduled__")
 
 
-def test_the_germline_snv_child_waits_for_the_decisions_not_the_journal(dag_bag):
+@pytest.mark.parametrize(("pipeline", "trigger"), DECIDED.items())
+def test_the_child_waits_for_the_decisions_not_the_journal(dag_bag, pipeline, trigger):
     """It runs the cases decided `run`; writing the journal holds nothing back."""
     dag = dag_bag.get_dag(DAG_ID)
-    assert "decide_germline_snv" in {t.task_id for t in dag.get_task("discover_germline_snv_cases").downstream_list}
-    assert {t.task_id for t in dag.get_task("decide_germline_snv").downstream_list} == {
-        "journal_germline_snv",
-        "trigger_germline_snv_postprocessing",
+    assert f"decide_{pipeline}" in {t.task_id for t in dag.get_task(f"discover_{pipeline}_cases").downstream_list}
+    assert {t.task_id for t in dag.get_task(f"decide_{pipeline}").downstream_list} == {
+        f"journal_{pipeline}",
+        trigger,
         "watcher",
     }
-    assert {t.task_id for t in dag.get_task("journal_germline_snv").downstream_list} == {"watcher"}
+    assert {t.task_id for t in dag.get_task(f"journal_{pipeline}").downstream_list} == {"watcher"}
 
 
 def test_a_failed_step_fails_the_run(dag_bag):

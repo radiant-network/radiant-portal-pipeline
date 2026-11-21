@@ -1,4 +1,4 @@
-"""Row fixtures shaped like what `sql/clinical/pending_cnv_annotation_select.sql` returns:
+"""Row fixtures shaped like what `sql/clinical/germline_cnv_case_members_select.sql` returns:
 one row per (case, member), carrying the alignment's CNV VCF and, when present, its CRAM."""
 
 import pytest
@@ -46,6 +46,8 @@ def member_row(case_id=1072, submitter_case_id="1KGP-1463", role="proband", aliq
         "exclusion_reason": None,
     }
     row.update(overrides)
+    # The current alignment is the CNV VCF's, unless a test says otherwise.
+    row.setdefault("current_alignment_task_id", row["alignment_task_id"])
     return row
 
 

@@ -6,7 +6,7 @@ from radiant.tasks.nextflow.model import CaseMember, Family, case_id_of, family_
 
 
 class CnvMember(CaseMember):
-    """One row of `sql/clinical/pending_cnv_annotation_select.sql`.
+    """One member row of `sql/clinical/germline_cnv_facts_select.sql` or `germline_cnv_case_members_select.sql`.
 
     Extends the annotation row with the CNV trigger document and the optional alignment.
     The inherited `gvcf_url` / `gvcf_matches` are not populated by this query and stay at

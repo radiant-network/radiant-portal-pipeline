@@ -392,7 +392,7 @@ def nextflow_snv_postprocessing_cases():
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.journal import record
+        from radiant.tasks.journal import Pipeline, record
         from radiant.tasks.nextflow.resolve import outcome_entries
 
         context = get_current_context()
@@ -400,7 +400,7 @@ def nextflow_snv_postprocessing_cases():
             raise AirflowSkipException("dry run: nothing registered, nothing to journal")
         selection = context["ti"].xcom_pull(task_ids="select_cases", key=SELECTION_KEY) or {}
         registered = {r["tenant"] for r in (context["ti"].xcom_pull(task_ids="register_tasks") or []) if r}
-        written = record(outcome_entries(selection, registered), context["run_id"])
+        written = record(outcome_entries(selection, registered, Pipeline.GERMLINE_SNV), context["run_id"])
         LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
         return len(written)
 

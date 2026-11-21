@@ -1,6 +1,7 @@
 import pytest
 
 from radiant.tasks.decision import Decision, Reason, ReasonCode
+from radiant.tasks.journal import Pipeline
 from radiant.tasks.nextflow.resolve import (
     CaseResolutionError,
     decide_cases,
@@ -376,7 +377,7 @@ def test_outcomes_follow_the_registration_of_each_tenant():
             {"case_id": 3, "reason": {"code": "ambiguous_input", "detail": "gvcf", "patient_id": 7}, "message": "x"}
         ],
     }
-    assert [(e.case_id, e.decision, e.reasons) for e in outcome_entries(selection, {"a"})] == [
+    assert [(e.case_id, e.decision, e.reasons) for e in outcome_entries(selection, {"a"}, Pipeline.GERMLINE_SNV)] == [
         (1, Decision.SUCCEEDED, ()),
         (2, Decision.FAILED, ()),
         (3, Decision.FAILED, (Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="gvcf", patient_id=7),)),
@@ -384,4 +385,4 @@ def test_outcomes_follow_the_registration_of_each_tenant():
 
 
 def test_no_selection_journals_nothing():
-    assert outcome_entries({}, set()) == []
+    assert outcome_entries({}, set(), Pipeline.GERMLINE_SNV) == []

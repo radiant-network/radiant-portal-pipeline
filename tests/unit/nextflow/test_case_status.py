@@ -10,13 +10,25 @@ from tests.unit.nextflow.conftest import member_row as snv_member_row
 from tests.unit.nextflow.qc.conftest import member_row as qc_member_row
 from tests.unit.nextflow.somatic.conftest import calling_task_rows
 
-# Germline SNV is decided from the facts: the reason each one stands for, as facts.
+# Germline SNV and CNV are decided from the facts: the reason each one stands for, as facts.
 SNV_FACTS = {
     None: {},
     "pending_sequencing": {"seq_id": None, "aliquot": None, "alignment_task_id": None, "gvcf_matches": 0},
     "no_gvcf": {"alignment_task_id": None, "gvcf_url": None, "gvcf_matches": 0},
     "tenant_excluded": {"tenant_code": "excluded"},
 }
+
+
+CNV_FACTS = {
+    None: {},
+    "pending_sequencing": {"seq_id": None, "aliquot": None, "alignment_task_id": None, "gcnv_matches": 0},
+    "no_gvcf": {"gcnv_url": None, "gcnv_matches": 0},
+    "tenant_excluded": {"tenant_code": "excluded"},
+}
+
+
+def cnv_facts(case_id, reason=None):
+    return cnv_member_row(case_id=case_id, **CNV_FACTS[reason])
 
 
 def snv_facts(case_id, reason=None):
@@ -31,7 +43,7 @@ def status_row(case_id, status_code="submitted", has_variants=False, tenant_code
 def test_work_waiting_is_the_union_of_every_pipeline_and_the_import_delta():
     waiting = case_status.cases_with_work(
         germline_snv_rows=[snv_facts(case_id=1)],
-        germline_cnv_rows=[cnv_member_row(case_id=2)],
+        germline_cnv_rows=[cnv_facts(case_id=2)],
         somatic_snv_rows=calling_task_rows(case_id=5),
         qc_rows=[qc_member_row(case_id=3)],
         import_rows=[{"case_id": 4}, {"case_id": 4}],
@@ -44,7 +56,7 @@ def test_a_case_the_pipeline_would_exclude_is_not_work_waiting(reason):
     """Moved to `processing`, it would wait there with nothing running for it."""
     waiting = case_status.cases_with_work(
         germline_snv_rows=[snv_facts(case_id=1, reason=reason)],
-        germline_cnv_rows=[cnv_member_row(case_id=2, exclusion_reason=reason)],
+        germline_cnv_rows=[cnv_facts(case_id=2, reason=reason)],
         somatic_snv_rows=calling_task_rows(case_id=5, exclusion_reason=reason),
         qc_rows=[qc_member_row(case_id=3, exclusion_reason=reason)],
         import_rows=[],
