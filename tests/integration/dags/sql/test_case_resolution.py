@@ -205,8 +205,9 @@ def test_a_trio_with_alignments_and_no_annotation_is_decided_run(
     assert all(r["tenant_code"] == "radiant" for r in rows)
     assert [r["gvcf_matches"] for r in rows] == [1, 1, 1]
     assert all(r["current_alignment_task_id"] for r in rows)
-    assert not any(r["annotated"] for r in rows)
-    assert _decided(rows) == {TRIO_CASE_ID: (Decision.RUN, ())}
+    assert not any(r["annotated"] or r["case_annotated"] for r in rows)
+    first_run = tuple(Reason(code=ReasonCode.FIRST_RUN, patient_id=p) for p in (44, 45, 46))
+    assert _decided(rows) == {TRIO_CASE_ID: (Decision.RUN, first_run)}
 
 
 def test_the_members_of_the_trio_are_what_the_pipeline_needs(
@@ -266,7 +267,9 @@ def test_a_shared_experiment_yields_both_cases(
     """Alignment tasks carry no case, so 'a task shared by two cases' is really one
     experiment linked to two. Both must come back, each as its own family."""
     decided = _decided(_facts(starrocks_session, radiant_mapping))
-    assert decided[SHARED_CASE_A] == decided[SHARED_CASE_B] == (Decision.RUN, ())
+    for case_id in (SHARED_CASE_A, SHARED_CASE_B):
+        decision, reasons = decided[case_id]
+        assert (decision, [r.code for r in reasons]) == (Decision.RUN, [ReasonCode.FIRST_RUN])
     rows = _members(starrocks_session, radiant_mapping, SHARED_CASE_A, SHARED_CASE_B)
     assert {r["case_id"] for r in rows} == {SHARED_CASE_A, SHARED_CASE_B}
     # Same experiment, same gVCF, two cases -- which is correct: the pipeline joint-calls
@@ -286,7 +289,7 @@ def test_the_newest_experiment_wins_and_the_older_one_disappears(
     keep the case eligible for ever."""
     facts = _facts(starrocks_session, radiant_mapping, SUPERSEDED_CASE)
     assert [r["seq_id"] for r in facts] == [9113]
-    assert _decided(facts) == {SUPERSEDED_CASE: (Decision.RUN, ())}
+    assert _decided(facts) == {SUPERSEDED_CASE: (Decision.RUN, (Reason(code=ReasonCode.FIRST_RUN, patient_id=9103),))}
     rows = _members(starrocks_session, radiant_mapping, SUPERSEDED_CASE)
     assert len(rows) == 1
     assert rows[0]["seq_id"] == 9113
@@ -361,9 +364,15 @@ def test_a_father_never_sequenced_leaves_the_proband_to_run(
     facts = _facts(starrocks_session, radiant_mapping, PENDING_CASE)
     by_role = {r["role"]: r for r in facts}
     assert by_role["father"]["seq_id"] is None
-    father = by_role["father"]["patient_id"]
+    father, proband = by_role["father"]["patient_id"], by_role["proband"]["patient_id"]
     assert _decided(facts) == {
-        PENDING_CASE: (Decision.RUN, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=father),))
+        PENDING_CASE: (
+            Decision.RUN,
+            (
+                Reason(code=ReasonCode.FIRST_RUN, patient_id=proband),
+                Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=father),
+            ),
+        )
     }
     selection = select_run_cases(_members(starrocks_session, radiant_mapping, PENDING_CASE), [])
     assert selection.case_ids == [PENDING_CASE]
