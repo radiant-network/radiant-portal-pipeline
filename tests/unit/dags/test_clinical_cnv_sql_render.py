@@ -76,6 +76,7 @@ def test_a_candidate_has_a_cnv_vcf_not_annotated_for_the_case():
     assert "JOIN radiant.current_germline_gcnv g ON g.seq_id = ce.seq_id" in candidate
     assert "AND a.seq_id IS NULL" in candidate
     assert "an.seq_id IS NOT NULL           AS annotated" in sql
+    assert "LEFT JOIN (SELECT DISTINCT case_id FROM annotated) ac    ON ac.case_id = pc.case_id" in sql
 
 
 def test_the_members_are_those_of_the_named_cases_with_their_cram():

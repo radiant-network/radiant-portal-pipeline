@@ -16,7 +16,7 @@ import jinja2
 import pytest
 
 from radiant.dags import DAGS_DIR
-from radiant.tasks.decision import Decision
+from radiant.tasks.decision import Decision, Reason, ReasonCode
 from radiant.tasks.nextflow.cnv.resolve import decide_cases, resolve_families, select_run_cases
 
 _CLINICAL_SQL = os.path.join(DAGS_DIR, "sql", "clinical")
@@ -50,9 +50,11 @@ def _facts(starrocks_session, radiant_mapping, case_id=None):
 def test_a_trio_with_cnv_vcfs_and_no_cnv_annotation_runs(postgres_clinical_seeds, starrocks_session, radiant_mapping):
     rows = _facts(starrocks_session, radiant_mapping, TRIO_CASE_ID)
     assert {r["patient_id"] for r in rows} == {44, 45, 46}
-    assert all(r["gcnv_matches"] == 1 and r["alignment_pipeline"] == "Dragen" and not r["annotated"] for r in rows)
+    assert all(r["gcnv_matches"] == 1 and r["alignment_pipeline"] == "Dragen" for r in rows)
+    assert not any(r["annotated"] or r["case_annotated"] for r in rows)
     (entry,) = decide_cases(rows, [])
-    assert (entry.case_id, entry.decision, entry.reasons) == (TRIO_CASE_ID, Decision.RUN, ())
+    assert (entry.case_id, entry.decision) == (TRIO_CASE_ID, Decision.RUN)
+    assert entry.reasons == tuple(Reason(code=ReasonCode.FIRST_RUN, patient_id=p) for p in (44, 45, 46))
 
 
 def test_an_excluded_tenant_is_a_skip_not_a_filter(postgres_clinical_seeds, starrocks_session, radiant_mapping):

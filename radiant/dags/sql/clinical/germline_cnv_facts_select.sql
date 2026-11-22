@@ -36,7 +36,8 @@ SELECT pc.case_id                      AS case_id,
        ca.task_id                      AS current_alignment_task_id,
        ca.pipeline_name                AS alignment_pipeline,
        COALESCE(g.matches, 0)          AS gcnv_matches,
-       an.seq_id IS NOT NULL           AS annotated
+       an.seq_id IS NOT NULL           AS annotated,
+       ac.case_id IS NOT NULL          AS case_annotated
 FROM {{ mapping.starrocks_pipeline_case }} pc
 JOIN candidate cd                                        ON cd.case_id = pc.case_id
 JOIN {{ mapping.starrocks_case_member }} cm              ON cm.case_id = pc.case_id
@@ -48,5 +49,7 @@ LEFT JOIN {{ mapping.starrocks_current_alignment }} ca   ON ca.seq_id = ce.seq_i
 LEFT JOIN {{ mapping.starrocks_current_germline_gcnv }} g ON g.seq_id = ce.seq_id
 LEFT JOIN annotated an                                   ON an.case_id = pc.case_id
                                                         AND an.seq_id  = ce.seq_id
+-- Annotated before, whatever the experiment: tells a case's first run from a later one.
+LEFT JOIN (SELECT DISTINCT case_id FROM annotated) ac    ON ac.case_id = pc.case_id
 WHERE pc.case_type = 'germline'
 ORDER BY pc.case_id, cm.patient_id

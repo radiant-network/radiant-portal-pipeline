@@ -203,30 +203,53 @@ def _decided(rows, excluded_tenants=()):
     return [(e.case_id, e.decision, e.reasons) for e in decide_cases(rows, list(excluded_tenants))]
 
 
-def test_a_case_with_a_member_not_annotated_runs(trio_rows):
+def _first_run(*patient_ids):
+    return tuple(Reason(code=ReasonCode.FIRST_RUN, patient_id=p) for p in patient_ids)
+
+
+def _new_sequencing(*patient_ids):
+    return tuple(Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=p) for p in patient_ids)
+
+
+def _annotated_before(rows, *not_annotated_roles):
+    for row in rows:
+        row["case_annotated"] = True
+        row["annotated"] = row["role"] not in not_annotated_roles
+
+
+def test_a_first_run_names_every_member(trio_rows):
     (entry,) = decide_cases(trio_rows, [])
-    assert (entry.pipeline, entry.decision, entry.reasons) == (Pipeline.GERMLINE_CNV, Decision.RUN, ())
+    assert (entry.pipeline, entry.decision, entry.reasons) == (
+        Pipeline.GERMLINE_CNV,
+        Decision.RUN,
+        _first_run(100, 101, 102),
+    )
 
 
 def test_a_parent_not_sequenced_yet_does_not_block_the_proband(trio_rows):
     """The family runs with the members present; the reason names who is missing."""
     _father(trio_rows).update(_NOT_SEQUENCED)
-    assert _decided(trio_rows) == [(1072, Decision.RUN, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))]
+    assert _decided(trio_rows) == [
+        (1072, Decision.RUN, (*_first_run(100, 102), Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101)))
+    ]
 
 
 def test_after_the_partial_run_the_case_waits_for_the_absent_parent(trio_rows):
     _father(trio_rows).update(_NOT_SEQUENCED)
-    for row in trio_rows:
-        row["annotated"] = row["role"] != "father"
+    _annotated_before(trio_rows, "father")
     assert _decided(trio_rows) == [
         (1072, Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))
     ]
 
 
 def test_the_case_runs_again_once_the_parent_arrives_and_says_for_whom(trio_rows):
-    for row in trio_rows:
-        row["annotated"] = row["role"] != "father"
-    assert _decided(trio_rows) == [(1072, Decision.RUN, (Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=101),))]
+    _annotated_before(trio_rows, "father")
+    assert _decided(trio_rows) == [(1072, Decision.RUN, _new_sequencing(101))]
+
+
+def test_a_singleton_sequenced_again_is_a_new_sequencing(singleton_rows):
+    _annotated_before(singleton_rows, "proband")
+    assert _decided(singleton_rows) == [(8, Decision.RUN, _new_sequencing(200))]
 
 
 def test_a_case_with_every_member_annotated_is_not_decided(trio_rows):
