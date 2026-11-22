@@ -164,7 +164,8 @@ def decide_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Ent
     """One journal entry per case of `germline_snv_facts_select.sql`: the decision and all its reasons.
 
     A member absent but the proband does not block: the case runs with the members present, as long as one of
-    them is not annotated yet, and runs again once the absent member arrives. Otherwise it waits for them.
+    them is not annotated yet, and runs again once the absent member arrives. Otherwise it waits for them. A case
+    that runs again while a member is already annotated names the members it runs for (`new_sequencing`).
     """
     entries = []
     for case_id, case_members in sorted(_group_by_case(_with_reasons(fact_rows, excluded_tenants)).items()):
@@ -183,6 +184,11 @@ def decide_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Ent
             decision = decision_of(blocking)
         elif any(not m.annotated for m in present):
             decision = Decision.RUN
+            if any(m.annotated for m in present):
+                new = [
+                    Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=m.patient_id) for m in present if not m.annotated
+                ]
+                reasons = (*new, *reasons)
         elif absent:
             decision = Decision.WAIT
         else:

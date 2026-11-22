@@ -80,6 +80,8 @@ wait, blocked or skip, with all the reasons), and `journal_germline_snv` writes 
 - A member other than the proband not sequenced or not aligned yet does not block: the case runs with the
   members present as long as one of them is not annotated, with the absent member's reason on the `run` row.
   Once they are all annotated, the case waits for the absent member, and runs again when it arrives.
+- A case that runs again while a member is already annotated names the members it runs for, `new_sequencing`: a
+  member arrived, or was sequenced again. A first run has no such reason.
 - A reason about one member names it (`patient_id`): two members waiting are two reasons. The reasons about
   the case (project, tenant, proband count, strategy) name no one.
 - The germline SNV "from Cases" DAG runs the cases decided `run`: `decide_germline_snv` hands them over as

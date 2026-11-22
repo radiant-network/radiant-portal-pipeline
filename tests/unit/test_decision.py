@@ -17,6 +17,7 @@ def _query_codes() -> set[str]:
 
 def test_each_code_leads_to_one_scheduler_decision():
     assert {code: code.decision for code in ReasonCode} == {
+        ReasonCode.NEW_SEQUENCING: Decision.RUN,
         ReasonCode.PENDING_SEQUENCING: Decision.WAIT,
         ReasonCode.PENDING_ALIGNMENT: Decision.WAIT,
         ReasonCode.MISSING_INPUT: Decision.BLOCKED,
