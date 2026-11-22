@@ -232,9 +232,35 @@ def test_after_the_partial_run_the_case_waits_for_the_absent_parent(trio_rows):
     assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))}
 
 
-def test_the_case_runs_again_once_the_parent_arrives(trio_rows):
+def test_the_case_runs_again_once_the_parent_arrives_and_says_for_whom(trio_rows):
     rows = [_facts(r) if r["role"] == "father" else _facts(r, annotated=True) for r in trio_rows]
-    assert _decided(rows) == {1072: (Decision.RUN, ())}
+    assert _decided(rows) == {1072: (Decision.RUN, (Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=101),))}
+
+
+def test_a_member_sequenced_again_runs_the_case_again_with_its_reason(trio_rows):
+    """Its new experiment becomes the current one, not annotated for the case."""
+    rows = [_facts(r, seq_id=599) if r["role"] == "proband" else _facts(r, annotated=True) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.RUN, (Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=100),))}
+
+
+def test_a_new_member_and_one_still_missing_are_both_named(trio_rows):
+    rows = [
+        _facts(r)
+        if r["role"] == "father"
+        else _facts(r, **PENDING_SEQUENCING)
+        if r["role"] == "mother"
+        else _facts(r, annotated=True)
+        for r in trio_rows
+    ]
+    assert _decided(rows) == {
+        1072: (
+            Decision.RUN,
+            (
+                Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=101),
+                Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=102),
+            ),
+        )
+    }
 
 
 def test_an_absent_proband_still_makes_the_case_wait(trio_rows):

@@ -223,6 +223,12 @@ def test_after_the_partial_run_the_case_waits_for_the_absent_parent(trio_rows):
     ]
 
 
+def test_the_case_runs_again_once_the_parent_arrives_and_says_for_whom(trio_rows):
+    for row in trio_rows:
+        row["annotated"] = row["role"] != "father"
+    assert _decided(trio_rows) == [(1072, Decision.RUN, (Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=101),))]
+
+
 def test_a_case_with_every_member_annotated_is_not_decided(trio_rows):
     for row in trio_rows:
         row["annotated"] = True

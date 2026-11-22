@@ -31,6 +31,12 @@ class ReasonCode(StrEnum):
         obj.label = label
         return obj
 
+    # Why a case partly annotated runs again: a member arrived, or was sequenced again.
+    NEW_SEQUENCING = (
+        "new_sequencing",
+        Decision.RUN,
+        "its current sequencing experiment is not annotated for the case yet, while another member's is",
+    )
     PENDING_SEQUENCING = "pending_sequencing", Decision.WAIT, "has no completed sequencing experiment yet"
     PENDING_ALIGNMENT = (
         "pending_alignment",
@@ -76,6 +82,7 @@ class ReasonCode(StrEnum):
 # The codes about one member of the case: their reason names that member.
 MEMBER_CODES = frozenset(
     {
+        ReasonCode.NEW_SEQUENCING,
         ReasonCode.PENDING_SEQUENCING,
         ReasonCode.PENDING_ALIGNMENT,
         ReasonCode.MISSING_INPUT,
