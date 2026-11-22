@@ -176,8 +176,8 @@ def decide(
     """One journal entry per case, from its members carrying their `exclusion_reason`.
 
     A member absent but the proband does not block: the case runs with the members present, as long as one of
-    them is not annotated yet, and runs again once the absent member arrives. Otherwise it waits for them. A case
-    that runs again while a member is already annotated names the members it runs for (`new_sequencing`).
+    them is not annotated yet, and runs again once the absent member arrives. Otherwise it waits for them. A run
+    names the members it runs for: `first_run` if the case was never annotated, `new_sequencing` otherwise.
     """
     entries = []
     for case_id, case_members in sorted(by_case.items()):
@@ -196,11 +196,9 @@ def decide(
             decision = decision_of(blocking)
         elif any(not m.annotated for m in present):
             decision = Decision.RUN
-            if any(m.annotated for m in present):
-                new = [
-                    Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=m.patient_id) for m in present if not m.annotated
-                ]
-                reasons = (*new, *reasons)
+            code = ReasonCode.NEW_SEQUENCING if first.case_annotated else ReasonCode.FIRST_RUN
+            new = [Reason(code=code, patient_id=m.patient_id) for m in present if not m.annotated]
+            reasons = (*new, *reasons)
         elif absent:
             decision = Decision.WAIT
         else:
