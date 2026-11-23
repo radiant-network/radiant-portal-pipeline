@@ -24,6 +24,14 @@ class Experiment(BaseModel):
     histology_type: str | None = None
 
 
+def first_row_per_experiment(rows: list[dict]) -> list[dict]:
+    """The first row of each `seq_id`, in row order: one per experiment for a task with no case in task_context."""
+    first_by_seq_id: dict[int, dict] = {}
+    for r in rows:
+        first_by_seq_id.setdefault(r["seq_id"], r)
+    return list(first_by_seq_id.values())
+
+
 class BaseTask(BaseModel, ABC):
     model_config = ConfigDict(frozen=True)
 
@@ -71,10 +79,7 @@ class AlignmentGermlineVariantCallingTask(BaseTask):
     def experiment_rows(rows: list[dict]) -> list[dict]:
         # The task has no case: an experiment in two germline cases gives one row per case, which may differ by
         # `family_role` (RAD-266). The occurrences are written once per experiment, and the role plays no part.
-        first_by_seq_id: dict[int, dict] = {}
-        for r in rows:
-            first_by_seq_id.setdefault(r["seq_id"], r)
-        return list(first_by_seq_id.values())
+        return first_row_per_experiment(rows)
 
     @staticmethod
     def gather_additional_args(rows: list[dict]) -> dict:
@@ -149,10 +154,7 @@ class AlignmentSomaticVariantCallingTask(BaseTask):
         # The task has no case (task_context.case_id is NULL): a tumor experiment in two somatic cases gives one row
         # per case, as RAD-266 does for `alignment_germline_variant_calling`. The occurrences are written once per
         # experiment.
-        first_by_seq_id: dict[int, dict] = {}
-        for r in rows:
-            first_by_seq_id.setdefault(r["seq_id"], r)
-        return list(first_by_seq_id.values())
+        return first_row_per_experiment(rows)
 
     @staticmethod
     def gather_additional_args(rows: list[dict]) -> dict:
