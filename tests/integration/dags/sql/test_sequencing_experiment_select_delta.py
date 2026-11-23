@@ -154,7 +154,7 @@ def test_sequencing_experiment_delta_carries_tumor_only_tasks(
         results = cursor.fetchall()
 
     somatic = pd.DataFrame(results, columns=sequencing_delta_columns).query("analysis_type == 'somatic'")
-    # Task 70 is the tumor-only *calling* step behind task 69, covered by its own test below.
+    # Task 76 is the tumor-only *calling* step of case 23 (RAD-272), covered by its own test below.
     annotations = somatic.query("task_type == 'radiant_somatic_annotation'")
 
     assert {int(task_id): sorted(rows["histology_type"]) for task_id, rows in annotations.groupby("task_id")} == {
@@ -186,12 +186,14 @@ def test_sequencing_experiment_delta_gates_somatic_cnv_documents(
 ):
     """A somatic CNV VCF is discovered by task type + document data type, never by filename.
 
-    Task 70 is the `tumor_only_variant_calling` step behind the tumor-only annotation task 69, and it
-    registers three output documents: the `scnv` CNV VCF, its index, and a raw un-annotated `ssnv`
-    SNV VCF. Only the CNV VCF may surface — the raw SNV file must not reach `vcf_filepath`, which
-    only ever holds the annotated VCF of a `radiant_somatic_annotation` task. Without the
-    `data_type_code = 'scnv'` gate in the view's WHERE clause, it would, giving somatic SNV a second
-    ingestion route it must not have.
+    Task 76 is the `alignment_somatic_variant_calling` task of case 23, the tumor-only Dragen run (RAD-272), and it
+    registers two output documents: the `scnv` CNV VCF and a raw un-annotated `ssnv` SNV VCF. Only the CNV VCF may
+    surface — the raw SNV file must not reach `vcf_filepath`, which only ever holds the annotated VCF of a
+    `radiant_somatic_annotation` task. Without the `data_type_code = 'scnv'` gate in the view's WHERE clause, it
+    would, giving somatic SNV a second ingestion route it must not have.
+
+    Task 70, the same run in the previous contract (`tumor_only_variant_calling`), publishes only its raw `ssnv` VCF
+    and never reaches the delta.
     """
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
@@ -199,14 +201,17 @@ def test_sequencing_experiment_delta_gates_somatic_cnv_documents(
         results = cursor.fetchall()
 
     delta = pd.DataFrame(results, columns=sequencing_delta_columns)
-    calling = delta.query("task_id == 70")
+    calling = delta.query("task_id == 76")
 
-    # One row: the task's single tumoral experiment, carrying the CNV VCF and nothing else.
+    # One row: the task's single tumoral experiment, carrying the CNV VCF and nothing else. The task has no case in
+    # task_context: it reaches case 23 through experiment 64.
     assert len(calling) == 1
     row = calling.iloc[0]
-    assert row["task_type"] == "tumor_only_variant_calling"
+    assert row["task_type"] == "alignment_somatic_variant_calling"
+    assert (row["case_id"], row["analysis_type"]) == (23, "somatic")
     assert (row["seq_id"], row["aliquot"], row["histology_type"]) == (64, "TCRBOA6_SRX1166091-T", "tumoral")
-    assert row["cnv_vcf_filepath"].endswith("TCRBOA6_SRX1166091-T.cnv.vcf.gz")
+    assert row["cnv_vcf_filepath"].endswith("TCRBOA6_SRX1166091-T.v2.cnv.vcf.gz")
+    assert delta.query("task_id == 70").empty
     # pd.isna, not `is None`: pandas renders a SQL NULL as either None or NaN depending on what else
     # the column holds, and a leak would show up as a URL string either way.
     assert pd.isna(row["vcf_filepath"]), "the raw un-annotated ssnv VCF leaked into vcf_filepath"
@@ -927,3 +932,106 @@ def test_sequencing_experiment_delta_keeps_germline_tasks_out_of_somatic_cases(
         (9631, 9630, 9632, "somatic"),
         (9631, 9631, 9632, "somatic"),
     ]
+
+
+@pytest.fixture
+def somatic_case_in_the_revised_contract(postgres_clinical_seeds, postgres_instance):
+    """RAD-272, the somatic QLIN contract of 2026-11-10: one task per Dragen run. Tumor-normal somatic case 9640 of
+    patient 9640, with the normal experiment 9640 and the tumor experiment 9641, and no germline case.
+
+    - task 9640: `alignment_somatic_variant_calling` on the tumor (the tumor-only run, no case in task_context), with
+      its raw `ssnv` VCF, its gVCF, its CRAM and its somatic CNV VCF (`scnv`);
+    - task 9641: `alignment_germline_variant_calling` on the normal (the germline run, no case in task_context), with
+      its `gcnv` VCF and its gVCF;
+    - task 9642: `somatic_variant_calling` on both (the tumor-normal run), with its raw `ssnv` VCF;
+    - task 9643: `tumor_only_variant_calling` on the tumor, the previous contract, with an `scnv` VCF.
+    """
+    execute_clinical(
+        postgres_instance,
+        """
+        INSERT INTO patient (id, submitter_patient_id, organization_code, sex_code, date_of_birth, life_status_code,
+                             tenant_code)
+        VALUES (9640, 'PT-9640', 'CQGC', 'female', '2015-01-01', 'alive', 'radiant');
+        INSERT INTO cases (id, proband_id, project_id, status_code, primary_condition, created_on, updated_on,
+                           case_type_code, submitter_case_id, tenant_code)
+        VALUES (9640, 9640, 1, 'in_progress', 'MONDO:0700092', now(), now(), 'somatic', 'RAD272-S', 'radiant');
+        INSERT INTO sample (id, type_code, histology_code, submitter_sample_id, patient_id, organization_code,
+                            tenant_code)
+        VALUES (9640, 'dna', 'normal',  'S9640', 9640, 'CQGC', 'radiant'),
+               (9641, 'dna', 'tumoral', 'S9641', 9640, 'CQGC', 'radiant');
+        INSERT INTO sequencing_experiment (id, sample_id, status_code, aliquot, created_on, updated_on,
+                                           experimental_strategy_code, platform_code, tenant_code)
+        VALUES (9640, 9640, 'completed', 'A9640-N', '2026-01-01', '2026-01-01', 'wgs', 'illumina', 'radiant'),
+               (9641, 9641, 'completed', 'A9641-T', '2026-01-01', '2026-01-01', 'wgs', 'illumina', 'radiant');
+        INSERT INTO case_has_sequencing_experiment (case_id, sequencing_experiment_id)
+        VALUES (9640, 9640), (9640, 9641);
+        INSERT INTO task (id, task_type_code, created_on, pipeline_name, pipeline_version, genome_build, tenant_code)
+        VALUES (9640, 'alignment_somatic_variant_calling',  '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
+               (9641, 'alignment_germline_variant_calling', '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
+               (9642, 'somatic_variant_calling',            '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant'),
+               (9643, 'tumor_only_variant_calling',         '2026-01-02', 'Dragen', '4.4.4', 'GRch38', 'radiant');
+        INSERT INTO task_context (task_id, case_id, sequencing_experiment_id)
+        VALUES (9640, null, 9641), (9641, null, 9640), (9642, null, 9640), (9642, null, 9641), (9643, 9640, 9641);
+        INSERT INTO document (id, name, data_category_code, data_type_code, format_code, size, url, hash, tenant_code)
+        VALUES (9640, 'A9641-T.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 1, 's3://test-vcf/A9641-T.snv.vcf.gz',
+                'mock9640', 'radiant'),
+               (9641, 'A9641-T.gvcf.gz', 'genomic', 'ssnv', 'gvcf', 1, 's3://test-vcf/A9641-T.gvcf.gz', 'mock9641',
+                'radiant'),
+               (9642, 'A9641-T.cram', 'genomic', 'alignment', 'cram', 1, 's3://test-vcf/A9641-T.cram', 'mock9642',
+                'radiant'),
+               (9643, 'A9641-T.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1, 's3://test-vcf/A9641-T.cnv.vcf.gz',
+                'mock9643', 'radiant'),
+               (9644, 'A9640-N.cnv.vcf.gz', 'genomic', 'gcnv', 'vcf', 1, 's3://test-vcf/A9640-N.cnv.vcf.gz',
+                'mock9644', 'radiant'),
+               (9645, 'A9640-N.gvcf.gz', 'genomic', 'snv', 'gvcf', 1, 's3://test-vcf/A9640-N.gvcf.gz', 'mock9645',
+                'radiant'),
+               (9646, 'A9641-T_vs_A9640-N.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 1,
+                's3://test-vcf/A9641-T_vs_A9640-N.snv.vcf.gz', 'mock9646', 'radiant'),
+               (9647, 'A9641-T.previous.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1,
+                's3://test-vcf/A9641-T.previous.cnv.vcf.gz', 'mock9647', 'radiant');
+        INSERT INTO task_has_document (task_id, document_id, type)
+        VALUES (9640, 9640, 'output'), (9640, 9641, 'output'), (9640, 9642, 'output'), (9640, 9643, 'output'),
+               (9641, 9644, 'output'), (9641, 9645, 'output'),
+               (9642, 9646, 'output'),
+               (9643, 9647, 'output');
+        """,
+    )
+    yield
+    execute_clinical(
+        postgres_instance,
+        """
+        DELETE FROM task_has_document WHERE task_id IN (9640, 9641, 9642, 9643);
+        DELETE FROM task_context WHERE task_id IN (9640, 9641, 9642, 9643);
+        DELETE FROM task WHERE id IN (9640, 9641, 9642, 9643);
+        DELETE FROM document WHERE id BETWEEN 9640 AND 9647;
+        DELETE FROM case_has_sequencing_experiment WHERE case_id = 9640;
+        DELETE FROM sequencing_experiment WHERE id IN (9640, 9641);
+        DELETE FROM sample WHERE id IN (9640, 9641);
+        DELETE FROM cases WHERE id = 9640;
+        DELETE FROM patient WHERE id = 9640;
+        """,
+    )
+
+
+def test_sequencing_experiment_delta_reads_the_somatic_cnv_of_the_tumor_only_run(
+    somatic_case_in_the_revised_contract, starrocks_session, sequencing_experiment_tables, sequencing_delta_columns
+):
+    """RAD-272: the somatic case stages its tumor-only run alone, with its `scnv` VCF and none of its other outputs.
+
+    - the normal's `gcnv` VCF stays out: its `alignment_germline_variant_calling` task gets no row in a somatic case
+      (RAD-266), so no germline CNV is loaded for it;
+    - the tumor-normal run publishes only a raw `ssnv` VCF, which the annotation reads, not the import;
+    - an `scnv` VCF on `tumor_only_variant_calling`, the previous contract, is no longer read.
+    """
+    delta = _delta(starrocks_session, sequencing_delta_columns).query("case_id == 9640")
+
+    assert len(delta) == 1
+    row = delta.iloc[0]
+    assert (int(row["task_id"]), row["task_type"], row["analysis_type"]) == (
+        9640,
+        "alignment_somatic_variant_calling",
+        "somatic",
+    )
+    assert (int(row["seq_id"]), row["histology_type"]) == (9641, "tumoral")
+    assert row["cnv_vcf_filepath"] == "s3://test-vcf/A9641-T.cnv.vcf.gz"
+    assert pd.isna(row["vcf_filepath"]), "the raw un-annotated ssnv VCF leaked into vcf_filepath"

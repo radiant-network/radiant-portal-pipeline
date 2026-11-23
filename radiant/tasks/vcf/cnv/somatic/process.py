@@ -10,9 +10,9 @@ from radiant.tasks.tracing.trace import get_tracer
 from radiant.tasks.utils import download_s3_file
 from radiant.tasks.vcf.cnv.somatic.occurrence import process_occurrence, resolve_cnv_type
 from radiant.tasks.vcf.experiment import (
-    TUMOR_ONLY_VARIANT_CALLING_TASK,
+    ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK,
+    AlignmentSomaticVariantCallingTask,
     BaseTask,
-    TumorOnlyVariantCallingTask,
 )
 
 logger = logging.getLogger("airflow.task")
@@ -22,7 +22,7 @@ tracer = get_tracer(__name__)
 def validate_task_is_tumor_only(task: BaseTask, vcf_file_samples: list[str]) -> None:
     """Holds the file to what the task type claims.
 
-    `tumor_only_variant_calling` asserts a single tumoral sample, but only
+    `alignment_somatic_variant_calling` (the tumor-only Dragen run, RAD-272) asserts a single tumoral sample, but only
     `gather_additional_args` enforces that, and only on the `build_task_from_rows` path -- the K8s and
     ECS containers reach this module through `model_validate` on a dict, which skips it. So the checks
     are repeated here, where the file itself is available.
@@ -33,7 +33,7 @@ def validate_task_is_tumor_only(task: BaseTask, vcf_file_samples: list[str]) -> 
     """
     if len(task.experiments) != 1:
         raise ValueError(
-            f"Task {task.task_id} is `{TUMOR_ONLY_VARIANT_CALLING_TASK}` but carries "
+            f"Task {task.task_id} is `{ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK}` but carries "
             f"{len(task.experiments)} experiments ({[exp.aliquot for exp in task.experiments]}); "
             f"expected exactly one tumoral sample."
         )
@@ -41,13 +41,13 @@ def validate_task_is_tumor_only(task: BaseTask, vcf_file_samples: list[str]) -> 
     experiment = task.experiments[0]
     if experiment.histology_type != "tumoral":
         raise ValueError(
-            f"Task {task.task_id} is `{TUMOR_ONLY_VARIANT_CALLING_TASK}` but its experiment "
+            f"Task {task.task_id} is `{ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK}` but its experiment "
             f"{experiment.aliquot} has histology_type '{experiment.histology_type}', expected 'tumoral'."
         )
 
     if len(vcf_file_samples) != 1:
         raise ValueError(
-            f"Task {task.task_id} is `{TUMOR_ONLY_VARIANT_CALLING_TASK}` but its VCF "
+            f"Task {task.task_id} is `{ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK}` but its VCF "
             f"{task.cnv_vcf_filepath} declares {len(vcf_file_samples)} samples: {vcf_file_samples} -- "
             f"likely a tumor-normal file mislabelled upstream."
         )
@@ -153,7 +153,7 @@ def import_somatic_cnv_vcf(tasks: list[dict], namespace: str) -> None:
     updated_tasks = []
     with tempfile.TemporaryDirectory() as tmpdir:
         for task in tasks:
-            if task.get("task_type") != TUMOR_ONLY_VARIANT_CALLING_TASK:
+            if task.get("task_type") != ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK:
                 continue
 
             if not task.get("cnv_vcf_filepath"):
@@ -167,7 +167,7 @@ def import_somatic_cnv_vcf(tasks: list[dict], namespace: str) -> None:
             logger.info(f"Downloaded somatic CNV VCF to {cnv_vcf_local}")
             task["cnv_vcf_filepath"] = cnv_vcf_local
 
-            task = TumorOnlyVariantCallingTask.model_validate(task)
+            task = AlignmentSomaticVariantCallingTask.model_validate(task)
             updated_tasks.append(task)
 
         logger.info("Starting somatic CNV VCF processing for all tasks")
