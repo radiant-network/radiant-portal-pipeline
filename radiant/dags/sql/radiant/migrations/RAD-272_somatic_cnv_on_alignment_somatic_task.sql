@@ -17,7 +17,9 @@
 --   <tenant>_tenant      each tenant database that holds somatic__cnv__occurrence (section 2, once per tenant)
 --   <task_ids>           the task_id list of check 0b (section 2)
 --
--- WHEN. After the ETL deploy, with no radiant-import / import_part running, before the next radiant-import.
+-- WHEN. After the ETL deploy, before the next radiant-import: pause radiant-case-scheduler first, check that no
+-- radiant-import / import_part / radiant-reannotate-open-data run is active, and unpause the scheduler once the
+-- views are re-created.
 
 
 -- ---------------------------------------------------------------------------------------------------

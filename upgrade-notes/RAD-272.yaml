@@ -4,17 +4,25 @@ actions:
       Remove the tumor_only_variant_calling rows from the staging table, and their somatic CNVs. The somatic CNV VCF
       is now read on alignment_somatic_variant_calling only, and the import fails a whole part on a staging row of
       the old type. Run check 0 of the migration file, then section 1 (drop both views), section 2 in each tenant
-      database where check 0c is not 0, and section 3.
+      database where check 0c is not 0, and section 3. Section 2 deletes the somatic CNVs already loaded from
+      tumor_only_variant_calling tasks: their cases have no somatic CNV until QLIN sends them again as
+      alignment_somatic_variant_calling tasks. On a deployment that never imported a somatic case, check 0a returns no
+      row and sections 2 and 3 have nothing to do.
     preconditions:
       - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
+      - radiant-case-scheduler is paused, so that no run reads the views between the drop and the DAG run.
     refs:
       - radiant/dags/sql/radiant/migrations/RAD-272_somatic_cnv_on_alignment_somatic_task.sql
     check: Check 0a of the RAD-272 migration file returns no row.
   - when: after
     do: >-
-      Run radiant-init-starrocks-base-tables after the RAD-272 view drop. It re-creates
-      staging_external_sequencing_experiment and staging_sequencing_experiment_delta with the new somatic CNV rule.
-      Run it again if it already ran earlier in this upgrade.
+      Re-create the staging views after the RAD-272 drop. Run the Radiant - Init StarRocks Base Tables DAG
+      with the udf_release_version in use. It re-creates staging_external_sequencing_experiment and
+      staging_sequencing_experiment_delta with the new somatic CNV rule. Run it again if it already ran earlier in
+      this upgrade. Then unpause radiant-case-scheduler.
+    preconditions:
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
+      - radiant-case-scheduler is paused, so that no run reads the views between the drop and the DAG run.
     refs:
       - radiant-init-starrocks-base-tables
       - radiant/dags/sql/radiant/init/staging_external_sequencing_experiment_create_table.sql
