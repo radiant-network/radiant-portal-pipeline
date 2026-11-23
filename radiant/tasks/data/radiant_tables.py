@@ -150,6 +150,8 @@ STARROCKS_RADIANT_BASE_MAPPING = {
     "starrocks_staging_exomiser": "raw_exomiser",
     # RAD-181: the CNV Exomiser reports, apart from the SNV ones.
     "starrocks_staging_exomiser_cnv": "raw_exomiser_cnv",
+    # RAD-315: the DRAGEN coverage_by_gene CSV of each current alignment, as read from the file.
+    "starrocks_staging_gene_coverage": "raw_gene_coverage",
     "starrocks_germline_snv_staging_variant_frequency": "germline__snv__staging_variant_frequency_part",
     "starrocks_somatic_snv_staging_variant_frequency": "somatic__snv__staging_variant_frequency_part",
 }
@@ -157,6 +159,7 @@ STARROCKS_RADIANT_BASE_MAPPING = {
 STARROCKS_RADIANT_PER_TENANT_MAPPING = {
     "starrocks_exomiser": "exomiser",
     "starrocks_exomiser_cnv": "exomiser_cnv",
+    "starrocks_gene_coverage": "gene_coverage",
     "starrocks_germline_cnv_occurrence": "germline__cnv__occurrence",
     "starrocks_germline_cnv_variant_frequency": "germline__cnv__variant_frequency",
     "starrocks_germline_snv_comphet": "germline__snv__comphet",
