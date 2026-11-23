@@ -27,10 +27,10 @@ from radiant.tasks.starrocks.operator import (
 )
 from radiant.tasks.vcf.experiment import (
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
+    ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK,
     RADIANT_GERMLINE_ANNOTATION_TASK,
     RADIANT_GERMLINE_CNV_ANNOTATION_TASK,
     RADIANT_SOMATIC_ANNOTATION_TASK,
-    TUMOR_ONLY_VARIANT_CALLING_TASK,
     build_task_from_rows,
 )
 
@@ -339,7 +339,7 @@ def import_part():
         def sanity_check_somatic_cnvs(tasks: Any) -> Any:
             # No `not deleted` clause, unlike the SNV checks: a part holding only deleted tumor-only tasks
             # must still run the swap, because that is what purges their rows from the partition.
-            has_somatic_cnv = any(t.get("task_type") == TUMOR_ONLY_VARIANT_CALLING_TASK for t in tasks)
+            has_somatic_cnv = any(t.get("task_type") == ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK for t in tasks)
             return has_somatic_cnv
 
         # max_active_tis_per_dagrun=1: process tenants one at a time within a dagrun

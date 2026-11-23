@@ -79,11 +79,13 @@ sequencing_experiments AS (
 	-- The SNV Exomiser report (`exomiser`) is an output of the germline SNV annotation task. The CNV annotation task
 	-- has its `gcnv` VCF branch (the family's slivar VCF, in `cnv_vcf_filepath` on every member's row) and its own
 	-- Exomiser report (`exomiser_cnv`, RAD-181). Each report is admitted on its own task type only.
+	-- The somatic CNV VCF (`scnv`) is an output of the tumor-only Dragen run, `alignment_somatic_variant_calling`
+	-- (RAD-272). The same task also publishes the raw `ssnv` VCF, the gVCF and the CRAM: the `scnv` gate keeps them out.
 	WHERE (
 		(d.format_code = 'vcf' AND t.task_type_code IN ('radiant_germline_annotation', 'radiant_somatic_annotation'))
 		OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv' AND t.task_type_code = 'alignment_germline_variant_calling')
 		OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv' AND t.task_type_code = 'radiant_germline_cnv_annotation')
-		OR (d.format_code = 'vcf' AND d.data_type_code = 'scnv' AND t.task_type_code = 'tumor_only_variant_calling')
+		OR (d.format_code = 'vcf' AND d.data_type_code = 'scnv' AND t.task_type_code = 'alignment_somatic_variant_calling')
 		OR (d.url LIKE '%variants.tsv' AND d.data_type_code = 'exomiser' AND t.task_type_code = 'radiant_germline_annotation')
 		OR (d.url LIKE '%variants.tsv' AND d.data_type_code = 'exomiser_cnv' AND t.task_type_code = 'radiant_germline_cnv_annotation')
 	)

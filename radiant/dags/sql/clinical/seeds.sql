@@ -991,9 +991,10 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (68, 'radiant_somatic_annotation', 'snv-post-processing', 'b535f27', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- Tumor-only analysis of case 23, whose tumor sample has no matched normal at all.
     (69, 'radiant_somatic_annotation', 'snv-post-processing', 'b535f27', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
-    -- The calling step behind task 69: this is where the somatic CNV VCF comes from. Somatic CNV is
-    -- discovered by task type + document data type (`tumor_only_variant_calling` + `scnv`), never by
-    -- filename, exactly as germline CNV is by `alignment_germline_variant_calling` + `gcnv`.
+    -- The calling step behind task 69, in the contract before 2026-11-10: its raw `ssnv` VCF is the input of
+    -- task 69. QLIN no longer sends `tumor_only_variant_calling` (RAD-272): the tumor-only run is now one
+    -- `alignment_somatic_variant_calling` task (76), which carries the somatic CNV VCF. Task 70 stays for the SNV
+    -- chain of case 23 and publishes no `scnv`.
     (70, 'tumor_only_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- QC of case 1: the per-family MultiQC set. Case 1 is therefore *not* pending quality control,
     -- while every other aligned germline case is (SJRA-1879).
@@ -1008,9 +1009,11 @@ INSERT INTO {{ params.clinical_task }} (id, task_type_code, pipeline_name, pipel
     (73, 'somatic_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     (74, 'tumor_only_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-10-12 13:08:00', 'radiant'),
     -- Pending somatic annotation (RAD-23): a newer tumor-normal call on case 22, and a tumor-only
-    -- alignment-and-call on case 23. Task 76 also publishes an `scnv` VCF, which is never selected.
-    -- An `scnv` on `alignment_somatic_variant_calling` matches no branch of
-    -- staging_external_sequencing_experiment, so neither task reaches the import delta.
+    -- alignment-and-call on case 23. Task 76 also publishes the somatic CNV VCF of case 23 (`scnv`, document 280),
+    -- which the annotation never selects. Somatic CNV is discovered by task type + document data type
+    -- (`alignment_somatic_variant_calling` + `scnv`, RAD-272), never by filename, exactly as germline CNV is by
+    -- `alignment_germline_variant_calling` + `gcnv`: task 76 reaches the import delta with that VCF only. Task 75
+    -- (`ssnv` only) does not.
     (75, 'somatic_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-11-12 13:08:00', 'radiant'),
     (76, 'alignment_somatic_variant_calling', 'Dragen', '4.4.4', 'GRch38', '2021-11-12 13:08:00', 'radiant');
 
@@ -1089,7 +1092,8 @@ INSERT INTO {{ params.clinical_task_context }} (task_id, case_id, sequencing_exp
     -- Task 68 spans only the tumoral experiment 62 -> tumor-only.
     (68, 22, 62),
     (69, 23, 64),
-    -- Task 70 calls the same single tumoral experiment 64 that task 69 annotates.
+    -- Task 70 calls the same single tumoral experiment 64 that task 69 annotates. Task 76 (below) is the same
+    -- tumor-only run in the current contract.
     (70, 23, 64),
     -- Task 71 spans all three experiments of case 1, like the annotation task 63 does.
     (71, 1, 1),
@@ -1377,17 +1381,16 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     (260, 'variants.SRX1091647-T.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 612884, '{{ params.vcf_bucket_prefix }}/variants.SRX1091647-T.snv.vep.vcf.gz.tbi', '97cfc0224aa7e916bfddd070c7522dc7', 'radiant'),
     (261, 'variants.SRX1166091-T.snv.vep.vcf.gz', 'genomic', 'snv', 'vcf', 23417650, '{{ params.vcf_bucket_prefix }}/variants.SRX1166091-T.snv.vep.vcf.gz', 'adc19953d1b08acdf57f20be42dbcdf3', 'radiant'),
     (262, 'variants.SRX1166091-T.snv.vep.vcf.gz.tbi', 'genomic', 'snv', 'tbi', 641327, '{{ params.vcf_bucket_prefix }}/variants.SRX1166091-T.snv.vep.vcf.gz.tbi', 'ce6da3c5c64ee1debb468acac4999080', 'radiant'),
-    -- Outputs of the tumor-only *calling* task 70. A calling step emits both the somatic CNV VCF and
-    -- a raw, un-annotated somatic SNV VCF: document 265 is that raw file, and it must never reach
-    -- `vcf_filepath`, which only ever holds the annotated VCF of a `radiant_somatic_annotation` task.
-    (263, 'TCRBOA6_SRX1166091-T.cnv.vcf.gz', 'genomic', 'scnv', 'vcf', 1204512, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.cnv.vcf.gz', 'b4e1f0a2c7d95836ae2f1c0d4b7a9e51', 'radiant'),
-    (264, 'TCRBOA6_SRX1166091-T.cnv.vcf.gz.tbi', 'genomic', 'scnv', 'tbi', 18432, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.cnv.vcf.gz.tbi', 'd0c6a3f92b17e845cf30ab29e6d15473', 'radiant'),
+    -- Output of the tumor-only *calling* task 70: a raw, un-annotated somatic SNV VCF, the input of task 69. Its
+    -- somatic CNV VCF (documents 263 and 264) was removed with the `tumor_only_variant_calling` route (RAD-272).
     (265, 'TCRBOA6_SRX1166091-T.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 19874233, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.snv.vcf.gz', 'f27a5b910ce3d648b0a71f2c85d9e304', 'radiant'),
     -- Outputs of QC task 71. `aggqc` matches no branch of staging_external_sequencing_experiment.
     (266, 'CA1_multiqc_report.html', 'genomic', 'aggqc', 'html', 3772915, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/CA1_multiqc_report.html', '5d41402abc4b2a76b9719d911017c900', 'radiant'),
     (267, 'CA1_multiqc_report_data.zip', 'genomic', 'aggqc', 'zip', 1616232, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/CA1_multiqc_report_data.zip', '5d41402abc4b2a76b9719d911017c901', 'radiant'),
     -- Raw somatic SNV VCFs of the calling tasks 73-76 (RAD-23). 274 and 276 are already annotated
-    -- (inputs of tasks 67 and 68), 277 and 279 are pending. 280 is task 76's `scnv` VCF.
+    -- (inputs of tasks 67 and 68), 277 and 279 are pending. 280 is task 76's `scnv` VCF, the somatic CNV VCF
+    -- the import loads for case 23. Like every raw calling-task VCF, 279 must never reach `vcf_filepath`, which
+    -- only ever holds the annotated VCF of a `radiant_somatic_annotation` task.
     (274, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 31874233, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e60', 'radiant'),
     (275, 'TCR002361_SRX1091647-T_vs_SRX1091646-N.snv.vcf.gz.tbi', 'genomic', 'ssnv', 'tbi', 912443, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T_vs_SRX1091646-N.snv.vcf.gz.tbi', 'a1c4e2f09b37d6851e0f2c9d4b7a3e61', 'radiant'),
     (276, 'TCR002361_SRX1091647-T.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 20903112, '{{ params.vcf_bucket_prefix }}/TCR002361_SRX1091647-T.snv.vcf.gz', 'a1c4e2f09b37d6851e0f2c9d4b7a3e62', 'radiant'),
@@ -1688,8 +1691,6 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (69, 265, 'input'),
     (69, 261, 'output'),
     (69, 262, 'output'),
-    (70, 263, 'output'),
-    (70, 264, 'output'),
     (70, 265, 'output'),
     -- QC task 71 -> its MultiQC report and archive, and each member's metrics.json.
     (71, 266, 'output'),

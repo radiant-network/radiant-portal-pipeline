@@ -429,3 +429,31 @@ def test_gene_coverage_loads_in_phase_3_like_exomiser(dag_bag):
     insert = dag.get_task("insert_gene_coverage")
     assert insert.partial_kwargs["table"] == "{{ mapping.starrocks_gene_coverage }}"
     assert insert.partial_kwargs["max_active_tis_per_dagrun"] == 1
+
+
+@pytest.mark.parametrize(
+    "tasks, expected",
+    [
+        ([{"task_type": "alignment_somatic_variant_calling", "deleted": False}], True),
+        # A part holding only deleted tumor-only runs still runs the swap that purges their CNVs.
+        ([{"task_type": "alignment_somatic_variant_calling", "deleted": True}], True),
+        ([{"task_type": "radiant_somatic_annotation"}, {"task_type": "alignment_somatic_variant_calling"}], True),
+        # RAD-272: the type of the contract before 2026-11-10 no longer loads somatic CNVs.
+        ([{"task_type": "tumor_only_variant_calling"}], False),
+        ([{"task_type": "radiant_somatic_annotation"}], False),
+        ([{"task_type": "alignment_germline_variant_calling"}], False),
+        ([], False),
+    ],
+    ids=[
+        "tumor-only-run",
+        "deleted-tumor-only-run",
+        "with-annotation",
+        "old-type",
+        "annotation-only",
+        "germline-alignment",
+        "no-task",
+    ],
+)
+def test_sanity_check_somatic_cnvs_runs_on_the_tumor_only_run_only(dag_bag, tasks, expected):
+    check = dag_bag.get_dag(f"{NAMESPACE}-import-part").get_task("somatic_cnv_occurrence.sanity_check_somatic_cnvs")
+    assert check.python_callable(tasks) is expected
