@@ -17,10 +17,13 @@ from radiant.tasks.data.radiant_tables import get_iceberg_radiant_mapping
 from radiant.tasks.locking import IMPORT_MUTEX_LOCK_NAME, acquire_lock, release_lock
 from radiant.tasks.starrocks.operator import (
     RadiantLoadExomiserOperator,
+    RadiantLoadGeneCoverageOperator,
     RadiantStarRocksOperator,
     RadiantStarRocksPartitionSwapOperator,
     SubmitTaskOptions,
     SwapPartition,
+    raise_gene_coverage_errors,
+    rows_output_processor,
 )
 from radiant.tasks.vcf.experiment import (
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
@@ -75,6 +78,15 @@ def build_tenant_scoped_params(tasks) -> list[dict[str, Any]]:
         }
         for tenant_code, bucket in sorted(ids.items())
     ]
+
+
+def build_seq_ids(tasks) -> dict[str, list[Any]]:
+    """The experiments of the part's delta, all tenants: of the live tasks, and of the deleted ones."""
+    ids = {"seq_ids": set(), "deleted_seq_ids": set()}
+    for t in tasks:
+        key = "deleted_seq_ids" if t["deleted"] else "seq_ids"
+        ids[key].update(e["seq_id"] for e in t.get("experiments") or [] if e)
+    return {key: sorted(values) or [-1] for key, values in ids.items()}
 
 
 dag_params = {
@@ -370,6 +382,59 @@ def import_part():
         }
 
     task_ids = extract_task_ids(tasks)
+
+    # RAD-315. The gene coverage of the current alignment of each experiment of the delta, loaded in Phase 3 like
+    # Exomiser: the shared load after the Exomiser loads, the per-tenant insert after insert_exomiser. A bad file never
+    # fails the load (it returns the errors): check_gene_coverage_files fails the run with them, and is upstream of
+    # nothing, so a bad file blocks no other data.
+    @task(task_id="extract_seq_ids", task_display_name="[PyOp] Extract Sequencing Experiment IDs")
+    def extract_seq_ids(tasks) -> dict[str, list[Any]]:
+        return build_seq_ids(tasks)
+
+    seq_ids = extract_seq_ids(tasks)
+
+    fetch_gene_coverage_files = RadiantStarRocksOperator(
+        task_id="fetch_gene_coverage_files",
+        sql="./sql/radiant/gene_coverage_file_select.sql",
+        task_display_name="[StarRocks] Get the coverage_by_gene file of each current alignment",
+        do_xcom_push=True,
+        output_processor=rows_output_processor,
+        parameters=seq_ids,
+    )
+
+    # Shared load, as for Exomiser: every tenant's files land in `raw_gene_coverage`, tagged with tenant_code.
+    load_gene_coverage = RadiantLoadGeneCoverageOperator(
+        task_id="load_gene_coverage_files",
+        task_display_name="[StarRocks] Load Gene Coverage Files",
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/staging_gene_coverage_copy_partition.sql",
+        ),
+        table="{{ mapping.starrocks_staging_gene_coverage }}",
+        parameters=seq_ids,
+        files=fetch_gene_coverage_files.output,
+    )
+
+    insert_gene_coverage_per_tenant = RadiantStarRocksPartitionSwapOperator.partial(
+        task_id="insert_gene_coverage",
+        table="{{ mapping.starrocks_gene_coverage }}",
+        task_display_name="[StarRocks] Insert Gene Coverage Part",
+        map_index_template="{{ task.tenant_code }}",
+        swap_partition=SwapPartition(
+            partition="{{ params.part }}",
+            copy_partition_sql="./sql/radiant/gene_coverage_copy_partition.sql",
+        ),
+        submit_task_options=std_submit_task_opts,
+        insert_partition_sql="./sql/radiant/gene_coverage_insert_partition_delta.sql",
+        trigger_rule=TriggerRule.ALL_SUCCESS,
+        max_active_tis_per_dagrun=1,
+    ).expand_kwargs(tenant_params)
+
+    @task(task_id="check_gene_coverage_files", task_display_name="[PyOp] Check Gene Coverage Files")
+    def check_gene_coverage_files(errors: list[dict] | None) -> None:
+        raise_gene_coverage_errors(errors)
+
+    _check_gene_coverage_files = check_gene_coverage_files(load_gene_coverage.output)
 
     # Single, shared load: all tenants' exomiser files land in one staging table, each row tagged with
     # tenant_code (set during the broker load) so the per-tenant insert_exomiser can route them later.
@@ -754,18 +819,23 @@ def import_part():
     # Phase 2: VCF Imports
     checkpoint_setup >> vcf_imports >> checkpoint_imports
 
-    # Phase 3: Post-VCF Processing (hashes, exomiser, compound hets)
+    # Phase 3: Post-VCF Processing (hashes, exomiser, gene coverage, compound hets)
     (
         checkpoint_imports
         >> load_exomiser
         >> load_exomiser_cnv
+        >> fetch_gene_coverage_files
+        >> load_gene_coverage
         >> refresh_iceberg_tables
         >> insert_hashes
         >> overwrite_snv_tmp_variants
         >> insert_exomiser_per_tenant
+        >> insert_gene_coverage_per_tenant
         >> insert_germline_snv_comphet_per_tenant
         >> checkpoint_after_exomiser
     )
+    # The check is a leaf: its failure (a bad covgene file) fails the run but blocks no other task.
+    insert_gene_coverage_per_tenant >> _check_gene_coverage_files
 
     # Phase 4: SNV Occurrence, Variants, Consequences, and Frequencies Insertions
     (

@@ -1413,7 +1413,14 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     -- the staging view admits the `variants.tsv` only.
     (286, 'CA1000019.NA12878.exomiser.variants.tsv', 'genomic', 'exomiser_cnv', 'tsv', 1656, '{{ params.vcf_bucket_prefix }}/CA1000019.NA12878.exomiser.variants.tsv', '39252587cf24876ef2d1ba7f2367b789', 'radiant'),
     (287, 'CA1000019.NA12878.exomiser.html', 'genomic', 'exomiser_cnv', 'html', 163627, '{{ params.vcf_bucket_prefix }}/CA1000019.NA12878.exomiser.html', 'aef9833ceec5991a95375f5a27ba08af', 'radiant'),
-    (288, 'CA1000019.NA12878.exomiser.json', 'genomic', 'exomiser_cnv', 'json', 36377, '{{ params.vcf_bucket_prefix }}/CA1000019.NA12878.exomiser.json', '97585964319e367b2be9fa72c2b296d9', 'radiant');
+    (288, 'CA1000019.NA12878.exomiser.json', 'genomic', 'exomiser_cnv', 'json', 36377, '{{ params.vcf_bucket_prefix }}/CA1000019.NA12878.exomiser.json', '97585964319e367b2be9fa72c2b296d9', 'radiant'),
+    -- The DRAGEN gene coverage (RAD-315), one file per format: the old one (no `type` column) on the proband's
+    -- alignment of case 1 (task 1, which the staging view hides behind the slivar VCF: the coverage still loads), the
+    -- new one (`type` column) on the tumor-only alignment of case 23 (task 76). The staging view admits no `covgene`.
+    -- The sandbox serves the files from its data/gene_coverage/ folder (the old one is the new one with its CDS rows
+    -- only, no `type` column, and each PAR pair merged into one row).
+    (289, 'old_format.csv', 'genomic', 'covgene', 'csv', 2418189, '{{ params.vcf_bucket_prefix }}/gene_coverage/old_format.csv', '94b3c5c1a9e1fd4cb369d96c7c1119dd', 'radiant'),
+    (290, 'new_format.csv', 'genomic', 'covgene', 'csv', 16638363, '{{ params.vcf_bucket_prefix }}/gene_coverage/new_format.csv', 'a57a66d4cff714d69e3c453d8f759e4a', 'radiant');
 
 TRUNCATE {{ params.clinical_task_has_document }} CASCADE;
 INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type) VALUES
@@ -1704,7 +1711,10 @@ INSERT INTO {{ params.clinical_task_has_document }} (task_id, document_id, type)
     (75, 277, 'output'),
     (75, 278, 'output'),
     (76, 279, 'output'),
-    (76, 280, 'output');
+    (76, 280, 'output'),
+    -- Alignment tasks 1 and 76 -> their DRAGEN gene coverage (RAD-315), old and new format.
+    (1, 289, 'output'),
+    (76, 290, 'output');
 
 -- Reset sequences
 ALTER TABLE {{ params.clinical_analysis_catalog }} ALTER COLUMN id RESTART WITH 1000;

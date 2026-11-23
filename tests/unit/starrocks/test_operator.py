@@ -216,13 +216,14 @@ def _annotation_task(task_id, exomiser_filepath, experiments):
     }
 
 
-def _run_exomiser_load(tasks):
+def _run_exomiser_load(tasks, **kwargs):
     op = RadiantLoadExomiserOperator(
         task_id="t",
         table="radiant.raw_exomiser",
         swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
         parameters={"task_ids": [1], "deleted_task_ids": [-1]},
         tasks=tasks,
+        **kwargs,
     )
     hook = MagicMock()
     cursor = hook.get_conn.return_value.cursor.return_value.__enter__.return_value
@@ -248,14 +249,15 @@ def test_exomiser_load_reads_the_file_of_the_annotation_task_and_tags_the_proban
         ]
     )
 
-    assert len(loads) == 1
-    assert {k: loads[0][k] for k in ("part", "seq_id", "task_id", "tenant_code", "tsv_filepath")} == {
-        "part": "5",
-        "seq_id": 101,
-        "task_id": 11,
-        "tenant_code": "test",
-        "tsv_filepath": "s3://test/CA1.exomiser.variants.tsv",
-    }
+    assert loads == [
+        {
+            "part": "5",
+            "seq_id_0": 101,
+            "task_id_0": 11,
+            "tenant_code_0": "test",
+            "filepath_0": "s3://test/CA1.exomiser.variants.tsv",
+        }
+    ]
 
 
 def test_exomiser_load_skips_tasks_without_exomiser_file():
@@ -370,15 +372,15 @@ def test_cnv_exomiser_load_reads_the_cnv_annotation_task_and_tags_the_proband():
 
     assert op.sql == "sql/radiant/staging_exomiser_cnv_load.sql"
     assert len(loads) == 1
-    params = loads[0][1]
-    assert {k: params[k] for k in ("part", "seq_id", "task_id", "tenant_code", "tsv_filepath")} == {
+    sql, params = loads[0]
+    assert params == {
         "part": "5",
-        "seq_id": 101,
-        "task_id": 21,
-        "tenant_code": "test",
-        "tsv_filepath": "s3://test/CA1.S1.exomiser.variants.tsv",
+        "seq_id_0": 101,
+        "task_id_0": 21,
+        "tenant_code_0": "test",
+        "filepath_0": "s3://test/CA1.S1.exomiser.variants.tsv",
     }
-    assert params["load_label"].startswith("load_exomiser_cnv_21_101_")
+    assert sql == op.sql
 
 
 def test_cnv_exomiser_load_never_reads_an_snv_annotation_task():
@@ -427,4 +429,95 @@ def test_exomiser_load_rejects_a_task_type_without_exomiser_report():
             swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
             tasks=[],
             annotation_task_type="alignment_germline_variant_calling",
+        )
+
+
+def _run_exomiser_batches(tasks, *, files_per_load, partition_exists):
+    op = RadiantLoadExomiserOperator(
+        task_id="t",
+        table="radiant.raw_exomiser",
+        swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+        tasks=tasks,
+        files_per_load=files_per_load,
+    )
+    hook = MagicMock()
+    cursor = hook.get_conn.return_value.cursor.return_value.__enter__.return_value
+    contexts = []
+
+    def render(content, ctx, *_):
+        contexts.append(ctx)
+        return content
+
+    with (
+        patch.object(op, "get_db_hook", return_value=hook),
+        patch.object(op, "render_template", side_effect=render),
+        patch.object(op, "verify_load_status") as verify,
+        patch.object(op, "swap_partitions") as swap,
+    ):
+        op.run_insert(context={}, partition_exists=partition_exists)
+    # Each job is waited for before the next one starts.
+    assert [call.args[0] for call in verify.call_args_list] == [c["load_label"] for c in contexts]
+    return contexts, [call.args[1] for call in cursor.execute.call_args_list], swap
+
+
+def test_exomiser_load_loads_the_reports_in_batches():
+    tasks = [
+        _annotation_task(10 + i, f"s3://test/CA{i}.exomiser.variants.tsv", [_experiment(100 + i, "proband")])
+        for i in range(5)
+    ]
+
+    contexts, loads, swap = _run_exomiser_batches(tasks, files_per_load=2, partition_exists=True)
+
+    assert [c["file_count"] for c in contexts] == [2, 2, 1]
+    assert {(c["table_name"], c["temporary_partition_clause"]) for c in contexts} == {
+        ("raw_exomiser", "TEMPORARY PARTITION (tp5)")
+    }
+    assert [c["load_label"].rsplit("_", 1)[0] for c in contexts] == [
+        "load_exomiser_10_100_2",
+        "load_exomiser_12_102_2",
+        "load_exomiser_14_104_1",
+    ]
+    assert loads[1] == {
+        "part": "5",
+        "seq_id_0": 102,
+        "task_id_0": 12,
+        "tenant_code_0": "test",
+        "filepath_0": "s3://test/CA2.exomiser.variants.tsv",
+        "seq_id_1": 103,
+        "task_id_1": 13,
+        "tenant_code_1": "test",
+        "filepath_1": "s3://test/CA3.exomiser.variants.tsv",
+    }
+    swap.assert_called_once()
+
+
+def test_exomiser_load_into_a_new_partition_loads_without_temporary_partition_nor_swap():
+    tasks = [_annotation_task(11, "s3://test/CA1.exomiser.variants.tsv", [_experiment(101, "proband")])]
+
+    contexts, loads, swap = _run_exomiser_batches(tasks, files_per_load=100, partition_exists=False)
+
+    assert [(c["file_count"], c["temporary_partition_clause"]) for c in contexts] == [(1, "")]
+    assert len(loads) == 1
+    swap.assert_not_called()
+
+
+def test_exomiser_load_defaults_to_100_reports_per_load():
+    op = RadiantLoadExomiserOperator(
+        task_id="t",
+        table="radiant.raw_exomiser",
+        swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+        tasks=[],
+    )
+
+    assert op.files_per_load == 100
+
+
+def test_exomiser_load_rejects_an_empty_batch_size():
+    with pytest.raises(ValueError, match="files_per_load must be at least 1"):
+        RadiantLoadExomiserOperator(
+            task_id="t",
+            table="radiant.raw_exomiser",
+            swap_partition=SwapPartition(partition="5", copy_partition_sql="SELECT 1"),
+            tasks=[],
+            files_per_load=0,
         )
