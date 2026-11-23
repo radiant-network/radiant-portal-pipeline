@@ -8,7 +8,6 @@ with sequencing_context AS (
     se.experimental_strategy_code,
 	se.tenant_code as tenant_code,
     se.created_on,
-    se.updated_on AS updated_on,
     ANY_VALUE(pc.case_type) as analysis_type,
     CASE
         MIN(
@@ -35,8 +34,7 @@ with sequencing_context AS (
 	    se.sample_id,
 	    se.experimental_strategy_code,
 	    se.tenant_code,
-	    se.created_on,
-	    se.updated_on
+	    se.created_on
 ),
 sequencing_experiments AS (
 	SELECT
@@ -60,7 +58,11 @@ sequencing_experiments AS (
 	                      OR (d.data_type_code = 'exomiser_cnv' AND t.task_type_code = 'radiant_germline_cnv_annotation'))
 	                   THEN d.url ELSE NULL END) AS exomiser_filepath,
         se.created_on AS created_at,
-        IF(tctx.case_id IS NOT NULL, c.updated_on, se.updated_on) AS updated_at
+        -- The task's creation date (RAD-377). A task never changes: only a new task brings data to import, and a new
+        -- task, or a new case of a shared per-experiment task, is a new (case_id, seq_id, task_id) key that the delta
+        -- finds without a date. A patient, case or experiment date would put the rows back in the delta on every
+        -- change, a case status change included, and the import would reload them with no data change.
+        t.created_on AS updated_at
 	FROM
 	    sequencing_context se
 	-- A task naming a case belongs to that case alone, even when its experiment is shared with another
@@ -69,7 +71,6 @@ sequencing_experiments AS (
 	LEFT JOIN {{ mapping.clinical_task_context }} tctx
 	    ON tctx.sequencing_experiment_id = se.id
 	    AND (tctx.case_id IS NULL OR tctx.case_id = se.case_id)
-	LEFT JOIN {{ mapping.clinical_case }} c ON tctx.case_id = c.id
 	LEFT JOIN {{ mapping.clinical_task }} t ON t.id = tctx.task_id
 	LEFT JOIN {{ mapping.clinical_task_has_document }} thd ON thd.task_id = t.id AND thd.type = 'output'
 	LEFT JOIN {{ mapping.clinical_document }} d ON d.id = thd.document_id
@@ -105,7 +106,7 @@ sequencing_experiments AS (
 		se.tenant_code,
 		se.priority_code,
 		se.created_on,
-		updated_at
+		t.created_on
 ),
 -- Proband source rule: the proband's alignment tasks of each case whose CNV annotation task has a slivar VCF.
 original_alignment AS (
