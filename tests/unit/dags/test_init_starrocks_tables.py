@@ -34,8 +34,8 @@ def test_dag_is_importable(dag_bag):
 
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(_BASE_DAG_ID)
-    # 21 base radiant tables and views + 2 clinical tables + 25 open data tables + 2 UDFs
-    assert len(dag.tasks) == 50
+    # 22 base radiant tables and views + 2 clinical tables + 25 open data tables + 2 UDFs
+    assert len(dag.tasks) == 51
 
 
 def test_dag_has_all_base_tasks(dag_bag):
