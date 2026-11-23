@@ -583,21 +583,40 @@ EXOMISER_LOADS = {
 }
 
 
+# The reports of one load job (one `data_desc` each). A WXS part (up to 1000 tasks) loads in about 10 jobs, not 1000.
+EXOMISER_FILES_PER_LOAD = 100
+
+
 class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
+    """Load the Exomiser report of each annotation task of the run into the shared staging table.
+
+    One broker load job per `files_per_load` reports, one `data_desc` per report, each tagged in its SET with its task,
+    the proband's seq_id and tenant. A job is atomic: a bad report cancels the batch and fails the task, before the
+    swap, so that Airflow retries it and the rows of the partition stay.
+    """
+
     template_fields = RadiantStarrocksLoadBaseOperator.template_fields + ("sql", "tasks")
     template_ext = (".sql", ".json")
     template_fields_renderers = {**RadiantStarrocksLoadBaseOperator.template_fields_renderers, "sql": "sql"}
 
     def __init__(
-        self, tasks: list[dict], *args, annotation_task_type: str = RADIANT_GERMLINE_ANNOTATION_TASK, **kwargs
+        self,
+        tasks: list[dict],
+        *args,
+        annotation_task_type: str = RADIANT_GERMLINE_ANNOTATION_TASK,
+        files_per_load: int = EXOMISER_FILES_PER_LOAD,
+        **kwargs,
     ):
         # Not `task_type`: BaseOperator already has a `task_type` property (the operator's class name).
         if annotation_task_type not in EXOMISER_LOADS:
             raise ValueError(
                 f"No Exomiser load for task type [{annotation_task_type}], expected one of {sorted(EXOMISER_LOADS)}."
             )
+        if files_per_load < 1:
+            raise ValueError(f"files_per_load must be at least 1, got {files_per_load}.")
         self.tasks = tasks
         self.annotation_task_type = annotation_task_type
+        self.files_per_load = files_per_load
         self.task_model, self.sql, self.label_prefix = EXOMISER_LOADS[annotation_task_type]
         super().__init__(*args, **kwargs)
 
@@ -605,11 +624,34 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
         super().render_template_fields(context, jinja_env)
         self.tasks = self.render_template(self.tasks, context, jinja_env)
         _context = super().prepare_load_context(context)
+        # Filled per load job in load_files; the data_desc loop is a `raw` block of the SQL, rendered there too.
         _sql_context = {**_context, "load_label": "{{load_label}}"}
         self.sql = self.render_template(self.sql, _sql_context, jinja_env)
 
+    def load_files(self, cursor, files: list[dict], temporary_partition_clause: str) -> None:
+        """Load the reports of one batch in one load job, one `data_desc` per report, and wait for it."""
+        first = files[0]
+        load_label = f"{self.label_prefix}_{first['task_id']}_{first['seq_id']}_{len(files)}_{uuid.uuid4().hex}"
+        filepaths = [f["filepath"] for f in files]
+        self.log.info(f"Loading {len(files)} Exomiser file(s) in load {load_label}: {filepaths}")
+        _sql = self.render_template(
+            self.sql,
+            {
+                "file_count": len(files),
+                "load_label": load_label,
+                "table_name": self.table.split(".")[1],
+                "temporary_partition_clause": temporary_partition_clause,
+            },
+            None,
+        )
+        _parameters = {"part": self.partition}
+        for i, file in enumerate(files):
+            _parameters.update({f"{key}_{i}": file[key] for key in ("filepath", "seq_id", "task_id", "tenant_code")})
+        cursor.execute(_sql, _parameters)
+        self.verify_load_status(load_label)
+
     def run_insert(self, context, partition_exists):
-        _parameters = []
+        files = []
         for task in self.tasks:
             # A deleted task's rows are dropped by the copy step and never read by the insert, and its file may be
             # gone from S3: loading it could only fail the part.
@@ -625,19 +667,17 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
             _proband = next((e for e in _task.experiments if e.family_role == "proband"), None)
             if _proband is None:
                 raise ValueError(f"No proband found in task [{_task.task_id}] for the Exomiser load.")
-            _parameters.append(
+            files.append(
                 {
-                    "part": self.partition,
                     "seq_id": _proband.seq_id,
                     "task_id": _task.task_id,
                     # Tag rows with the tenant in the shared staging table; insert_exomiser routes by it later.
                     "tenant_code": _proband.tenant_code,
-                    "tsv_filepath": _task.exomiser_filepath,
-                    "load_label": f"{self.label_prefix}_{_task.task_id}_{_proband.seq_id}_{str(uuid.uuid4().hex)}",
+                    "filepath": _task.exomiser_filepath,
                 }
             )
 
-        if not _parameters:
+        if not files:
             self.log.info("No Exomiser files to load, skipping...")
             # The copy step has already filled the temporary partition with the rows to keep (the tasks not in this
             # run). Swap it in all the same, or the rows of this run's tasks (deleted, or re-imported without a
@@ -649,17 +689,8 @@ class RadiantLoadExomiserOperator(RadiantStarrocksLoadBaseOperator):
         hook = self.get_db_hook()
         _temporary_partition_clause = f"TEMPORARY PARTITION ({self.temp_partition})" if partition_exists else ""
         with hook.get_conn().cursor() as cursor:
-            for _params in _parameters:
-                self.log.info(f"Loading Exomiser file {_params['tsv_filepath']}...")
-                _sql_context = {
-                    "load_label": _params["load_label"],
-                    "temporary_partition_clause": _temporary_partition_clause,
-                }
-                _sql = self.render_template(self.sql, _sql_context, None)
-                _sql_parameters = {**self.parameters, **_params}
-                self.log.info(f"Executing exomiser load with params: {_params}")
-                cursor.execute(_sql, _sql_parameters)
-                self.verify_load_status(_params["load_label"])
+            for batch in itertools.batched(files, self.files_per_load):
+                self.load_files(cursor, list(batch), _temporary_partition_clause)
         if partition_exists and self.is_swap:
             self.swap_partitions()
 
