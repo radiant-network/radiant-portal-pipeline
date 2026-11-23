@@ -9,6 +9,7 @@ _BASE_TABLES = [
     "pipeline_case",
     "current_experiment",
     "current_alignment",
+    "current_germline_gvcf",
     "case_member",
     "staging_external_sequencing_experiment",
     "staging_sequencing_experiment",

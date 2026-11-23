@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from radiant.tasks.nextflow.cnv.resolve import select_cases as select_cnv_cases
 from radiant.tasks.nextflow.qc.resolve import select_cases as select_qc_cases
-from radiant.tasks.nextflow.resolve import select_cases as select_snv_cases
+from radiant.tasks.nextflow.resolve import decide_cases as decide_snv_cases
 from radiant.tasks.nextflow.somatic.resolve import select_tasks as select_somatic_tasks
 
 LOGGER = logging.getLogger(__name__)
@@ -41,16 +41,20 @@ def cases_with_work(
     somatic_snv_rows: list[dict],
     qc_rows: list[dict],
     import_rows: list[dict],
+    excluded_tenants: list[str] = (),
 ) -> set[int]:
     """The cases at least one pipeline will run on: the union of what each "from Cases" DAG
-    would select, and of the cases in the import delta.
+    would select, and of the cases in the import delta. For germline SNV, the cases the scheduler
+    decides `run` for, from the facts (`decide_cases`): the ones its child DAG is given.
 
     The Nextflow candidates go through the DAGs' own `select_cases`, lenient as on a scheduled
     run. A case they exclude (sequencing pending, no gVCF, tenant excluded...) is not counted:
     it would sit in `processing` with nothing running for it, and never reach `in_progress`.
     """
     selected = {
-        "germline snv post-processing": select_snv_cases(germline_snv_rows, strict=False).case_ids,
+        "germline snv post-processing": [
+            e.case_id for e in decide_snv_cases(germline_snv_rows, list(excluded_tenants)) if e.decision == "run"
+        ],
         "germline cnv post-processing": select_cnv_cases(germline_cnv_rows, strict=False).case_ids,
         "somatic snv annotation": select_somatic_tasks(somatic_snv_rows, strict=False).case_ids,
         "quality control": select_qc_cases(qc_rows, strict=False).case_ids,

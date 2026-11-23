@@ -5,7 +5,7 @@
 -- Consumed by `radiant-nextflow-cnv-postprocessing-cases` (discover_scope). Full analysis:
 -- `design/cnv-post-processing-nextflow-integration.md`.
 --
--- Sibling of `pending_annotation_select.sql`: both read the supersession policy (SJRA-1698 5)
+-- Sibling of `germline_snv_facts_select.sql`: both read the supersession policy (SJRA-1698 5)
 -- from the views `current_experiment` and `current_alignment`, and the cases from
 -- `pipeline_case` (RAD-287). What differs is the trigger document (a `gcnv` VCF here, a gVCF
 -- there) and the anti-join (a `radiant_germline_cnv_annotation` task here, a
