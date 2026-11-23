@@ -1,0 +1,2 @@
+#gene,type,size,average_coverage,coverage5,coverage15,coverage30,coverage50,coverage100,coverage200,coverage300,coverage400,coverage500,coverage1000
+TP53,CDS,1182,60.0,1.0,1.0,0.9,0.8,0.1,0.0,0.0,0.0,0.0,0.0

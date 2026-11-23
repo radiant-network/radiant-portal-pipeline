@@ -1,30 +1,22 @@
-"""Find the germline cases waiting for an annotation, run the pipeline, register the result.
+"""Run the post-processing pipeline over the named germline cases, register the result.
 
 `radiant-nextflow-snv-postprocessing` runs the Ferlab post-processing pipeline. This DAG closes
-the two manual ends around it: it discovers what needs running, builds the samplesheet, PED
-files and phenopackets from the clinical model, triggers that DAG, then registers what the
-run published back onto the cases as a `radiant_germline_annotation` task, with the Exomiser
-reports among its outputs.
+the two manual ends around it: it builds the samplesheet, PED files and phenopackets of the
+named cases from the clinical model, triggers that DAG, then registers what the run published
+back onto the cases as a `radiant_germline_annotation` task, with the Exomiser reports among
+its outputs.
 
-    discover_scope -> select_cases -> fetch_phenotypes -> resolve_cases -> generate_inputs
+    has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_cases
                                                                                   |
-                                                                            run_pipeline
+                                                       generate_inputs -> run_pipeline
                                                                                   |
               register_tasks (one per tenant) <- collect_outputs <----------------+
 
-Nothing is asked of an operator on a scheduled run. `discover_scope` asks the clinical model
-which sequencing has been aligned but never annotated; `task_ids` narrows that to specific
-alignment tasks when someone wants a targeted rerun, and is empty otherwise.
-
-Two rules do most of the work, and both live in
-`sql/clinical/pending_annotation_select.sql` rather than here:
-
-- exactly one sequencing experiment per (case, member) -- the newest `completed` one -- and
-  exactly one alignment task per experiment. The same selection decides eligibility *and*
-  builds the family, which is what stops a superseded experiment keeping its case eligible
-  for ever;
-- a candidate that cannot be run is excluded with a reason and reported, never fatal. One
-  unfixable case must not block every other case, every night.
+It decides nothing. `radiant-case-scheduler` decides which cases run (`decide_cases`, on
+`sql/clinical/germline_snv_facts_select.sql`) and passes them as `case_ids`; an operator can
+name cases to rerun. `select_cases` checks them again, leniently, since the data may have moved:
+a case that cannot be run is excluded with a reason and reported, never fatal, and a member other
+than the proband with no gVCF yet is left out of the family.
 
 Paths are derived from the run, not parameterised: `{root}/{run_tag}` for both inputs and
 outputs, where `run_tag` comes from `run_id`. That gives each run its own output location --
@@ -70,17 +62,6 @@ OUTPUTS_SUBDIR = "snv"
 
 
 dag_params = {
-    "task_ids": Param(
-        [],
-        type="array",
-        items={"type": "integer"},
-        title="Alignment task ids",
-        description=(
-            "`alignment_germline_variant_calling` task ids, for a targeted rerun. Leave empty -- "
-            "as a scheduled run does -- to process every case that has been aligned but never "
-            "annotated. A task shared by several cases runs all of them."
-        ),
-    ),
     "excluded_tenants": Param(
         excluded_tenants_from_env(),
         type="array",
@@ -90,6 +71,16 @@ dag_params = {
             "Tenants left out of case processing: their cases are excluded before the pipeline "
             f"runs, as `tenant_excluded`. Defaults to ${EXCLUDED_TENANTS_ENV}; empty excludes none. "
             "The case scheduler passes its own."
+        ),
+    ),
+    "case_ids": Param(
+        [],
+        type="array",
+        items={"type": "integer"},
+        title="Case ids",
+        description=(
+            "The cases to run: `radiant-case-scheduler` passes the ones it decided `run` for, and an operator can "
+            "name cases to rerun. Empty runs nothing."
         ),
     ),
     "dry_run": Param(
@@ -143,14 +134,17 @@ def nextflow_snv_postprocessing_cases():
     # per tenant, and `cases.id` is a single-column primary key over all of it -- so the
     # tenant comes back with the rows rather than scoping the query. Nothing here needs
     # RADIANT_TENANT_CODE.
-    discover_scope = RadiantStarRocksOperator(
-        task_id="discover_scope",
-        task_display_name="[StarRocks] Discover cases pending annotation",
-        sql="./sql/clinical/pending_annotation_select.sql",
-        parameters={
-            "task_ids": "{{ params.task_ids }}",
-            "excluded_tenants": "{{ params.excluded_tenants }}",
-        },
+    @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is named")
+    def has_cases() -> bool:
+        from airflow.sdk import get_current_context
+
+        return bool(get_current_context()["params"]["case_ids"])
+
+    fetch_case_members = RadiantStarRocksOperator(
+        task_id="fetch_case_members",
+        task_display_name="[StarRocks] Fetch the members of the named cases",
+        sql="./sql/clinical/germline_snv_case_members_select.sql",
+        parameters={"case_ids": "{{ params.case_ids }}"},
         output_processor=rows_output_processor,
         do_xcom_push=True,
     )
@@ -161,18 +155,11 @@ def nextflow_snv_postprocessing_cases():
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.resolve import select_cases as select
+        from radiant.tasks.nextflow.resolve import select_run_cases
 
-        context = get_current_context()
-        requested = list(context["params"]["task_ids"] or [])
-        # Named tasks are an operator's request, so a case that cannot be resolved is an
-        # error. A discovered scope is the job's own doing, so it is a line in a report.
-        selection = select(member_rows, requested, strict=bool(requested))
-
+        selection = select_run_cases(member_rows, get_current_context()["params"]["excluded_tenants"])
         if not selection.case_ids:
-            raise AirflowSkipException(
-                f"nothing to run: {len(selection.excluded)} candidate case(s) discovered, all excluded"
-            )
+            raise AirflowSkipException(f"nothing to run: {len(selection.excluded)} named case(s), all excluded")
 
         LOGGER.info(
             "%d case(s) selected across tenant(s) %s: %s",
@@ -186,7 +173,8 @@ def nextflow_snv_postprocessing_cases():
             "excluded": [e.model_dump() for e in selection.excluded],
         }
 
-    selection = select_cases(discover_scope.output)
+    has_cases() >> fetch_case_members
+    selection = select_cases(fetch_case_members.output)
 
     fetch_phenotypes = RadiantStarRocksOperator(
         task_id="fetch_phenotypes",

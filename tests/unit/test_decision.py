@@ -64,3 +64,8 @@ def test_the_text_fills_in_the_detail():
     assert reason.text == "its current alignment published no cram document"
     assert str(reason) == "missing_input:cram"
     assert reason.decision == Decision.BLOCKED
+
+
+def test_only_a_member_reason_names_the_member():
+    assert Reason(code=ReasonCode.PENDING_ALIGNMENT).about(101).patient_id == 101
+    assert Reason(code=ReasonCode.TENANT_EXCLUDED).about(101).patient_id is None
