@@ -3,12 +3,13 @@ WITH sequencing_delta AS (
     SELECT
         sse.*
     FROM {{ mapping.starrocks_staging_external_sequencing_experiment }} sse
+    -- On the key only (RAD-377): a row already in staging is never selected again. A new task, or a new case of a
+    -- shared per-experiment task, is a new key.
     LEFT ANTI JOIN {{ mapping.starrocks_staging_sequencing_experiment }} existing
     ON
     	sse.case_id = existing.case_id AND
         sse.seq_id = existing.seq_id AND
-        sse.task_id = existing.task_id AND
-        sse.updated_at <= existing.updated_at
+        sse.task_id = existing.task_id
 ),
 patient_part AS (
 	SELECT

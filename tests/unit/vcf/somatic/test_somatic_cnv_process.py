@@ -6,9 +6,9 @@ from radiant.tasks.utils import S3DownloadError
 from radiant.tasks.vcf.cnv.somatic import process as cnv_process
 from radiant.tasks.vcf.experiment import (
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK,
-    TUMOR_ONLY_VARIANT_CALLING_TASK,
+    ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK,
+    AlignmentSomaticVariantCallingTask,
     Experiment,
-    TumorOnlyVariantCallingTask,
 )
 from tests.unit.vcf.vcf_test_utils import RESOURCES_DIR
 
@@ -28,9 +28,9 @@ def _experiment(seq_id: int = 64, aliquot: str = "TCRBOA6-T", histology_type: st
     )
 
 
-def _task(experiments: list[Experiment] | None = None) -> TumorOnlyVariantCallingTask:
-    return TumorOnlyVariantCallingTask(
-        task_id=70,
+def _task(experiments: list[Experiment] | None = None) -> AlignmentSomaticVariantCallingTask:
+    return AlignmentSomaticVariantCallingTask(
+        task_id=76,
         part=0,
         analysis_type="somatic",
         deleted=False,
@@ -39,7 +39,7 @@ def _task(experiments: list[Experiment] | None = None) -> TumorOnlyVariantCallin
     )
 
 
-def _task_dict(task_id: int, filepath: str | None, task_type: str = TUMOR_ONLY_VARIANT_CALLING_TASK) -> dict:
+def _task_dict(task_id: int, filepath: str | None, task_type: str = ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK) -> dict:
     return {
         "task_id": task_id,
         "task_type": task_type,
@@ -105,7 +105,7 @@ def test_process_tasks_buffers_only_classifiable_records():
     ]
     assert {occ["seq_id"] for occ in buffered} == {64}
     assert {occ["tenant_code"] for occ in buffered} == {"tenant1"}
-    assert {occ["task_id"] for occ in buffered} == {70}
+    assert {occ["task_id"] for occ in buffered} == {76}
 
 
 def test_process_tasks_rejects_a_two_sample_vcf():
@@ -126,15 +126,18 @@ def test_process_tasks_rejects_a_two_sample_vcf():
     mock_pa.Table.from_pylist.assert_not_called()
 
 
-def test_import_somatic_cnv_vcf_processes_only_tumor_only_tasks():
+def test_import_somatic_cnv_vcf_processes_only_alignment_somatic_tasks():
+    """RAD-272: the somatic CNV VCF comes from the tumor-only Dragen run, `alignment_somatic_variant_calling`.
+    The type of the previous contract, `tumor_only_variant_calling`, is no longer read."""
     tasks = [
         _task_dict(1, "s3://bucket/germline.cnv.vcf.gz", task_type=ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK),
         _task_dict(2, "s3://bucket/tumor_only.cnv.vcf.gz"),
+        _task_dict(3, "s3://bucket/previous_contract.cnv.vcf.gz", task_type="tumor_only_variant_calling"),
     ]
 
     with (
         patch.object(cnv_process, "download_s3_file", return_value="/tmp/local.cnv.vcf.gz"),
-        patch.object(cnv_process.TumorOnlyVariantCallingTask, "model_validate", side_effect=lambda t: t),
+        patch.object(cnv_process.AlignmentSomaticVariantCallingTask, "model_validate", side_effect=lambda t: t),
         patch.object(cnv_process, "process_tasks") as mock_process,
     ):
         cnv_process.import_somatic_cnv_vcf(tasks, namespace="radiant")
@@ -151,7 +154,7 @@ def test_import_somatic_cnv_vcf_skips_task_without_filepath():
 
     with (
         patch.object(cnv_process, "download_s3_file", return_value="/tmp/local.cnv.vcf.gz"),
-        patch.object(cnv_process.TumorOnlyVariantCallingTask, "model_validate", side_effect=lambda t: t),
+        patch.object(cnv_process.AlignmentSomaticVariantCallingTask, "model_validate", side_effect=lambda t: t),
         patch.object(cnv_process, "process_tasks") as mock_process,
     ):
         cnv_process.import_somatic_cnv_vcf(tasks, namespace="radiant")
@@ -172,7 +175,7 @@ def test_import_somatic_cnv_vcf_propagates_download_failure():
 
     with (
         patch.object(cnv_process, "download_s3_file", side_effect=fake_download),
-        patch.object(cnv_process.TumorOnlyVariantCallingTask, "model_validate", side_effect=lambda t: t),
+        patch.object(cnv_process.AlignmentSomaticVariantCallingTask, "model_validate", side_effect=lambda t: t),
         patch.object(cnv_process, "process_tasks") as mock_process,
         pytest.raises(S3DownloadError),
     ):

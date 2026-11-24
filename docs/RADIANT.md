@@ -52,7 +52,7 @@ The assigner follows these rules to ensure consistency and efficiency:
 
 ### Data Flow
 
-1.  **Fetch Delta**: `[StarRocks] Get Sequencing Experiment Delta` fetches new or updated sequencing experiments from the staging delta table.
+1.  **Fetch Delta**: `[StarRocks] Get Sequencing Experiment Delta` fetches the new (case, sequencing experiment, task) keys from the staging delta view: a row already in staging is never fetched again (RAD-377).
 2.  **Assign Partitions**: `[PyOp] Assign Partitions` processes the experiments through `SequencingExperimentPartitionAssigner`.
 3.  **Insert/Update**: `[PyOp] Insert New Sequencing Experiments` saves the experiments with their newly assigned `part` IDs back to the StarRocks `sequencing_experiment` table.
 4.  **Trigger Import**: The `radiant-import` DAG then uses these partitions to trigger the `import-part` DAG for each partition in order of priority.

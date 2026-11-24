@@ -3,8 +3,7 @@
 -- Consumed by `radiant-case-scheduler` (`discover_import_cases`, `rediscover_import_cases`).
 -- Two places, because a row leaves the first as soon as the import inserts it into the second:
 --
--- - the delta view: sequencing experiments not yet in `staging_sequencing_experiment`, or
---   changed since;
+-- - the delta view: (case, experiment, task) keys not yet in `staging_sequencing_experiment`;
 -- - `staging_sequencing_experiment` rows `import_part` has not loaded yet, with the import's own
 --   predicate (`sequencing_experiment_select.sql`). A row is inserted with `ingested_at` at the
 --   epoch, so one whose `import_part` failed stays here until a later import loads it.
