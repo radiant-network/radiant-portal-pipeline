@@ -7,6 +7,11 @@ the cases it kept. What differs is the trigger document -- a CRAM, not a gVCF; f
 member, the DRAGEN metrics tarball, with no CRAM -- that a case may mix strategies, since the QC
 samplesheet carries `experimentalStrategy` per row, and that a somatic case is one member, its
 proband's tumor.
+
+The case scheduler decides on `quality_control_facts_select.sql` with `decide_cases`, and on its somatic sibling with
+`decide_somatic_cases`, the rule of germline SNV (`radiant.tasks.nextflow.resolve.decide`): a member absent but the
+proband does not block, the family runs with the members present. The pipeline accepts it: it derives the pedigree
+from the samplesheet, with `0` for a parent missing from it.
 """
 
 import logging
@@ -14,8 +19,16 @@ import logging
 from pydantic import BaseModel
 
 from radiant.tasks.decision import Reason, ReasonCode, from_query
-from radiant.tasks.nextflow.qc.model import QcCase, QcMember, family_id
-from radiant.tasks.nextflow.resolve import REL_ORDER, CaseResolutionError, ExcludedCase
+from radiant.tasks.journal import Entry, Pipeline
+from radiant.tasks.nextflow.qc.model import SOMATIC, QcCase, QcMember, family_id
+from radiant.tasks.nextflow.resolve import (
+    REL_ORDER,
+    CaseResolutionError,
+    ExcludedCase,
+    decide,
+    is_absent,
+    query_reason,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -23,7 +36,17 @@ LOGGER = logging.getLogger(__name__)
 # dictionaries; the pipeline spells it WXS.
 STRATEGIES = {"wgs": "WGS", "wxs": "WXS", "wes": "WXS"}
 
-__all__ = ["CaseResolutionError", "ExcludedCase", "Selection", "select_cases", "resolve_cases", "tenants_of"]
+__all__ = [
+    "CaseResolutionError",
+    "ExcludedCase",
+    "Selection",
+    "decide_cases",
+    "decide_somatic_cases",
+    "select_cases",
+    "select_run_cases",
+    "resolve_cases",
+    "tenants_of",
+]
 
 
 class Selection(BaseModel):
@@ -86,6 +109,46 @@ def select_cases(
     return selection
 
 
+def decide_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Entry]:
+    """One journal entry per case of `quality_control_facts_select.sql`: the decision and all its reasons."""
+    members = _with_reasons(fact_rows, excluded_tenants)
+    return decide(_group_by_case(members), excluded_tenants, _validate, Pipeline.QUALITY_CONTROL)
+
+
+def decide_somatic_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Entry]:
+    """One journal entry per case of `quality_control_somatic_facts_select.sql`."""
+    members = _with_reasons(fact_rows, excluded_tenants)
+    return decide(_group_by_case(members), excluded_tenants, _validate, Pipeline.QUALITY_CONTROL_SOMATIC)
+
+
+def select_run_cases(member_rows: list[dict], excluded_tenants: list[str]) -> Selection:
+    """The cases the scheduler decided `run` for (`quality_control_{,somatic_}case_members_select.sql`), checked
+    again, lenient: the data may have moved since the decision. A member other than the proband with no CRAM yet is
+    left out, and the family runs with the members present."""
+    present = [m for m in _with_reasons(member_rows, excluded_tenants) if not is_absent(m)]
+    return select_cases([m.model_dump() for m in present], strict=False)
+
+
+def _with_reasons(rows: list[dict], excluded_tenants: list[str]) -> list[QcMember]:
+    members = [QcMember(**row) for row in rows]
+    for member in members:
+        member.exclusion_reason = _query_reason(member, excluded_tenants)
+    return members
+
+
+def _query_reason(member: QcMember, excluded_tenants: list[str]) -> str | None:
+    """A germline member's trigger document is its CRAM, a tumor's its DRAGEN metrics tarball: no CRAM-directory
+    fallback for it, which would give a green run with an empty report."""
+    if member.case_type == SOMATIC:
+        reason = query_reason(member, excluded_tenants, "metrics", member.dragen_metrics_matches)
+    else:
+        reason = query_reason(member, excluded_tenants, "cram", member.cram_matches)
+        if reason is None and member.dragen_metrics_matches > 1:
+            reason = "ambiguous_metrics"
+    # The shared code for two tarballs on one alignment.
+    return "ambiguous_dragen_metrics" if reason == "ambiguous_metrics" else reason
+
+
 def resolve_cases(member_dicts: list[dict]) -> list[QcCase]:
     """Build one `QcCase` per case. `select_cases` has already validated these members."""
     members = [QcMember(**m) for m in member_dicts]
@@ -112,13 +175,12 @@ def _group_by_case(members: list[QcMember]) -> dict[int, list[QcMember]]:
 
 
 def _validate(case_id: int, members: list[QcMember]) -> list[tuple[Reason, str]]:
-    """`(reason, message)` pairs. Exclusion is at case granularity: the report is per family,
-    and a family short one member is a different report, not a smaller one."""
+    """`(reason, message)` pairs. Exclusion is at case granularity: the report is per family."""
     problems: list[tuple[Reason, str]] = []
 
     for member in members:
         if member.exclusion_reason:
-            reason = from_query(member.exclusion_reason)
+            reason = from_query(member.exclusion_reason).about(member.patient_id)
             problems.append((reason, f"case {case_id}, patient {member.patient_id}: {reason.text}"))
 
     probands = [m for m in members if m.role == "proband"]

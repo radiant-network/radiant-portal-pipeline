@@ -18,7 +18,8 @@ from pydantic import BaseModel
 
 from radiant.tasks.journal import Entry, Pipeline
 from radiant.tasks.nextflow.cnv.resolve import decide_cases as decide_cnv_cases
-from radiant.tasks.nextflow.qc.resolve import select_cases as select_qc_cases
+from radiant.tasks.nextflow.qc.resolve import decide_cases as decide_qc_cases
+from radiant.tasks.nextflow.qc.resolve import decide_somatic_cases as decide_qc_somatic_cases
 from radiant.tasks.nextflow.resolve import decide_cases as decide_snv_cases
 from radiant.tasks.nextflow.somatic.resolve import select_tasks as select_somatic_tasks
 
@@ -28,6 +29,8 @@ LOGGER = logging.getLogger(__name__)
 DECIDE: dict[Pipeline, Callable[[list[dict], list[str]], list[Entry]]] = {
     Pipeline.GERMLINE_SNV: decide_snv_cases,
     Pipeline.GERMLINE_CNV: decide_cnv_cases,
+    Pipeline.QUALITY_CONTROL: decide_qc_cases,
+    Pipeline.QUALITY_CONTROL_SOMATIC: decide_qc_somatic_cases,
 }
 
 SUBMITTED = "submitted"
@@ -47,22 +50,24 @@ def cases_with_work(
     germline_cnv_rows: list[dict],
     somatic_snv_rows: list[dict],
     qc_rows: list[dict],
+    qc_somatic_rows: list[dict],
     import_rows: list[dict],
     excluded_tenants: list[str] = (),
 ) -> set[int]:
     """The cases at least one pipeline will run on: the union of what each "from Cases" DAG
-    would select, and of the cases in the import delta. For germline SNV and CNV, the cases the
+    would select, and of the cases in the import delta. For germline SNV and CNV and quality control, the cases the
     scheduler decides `run` for, from the facts (`DECIDE`): the ones their child DAGs are given.
 
-    The Nextflow candidates go through the DAGs' own `select_cases`, lenient as on a scheduled
-    run. A case they exclude (sequencing pending, no gVCF, tenant excluded...) is not counted:
+    The somatic SNV candidates go through the DAG's own `select_tasks`, lenient as on a scheduled
+    run. A case it excludes (no calling, tenant excluded...) is not counted:
     it would sit in `processing` with nothing running for it, and never reach `in_progress`.
     """
     selected = {
         "germline snv post-processing": _run_case_ids(Pipeline.GERMLINE_SNV, germline_snv_rows, excluded_tenants),
         "germline cnv post-processing": _run_case_ids(Pipeline.GERMLINE_CNV, germline_cnv_rows, excluded_tenants),
         "somatic snv annotation": select_somatic_tasks(somatic_snv_rows, strict=False).case_ids,
-        "quality control": select_qc_cases(qc_rows, strict=False).case_ids,
+        "quality control": _run_case_ids(Pipeline.QUALITY_CONTROL, qc_rows, excluded_tenants),
+        "somatic quality control": _run_case_ids(Pipeline.QUALITY_CONTROL_SOMATIC, qc_somatic_rows, excluded_tenants),
         "import": sorted({row["case_id"] for row in import_rows}),
     }
     for pipeline, case_ids in selected.items():

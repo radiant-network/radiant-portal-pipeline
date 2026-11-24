@@ -1,17 +1,22 @@
-"""Find the cases waiting for a QC report, run the pipeline, register the result.
+"""Run the quality-control pipeline over the named cases, register the result.
 
 `radiant-nextflow-quality-control` runs the Ferlab quality-control-pipeline. This DAG closes the
 two manual ends around it, the way `nextflow_snv_postprocessing_cases` does for annotation: it
-discovers which cases have been aligned but never QC'd, builds the samplesheet, triggers that
-DAG, then registers what the run published back onto the cases as one `quality_control_metrics`
-task each, carrying the per-family MultiQC set as `aggqc` documents.
+builds the samplesheet of the named cases, triggers that DAG, then registers what the run
+published back onto the cases as one `quality_control_metrics` task each, carrying the
+per-family MultiQC set as `aggqc` documents.
 
-    discover_germline -+
-                       +-> select_cases -> resolve_cases -> generate_inputs -> run_pipeline
-    discover_somatic --+                                                                  |
-                                     register_tasks (one per tenant) <- collect_outputs <-+
+                 +-> fetch_germline_members -+
+    has_cases ---+                           +-> select_cases -> resolve_cases -> generate_inputs -> run_pipeline
+                 +-> fetch_somatic_members --+                                                         |
+                                            register_tasks (one per tenant) <- collect_outputs <-------+
 
-Germline cases bring every family member; somatic cases their tumor alone. The DRAGEN metrics
+It decides nothing. `radiant-case-scheduler` decides which cases run (`decide_cases` and
+`decide_somatic_cases`, on `sql/clinical/quality_control_{,somatic_}facts_select.sql`) and passes
+them as `case_ids`; an operator can name cases to rerun. `select_cases` checks them again,
+leniently: a case that cannot be run is excluded with a reason, and a germline member other than
+the proband with no CRAM yet is left out of the family. Germline cases bring every family member
+present; somatic cases their tumor alone. The DRAGEN metrics
 come from the clinical model: each member's samplesheet row carries its alignment's `ssup`/`tgz`
 tarball in `dragenMetrics`, or, for germline only, its CRAM's directory when there is none. The
 pipeline handles each sample on its own, so every case of the run goes into one launcher run.
@@ -20,6 +25,7 @@ Full analysis: `design/SJRA-1879-nextflow-quality-control-automation.md`, and ra
 `docs/features/RAD-110-qc-dragen-metrics-samplesheet.md` for the `dragenMetrics` column.
 """
 
+import datetime
 import logging
 import os
 from typing import Any
@@ -49,23 +55,19 @@ OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "3
 
 PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-quality-control"
 
+# `select_cases` XCom: what it selected and left out per pipeline, read back by `journal_outcomes`.
+SELECTION_KEY = "selection"
+
+# The journal write is idempotent (an unchanged marker is not written twice), so a retry is safe.
+JOURNAL_RETRIES = 2
+JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
+
 # Under the shared roots, apart from post-processing (`snv-runs/`, `snv/`).
 INPUTS_SUBDIR = "qc-runs"
 OUTPUTS_SUBDIR = "qc"
 
 
 dag_params = {
-    "task_ids": Param(
-        [],
-        type="array",
-        items={"type": "integer"},
-        title="Alignment task ids",
-        description=(
-            "`alignment_germline_variant_calling` or `alignment_somatic_variant_calling` task ids, "
-            "for a targeted rerun. Leave empty -- as a scheduled run does -- to process every case "
-            "that has been aligned but never QC'd. A task shared by several cases runs all of them."
-        ),
-    ),
     "excluded_tenants": Param(
         excluded_tenants_from_env(),
         type="array",
@@ -75,6 +77,16 @@ dag_params = {
             "Tenants left out of case processing: their cases are excluded before the pipeline "
             f"runs, as `tenant_excluded`. Defaults to ${EXCLUDED_TENANTS_ENV}; empty excludes none. "
             "The case scheduler passes its own."
+        ),
+    ),
+    "case_ids": Param(
+        [],
+        type="array",
+        items={"type": "integer"},
+        title="Case ids",
+        description=(
+            "The germline and somatic cases to run: `radiant-case-scheduler` passes the ones it decided `run` for, "
+            "and an operator can name cases to rerun. Empty runs nothing."
         ),
     ),
     "dry_run": Param(
@@ -87,6 +99,14 @@ dag_params = {
         ),
     ),
 }
+
+
+def _selection_payload(selection) -> dict:
+    return {
+        "case_ids": selection.case_ids,
+        "members": [m.model_dump() for m in selection.members],
+        "excluded": [e.model_dump(mode="json") for e in selection.excluded],
+    }
 
 
 def _workspace_env() -> dict[str, str]:
@@ -112,8 +132,7 @@ def _workspace_env() -> dict[str, str]:
     # schedule of its own would process cases without moving them, and race that DAG.
     schedule=None,
     catchup=False,
-    # The entire concurrency story: discovery runs at the start of a run, so a queued run
-    # re-queries after the previous one has registered and sees the shorter list.
+    # One run at a time: two runs on the same cases would register two QC tasks each.
     max_active_runs=1,
     tags=["radiant", "nextflow", "qc"],
     params=dag_params,
@@ -122,58 +141,67 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_quality_control_cases():
-    def discover(task_id: str, display_name: str, sql: str) -> RadiantStarRocksOperator:
+    @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is named")
+    def has_cases() -> bool:
+        from airflow.sdk import get_current_context
+
+        return bool(get_current_context()["params"]["case_ids"])
+
+    def fetch_members(task_id: str, display_name: str, sql: str) -> RadiantStarRocksOperator:
         return RadiantStarRocksOperator(
             task_id=task_id,
             task_display_name=f"[StarRocks] {display_name}",
             sql=sql,
-            parameters={
-                "task_ids": "{{ params.task_ids }}",
-                "excluded_tenants": "{{ params.excluded_tenants }}",
-            },
+            parameters={"case_ids": "{{ params.case_ids }}"},
             output_processor=rows_output_processor,
             do_xcom_push=True,
         )
 
-    discover_germline = discover(
-        "discover_germline",
-        "Discover germline cases pending quality control",
-        "./sql/clinical/pending_quality_control_select.sql",
+    fetch_germline_members = fetch_members(
+        "fetch_germline_members",
+        "Fetch the members of the named germline cases",
+        "./sql/clinical/quality_control_case_members_select.sql",
     )
-    discover_somatic = discover(
-        "discover_somatic",
-        "Discover somatic cases pending quality control",
-        "./sql/clinical/pending_quality_control_somatic_select.sql",
+    fetch_somatic_members = fetch_members(
+        "fetch_somatic_members",
+        "Fetch the tumor of the named somatic cases",
+        "./sql/clinical/quality_control_somatic_case_members_select.sql",
     )
 
     @task(task_id="select_cases", task_display_name="[PyOp] Select the cases that can run")
     def select_cases(germline_rows: Any, somatic_rows: Any) -> Any:
-        """Keep the cases that can run, report the ones that cannot."""
+        """Keep what can run, report what cannot, and skip the run if nothing can."""
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.qc.resolve import select_cases as select
+        from radiant.tasks.journal import Pipeline
+        from radiant.tasks.nextflow.qc.resolve import select_run_cases
 
         context = get_current_context()
-        requested = list(context["params"]["task_ids"] or [])
-        selection = select([*germline_rows, *somatic_rows], requested, strict=bool(requested))
+        excluded_tenants = context["params"]["excluded_tenants"]
+        selections = {
+            Pipeline.QUALITY_CONTROL: select_run_cases(germline_rows, excluded_tenants),
+            Pipeline.QUALITY_CONTROL_SOMATIC: select_run_cases(somatic_rows, excluded_tenants),
+        }
+        # Kept apart from the return value, so the outcomes are journaled even when nothing runs.
+        payloads = {str(pipeline): _selection_payload(s) for pipeline, s in selections.items()}
+        context["ti"].xcom_push(key=SELECTION_KEY, value=payloads)
 
-        if not selection.case_ids:
-            raise AirflowSkipException(
-                f"nothing to run: {len(selection.excluded)} candidate case(s) discovered, all excluded"
-            )
+        selected = {
+            "case_ids": sorted(c for p in payloads.values() for c in p["case_ids"]),
+            "members": [m for p in payloads.values() for m in p["members"]],
+        }
+        if not selected["case_ids"]:
+            excluded = sum(len(p["excluded"]) for p in payloads.values())
+            raise AirflowSkipException(f"nothing to run: {excluded} named case(s), all excluded")
 
         LOGGER.info(
             "%d case(s) selected across tenant(s) %s: %s",
-            len(selection.case_ids),
-            ", ".join(selection.tenants),
-            ", ".join(str(case_id) for case_id in selection.case_ids),
+            len(selected["case_ids"]),
+            ", ".join(sorted({t for s in selections.values() for t in s.tenants})),
+            ", ".join(str(case_id) for case_id in selected["case_ids"]),
         )
-        return {
-            "case_ids": selection.case_ids,
-            "members": [m.model_dump() for m in selection.members],
-            "excluded": [e.model_dump() for e in selection.excluded],
-        }
+        return selected
 
     @task(task_id="resolve_cases", task_display_name="[PyOp] Resolve cases to families")
     def resolve_cases(selected: Any) -> Any:
@@ -286,9 +314,40 @@ def nextflow_quality_control_cases():
         if not parsed:
             raise AirflowFailException(f"no resolved case belongs to tenant '{tenant}'")
         body = build_patch_body(parsed, collected)
-        return register_case_batch(tenant, body, context["params"]["dry_run"])
+        return {"tenant": tenant, "report": register_case_batch(tenant, body, context["params"]["dry_run"])}
 
-    cases = resolve_cases(select_cases(discover_germline.output, discover_somatic.output))
+    # Retried: the run's state ignores this teardown, so a failed write is only seen on its own task.
+    @task(
+        task_id="journal_outcomes",
+        task_display_name="[PyOp] Journal what the run did with its cases",
+        retries=JOURNAL_RETRIES,
+        retry_delay=JOURNAL_RETRY_DELAY,
+    )
+    def journal_outcomes() -> int:
+        """`succeeded` for the cases of the tenants registered, `failed` for the others and the cases left out."""
+        from airflow.exceptions import AirflowSkipException
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.journal import Pipeline, record
+        from radiant.tasks.nextflow.resolve import outcome_entries
+
+        context = get_current_context()
+        if context["params"]["dry_run"]:
+            raise AirflowSkipException("dry run: nothing registered, nothing to journal")
+        selections = context["ti"].xcom_pull(task_ids="select_cases", key=SELECTION_KEY) or {}
+        registered = {r["tenant"] for r in (context["ti"].xcom_pull(task_ids="register_tasks") or []) if r}
+        entries = [
+            e
+            for pipeline, selection in selections.items()
+            for e in outcome_entries(selection, registered, Pipeline(pipeline))
+        ]
+        written = record(entries, context["run_id"])
+        LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
+        return len(written)
+
+    has_cases() >> [fetch_germline_members, fetch_somatic_members]
+    selection = select_cases(fetch_germline_members.output, fetch_somatic_members.output)
+    cases = resolve_cases(selection)
     paths = generate_inputs(cases)
 
     run_pipeline = TriggerDagRunOperator(
@@ -309,7 +368,10 @@ def nextflow_quality_control_cases():
     )
 
     collected = collect_outputs(cases, paths)
-    register_tasks.partial(cases=cases, collected=collected).expand(tenant=list_tenants(cases))
+    registered = register_tasks.partial(cases=cases, collected=collected).expand(tenant=list_tenants(cases))
+    # A teardown: it runs whatever happened before it, and the run's state ignores it, so a failed pipeline or
+    # registration still fails the run.
+    [selection, registered] >> journal_outcomes().as_teardown()
 
     paths >> run_pipeline >> collected
 

@@ -18,7 +18,8 @@ discover_{germline_snv,germline_cnv,somatic_snv,qc,qc_somatic,import}_cases, fet
 
 Each key names the case type and the variant type: **germline_snv**, **germline_cnv** and
 **somatic_snv**. Quality control has one query per case type: **qc** (germline) and **qc_somatic**
-(the tumor of the somatic cases). Their rows are counted together.
+(the tumor of the somatic cases), each decided and journaled on its own (`quality_control`,
+`quality_control_somatic`). Both name their cases to the one quality-control DAG.
 
 The import waits for SNV post-processing, somatic annotation and CNV post-processing, success or
 not: it loads the annotation tasks they register (for CNV post-processing, the proband's slivar VCF,
@@ -48,9 +49,9 @@ The union of:
   `select_cases` (`select_tasks` for somatic annotation, whose unit is the calling task: its cases
   count), with the run's `excluded_tenants` (the list that DAG is given). A case that DAG would exclude
   (sequencing pending, no gVCF, tenant not granted, two DRAGEN metrics tarballs...) is **not** counted: it
-  would sit in `processing` with nothing running for it, and never reach `in_progress`. Germline SNV and CNV
-  are the exception: the cases `decide_cases` decides `run` for, from `germline_snv_facts_select.sql` and
-  `germline_cnv_facts_select.sql`, the same cases their DAGs are given (below);
+  would sit in `processing` with nothing running for it, and never reach `in_progress`. Germline SNV, CNV
+  and quality control are the exception: the cases decided `run` for, from their facts queries, the same
+  cases their DAGs are given (below);
 - the cases the import still has work for (`sql/radiant/import_pending_case_select.sql`): those in
   the delta view, `staging_sequencing_experiment_delta`, and those already inserted into
   `staging_sequencing_experiment` but not loaded by `import_part` yet, with the import's own
@@ -68,17 +69,26 @@ nothing is pending for them.
 
 ## Journal
 
-Germline SNV and CNV are decided the same way, each with its own three tasks (`discover_<pipeline>_cases`,
-`decide_<pipeline>`, `journal_<pipeline>`, `<pipeline>` being `germline_snv` or `germline_cnv`).
-`discover_<pipeline>_cases` reads the facts of the candidates (`sql/clinical/<pipeline>_facts_select.sql`),
-`decide_<pipeline>` decides each case in Python (`decide_cases`: run, wait, blocked or skip, with all the reasons),
-and `journal_<pipeline>` writes it to `pipeline_journal`.
+Germline SNV, germline CNV and quality control (germline and somatic) are decided the same way, each with its
+own three tasks: `discover_<query>_cases` reads the facts of the candidates
+(`sql/clinical/<pipeline>_facts_select.sql`), `decide_<pipeline>` decides each case in Python (run, wait,
+blocked or skip, with all the reasons), and `journal_<pipeline>` writes it to `pipeline_journal`.
+
+| `<pipeline>` | `<query>` |
+| --- | --- |
+| `germline_snv` | `germline_snv` |
+| `germline_cnv` | `germline_cnv` |
+| `quality_control` | `qc` |
+| `quality_control_somatic` | `qc_somatic` |
 
 - Germline SNV candidate: a germline case with no experiment yet, or with a member's current experiment not yet
   annotated, whether its documents are there or not.
 - Germline CNV candidate: a germline case where a member's current experiment has a germline CNV VCF not yet
   annotated for the case. A case where no member has one (CNVs not called, or joint-called upstream) is not a
   candidate, and is not journaled.
+- Germline QC candidate: a germline case where a member's current experiment has a CRAM and no QC task for the case.
+- Somatic QC candidate: a somatic case whose proband's current tumor is aligned and has no QC task for the case.
+  Before its tumor is aligned, a somatic case is not a candidate, and is not journaled.
 
 - `run` is written on every pass. Any other decision is written only when it, or its reasons, differ from the
   case's last row (view `pipeline_state`).
@@ -91,8 +101,9 @@ and `journal_<pipeline>` writes it to `pipeline_journal`.
   never annotated, `new_sequencing` when it was (a member arrived, or was sequenced again).
 - A reason about one member names it (`patient_id`): two members waiting are two reasons. The reasons about
   the case (project, tenant, proband count, strategy) name no one.
-- The germline SNV and CNV "from Cases" DAGs run the cases decided `run`: `decide_<pipeline>` hands them over as
-  `case_ids` in the child's conf, and the trigger waits for it. If deciding fails, no case is named and the child
+- The germline SNV, CNV and quality-control "from Cases" DAGs run the cases decided `run`: `decide_<pipeline>`
+  hands them over as `case_ids` in the child's conf (both QC pipelines to the one QC DAG), and the trigger waits
+  for it. If deciding fails, no case is named and the child
   runs nothing. The journal is written beside (`journal_<pipeline>`): nothing waits for it, and
   if it fails `watcher` turns the run red. The other pipelines still select their own cases.
 
