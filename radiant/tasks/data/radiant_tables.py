@@ -133,6 +133,7 @@ STARROCKS_RADIANT_BASE_MAPPING = {
     "starrocks_current_experiment": "current_experiment",
     "starrocks_current_alignment": "current_alignment",
     "starrocks_current_germline_gvcf": "current_germline_gvcf",
+    "starrocks_current_germline_gcnv": "current_germline_gcnv",
     "starrocks_case_member": "case_member",
     "starrocks_staging_sequencing_experiment": "staging_sequencing_experiment",
     "starrocks_staging_external_sequencing_experiment": "staging_external_sequencing_experiment",

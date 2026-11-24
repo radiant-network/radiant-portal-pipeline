@@ -19,6 +19,7 @@ _BASE_TABLES = [
     "current_experiment",
     "current_alignment",
     "current_germline_gvcf",
+    "current_germline_gcnv",
     "case_member",
     "staging_external_sequencing_experiment",
     "staging_sequencing_experiment",

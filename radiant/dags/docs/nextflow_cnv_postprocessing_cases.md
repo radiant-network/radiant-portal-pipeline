@@ -1,9 +1,8 @@
 # Nextflow CNV Post-processing (from Cases)
 
-Finds the germline cases whose current alignments published a germline CNV VCF that has
-never been post-processed, runs the Ferlab
+Runs the Ferlab
 [cnv-post-processing](https://github.com/Ferlab-Ste-Justine/cnv-post-processing) pipeline
-over them, and registers the result back onto each case as a
+over the germline cases it is given, and registers the result back onto each case as a
 `radiant_germline_cnv_annotation` task, with the Exomiser reports among its outputs.
 
 `radiant-nextflow-cnv-postprocessing` runs the pipeline and nothing else. This DAG closes
@@ -11,23 +10,24 @@ everything around it, exactly as `radiant-nextflow-snv-postprocessing-cases` doe
 annotation.
 
 ```
-discover_scope -> select_cases -> fetch_phenotypes -> resolve_cases -> generate_inputs
+has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_cases
                                                                               |
-                                                                        run_pipeline
+                                                   generate_inputs -> run_pipeline
                                                                               |
           register_tasks (one per tenant) <- collect_outputs <----------------+
+                                                     (teardown: journal_outcomes)
 ```
 
-It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
-daily with its own `excluded_tenants`, and moves the case statuses around it. Run
-it by hand only for a targeted rerun: the `excluded_tenants` default below applies to a manual run only. The
-parameters exist for targeted reruns and for configuration, not for normal operation.
+It has **no schedule of its own and decides nothing**: `radiant-case-scheduler` starts it
+daily with the cases it decided `run` for (`case_ids`) and its own `excluded_tenants`, and moves the case
+statuses around it. Run it by hand only to rerun named cases: the `excluded_tenants` default below applies to a
+manual run only.
 
 ## Parameters
 
 | Param | Default | Meaning |
 |---|---|---|
-| `task_ids` | empty | `alignment_germline_variant_calling` task ids, for a targeted rerun. Empty means "find everything". |
+| `case_ids` | empty | The cases to run. The case scheduler passes the ones it decided `run` for. Empty runs nothing. |
 | `excluded_tenants` | `$RADIANT_ETL_EXCLUDED_TENANTS` | Tenants left out of case processing, reported as `tenant_excluded`. Empty excludes none. |
 | `dry_run` | **false** | Passed to the batch PATCH. True validates and writes nothing. |
 
@@ -36,19 +36,22 @@ eligible and tomorrow's run does the same work again. Manual runs only.
 
 ## What counts as "needs CNV post-processing"
 
-A `(case, sequencing experiment)` pair is eligible when the pair's *current* experiment has
-an alignment publishing a `gcnv` / `vcf` document, and no `radiant_germline_cnv_annotation`
-task is scoped to that same pair. The rule lives in
-`sql/clinical/pending_cnv_annotation_select.sql`, and its two selections are the annotation
-query's: **one experiment per (case, member)**, the newest `completed` one, and **one
-alignment per experiment**, the newest. Every `pending_*` query reads them from the StarRocks
-views `current_experiment` and `current_alignment`, and the cases from `pipeline_case`
-(RAD-287, `sql/radiant/init/`). To see why a case is not picked up, query the views:
-`SELECT * FROM current_experiment WHERE case_id = …`.
+This DAG decides nothing: **radiant-case-scheduler** does (**decide_cases**, on
+sql/clinical/germline_cnv_facts_select.sql, written to the pipeline journal). A case is a candidate when a
+`(case, sequencing experiment)` pair's *current* experiment has an alignment publishing a `gcnv` / `vcf` document,
+and no `radiant_germline_cnv_annotation` task is scoped to that same pair. This DAG reads the members of the cases
+it is given with sql/clinical/germline_cnv_case_members_select.sql. Both queries read **one experiment per (case,
+member)**, the newest `completed` one, and **one alignment per experiment**, the newest, from the StarRocks views
+`current_experiment` and `current_alignment`, the CNV VCF from `current_germline_gcnv`, and the cases from
+`pipeline_case` (`sql/radiant/init/`). To see why a case is not picked up, read its last row in the view
+`pipeline_state` (`pipeline = 'germline_cnv'`).
 
 The trigger document is selected on `data_type_code = 'gcnv' AND format_code = 'vcf'`,
 never on filename. A case where no member has one (joint-called upstream) is not a
-candidate and is not reported.
+candidate and is not journaled.
+
+A member other than the proband not sequenced or not aligned yet does not block: the family runs with the members
+present, the PED names the absent parent `0`, and the case runs again when the member arrives with a CNV VCF.
 
 ## What the pipeline is given
 
@@ -76,8 +79,9 @@ skip. Passing CRAMs only when the whole set is usable turns both cases into a cl
 
 ## Nothing fails the run -- it gets excluded
 
-A candidate that cannot be run is dropped with a reason and the rest continues.
-`select_cases` logs them; grep for `excluded`.
+The scheduler journals these reasons. `select_cases` checks the named cases again, since the data may have moved:
+a case that cannot be run is dropped with a reason, logged (grep for `excluded`), and journaled `failed`; the rest
+continues. `journal_outcomes` writes `succeeded` or `failed` for each named case.
 
 | Reason | Meaning | Transient? |
 |---|---|---|
@@ -93,10 +97,7 @@ A candidate that cannot be run is dropped with a reason and the rest continues.
 | `no_project_code` | `cases.project_id` did not resolve; the batch PATCH needs it | no |
 | `tenant_excluded` | the tenant is in `excluded_tenants` | no, by configuration |
 
-If every candidate is excluded the run **skips**. A skipped run is not a failed one.
-
-**A targeted rerun behaves differently on purpose.** With `task_ids` set, an unresolvable
-case fails the run instead of being excluded.
+If every named case is excluded the run **skips**. A skipped run is not a failed one.
 
 ## What gets registered
 

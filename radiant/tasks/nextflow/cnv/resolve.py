@@ -5,6 +5,10 @@ decides which candidate cases can run and why the others cannot, in strict mode 
 named alignment tasks) or lenient mode (the nightly query found them); `resolve_families`
 builds the families it kept. What differs is the trigger document -- a germline CNV VCF, not
 a gVCF -- and one extra guard: the pipeline only knows DRAGEN's CNV conventions.
+
+The case scheduler decides on `germline_cnv_facts_select.sql` with `decide_cases`, the rule of germline SNV
+(`radiant.tasks.nextflow.resolve.decide`): a member absent but the proband does not block, the family runs with the
+members present. The pipeline accepts it: the PED names an absent parent `0`.
 """
 
 import logging
@@ -12,9 +16,18 @@ import logging
 from pydantic import BaseModel
 
 from radiant.tasks.decision import Reason, ReasonCode, from_query
+from radiant.tasks.journal import Entry, Pipeline
 from radiant.tasks.nextflow.cnv.model import CnvFamily, CnvMember, family_id
 from radiant.tasks.nextflow.model import Phenotype
-from radiant.tasks.nextflow.resolve import REL_ORDER, SEQUENCING_TYPES, CaseResolutionError, ExcludedCase
+from radiant.tasks.nextflow.resolve import (
+    REL_ORDER,
+    SEQUENCING_TYPES,
+    CaseResolutionError,
+    ExcludedCase,
+    decide,
+    is_absent,
+    query_reason,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,7 +35,16 @@ LOGGER = logging.getLogger(__name__)
 # case-insensitively as a prefix against `task.pipeline_name` ("Dragen", "DRAGEN 4.2", ...).
 SUPPORTED_CALLER_PREFIX = "dragen"
 
-__all__ = ["CaseResolutionError", "ExcludedCase", "Selection", "select_cases", "resolve_families", "tenants_of"]
+__all__ = [
+    "CaseResolutionError",
+    "ExcludedCase",
+    "Selection",
+    "decide_cases",
+    "select_cases",
+    "select_run_cases",
+    "resolve_families",
+    "tenants_of",
+]
 
 
 class Selection(BaseModel):
@@ -84,6 +106,27 @@ def select_cases(
     return selection
 
 
+def decide_cases(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Entry]:
+    """One journal entry per case of `germline_cnv_facts_select.sql`: the decision and all its reasons."""
+    members = _with_reasons(fact_rows, excluded_tenants)
+    return decide(_group_by_case(members), excluded_tenants, _validate, Pipeline.GERMLINE_CNV)
+
+
+def select_run_cases(member_rows: list[dict], excluded_tenants: list[str]) -> Selection:
+    """The families of the cases the scheduler decided `run` for (`germline_cnv_case_members_select.sql`), checked
+    again, lenient: the data may have moved since the decision. A member other than the proband with no CNV VCF
+    yet is left out, and the family runs with the members present."""
+    present = [m for m in _with_reasons(member_rows, excluded_tenants) if not is_absent(m)]
+    return select_cases([m.model_dump() for m in present], strict=False)
+
+
+def _with_reasons(rows: list[dict], excluded_tenants: list[str]) -> list[CnvMember]:
+    members = [CnvMember(**row) for row in rows]
+    for member in members:
+        member.exclusion_reason = query_reason(member, excluded_tenants, "gcnv", member.gcnv_matches)
+    return members
+
+
 def resolve_families(member_rows: list[dict], phenotype_rows: list[dict]) -> list[CnvFamily]:
     """Build one `CnvFamily` per case. `select_cases` has already validated these rows."""
     members = [CnvMember(**row) for row in member_rows]
@@ -113,7 +156,7 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[Reason, str]
 
     for member in members:
         if member.exclusion_reason:
-            reason = from_query(member.exclusion_reason)
+            reason = from_query(member.exclusion_reason).about(member.patient_id)
             problems.append((reason, f"case {case_id}, patient {member.patient_id}: {reason.text}"))
 
     # The aliquot is every id the pipeline sees (samplesheet, PED, phenopacket), and the
@@ -122,20 +165,22 @@ def _validate(case_id: int, members: list[CnvMember]) -> list[tuple[Reason, str]
     for member in members:
         if not member.exclusion_reason and not member.aliquot:
             message = f"case {case_id}, patient {member.patient_id}: its sequencing experiment has no aliquot"
-            problems.append((Reason(code=ReasonCode.MISSING_ALIQUOT), message))
+            problems.append((Reason(code=ReasonCode.MISSING_ALIQUOT, patient_id=member.patient_id), message))
 
     # Fails closed: the samplesheet states `caller=DRAGEN` as a fact, and `task.pipeline_name`
     # is nullable. An alignment that does not say what produced it is excluded and reported
     # rather than asserted to be DRAGEN and found out hours in, every night.
     for member in members:
-        if member.alignment_task_id is None:
-            continue  # already reported by the query (`pending_alignment`)
+        if member.current_alignment_task_id is None:
+            continue  # already a reason (`pending_alignment`)
         pipeline = (member.alignment_pipeline or "").strip().lower()
         if not pipeline:
-            reason = Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="unknown")
+            reason = Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail="unknown", patient_id=member.patient_id)
             problems.append((reason, f"case {case_id}, patient {member.patient_id}: {reason.text}"))
         elif not pipeline.startswith(SUPPORTED_CALLER_PREFIX):
-            reason = Reason(code=ReasonCode.UNSUPPORTED_CALLER, detail=member.alignment_pipeline)
+            reason = Reason(
+                code=ReasonCode.UNSUPPORTED_CALLER, detail=member.alignment_pipeline, patient_id=member.patient_id
+            )
             problems.append((reason, f"case {case_id}, patient {member.patient_id}: {reason.text}"))
 
     probands = [m for m in members if m.role == "proband"]

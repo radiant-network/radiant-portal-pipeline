@@ -1,27 +1,30 @@
-"""Find the germline cases waiting for CNV post-processing, run the pipeline, register the result.
+"""Run the CNV post-processing pipeline over the named germline cases, register the result.
 
 `radiant-nextflow-cnv-postprocessing` runs the Ferlab cnv-post-processing pipeline. This DAG
 closes the two manual ends around it, the way `nextflow_snv_postprocessing_cases` does for SNV
-annotation: it discovers which cases have a germline CNV VCF but no CNV annotation, builds the
-samplesheet, PED files and phenopackets from the clinical model, triggers that DAG, then
-registers what the run published back onto the cases as a `radiant_germline_cnv_annotation`
-task, with the Exomiser reports (data type `exomiser_cnv`) among its outputs.
+annotation: it builds the samplesheet, PED files and phenopackets of the named cases from the
+clinical model, triggers that DAG, then registers what the run published back onto the cases as
+a `radiant_germline_cnv_annotation` task, with the Exomiser reports (data type `exomiser_cnv`)
+among its outputs.
 
-    discover_scope -> select_cases -> fetch_phenotypes -> resolve_cases -> generate_inputs
+    has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_cases
                                                                                   |
-                                                                            run_pipeline
+                                                       generate_inputs -> run_pipeline
                                                                                   |
               register_tasks (one per tenant) <- collect_outputs <----------------+
 
-The eligibility rule lives in `sql/clinical/pending_cnv_annotation_select.sql`, and its two
-selections are the annotation query's: one `completed` experiment per (case, member), the
-newest, and one alignment per experiment, the newest. The trigger document is the alignment's
-`gcnv`/`vcf`; its CRAM rides along and is passed to the pipeline's depth-based genotype
-refinement only when every member of the family has one with its index at `<cram>.crai`.
+It decides nothing. `radiant-case-scheduler` decides which cases run (`decide_cases`, on
+`sql/clinical/germline_cnv_facts_select.sql`) and passes them as `case_ids`; an operator can
+name cases to rerun. `select_cases` checks them again, leniently: a case that cannot be run is
+excluded with a reason, and a member other than the proband with no CNV VCF yet is left out of
+the family. The trigger document is the current alignment's `gcnv`/`vcf`; its CRAM rides along
+and is passed to the depth-based genotype refinement only when every member of the family has
+one with its index at `<cram>.crai`.
 
 Full analysis: `design/cnv-post-processing-nextflow-integration.md`.
 """
 
+import datetime
 import logging
 import os
 from typing import Any
@@ -48,6 +51,13 @@ OUTPUT_POLL_INTERVAL_SECONDS = int(os.getenv("NEXTFLOW_OUTPUT_POLL_INTERVAL", "3
 
 PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-cnv-postprocessing"
 
+# `select_cases` XCom: what it selected and left out, read back by `journal_outcomes`.
+SELECTION_KEY = "selection"
+
+# The journal write is idempotent (an unchanged marker is not written twice), so a retry is safe.
+JOURNAL_RETRIES = 2
+JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
+
 # Under the shared roots, apart from post-processing (`snv-runs/`, `snv/`)
 # and quality control (`qc-runs/`, `qc/`).
 INPUTS_SUBDIR = "cnv-runs"
@@ -55,17 +65,6 @@ OUTPUTS_SUBDIR = "cnv"
 
 
 dag_params = {
-    "task_ids": Param(
-        [],
-        type="array",
-        items={"type": "integer"},
-        title="Alignment task ids",
-        description=(
-            "`alignment_germline_variant_calling` task ids, for a targeted rerun. Leave empty -- "
-            "as a scheduled run does -- to process every case that has a germline CNV VCF but no "
-            "CNV annotation. A task shared by several cases runs all of them."
-        ),
-    ),
     "excluded_tenants": Param(
         excluded_tenants_from_env(),
         type="array",
@@ -75,6 +74,16 @@ dag_params = {
             "Tenants left out of case processing: their cases are excluded before the pipeline "
             f"runs, as `tenant_excluded`. Defaults to ${EXCLUDED_TENANTS_ENV}; empty excludes none. "
             "The case scheduler passes its own."
+        ),
+    ),
+    "case_ids": Param(
+        [],
+        type="array",
+        items={"type": "integer"},
+        title="Case ids",
+        description=(
+            "The cases to run: `radiant-case-scheduler` passes the ones it decided `run` for, and an operator can "
+            "name cases to rerun. Empty runs nothing."
         ),
     ),
     "dry_run": Param(
@@ -87,6 +96,14 @@ dag_params = {
         ),
     ),
 }
+
+
+def _selection_payload(selection) -> dict:
+    return {
+        "case_ids": selection.case_ids,
+        "members": [m.model_dump() for m in selection.members],
+        "excluded": [e.model_dump(mode="json") for e in selection.excluded],
+    }
 
 
 def _workspace_env() -> dict[str, str]:
@@ -121,14 +138,17 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_cnv_postprocessing_cases():
-    discover_scope = RadiantStarRocksOperator(
-        task_id="discover_scope",
-        task_display_name="[StarRocks] Discover cases pending CNV annotation",
-        sql="./sql/clinical/pending_cnv_annotation_select.sql",
-        parameters={
-            "task_ids": "{{ params.task_ids }}",
-            "excluded_tenants": "{{ params.excluded_tenants }}",
-        },
+    @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is named")
+    def has_cases() -> bool:
+        from airflow.sdk import get_current_context
+
+        return bool(get_current_context()["params"]["case_ids"])
+
+    fetch_case_members = RadiantStarRocksOperator(
+        task_id="fetch_case_members",
+        task_display_name="[StarRocks] Fetch the members of the named cases",
+        sql="./sql/clinical/germline_cnv_case_members_select.sql",
+        parameters={"case_ids": "{{ params.case_ids }}"},
         output_processor=rows_output_processor,
         do_xcom_push=True,
     )
@@ -139,18 +159,14 @@ def nextflow_cnv_postprocessing_cases():
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.cnv.resolve import select_cases as select
+        from radiant.tasks.nextflow.cnv.resolve import select_run_cases
 
         context = get_current_context()
-        requested = list(context["params"]["task_ids"] or [])
-        # Named tasks are an operator's request, so a case that cannot be resolved is an
-        # error. A discovered scope is the job's own doing, so it is a line in a report.
-        selection = select(member_rows, requested, strict=bool(requested))
-
+        selection = select_run_cases(member_rows, context["params"]["excluded_tenants"])
+        # Kept apart from the return value, so the outcomes are journaled even when nothing runs.
+        context["ti"].xcom_push(key=SELECTION_KEY, value=_selection_payload(selection))
         if not selection.case_ids:
-            raise AirflowSkipException(
-                f"nothing to run: {len(selection.excluded)} candidate case(s) discovered, all excluded"
-            )
+            raise AirflowSkipException(f"nothing to run: {len(selection.excluded)} named case(s), all excluded")
 
         LOGGER.info(
             "%d case(s) selected across tenant(s) %s: %s",
@@ -158,13 +174,10 @@ def nextflow_cnv_postprocessing_cases():
             ", ".join(selection.tenants),
             ", ".join(str(case_id) for case_id in selection.case_ids),
         )
-        return {
-            "case_ids": selection.case_ids,
-            "members": [m.model_dump() for m in selection.members],
-            "excluded": [e.model_dump() for e in selection.excluded],
-        }
+        return _selection_payload(selection)
 
-    selection = select_cases(discover_scope.output)
+    has_cases() >> fetch_case_members
+    selection = select_cases(fetch_case_members.output)
 
     fetch_phenotypes = RadiantStarRocksOperator(
         task_id="fetch_phenotypes",
@@ -310,7 +323,31 @@ def nextflow_cnv_postprocessing_cases():
         if not parsed:
             raise AirflowFailException(f"no resolved case belongs to tenant '{tenant}'")
         body = build_patch_body(parsed, collected)
-        return register_case_batch(tenant, body, context["params"]["dry_run"])
+        return {"tenant": tenant, "report": register_case_batch(tenant, body, context["params"]["dry_run"])}
+
+    # Retried: the run's state ignores this teardown, so a failed write is only seen on its own task.
+    @task(
+        task_id="journal_outcomes",
+        task_display_name="[PyOp] Journal what the run did with its cases",
+        retries=JOURNAL_RETRIES,
+        retry_delay=JOURNAL_RETRY_DELAY,
+    )
+    def journal_outcomes() -> int:
+        """`succeeded` for the cases of the tenants registered, `failed` for the others and the cases left out."""
+        from airflow.exceptions import AirflowSkipException
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.journal import Pipeline, record
+        from radiant.tasks.nextflow.resolve import outcome_entries
+
+        context = get_current_context()
+        if context["params"]["dry_run"]:
+            raise AirflowSkipException("dry run: nothing registered, nothing to journal")
+        selection = context["ti"].xcom_pull(task_ids="select_cases", key=SELECTION_KEY) or {}
+        registered = {r["tenant"] for r in (context["ti"].xcom_pull(task_ids="register_tasks") or []) if r}
+        written = record(outcome_entries(selection, registered, Pipeline.GERMLINE_CNV), context["run_id"])
+        LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
+        return len(written)
 
     families = resolve_cases(selection, fetch_phenotypes.output)
     paths = generate_inputs(families)
@@ -333,7 +370,10 @@ def nextflow_cnv_postprocessing_cases():
     )
 
     collected = collect_outputs(families, paths)
-    register_tasks.partial(families=families, collected=collected).expand(tenant=list_tenants(families))
+    registered = register_tasks.partial(families=families, collected=collected).expand(tenant=list_tenants(families))
+    # A teardown: it runs whatever happened before it, and the run's state ignores it, so a failed pipeline or
+    # registration still fails the run.
+    [selection, registered] >> journal_outcomes().as_teardown()
 
     selection >> fetch_phenotypes
     paths >> run_pipeline >> collected
