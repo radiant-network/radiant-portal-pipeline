@@ -1,3 +1,4 @@
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -5,6 +6,8 @@ from enum import Enum
 from pydantic import BaseModel
 
 DT_EPOCH = datetime(year=1970, month=1, day=1)
+
+logger = logging.getLogger("airflow.task")
 
 
 class SequencingDeltaCommon(BaseModel):
@@ -95,74 +98,65 @@ class SequencingExperimentPartitionAssigner:
 
     def __init__(self):
         self.state = {k: PartitionCounter(id=self.SEQUENCING_TYPES[k].mask, count=0) for k in self.SEQUENCING_TYPES}
-        self.task_patient_mapping = {
-            k: {"patient_id": {}, "seq_id": {}, "case_id": {}, "family_id": {}} for k in self.SEQUENCING_TYPES
-        }
 
-    def _compute_partition(
-        self,
-        experimental_strategy: str,
-        patient_id: int,
-        seq_id: int,
-        case_id: int,
-        family_id: int | None = None,
-        patient_part: int | None = None,
-        seq_part: int | None = None,
-        case_part: int | None = None,
-        family_part: int | None = None,
-    ) -> int:
+    @staticmethod
+    def _linked_groups(inputs: list[SequencingDeltaInput]) -> list[list[int]]:
         """
-        Computes the partition based on case, sequencing experiments, patients and family parts.
+        Groups the indexes of the rows that share a patient, seq, case or family id of the same experimental strategy,
+        directly or through other rows. The groups keep the order of their first row.
         """
+        parent = list(range(len(inputs)))
 
-        # Creates a set of all provided partition information to check for consistency
-        # We should have only one unique partition if any of the partition information is provided
-        parts = {
-            patient_part,
-            seq_part,
-            case_part,
-            family_part,
-            self.task_patient_mapping[experimental_strategy]["patient_id"].get(patient_id),
-            self.task_patient_mapping[experimental_strategy]["seq_id"].get(seq_id),
-            self.task_patient_mapping[experimental_strategy]["case_id"].get(case_id),
-        }
-        if family_id is not None:
-            parts.add(self.task_patient_mapping[experimental_strategy]["family_id"].get(family_id))
-        parts.discard(None)
+        def find(i: int) -> int:
+            while parent[i] != i:
+                parent[i] = parent[parent[i]]
+                i = parent[i]
+            return i
+
+        first_row_of_id = {}
+        for i, item in enumerate(inputs):
+            ids = [("patient_id", item.patient_id), ("seq_id", item.seq_id), ("case_id", item.case_id)]
+            if item.family_id is not None:
+                ids.append(("family_id", item.family_id))
+            for id_ in ids:
+                j = first_row_of_id.setdefault((item.experimental_strategy, *id_), i)
+                parent[find(i)] = find(j)
+
+        groups: dict[int, list[int]] = {}
+        for i in range(len(inputs)):
+            groups.setdefault(find(i), []).append(i)
+        return list(groups.values())
+
+    def _compute_partition(self, group: list[SequencingDeltaInput]) -> int:
+        """
+        Computes the partition of a group of linked rows: the highest part they already have in staging, else the
+        current part, rolled over before the group so that a group is never split.
+        """
+        strategy = group[0].experimental_strategy
+        state = self.state[strategy]
+
+        parts = {p for i in group for p in (i.patient_part, i.seq_part, i.case_part, i.family_part) if p is not None}
+        if len(parts) > 1:
+            # A patient then has experiments in two parts: the germline SNV frequencies count them twice.
+            logger.warning(
+                f"Linked rows are already in parts {sorted(parts)}, the group goes to part {max(parts)}, for "
+                f"patient_ids {sorted({i.patient_id for i in group})}, "
+                f"seq_ids {sorted({i.seq_id for i in group})}, "
+                f"case_ids {sorted({i.case_id for i in group})}, "
+                f"family_ids {sorted({i.family_id for i in group if i.family_id is not None})}"
+            )
 
         if parts:
-            if len(parts) > 1:
-                raise ValueError(
-                    "Inconsistent partitioning information provided for "
-                    f"patient_id/part [{patient_id}/{patient_part}], "
-                    f"seq_id/part [{seq_id}/{seq_part}], "
-                    f"case_id/part [{case_id}/{case_part}], "
-                    f"family_id/part [{family_id}/{family_part}]"
-                )
-            _p = parts.pop()
+            part = max(parts)
+            if part == state.id:
+                state.count += len(group)
+            return part
 
-            # If were still within the same partition, we need to increment the count to reflect the new assignment
-            if _p == self.state[experimental_strategy].id:
-                self.state[experimental_strategy].count += 1
-
-            return _p
-
-        # Check if limit was reached before assigning the partition
-        if self.state[experimental_strategy].count >= self.SEQUENCING_TYPES[experimental_strategy].limit:
-            self.state[experimental_strategy].id += 1
-            self.state[experimental_strategy].count = 0
-
-        assigned_part = self.state[experimental_strategy].id
-        self.state[experimental_strategy].count += 1
-
-        self.task_patient_mapping[experimental_strategy]["patient_id"][patient_id] = assigned_part
-        self.task_patient_mapping[experimental_strategy]["seq_id"][seq_id] = assigned_part
-        self.task_patient_mapping[experimental_strategy]["case_id"][case_id] = assigned_part
-
-        if family_id is not None:
-            self.task_patient_mapping[experimental_strategy]["family_id"][family_id] = assigned_part
-
-        return assigned_part
+        if state.count >= self.SEQUENCING_TYPES[strategy].limit:
+            state.id += 1
+            state.count = 0
+        state.count += len(group)
+        return state.id
 
     def _bootstrap_state(self, inputs: list[SequencingDeltaInput]) -> None:
         """
@@ -205,30 +199,16 @@ class SequencingExperimentPartitionAssigner:
 
         self._bootstrap_state(inputs)
 
-        partitioned_items = []
-        for _item in inputs:
-            _item.experimental_strategy = _item.experimental_strategy.lower()
+        parts: list[int | None] = [None] * len(inputs)
+        for group in self._linked_groups(inputs):
+            part = self._compute_partition([inputs[i] for i in group])
+            for i in group:
+                parts[i] = part
 
-            _output = SequencingDeltaOutput(
-                **vars(_item)
-                | {
-                    "part": self._compute_partition(
-                        experimental_strategy=_item.experimental_strategy,
-                        patient_id=_item.patient_id,
-                        seq_id=_item.seq_id,
-                        case_id=_item.case_id,
-                        family_id=_item.family_id,
-                        patient_part=_item.patient_part,
-                        seq_part=_item.seq_part,
-                        case_part=_item.case_part,
-                        family_part=_item.family_part,
-                    ),
-                    "ingested_at": DT_EPOCH,
-                }
-            )
-            partitioned_items.append(_output)
-
-        return partitioned_items
+        return [
+            SequencingDeltaOutput(**vars(_item) | {"part": part, "ingested_at": DT_EPOCH})
+            for _item, part in zip(inputs, parts, strict=True)
+        ]
 
 
 class SequencingExperimentPriorityAssigner:
