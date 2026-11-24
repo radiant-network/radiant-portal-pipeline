@@ -1,0 +1,25 @@
+[package]
+name = "radiant_vcf"
+version = "0.1.0"
+edition = "2024"
+description = "Germline SNV extraction of the Radiant ETL, in Rust (POC)"
+publish = false
+
+[lib]
+name = "radiant_vcf"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Arrow -> pyarrow through the C Data Interface. arrow-pyarrow 60 pins pyo3 0.29.
+arrow = { version = "60.1.0", default-features = false, features = ["pyarrow", "ffi"] }
+hex = "0.4.3"
+parquet = { version = "60.1.0", default-features = false, features = ["arrow", "zstd", "snap"] }
+# `extension-module` comes from maturin (pyproject.toml), so that `cargo test` can link.
+pyo3 = { version = "0.29", features = ["abi3-py312"] }
+# Bundled htslib, the C library cyvcf2 wraps: same VCF decoding. No CRAM/remote features needed.
+rust-htslib = { version = "1.0.2", default-features = false }
+sha2 = "0.11.1"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1

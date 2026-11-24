@@ -1,3 +1,28 @@
+# Rust germline SNV engine (POC, rust/radiant_vcf/README.md): an abi3 wheel for linux/amd64.
+# The stage runs on the build host's platform and cross-compiles, so an arm64 host (minikube on Apple silicon)
+# does not compile Rust and htslib under amd64 emulation.
+FROM --platform=$BUILDPLATFORM python:3.12-slim AS rust-builder
+
+ARG RUST_TOOLCHAIN=1.91.0
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates make gcc libc6-dev libclang-dev gcc-x86-64-linux-gnu libc6-dev-amd64-cross \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain $RUST_TOOLCHAIN \
+    && rustup target add x86_64-unknown-linux-gnu \
+    && pip install --no-cache-dir "maturin>=1.7,<2"
+
+# The C parts (htslib, zlib) and the final link use the x86_64 cross compiler. A cross build makes hts-sys
+# generate its bindings (bindgen, libclang) against the x86_64 headers.
+ENV CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc \
+    AR_x86_64_unknown_linux_gnu=x86_64-linux-gnu-ar \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \
+    BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_gnu="--sysroot=/usr/x86_64-linux-gnu -I/usr/x86_64-linux-gnu/include"
+
+COPY rust/radiant_vcf /build/radiant_vcf
+WORKDIR /build/radiant_vcf
+RUN maturin build --release --target x86_64-unknown-linux-gnu --compatibility off -o /wheels
+
 FROM --platform=linux/amd64 python:3.12-slim
 
 USER root
@@ -12,6 +37,13 @@ RUN apt-get update \
 
 COPY requirements.txt /opt/radiant/requirements.txt
 RUN pip install -r /opt/radiant/requirements.txt
+
+COPY --from=rust-builder /wheels /tmp/wheels
+RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
+
+# Germline SNV engine: `python` (default) or `rust`. A pod gets this value unless the operator sets the variable.
+ARG RADIANT_SNV_ENGINE=python
+ENV RADIANT_SNV_ENGINE=$RADIANT_SNV_ENGINE
 
 # Setup Radiant code
 COPY radiant /opt/radiant/radiant

@@ -1,0 +1,6 @@
+# No image copies these. The Rust build output (rust/*/target) alone is about 2 GB.
+.git
+.venv
+.claude
+**/target
+**/__pycache__
