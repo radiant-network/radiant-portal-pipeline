@@ -4,6 +4,7 @@ from radiant.tasks.decision import Decision, Reason, ReasonCode
 from radiant.tasks.nextflow.resolve import (
     CaseResolutionError,
     decide_cases,
+    outcome_entries,
     resolve_families,
     select_cases,
     select_run_cases,
@@ -207,16 +208,30 @@ def _decided(rows, excluded_tenants=()):
 
 
 PENDING_SEQUENCING = {"seq_id": None, "aliquot": None, "alignment_task_id": None, "gvcf_matches": 0}
+# A member whose current experiment is annotated, so the case was too.
+DONE = {"annotated": True, "case_annotated": True}
+
+
+def _first_run(*patient_ids):
+    return tuple(Reason(code=ReasonCode.FIRST_RUN, patient_id=p) for p in patient_ids)
+
+
+def _new_sequencing(*patient_ids):
+    return tuple(Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=p) for p in patient_ids)
+
+
 NO_GVCF = {"alignment_task_id": None, "gvcf_url": None, "gvcf_matches": 0}
 
 
-def test_a_ready_trio_runs_without_a_reason(trio_rows):
-    assert _decided([_facts(r) for r in trio_rows]) == {1072: (Decision.RUN, ())}
+def test_a_first_run_names_every_member_it_runs_for(trio_rows):
+    assert _decided([_facts(r) for r in trio_rows]) == {1072: (Decision.RUN, _first_run(100, 101, 102))}
 
 
 def test_a_parent_not_sequenced_yet_does_not_hold_the_proband_back(trio_rows):
     rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r) for r in trio_rows]
-    assert _decided(rows) == {1072: (Decision.RUN, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))}
+    assert _decided(rows) == {
+        1072: (Decision.RUN, (*_first_run(100, 102), Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101)))
+    }
 
 
 def test_a_parent_not_aligned_yet_does_not_hold_the_proband_back(trio_rows):
@@ -230,9 +245,37 @@ def test_after_the_partial_run_the_case_waits_for_the_absent_parent(trio_rows):
     assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))}
 
 
-def test_the_case_runs_again_once_the_parent_arrives(trio_rows):
-    rows = [_facts(r) if r["role"] == "father" else _facts(r, annotated=True) for r in trio_rows]
-    assert _decided(rows) == {1072: (Decision.RUN, ())}
+def test_the_case_runs_again_once_the_parent_arrives_and_says_for_whom(trio_rows):
+    rows = [_facts(r, case_annotated=True) if r["role"] == "father" else _facts(r, **DONE) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.RUN, _new_sequencing(101))}
+
+
+def test_a_member_sequenced_again_runs_the_case_again_with_its_reason(trio_rows):
+    """Its new experiment becomes the current one, not annotated for the case."""
+    rows = [
+        _facts(r, seq_id=599, case_annotated=True) if r["role"] == "proband" else _facts(r, **DONE) for r in trio_rows
+    ]
+    assert _decided(rows) == {1072: (Decision.RUN, _new_sequencing(100))}
+
+
+def test_a_singleton_sequenced_again_is_not_a_first_run(singleton_rows):
+    """No other member is annotated: only the case tells a later run from the first one."""
+    rows = [_facts(r, seq_id=699, case_annotated=True) for r in singleton_rows]
+    assert _decided(rows) == {8: (Decision.RUN, _new_sequencing(200))}
+
+
+def test_a_new_member_and_one_still_missing_are_both_named(trio_rows):
+    rows = [
+        _facts(r, case_annotated=True)
+        if r["role"] == "father"
+        else _facts(r, **PENDING_SEQUENCING, case_annotated=True)
+        if r["role"] == "mother"
+        else _facts(r, **DONE)
+        for r in trio_rows
+    ]
+    assert _decided(rows) == {
+        1072: (Decision.RUN, (*_new_sequencing(101), Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=102)))
+    }
 
 
 def test_an_absent_proband_still_makes_the_case_wait(trio_rows):
@@ -322,6 +365,7 @@ def test_the_facts_run_exactly_the_cases_the_pending_query_selects():
 def test_two_members_waiting_are_two_reasons(trio_rows):
     rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] != "proband" else _facts(r) for r in trio_rows]
     assert set(_decided(rows)[1072][1]) == {
+        *_first_run(100),
         Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),
         Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=102),
     }
@@ -365,3 +409,22 @@ def test_the_child_excludes_a_case_whose_proband_has_no_gvcf(trio_rows):
 def test_the_child_excludes_a_case_with_two_gvcfs_for_a_member(trio_rows):
     rows = [_member(r, gvcf_matches=2) if r["role"] == "mother" else _member(r) for r in trio_rows]
     assert select_run_cases(rows, []).case_ids == []
+
+
+def test_outcomes_follow_the_registration_of_each_tenant():
+    selection = {
+        "case_ids": [1, 2],
+        "members": [{"case_id": 1, "tenant_code": "a"}, {"case_id": 2, "tenant_code": "b"}],
+        "excluded": [
+            {"case_id": 3, "reason": {"code": "ambiguous_input", "detail": "gvcf", "patient_id": 7}, "message": "x"}
+        ],
+    }
+    assert [(e.case_id, e.decision, e.reasons) for e in outcome_entries(selection, {"a"})] == [
+        (1, Decision.SUCCEEDED, ()),
+        (2, Decision.FAILED, ()),
+        (3, Decision.FAILED, (Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="gvcf", patient_id=7),)),
+    ]
+
+
+def test_no_selection_journals_nothing():
+    assert outcome_entries({}, set()) == []

@@ -57,6 +57,8 @@ class CaseMember(BaseModel):
     current_alignment_task_id: int | None = None
     # This member's current experiment already has an annotation for the case (facts query only).
     annotated: bool = False
+    # The case already has an annotation, whatever the experiment (facts query only).
+    case_annotated: bool = False
     # Set by the query when this member is why the case cannot run. None means usable.
     exclusion_reason: str | None = None
 

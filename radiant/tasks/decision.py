@@ -31,6 +31,14 @@ class ReasonCode(StrEnum):
         obj.label = label
         return obj
 
+    # Who a run is for: each member present not annotated yet, on the case's first run or on a later one.
+    FIRST_RUN = "first_run", Decision.RUN, "the case has never been annotated by this pipeline"
+    NEW_SEQUENCING = (
+        "new_sequencing",
+        Decision.RUN,
+        "the case was annotated before, but not this member's current sequencing experiment: the member arrived, "
+        "or was sequenced again",
+    )
     PENDING_SEQUENCING = "pending_sequencing", Decision.WAIT, "has no completed sequencing experiment yet"
     PENDING_ALIGNMENT = (
         "pending_alignment",
@@ -76,6 +84,8 @@ class ReasonCode(StrEnum):
 # The codes about one member of the case: their reason names that member.
 MEMBER_CODES = frozenset(
     {
+        ReasonCode.FIRST_RUN,
+        ReasonCode.NEW_SEQUENCING,
         ReasonCode.PENDING_SEQUENCING,
         ReasonCode.PENDING_ALIGNMENT,
         ReasonCode.MISSING_INPUT,
