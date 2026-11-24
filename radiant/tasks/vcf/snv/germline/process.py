@@ -18,7 +18,7 @@ from radiant.tasks.vcf.snv.consequence import log_invalid_cds, log_source_counts
 from radiant.tasks.vcf.snv.germline.comphet import process_comphet
 from radiant.tasks.vcf.snv.germline.inheritance import slivar_inheritance_methods
 from radiant.tasks.vcf.snv.germline.occurrence import process_occurrence
-from radiant.tasks.vcf.snv.germline.rust_engine import ENGINE_RUST, process_task_rust, snv_engine
+from radiant.tasks.vcf.snv.rust_engine import ENGINE_RUST, process_task_rust, snv_engine
 from radiant.tasks.vcf.snv.variant import process_variant
 from radiant.tasks.vcf.vcf_utils import InfoKeys
 

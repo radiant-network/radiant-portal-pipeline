@@ -31,16 +31,18 @@ test-static:
 
 test: test-static test-unit test-integration
 
-# Rust germline SNV engine (POC, rust/radiant_vcf/README.md). Needs cargo and maturin (pip install maturin).
+# Rust SNV engine, germline and somatic (POC, rust/radiant_vcf/README.md). Needs cargo and maturin (pip install maturin).
 rust-develop:
 	maturin develop --release -m rust/radiant_vcf/Cargo.toml
 
 rust-test: rust-develop
 	cargo test --manifest-path rust/radiant_vcf/Cargo.toml
-	pytest tests/unit/vcf/germline/test_rust_engine_parity.py tests/unit/iceberg/test_table_accumulator.py
+	pytest tests/unit/vcf/test_rust_engine.py tests/unit/vcf/germline/test_rust_engine_parity.py \
+		tests/unit/vcf/somatic/test_rust_engine_parity.py
 
 rust-bench: rust-develop
-	python rust/radiant_vcf/bench.py --records 100000
+	python rust/radiant_vcf/bench.py --flavour germline --records 100000
+	python rust/radiant_vcf/bench.py --flavour somatic --records 200000
 
 format:
 	ruff format radiant/ tests/ scripts/ecs/ scripts/upgrade_guide/

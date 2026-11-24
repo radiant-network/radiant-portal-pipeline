@@ -1,4 +1,4 @@
-# Rust germline SNV engine (POC, rust/radiant_vcf/README.md): an abi3 wheel for linux/amd64.
+# Rust SNV engine, germline and somatic (POC, rust/radiant_vcf/README.md): an abi3 wheel for linux/amd64.
 # The stage runs on the build host's platform and cross-compiles, so an arm64 host (minikube on Apple silicon)
 # does not compile Rust and htslib under amd64 emulation.
 FROM --platform=$BUILDPLATFORM python:3.12-slim AS rust-builder
@@ -41,7 +41,7 @@ RUN pip install -r /opt/radiant/requirements.txt
 COPY --from=rust-builder /wheels /tmp/wheels
 RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
 
-# Germline SNV engine: `python` (default) or `rust`. A pod gets this value unless the operator sets the variable.
+# SNV engine (germline and somatic): `python` (default) or `rust`. A pod gets this value unless the operator sets it.
 ARG RADIANT_SNV_ENGINE=python
 ENV RADIANT_SNV_ENGINE=$RADIANT_SNV_ENGINE
 

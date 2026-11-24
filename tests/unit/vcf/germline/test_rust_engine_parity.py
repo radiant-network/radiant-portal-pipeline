@@ -22,10 +22,14 @@ radiant_vcf = pytest.importorskip("radiant_vcf")
 
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator  # noqa: E402
 from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask  # noqa: E402
-from radiant.tasks.vcf.snv import consequence, variant  # noqa: E402
-from radiant.tasks.vcf.snv.germline import comphet, occurrence, rust_engine  # noqa: E402
+from radiant.tasks.vcf.snv import (  # noqa: E402
+    consequence,
+    rust_engine,  # noqa: E402
+    variant,
+)
+from radiant.tasks.vcf.snv.germline import comphet, occurrence  # noqa: E402
 from radiant.tasks.vcf.snv.germline import process as germline_process  # noqa: E402
-from radiant.tasks.vcf.snv.germline.rust_engine import ENGINE_ENV  # noqa: E402
+from radiant.tasks.vcf.snv.rust_engine import ENGINE_ENV  # noqa: E402
 
 RESOURCES = Path(__file__).parent.parent.parent.parent / "resources"
 GEN_TABLES = Path(__file__).parents[4] / "rust" / "radiant_vcf" / "gen_tables.py"

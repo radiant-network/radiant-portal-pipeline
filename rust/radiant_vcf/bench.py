@@ -1,31 +1,37 @@
-"""Time the germline SNV extraction of both engines on a synthetic trio built from real VEP --merged records.
+"""Time the SNV extraction of both engines on a synthetic VCF built from real records.
 
-    python rust/radiant_vcf/bench.py [--records 100000] [--engine python|rust|both]
+    python rust/radiant_vcf/bench.py [--flavour germline|somatic] [--records 100000] [--engine python|rust|both]
 
-The records of tests/resources/test_consequence_merged.vcf (a trio with a VEP --merged CSQ) are copied with shifted
-positions until the file holds `--records` records, then bgzipped. Each engine runs `process_task` in its own
-process with a fake catalog. Both write the Parquet files to a local directory (Python: pyarrow with the options of
-`_write_file`; Rust: the parquet crate); the S3 upload is left out. Reports wall time, records per second, peak RSS
-and Parquet size.
+germline: the records of tests/resources/test_consequence_merged.vcf (a trio, VEP --merged CSQ). somatic: the records
+of tests/resources/test_somatic_snv.vcf (Mutect2 tumor-normal). They are copied with new positions until the file
+holds `--records` records, then gzipped. Each engine runs `process_task` in its own process with a fake catalog. Both
+write the Parquet files to a local directory (Python: pyarrow with the options of `_write_file`; Rust: the parquet
+crate); the S3 upload is left out. Reports wall time, records per second, peak RSS and Parquet size.
 """
 
 import argparse
 import gzip
+import itertools
 import json
+import os
 import resource
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
-TEMPLATE = ROOT / "tests" / "resources" / "test_consequence_merged.vcf"
+TEMPLATES = {
+    "germline": ROOT / "tests" / "resources" / "test_consequence_merged.vcf",
+    "somatic": ROOT / "tests" / "resources" / "test_somatic_snv.vcf",
+}
 
 
-def build_vcf(path: Path, n_records: int):
+def build_vcf(template: Path, path: Path, n_records: int):
     header, body = [], []
-    for line in TEMPLATE.read_text().splitlines():
+    for line in template.read_text().splitlines():
         (header if line.startswith("#") else body).append(line.split("\t"))
     # The template spans several chromosomes: each copy gets its own positions, 100 bp apart, along each autosome
     # in turn, so they stay sorted and far below the contig length.
@@ -49,29 +55,66 @@ def build_vcf(path: Path, n_records: int):
             copy += 1
 
 
-def run_one(engine: str, vcf: str) -> dict:
-    sys.path.insert(0, str(ROOT))
-    import os
-
-    os.environ["RADIANT_SNV_ENGINE"] = engine
-    from radiant.tasks.iceberg.table_accumulator import TableAccumulator
-    from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
-    from radiant.tasks.vcf.snv import consequence, variant
-    from radiant.tasks.vcf.snv.germline import comphet, occurrence
-    from radiant.tasks.vcf.snv.germline import process as germline_process
-
-    schemas = {
-        "b.germline_snv_occurrence": occurrence.SCHEMA,
-        "b.snv_variant": variant.SCHEMA,
-        "b.snv_consequence": consequence.SCHEMA,
-        "b.germline_snv_comphet": comphet.SCHEMA,
+def experiment(seq_id, aliquot, **extra):
+    return {
+        "seq_id": seq_id,
+        "patient_id": seq_id,
+        "aliquot": aliquot,
+        "tenant_code": "mock",
+        "family_role": "proband",
+        "affected_status": "affected",
+        "sex": "female",
+        "experimental_strategy": "wgs",
+        **extra,
     }
+
+
+def run_one(flavour: str, engine: str, vcf: str) -> dict:
+    sys.path.insert(0, str(ROOT))
+    os.environ["RADIANT_SNV_ENGINE"] = engine
+    import pyarrow.parquet as pq
+    from pyiceberg.io.pyarrow import _get_parquet_writer_kwargs
+
+    from radiant.tasks.iceberg.table_accumulator import TableAccumulator
+    from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask, RadiantSomaticAnnotationTask
+    from radiant.tasks.vcf.snv import consequence, rust_engine, variant
+
+    if flavour == "germline":
+        from radiant.tasks.vcf.snv.germline import comphet, occurrence, process
+
+        schemas = {"b.germline_snv_occurrence": occurrence.SCHEMA, "b.germline_snv_comphet": comphet.SCHEMA}
+        task = RadiantGermlineAnnotationTask(
+            task_id=1,
+            part=1,
+            analysis_type="germline",
+            deleted=False,
+            vcf_filepath=vcf,
+            experiments=[
+                experiment(1, "NA12878", family_role="proband", sex="Male"),
+                experiment(2, "NA12891", family_role="father", sex="Male", affected_status="not_affected"),
+                experiment(3, "NA12892", family_role="mother", sex="Female", affected_status="not_affected"),
+            ],
+        )
+    else:
+        from radiant.tasks.vcf.snv.somatic import occurrence, process
+
+        schemas = {"b.somatic_snv_occurrence": occurrence.SCHEMA}
+        task = RadiantSomaticAnnotationTask(
+            task_id=1,
+            part=1,
+            analysis_type="somatic",
+            deleted=False,
+            vcf_filepath=vcf,
+            experiments=[
+                experiment(1, "TCR002361_SRX1091647-T", histology_type="tumoral"),
+                experiment(2, "TCR002361_SRX1091646-N", histology_type="normal"),
+            ],
+        )
+    schemas |= {"b.snv_variant": variant.SCHEMA, "b.snv_consequence": consequence.SCHEMA}
     rows = dict.fromkeys(schemas, 0)
 
     class Table:
         def __init__(self, name):
-            from types import SimpleNamespace
-
             self.n, self.catalog = name, None
             self.metadata = SimpleNamespace(properties={})
 
@@ -84,13 +127,6 @@ def run_one(engine: str, vcf: str) -> dict:
     class Catalog:
         def load_table(self, name):
             return Table(name)
-
-    import itertools
-
-    import pyarrow.parquet as pq
-    from pyiceberg.io.pyarrow import _get_parquet_writer_kwargs
-
-    from radiant.tasks.vcf.snv.germline import rust_engine
 
     out_dir = tempfile.mkdtemp(prefix="bench-parquet-")
     counter = itertools.count()
@@ -114,33 +150,11 @@ def run_one(engine: str, vcf: str) -> dict:
         bytes_written[0] += sum(b for _, _, b in local_files)
         return []
 
-    germline_process.load_catalog = lambda *a, **k: Catalog()
+    process.load_catalog = lambda *a, **k: Catalog()
     TableAccumulator.write_files = write_files
     rust_engine.upload_files = upload_files
-    samples = ["NA12878", "NA12891", "NA12892"]
-    roles = [("proband", "Male", "affected"), ("father", "Male", "not_affected"), ("mother", "Female", "not_affected")]
-    task = RadiantGermlineAnnotationTask(
-        task_id=1,
-        part=1,
-        analysis_type="germline",
-        deleted=False,
-        vcf_filepath=vcf,
-        experiments=[
-            {
-                "seq_id": i + 1,
-                "patient_id": i + 1,
-                "aliquot": s,
-                "tenant_code": "mock",
-                "family_role": r,
-                "affected_status": a,
-                "sex": sex,
-                "experimental_strategy": "wgs",
-            }
-            for i, (s, (r, sex, a)) in enumerate(zip(samples, roles, strict=True))
-        ],
-    )
     start = time.perf_counter()
-    germline_process.process_task(task, namespace="b", vcf_threads=4)
+    process.process_task(task, namespace="b", vcf_threads=4)
     elapsed = time.perf_counter() - start
     rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     rss_mb = rss / (1024 * 1024) if sys.platform == "darwin" else rss / 1024
@@ -155,21 +169,22 @@ def run_one(engine: str, vcf: str) -> dict:
 
 def main():
     p = argparse.ArgumentParser()
+    p.add_argument("--flavour", choices=list(TEMPLATES), default="germline")
     p.add_argument("--records", type=int, default=100_000)
     p.add_argument("--engine", choices=["python", "rust", "both"], default="both")
-    p.add_argument("--_child", nargs=2, help=argparse.SUPPRESS)
+    p.add_argument("--_child", nargs=3, help=argparse.SUPPRESS)
     args = p.parse_args()
     if args._child:
         print(json.dumps(run_one(*args._child)))
         return
     with tempfile.TemporaryDirectory() as tmp:
         vcf = Path(tmp) / "bench.vcf.gz"
-        build_vcf(vcf, args.records)
+        build_vcf(TEMPLATES[args.flavour], vcf, args.records)
         engines = ["python", "rust"] if args.engine == "both" else [args.engine]
         results = {}
         for engine in engines:
             out = subprocess.run(
-                [sys.executable, __file__, "--_child", engine, str(vcf)], capture_output=True, text=True
+                [sys.executable, __file__, "--_child", args.flavour, engine, str(vcf)], capture_output=True, text=True
             )
             if out.returncode:
                 sys.exit(f"{engine} failed:\n{out.stdout[-3000:]}\n{out.stderr[-3000:]}")

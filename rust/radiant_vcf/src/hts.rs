@@ -68,6 +68,61 @@ impl I32Buf {
     }
 }
 
+/// `I32Buf` for Float FORMAT fields (`bcf_get_format_float`). Missing and padding values keep htslib's NaN bit
+/// patterns, as cyvcf2's `format()` returns them.
+pub struct F32Buf {
+    ptr: *mut f32,
+    cap: c_int,
+}
+
+impl F32Buf {
+    pub fn new() -> Self {
+        Self {
+            ptr: ptr::null_mut(),
+            cap: 0,
+        }
+    }
+
+    /// # Safety
+    /// `hdr` and `rec` must be valid, `rec` unpacked.
+    pub unsafe fn get_format_float(
+        &mut self,
+        hdr: *mut htslib::bcf_hdr_t,
+        rec: *mut htslib::bcf1_t,
+        tag: &CStr,
+    ) -> i32 {
+        let mut p = self.ptr as *mut c_void;
+        let n = unsafe {
+            htslib::bcf_get_format_values(
+                hdr,
+                rec,
+                tag.as_ptr(),
+                &mut p,
+                &mut self.cap,
+                htslib::BCF_HT_REAL as c_int,
+            )
+        };
+        self.ptr = p as *mut f32;
+        n
+    }
+
+    pub fn values(&self, n: i32) -> &[f32] {
+        if n <= 0 || self.ptr.is_null() {
+            &[]
+        } else {
+            unsafe { std::slice::from_raw_parts(self.ptr, n as usize) }
+        }
+    }
+}
+
+impl Drop for F32Buf {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() {
+            unsafe { htslib::free(self.ptr as *mut c_void) };
+        }
+    }
+}
+
 impl Drop for I32Buf {
     fn drop(&mut self) {
         if !self.ptr.is_null() {

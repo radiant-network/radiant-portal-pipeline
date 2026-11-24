@@ -137,6 +137,31 @@ impl ParquetSink {
     }
 }
 
+/// Writes every batch `next` yields to the sink of its table (`tables[i]` for the i-th batch), until `next` gives
+/// None. Returns the files of each sink.
+pub fn drain(
+    sinks: &mut [(String, ParquetSink)],
+    tables: &[&str],
+    mut next: impl FnMut() -> Result<Option<Vec<RecordBatch>>, String>,
+) -> Result<Vec<(String, Vec<WrittenFile>)>, String> {
+    let idx = tables
+        .iter()
+        .map(|t| {
+            sinks
+                .iter()
+                .position(|(k, _)| k == t)
+                .ok_or_else(|| format!("no Parquet sink for table {t}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    while let Some(batches) = next()? {
+        for (i, batch) in idx.iter().zip(batches.iter()) {
+            let (key, sink) = &mut sinks[*i];
+            sink.write(batch).map_err(|e| format!("table {key}: {e}"))?;
+        }
+    }
+    sinks.iter_mut().map(|(k, s)| Ok((k.clone(), s.finish()?))).collect()
+}
+
 /// The batch's columns, picked by name and cast to the types of `schema` (`Utf8` to `LargeUtf8`, `List` to
 /// `LargeList`...). `RecordBatch::try_new` then refuses a null in a required column.
 pub fn conform(batch: &RecordBatch, schema: &SchemaRef) -> Result<RecordBatch, String> {

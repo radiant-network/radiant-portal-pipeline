@@ -1,12 +1,13 @@
-"""Germline SNV extraction through the Rust engine (``rust/radiant_vcf``, POC).
+"""SNV extraction through the Rust engine (``rust/radiant_vcf``, POC), germline and somatic.
 
-The Rust extension reads the VCF, builds the rows of the four germline SNV tables and writes them to local Parquet
-files (arrow-rs ``parquet`` crate), with the writer options PyIceberg takes from the table properties. This module
-uploads those files where PyIceberg would have written them and returns the same ``PartitionCommit`` list as the
-Python path, so the Iceberg commit (``add_files``) does not change. Select it with ``RADIANT_SNV_ENGINE=rust``; the
-Python path stays the default.
+The Rust extension reads the VCF, builds the rows of the SNV tables and writes them to local Parquet files (arrow-rs
+``parquet`` crate), with the writer options PyIceberg takes from the table properties. This module uploads those
+files where PyIceberg would have written them and returns the same ``PartitionCommit`` lists as the Python path, so
+the Iceberg commit (``add_files``) does not change. Select it with ``RADIANT_SNV_ENGINE=rust``; the Python path stays
+the default.
 
-Parity with the Python path is checked by ``tests/unit/vcf/germline/test_rust_engine_parity.py``.
+Parity with the Python path is checked by ``tests/unit/vcf/germline/test_rust_engine_parity.py`` and
+``tests/unit/vcf/somatic/test_rust_engine_parity.py``.
 """
 
 import logging
@@ -23,7 +24,7 @@ from pyiceberg.utils.properties import property_as_int
 
 from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator, resolve_parquet_file_size_mb
-from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask
+from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.consequence import log_invalid_cds, log_source_counts
 
 logger = logging.getLogger("airflow.task")
@@ -39,7 +40,7 @@ UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 
 
 def snv_engine() -> str:
-    """The germline SNV engine, from ``RADIANT_SNV_ENGINE`` (default ``python``). Unknown values raise."""
+    """The SNV engine, from ``RADIANT_SNV_ENGINE`` (default ``python``). Unknown values raise."""
     value = (os.getenv(ENGINE_ENV) or ENGINE_PYTHON).strip().lower()
     if value not in (ENGINE_PYTHON, ENGINE_RUST):
         raise ValueError(f"{ENGINE_ENV} must be '{ENGINE_PYTHON}' or '{ENGINE_RUST}', got {value!r}")
@@ -113,8 +114,33 @@ def upload_files(table, partition_filter: dict, local_files: list[tuple[str, int
     return paths
 
 
+def _write_and_upload(reader, task, catalog, tables: dict[str, tuple[str, dict]]) -> dict[str, list[PartitionCommit]]:
+    """Write every table through the reader, upload the files, and return the partitions to commit.
+
+    Args:
+        reader: A configured ``radiant_vcf`` reader.
+        task: The annotation task.
+        catalog: The Iceberg catalog.
+        tables: Table key of the reader -> (Iceberg table name, partition filter).
+    """
+    loaded = {key: catalog.load_table(name) for key, (name, _) in tables.items()}
+    result = {}
+    with tempfile.TemporaryDirectory(prefix=f"snv-{task.task_id}-") as tmp:
+        sinks = {key: sink_config(table, os.path.join(tmp, key), key) for key, table in loaded.items()}
+        logger.info(f"Starting processing vcf for task {task.task_id} with file {task.vcf_filepath} (rust engine)")
+        files = reader.write_parquet(sinks, RUST_BATCH_RECORDS)
+        _log_stats(reader.stats(), task)
+        for key, (name, partition_filter) in tables.items():
+            rows = sum(f[1] for f in files[key])
+            logger.info(f"{name}: {rows} rows in {len(files[key])} Parquet files")
+            paths = upload_files(loaded[key], partition_filter, files[key])
+            result[name] = [PartitionCommit(parquet_files=paths, partition_filter=partition_filter)]
+    logger.info(f"✅ Parquet files created: {task.task_id}, file {task.vcf_filepath} (rust engine)")
+    return result
+
+
 def process_task_rust(task: RadiantGermlineAnnotationTask, catalog, namespace: str, vcf_threads=None) -> dict:
-    """``process_task`` through the Rust engine. Same tables, same partition filters, same return value."""
+    """Germline ``process_task`` through the Rust engine. Same tables, same partition filters, same return value."""
     # Imported here: the extension is only required when the Rust engine is selected.
     import radiant_vcf
 
@@ -135,40 +161,63 @@ def process_task_rust(task: RadiantGermlineAnnotationTask, catalog, namespace: s
         f"Task {task.task_id}: parental origin from {'slivar' if reader.slivar_parental_origin else 'etl'}, "
         f"transmission mode from {'slivar' if reader.slivar_transmission_mode else 'etl'} (rust engine)"
     )
-
-    table_names = {
-        "occurrence": f"{namespace}.germline_snv_occurrence",
-        "variant": f"{namespace}.snv_variant",
-        "consequence": f"{namespace}.snv_consequence",
-        "comphet": f"{namespace}.germline_snv_comphet",
-    }
     occurrence_filter = {"part": task.part, "task_id": task.task_id}
     variant_csq_filter = {"task_id": task.task_id}
-    filters = {
-        "occurrence": occurrence_filter,
-        "variant": variant_csq_filter,
-        "consequence": variant_csq_filter,
-        # Same partition filter as the occurrences: a re-imported task replaces its pairs, even with none.
-        "comphet": occurrence_filter,
-    }
-    tables = {key: catalog.load_table(name) for key, name in table_names.items()}
-
-    result = {}
-    with tempfile.TemporaryDirectory(prefix=f"snv-{task.task_id}-") as tmp:
-        sinks = {key: sink_config(table, os.path.join(tmp, key), key) for key, table in tables.items()}
-        logger.info(f"Starting processing vcf for task {task.task_id} with file {task.vcf_filepath} (rust engine)")
-        files = reader.write_parquet(sinks, RUST_BATCH_RECORDS)
-        _log_stats(reader.stats(), task)
-        for key, name in table_names.items():
-            rows = sum(f[1] for f in files[key])
-            logger.info(f"{name}: {rows} rows in {len(files[key])} Parquet files")
-            paths = upload_files(tables[key], filters[key], files[key])
-            result[name] = [PartitionCommit(parquet_files=paths, partition_filter=filters[key])]
-    logger.info(f"✅ Parquet files created: {task.task_id}, file {task.vcf_filepath} (rust engine)")
-    return result
+    return _write_and_upload(
+        reader,
+        task,
+        catalog,
+        {
+            "occurrence": (f"{namespace}.germline_snv_occurrence", occurrence_filter),
+            "variant": (f"{namespace}.snv_variant", variant_csq_filter),
+            "consequence": (f"{namespace}.snv_consequence", variant_csq_filter),
+            # Same partition filter as the occurrences: a re-imported task replaces its pairs, even with none.
+            "comphet": (f"{namespace}.germline_snv_comphet", occurrence_filter),
+        },
+    )
 
 
-def _log_stats(stats: dict, task: RadiantGermlineAnnotationTask) -> None:
+def process_somatic_task_rust(task: RadiantSomaticAnnotationTask, catalog, namespace: str, vcf_threads=None) -> dict:
+    """Somatic ``process_task`` through the Rust engine. Same checks, tables, partition filters and return value."""
+    import radiant_vcf
+
+    # Imported here: `somatic/process.py` imports this module.
+    from radiant.tasks.vcf.snv.somatic.process import check_samples
+
+    reader = radiant_vcf.SomaticSnvReader(
+        task.vcf_filepath, [e.aliquot for e in task.experiments], task.task_id, task.part, threads=vcf_threads
+    )
+    filtered = check_samples(task, reader.file_samples, reader.samples)
+    tumor = filtered.experiments[filtered.tumor_index]
+    normal = filtered.experiments[filtered.normal_index] if filtered.normal_index is not None else None
+    try:
+        reader.configure(
+            tumor_index=filtered.tumor_index,
+            tumor_seq_id=tumor.seq_id,
+            tenant_code=tumor.tenant_code,
+            normal_index=filtered.normal_index,
+            normal_seq_id=normal.seq_id if normal is not None else None,
+        )
+    except RuntimeError as e:
+        # Same error as the Python path's `parse_csq_header` for a header without a CSQ line.
+        if "KeyError" in str(e):
+            raise KeyError(str(e)) from e
+        raise
+
+    variant_csq_filter = {"task_id": task.task_id}
+    return _write_and_upload(
+        reader,
+        task,
+        catalog,
+        {
+            "occurrence": (f"{namespace}.somatic_snv_occurrence", {"part": task.part, "task_id": task.task_id}),
+            "variant": (f"{namespace}.snv_variant", variant_csq_filter),
+            "consequence": (f"{namespace}.snv_consequence", variant_csq_filter),
+        },
+    )
+
+
+def _log_stats(stats: dict, task) -> None:
     counts = stats["counts"]
     source_counts = Counter(stats["source_counts"])
     source_counts[None] = counts["unclassified_sources"]
@@ -179,7 +228,7 @@ def _log_stats(stats: dict, task: RadiantGermlineAnnotationTask) -> None:
     if counts["malformed_comphet"]:
         examples = ", ".join(f"'{entry}' at {locus}" for entry, locus in stats["malformed_comphet_examples"][:5])
         logger.warning(f"Skipped {counts['malformed_comphet']} malformed slivar_comphet entries (e.g. {examples})")
-    logger.info(f"Task {task.task_id}: skipped {counts['skipped_no_alt']} records with no alt call in any sample")
+    logger.info(f"Task {task.task_id}: skipped {counts['skipped_no_alt']} records with no alt call")
     logger.info(
         f"Task {task.task_id}: {counts['records']} records read, {counts['kept']} kept, "
         f"{counts['skipped_multi_allelic']} multi-allelic and {counts['skipped_unsupported_chromosome']} on "

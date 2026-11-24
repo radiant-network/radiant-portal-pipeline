@@ -11,6 +11,16 @@ pub const HET: i32 = 1;
 pub const UNKNOWN: i32 = 2;
 pub const HOM_ALT: i32 = 3;
 
+/// `ZYGOSITY[z]` of `vcf_utils.py`.
+pub fn zygosity_name(z: i32) -> &'static str {
+    match z {
+        HOM_REF => "WT",
+        HET => "HET",
+        HOM_ALT => "HOM",
+        _ => "UNK",
+    }
+}
+
 #[inline]
 fn gt_is_missing(v: i32) -> bool {
     // `bcf_gt_is_missing(val) ((val)>>1 ? 0 : 1)`

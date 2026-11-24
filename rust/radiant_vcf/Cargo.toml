@@ -2,7 +2,7 @@
 name = "radiant_vcf"
 version = "0.1.0"
 edition = "2024"
-description = "Germline SNV extraction of the Radiant ETL, in Rust (POC)"
+description = "Germline and somatic SNV extraction of the Radiant ETL, in Rust (POC)"
 publish = false
 
 [lib]

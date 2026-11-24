@@ -7,7 +7,7 @@ from pyiceberg.partitioning import PartitionField, PartitionSpec
 from pyiceberg.transforms import IdentityTransform
 
 from radiant.tasks.vcf.snv.germline import occurrence
-from radiant.tasks.vcf.snv.germline.rust_engine import ENGINE_ENV, partition_key, sink_config, snv_engine
+from radiant.tasks.vcf.snv.rust_engine import ENGINE_ENV, partition_key, sink_config, snv_engine
 
 
 class Table:
