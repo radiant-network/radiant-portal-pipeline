@@ -33,8 +33,10 @@ ENGINE_ENV = "RADIANT_SNV_ENGINE"
 ENGINE_PYTHON = "python"
 ENGINE_RUST = "rust"
 
-# Records decoded between two writes to the Parquet files.
-RUST_BATCH_RECORDS = 10_000
+# Records decoded between two writes to the Parquet files. Measured on a real VEP --merged WGS trio (6.9 M records,
+# 77.7 M consequences): the reader peaks at 763 MB with 10 000 and 381 MB with 1 000, in the same time (a few
+# records carry thousands of CSQ blocks, so one batch can reach ~100 MB).
+RUST_BATCH_RECORDS = 1_000
 
 UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 
