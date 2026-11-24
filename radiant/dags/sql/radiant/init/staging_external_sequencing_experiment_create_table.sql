@@ -8,7 +8,6 @@ with sequencing_context AS (
     se.experimental_strategy_code,
 	se.tenant_code as tenant_code,
     se.created_on,
-    se.updated_on AS updated_on,
     ANY_VALUE(pc.case_type) as analysis_type,
     CASE
         MIN(
@@ -35,8 +34,7 @@ with sequencing_context AS (
 	    se.sample_id,
 	    se.experimental_strategy_code,
 	    se.tenant_code,
-	    se.created_on,
-	    se.updated_on
+	    se.created_on
 ),
 sequencing_experiments AS (
 	SELECT
@@ -60,7 +58,11 @@ sequencing_experiments AS (
 	                      OR (d.data_type_code = 'exomiser_cnv' AND t.task_type_code = 'radiant_germline_cnv_annotation'))
 	                   THEN d.url ELSE NULL END) AS exomiser_filepath,
         se.created_on AS created_at,
-        IF(tctx.case_id IS NOT NULL, c.updated_on, se.updated_on) AS updated_at
+        -- The task's creation date (RAD-377). A task never changes: only a new task brings data to import, and a new
+        -- task, or a new case of a shared per-experiment task, is a new (case_id, seq_id, task_id) key that the delta
+        -- finds without a date. A patient, case or experiment date would put the rows back in the delta on every
+        -- change, a case status change included, and the import would reload them with no data change.
+        t.created_on AS updated_at
 	FROM
 	    sequencing_context se
 	-- A task naming a case belongs to that case alone, even when its experiment is shared with another
@@ -69,7 +71,6 @@ sequencing_experiments AS (
 	LEFT JOIN {{ mapping.clinical_task_context }} tctx
 	    ON tctx.sequencing_experiment_id = se.id
 	    AND (tctx.case_id IS NULL OR tctx.case_id = se.case_id)
-	LEFT JOIN {{ mapping.clinical_case }} c ON tctx.case_id = c.id
 	LEFT JOIN {{ mapping.clinical_task }} t ON t.id = tctx.task_id
 	LEFT JOIN {{ mapping.clinical_task_has_document }} thd ON thd.task_id = t.id AND thd.type = 'output'
 	LEFT JOIN {{ mapping.clinical_document }} d ON d.id = thd.document_id
@@ -78,11 +79,13 @@ sequencing_experiments AS (
 	-- The SNV Exomiser report (`exomiser`) is an output of the germline SNV annotation task. The CNV annotation task
 	-- has its `gcnv` VCF branch (the family's slivar VCF, in `cnv_vcf_filepath` on every member's row) and its own
 	-- Exomiser report (`exomiser_cnv`, RAD-181). Each report is admitted on its own task type only.
+	-- The somatic CNV VCF (`scnv`) is an output of the tumor-only Dragen run, `alignment_somatic_variant_calling`
+	-- (RAD-272). The same task also publishes the raw `ssnv` VCF, the gVCF and the CRAM: the `scnv` gate keeps them out.
 	WHERE (
 		(d.format_code = 'vcf' AND t.task_type_code IN ('radiant_germline_annotation', 'radiant_somatic_annotation'))
 		OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv' AND t.task_type_code = 'alignment_germline_variant_calling')
 		OR (d.format_code = 'vcf' AND d.data_type_code = 'gcnv' AND t.task_type_code = 'radiant_germline_cnv_annotation')
-		OR (d.format_code = 'vcf' AND d.data_type_code = 'scnv' AND t.task_type_code = 'tumor_only_variant_calling')
+		OR (d.format_code = 'vcf' AND d.data_type_code = 'scnv' AND t.task_type_code = 'alignment_somatic_variant_calling')
 		OR (d.url LIKE '%variants.tsv' AND d.data_type_code = 'exomiser' AND t.task_type_code = 'radiant_germline_annotation')
 		OR (d.url LIKE '%variants.tsv' AND d.data_type_code = 'exomiser_cnv' AND t.task_type_code = 'radiant_germline_cnv_annotation')
 	)
@@ -105,7 +108,7 @@ sequencing_experiments AS (
 		se.tenant_code,
 		se.priority_code,
 		se.created_on,
-		updated_at
+		t.created_on
 ),
 -- Proband source rule: the proband's alignment tasks of each case whose CNV annotation task has a slivar VCF.
 original_alignment AS (
