@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-3
+version: poc-4
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -69,6 +69,10 @@ pm4:
 
 bp7:
   consequences: [synonymous_variant]
+
+# ClinVar review status: every criterion ignores a variant whose best RCV (`clinvar_rcv_summary`) has fewer stars.
+clinvar:
+  min_stars: 1
 
 # ClinVar-based criteria. POC values, to calibrate in the clinical review.
 # PM1 hotspot: P/LP missense ClinVar variants within window_bp of the variant (itself excluded), no B/LB there.

@@ -15,6 +15,12 @@ clinvar AS (
         array_join(mc, ',') LIKE '%missense_variant%' AS missense,
         array_join(mc, ',') REGEXP 'nonsense|frameshift_variant|splice_donor_variant|splice_acceptor_variant' AS lof
     FROM ${shared_db}.clinvar
+    -- Review status: the best star rating among the variant's RCV (one per condition).
+    WHERE locus_id IN (
+        SELECT locus_id FROM ${shared_db}.clinvar_rcv_summary
+        GROUP BY locus_id
+        HAVING max(review_status_stars) >= ${clinvar_min_stars}
+    )
 ),
 clinvar_locus AS (
     SELECT locus_id, max(IF(plp, 1, 0)) = 1 AS plp

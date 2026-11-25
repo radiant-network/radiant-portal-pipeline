@@ -10,6 +10,12 @@ clinvar_locus AS (
         max(IF(arrays_overlap(clin_sig, ['Pathogenic', 'Likely_pathogenic', 'Pathogenic/Likely_pathogenic']), 1, 0)) = 1
             AS plp
     FROM ${shared_db}.clinvar
+    -- Review status: the best star rating among the variant's RCV (one per condition).
+    WHERE locus_id IN (
+        SELECT locus_id FROM ${shared_db}.clinvar_rcv_summary
+        GROUP BY locus_id
+        HAVING max(review_status_stars) >= ${clinvar_min_stars}
+    )
     GROUP BY locus_id
 ),
 sequencing AS (

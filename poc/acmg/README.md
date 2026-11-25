@@ -41,6 +41,8 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | occurrence | PM3 | the proband's comphet partner (`germline__snv__comphet`) P/LP in ClinVar; "trans" in a complete trio | — |
 | occurrence | BP2 | in trans with a ClinVar pathogenic variant in a dominant-only gene (OMIM) | no "in cis" branch |
 
+Every ClinVar read skips variants whose best RCV has fewer than `clinvar.min_stars` stars (`clinvar_rcv_summary`).
+
 Missing: PS1/PM5, PS2, PP4, PS3/BS3, BP3, BP5, PP5/BP6; PS4 from published cases (no literature source). Siblings: not read yet (probands only).
 
 ## Run locally
@@ -65,7 +67,7 @@ named `acmg_poc*`.
 
 | | |
 |---|---|
-| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet` |
+| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet` |
 | Writes | the run's files under `s3://<bucket>/runs/<run id>/` (deleted at the end), the three tables of `--output-db` (created if missing; **refused if it is the shared or the tenant database**) |
 | Never | DROP, TRUNCATE, UPDATE or DELETE on a Radiant table |
 | Prints | counts per class and per criterion, file and row counts, timings |

@@ -60,6 +60,22 @@ FROM (
     ) draws
 ) x;
 
+-- Best RCV stars per ClinVar locus: 20 % none, 55 % one, 20 % two, 5 % three; the hotspots two.
+INSERT INTO ${shared_db}.clinvar_rcv_summary
+SELECT
+    locus_id,
+    CASE
+        WHEN locus_id >= 20000000000 THEN 2
+        WHEN r < 20 THEN 0
+        WHEN r < 75 THEN 1
+        WHEN r < 95 THEN 2
+        ELSE 3
+    END
+FROM (
+    SELECT DISTINCT locus_id, abs(murmur_hash3_32(concat('stars', locus_id))) % 100 AS r
+    FROM ${shared_db}.clinvar
+) c;
+
 -- Comphet pairs: one proband occurrence in 100 gets a partner drawn among the patient loci that are P/LP in ClinVar.
 INSERT INTO ${tenant_db}.germline__snv__comphet
 WITH plp AS (

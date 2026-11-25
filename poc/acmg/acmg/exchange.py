@@ -132,6 +132,7 @@ def scope(args, rs: Ruleset) -> dict:
         "output_db": args.output_db,
         "tenant_code": args.tenant_code,
         "pm1_window_bp": str(rs.pm1.window_bp),
+        "clinvar_min_stars": str(rs.clinvar.min_stars),
         "cases": cases,
         "classified": classified,
         "occurrence_part": part,

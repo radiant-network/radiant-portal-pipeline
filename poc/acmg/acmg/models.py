@@ -171,6 +171,10 @@ class Ps4Rule(Frozen):
     ci_lower_min: Annotated[float, Field(gt=0)]
 
 
+class ClinvarRule(Frozen):
+    min_stars: Annotated[int, Field(ge=0, le=4)]
+
+
 class Pm1Rule(Frozen):
     consequences: list[str]
     window_bp: Annotated[int, Field(gt=0)]
@@ -206,6 +210,7 @@ class Ruleset(Frozen):
     spliceai: SpliceAiThresholds
     pvs1: Pvs1Rule
     bp7: Bp7Rule
+    clinvar: ClinvarRule
     pm1: Pm1Rule
     pp2: Pp2Rule
     bp1: Bp1Rule

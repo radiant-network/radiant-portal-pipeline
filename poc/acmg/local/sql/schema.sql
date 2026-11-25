@@ -111,3 +111,10 @@ CREATE TABLE IF NOT EXISTS ${shared_db}.clinvar (
 )
 DUPLICATE KEY (locus_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10;
+
+CREATE TABLE IF NOT EXISTS ${shared_db}.clinvar_rcv_summary (
+    locus_id BIGINT NOT NULL,
+    review_status_stars INT
+)
+DUPLICATE KEY (locus_id)
+DISTRIBUTED BY HASH(locus_id) BUCKETS 10;
