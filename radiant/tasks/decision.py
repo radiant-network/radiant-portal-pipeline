@@ -31,8 +31,13 @@ class ReasonCode(StrEnum):
         obj.label = label
         return obj
 
-    # Who a run is for: each member present not annotated yet, on the case's first run or on a later one.
-    FIRST_RUN = "first_run", Decision.RUN, "the case has never been annotated by this pipeline"
+    # Who a run is for: each member present not annotated yet, on the case's first run or on a later one. A somatic
+    # calling task names no member.
+    FIRST_RUN = (
+        "first_run",
+        Decision.RUN,
+        "never processed by this pipeline: the case, or this calling task for the case",
+    )
     NEW_SEQUENCING = (
         "new_sequencing",
         Decision.RUN,

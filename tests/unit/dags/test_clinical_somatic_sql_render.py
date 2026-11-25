@@ -1,4 +1,4 @@
-"""Render `pending_somatic_annotation_select.sql` the way Airflow will, and pin what it must say."""
+"""Render `somatic_snv_facts_select.sql` the way Airflow will, and pin what it must say."""
 
 import re
 
@@ -7,9 +7,9 @@ import jinja2
 from radiant.dags import DAGS_DIR
 from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
-_TEMPLATE = DAGS_DIR / "sql" / "clinical" / "pending_somatic_annotation_select.sql"
+_TEMPLATE = DAGS_DIR / "sql" / "clinical" / "somatic_snv_facts_select.sql"
 _CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
-_NO_PARAMS = {"task_ids": [], "excluded_tenants": []}
+_NO_PARAMS = {"task_ids": []}
 
 
 def _render(params: dict | None = None) -> str:
@@ -46,30 +46,32 @@ def test_the_ctes_answer_one_question_each_in_order():
     assert re.findall(r"^(?:WITH )?(\w+) AS \($", sql, flags=re.MULTILINE) == names
 
 
-def test_discovery_is_unscoped_by_default_and_needs_an_ssnv_vcf():
+def test_the_scheduler_reads_every_candidate_with_an_ssnv_vcf():
     sql = _without_comments(_render())
-    assert "%(task_ids)s" not in sql
-    assert "%(excluded_tenants)s" not in sql
+    assert "%(" not in sql
     assert "AND v.task_id IS NOT NULL" in _cte(sql, "work_to_do")
 
 
-def test_named_tasks_narrow_candidacy_and_report_a_task_without_ssnv():
-    sql = _without_comments(_render({"task_ids": [70], "excluded_tenants": []}))
+def test_the_child_reads_its_named_tasks_with_or_without_an_ssnv_vcf():
+    """So the reason of a named task without one is decided, instead of silence."""
+    sql = _without_comments(_render({"task_ids": [70]}))
     pending = _cte(sql, "work_to_do")
     assert sql.count("%(task_ids)s") == 1
     assert "ct.task_id IN %(task_ids)s" in pending
     assert "v.task_id IS NOT NULL" not in pending
-    assert "'no_ssnv'" in sql
 
 
-def test_the_tenant_block_list_is_a_reason_not_a_filter():
-    sql = _without_comments(_render({"task_ids": [], "excluded_tenants": ["radiant"]}))
-    assert "WHEN pt.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'" in sql
+def test_no_decision_in_sql_the_facts_come_back():
+    """The tenant block list is a reason, decided in Python like every other."""
+    sql = _without_comments(_render())
+    assert "exclusion_reason" not in sql
     assert "WHERE pt.tenant_code" not in sql
+    for column in ("sequencing_status", "ssnv_url", "ssnv_matches", "aliquot", "histology"):
+        assert f"AS {column}" in sql
 
 
 def test_no_stray_percent_survives_parameter_binding():
-    sql = _render({"task_ids": [1], "excluded_tenants": ["radiant"]})
+    sql = _render({"task_ids": [1]})
     assert "%" not in re.sub(r"%\(\w+\)s", "", sql).replace("%%", "")
 
 
@@ -116,5 +118,5 @@ def test_a_vcf_already_input_of_an_annotation_on_the_same_case_is_done():
     assert "WHERE a.task_id IS NULL" in pending
 
 
-def test_only_completed_experiments_run():
-    assert "WHEN se.status_code <> 'completed' THEN 'pending_sequencing'" in _render()
+def test_the_experiment_status_comes_back_to_tell_a_waiting_task():
+    assert "se.status_code                 AS sequencing_status" in _render()

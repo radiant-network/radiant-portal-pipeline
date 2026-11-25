@@ -1,18 +1,16 @@
-import re
-from pathlib import Path
-
 import pytest
 
 from radiant.tasks.decision import Decision, Reason, ReasonCode, from_query
 
-SQL_DIR = Path(__file__).parents[2] / "radiant" / "dags" / "sql" / "clinical"
-
-
-def _query_codes() -> set[str]:
-    codes = set()
-    for path in SQL_DIR.glob("pending_*_select.sql"):
-        codes |= set(re.findall(r"THEN '([a-z_]+)'", path.read_text()))
-    return codes
+# Every code the pipelines' `query_reason` rules return, per trigger document.
+_QUERY_CODES = {
+    "pending_sequencing",
+    "pending_alignment",
+    "no_project_code",
+    "tenant_excluded",
+    *(f"no_{document}" for document in ("gvcf", "gcnv", "cram", "metrics", "ssnv")),
+    *(f"ambiguous_{document}" for document in ("gvcf", "gcnv", "cram", "dragen_metrics", "ssnv")),
+}
 
 
 def test_each_code_leads_to_one_scheduler_decision():
@@ -37,11 +35,9 @@ def test_every_code_has_a_label():
     assert all(code.label for code in ReasonCode)
 
 
-def test_every_code_a_fact_query_returns_is_known():
-    codes = _query_codes()
-    assert codes, f"no reason code found in {SQL_DIR}"
-    for code in codes:
-        from_query(code)
+@pytest.mark.parametrize("code", sorted(_QUERY_CODES))
+def test_every_code_the_fact_rules_return_is_known(code):
+    from_query(code)
 
 
 @pytest.mark.parametrize(

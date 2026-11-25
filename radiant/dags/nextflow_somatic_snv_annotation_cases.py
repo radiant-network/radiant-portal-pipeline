@@ -1,4 +1,4 @@
-"""Find the somatic calling tasks waiting for an annotation, run VEP, register the result.
+"""Annotate the named somatic calling tasks with VEP, register the result.
 
 QLIN sends the raw somatic SNV VCF of each calling task (`somatic_variant_calling`,
 `tumor_only_variant_calling`, `alignment_somatic_variant_calling`). This DAG annotates it with the
@@ -6,18 +6,20 @@ same VEP as germline -- `radiant-nextflow-somatic-snv-annotation`, the germline 
 its `normalize` step with `tools = vep` -- and registers the result on
 the case as a `radiant_somatic_annotation` task, which the scheduled import already loads.
 
-    discover_scope -> select_tasks -> generate_inputs -> run_pipeline -> collect_outputs
-                           |                                                   |
-                      list_tenants --------------> register_tasks (one per tenant)
+    has_tasks -> fetch_tasks -> select_tasks -> generate_inputs -> run_pipeline -> collect_outputs
+                                     |                                                   |
+                                list_tenants --------------> register_tasks (one per tenant)
 
 The unit of work is the calling task, not the case: a tumor-normal and a tumor-only call on the same
-tumor sample are both annotated. The rule lives in `sql/clinical/pending_somatic_annotation_select.sql`:
-a calling task is pending when it published an `ssnv` VCF that no `radiant_somatic_annotation` task
-has as input. No phenotypes, no PED, no Exomiser.
+tumor sample are both annotated. It decides nothing: `radiant-case-scheduler` decides which calling tasks
+run (`decide_tasks`, on `sql/clinical/somatic_snv_facts_select.sql`) and passes them as `task_ids`; an
+operator can name tasks to rerun. The same query reads them, for their (case, task) pairs not annotated
+yet, and `select_tasks` checks them again, leniently. No phenotypes, no PED, no Exomiser.
 
 Design: radiant-hub `docs/features/RAD-23-somatic-vep-annotation.md`.
 """
 
+import datetime
 import logging
 import os
 from typing import Any
@@ -49,6 +51,13 @@ PIPELINE_DAG_ID = f"{NAMESPACE}-nextflow-somatic-snv-annotation"
 INPUTS_SUBDIR = "somatic-snv-runs"
 OUTPUTS_SUBDIR = "somatic-snv"
 
+# `select_tasks` XCom: what it selected and left out, read back by `journal_outcomes`.
+SELECTION_KEY = "selection"
+
+# The journal write is idempotent (an unchanged marker is not written twice), so a retry is safe.
+JOURNAL_RETRIES = 2
+JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
+
 # Load-bearing, not cosmetic. The case scheduler pins the same run id on every cases DAG it
 # triggers, and the Nextflow launch dir and work dir are keyed by the run tag on a filesystem every
 # launcher shares. Without the prefix, this run and the germline SNV one would share both, and each
@@ -63,9 +72,9 @@ dag_params = {
         items={"type": "integer"},
         title="Calling task ids",
         description=(
-            "`somatic_variant_calling`, `tumor_only_variant_calling` or `alignment_somatic_variant_calling` "
-            "task ids, for a targeted rerun, e.g. [70]. Leave empty -- as a scheduled run does -- to "
-            "process every calling task whose `ssnv` VCF has never been annotated."
+            "The `somatic_variant_calling`, `tumor_only_variant_calling` or `alignment_somatic_variant_calling` "
+            "tasks to run: `radiant-case-scheduler` passes the ones it decided `run` for, and an operator can "
+            "name tasks to rerun, e.g. [70]. Each runs for its cases not annotated yet. Empty runs nothing."
         ),
     ),
     "excluded_tenants": Param(
@@ -113,8 +122,7 @@ def _workspace_env() -> dict[str, str]:
     # schedule of its own would process cases without moving them, and race that DAG.
     schedule=None,
     catchup=False,
-    # The entire concurrency story: discovery runs at the start of a run, so a queued run
-    # re-queries after the previous one has registered and sees the shorter list.
+    # One run at a time: a queued run reads the named tasks after the previous one has registered.
     max_active_runs=1,
     tags=["radiant", "nextflow", "somatic"],
     params=dag_params,
@@ -123,14 +131,17 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_somatic_snv_annotation_cases():
-    discover_scope = RadiantStarRocksOperator(
-        task_id="discover_scope",
-        task_display_name="[StarRocks] Discover calling tasks pending somatic annotation",
-        sql="./sql/clinical/pending_somatic_annotation_select.sql",
-        parameters={
-            "task_ids": "{{ params.task_ids }}",
-            "excluded_tenants": "{{ params.excluded_tenants }}",
-        },
+    @task.short_circuit(task_id="has_tasks", task_display_name="[PyOp] Skip when no calling task is named")
+    def has_tasks() -> bool:
+        from airflow.sdk import get_current_context
+
+        return bool(get_current_context()["params"]["task_ids"])
+
+    fetch_tasks = RadiantStarRocksOperator(
+        task_id="fetch_tasks",
+        task_display_name="[StarRocks] Fetch the named calling tasks",
+        sql="./sql/clinical/somatic_snv_facts_select.sql",
+        parameters={"task_ids": "{{ params.task_ids }}"},
         output_processor=rows_output_processor,
         do_xcom_push=True,
     )
@@ -141,18 +152,20 @@ def nextflow_somatic_snv_annotation_cases():
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.nextflow.somatic.resolve import select_tasks as select
+        from radiant.tasks.nextflow.somatic.resolve import select_run_tasks
 
         context = get_current_context()
-        requested = list(context["params"]["task_ids"] or [])
-        # Named tasks are an operator's request, so a task that cannot be resolved is an
-        # error. A discovered scope is the job's own doing, so it is a line in a report.
-        selection = select(rows, requested, strict=bool(requested))
-
+        selection = select_run_tasks(rows, context["params"]["excluded_tenants"])
+        # Kept apart from the return value, so the outcomes are journaled even when nothing runs.
+        context["ti"].xcom_push(
+            key=SELECTION_KEY,
+            value={
+                "tasks": [t.model_dump() for t in selection.tasks],
+                "excluded": [e.model_dump(mode="json") for e in selection.excluded],
+            },
+        )
         if not selection.tasks:
-            raise AirflowSkipException(
-                f"nothing to run: {len(selection.excluded)} candidate(s) discovered, all excluded"
-            )
+            raise AirflowSkipException(f"nothing to run: {len(selection.excluded)} named task(s) or case(s) excluded")
 
         LOGGER.info(
             "%d calling task(s) selected for %d case(s) across tenant(s) %s: %s",
@@ -297,9 +310,35 @@ def nextflow_somatic_snv_annotation_cases():
         body = build_patch_body([CallingTask(**t) for t in tasks], collected, tenant)
         if not body["cases"]:
             raise AirflowFailException(f"no selected case belongs to tenant '{tenant}'")
-        return register_case_batch(tenant, body, context["params"]["dry_run"])
+        return {"tenant": tenant, "report": register_case_batch(tenant, body, context["params"]["dry_run"])}
 
-    tasks = select_tasks(discover_scope.output)
+    # Retried: the run's state ignores this teardown, so a failed write is only seen on its own task.
+    @task(
+        task_id="journal_outcomes",
+        task_display_name="[PyOp] Journal what the run did with its calling tasks",
+        retries=JOURNAL_RETRIES,
+        retry_delay=JOURNAL_RETRY_DELAY,
+    )
+    def journal_outcomes() -> int:
+        """`succeeded` for the (case, task) pairs of the tenants registered, `failed` for the others and those left
+        out."""
+        from airflow.exceptions import AirflowSkipException
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.journal import record
+        from radiant.tasks.nextflow.somatic.resolve import outcome_entries
+
+        context = get_current_context()
+        if context["params"]["dry_run"]:
+            raise AirflowSkipException("dry run: nothing registered, nothing to journal")
+        selection = context["ti"].xcom_pull(task_ids="select_tasks", key=SELECTION_KEY) or {}
+        registered = {r["tenant"] for r in (context["ti"].xcom_pull(task_ids="register_tasks") or []) if r}
+        written = record(outcome_entries(selection, registered), context["run_id"])
+        LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
+        return len(written)
+
+    has_tasks() >> fetch_tasks
+    tasks = select_tasks(fetch_tasks.output)
     paths = generate_inputs(tasks)
 
     run_pipeline = TriggerDagRunOperator(
@@ -320,7 +359,10 @@ def nextflow_somatic_snv_annotation_cases():
     )
 
     collected = collect_outputs(tasks, paths)
-    register_tasks.partial(tasks=tasks, collected=collected).expand(tenant=list_tenants(tasks))
+    registered = register_tasks.partial(tasks=tasks, collected=collected).expand(tenant=list_tenants(tasks))
+    # A teardown: it runs whatever happened before it, and the run's state ignores it, so a failed pipeline or
+    # registration still fails the run.
+    [tasks, registered] >> journal_outcomes().as_teardown()
 
     paths >> run_pipeline >> collected
 

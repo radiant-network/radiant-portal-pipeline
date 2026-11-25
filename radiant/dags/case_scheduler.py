@@ -114,12 +114,19 @@ def _run_conf(*pipelines: str) -> dict:
     return EXCLUDED_TENANTS_CONF | {"case_ids": f"{{{{ {pulls} }}}}"}
 
 
+def _run_tasks_conf(pipeline: str) -> dict:
+    # The calling tasks this run decided `run` for, for a pipeline whose item is the calling task.
+    return EXCLUDED_TENANTS_CONF | {
+        "task_ids": f"{{{{ (ti.xcom_pull(task_ids='decide_{pipeline}') or {{}}).get('run_task_ids', []) }}}}"
+    }
+
+
 def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksOperator]:
     """The six "work waiting" queries, `{prefix}_{germline_snv,germline_cnv,somatic_snv,qc,qc_somatic,import}_cases`.
 
     Built once before the pipelines (`discover`) and once after (`rediscover`), so the question
-    asked both times cannot drift. Each "from Cases" DAG's own query, with the run's
-    `excluded_tenants`: the same block list this DAG passes to that DAG.
+    asked both times cannot drift. The facts of each pipeline's candidates, decided with the run's
+    `excluded_tenants`: the same block list this DAG passes to the "from Cases" DAGs.
     """
 
     def query(name: str, display_name: str, sql: str):
@@ -130,7 +137,7 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
             output_processor=rows_output_processor,
             do_xcom_push=True,
             trigger_rule=trigger_rule,
-            # `task_ids` empty, as on a discovery run; `excluded_tenants` is the DAG's param.
+            # `task_ids` empty: every candidate, not the calling tasks a child is named.
             params={"task_ids": []},
             parameters=EXCLUDED_TENANTS_CONF,
         )
@@ -148,8 +155,8 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
         ),
         query(
             "somatic_snv",
-            "Cases pending somatic SNV annotation",
-            "./sql/clinical/pending_somatic_annotation_select.sql",
+            "Facts of the somatic SNV candidates",
+            "./sql/clinical/somatic_snv_facts_select.sql",
         ),
         query("qc", "Facts of the germline QC candidates", "./sql/clinical/quality_control_facts_select.sql"),
         query(
@@ -244,9 +251,12 @@ def case_scheduler():
         entries = DECIDE[pipeline](fact_rows, get_current_context()["params"]["excluded_tenants"])
         counts = dict(Counter(str(e.decision) for e in entries))
         LOGGER.info("%s: %d item(s) %s", pipeline, len(entries), counts)
+        runs = [e for e in entries if e.decision == Decision.RUN]
         return {
             "entries": [e.model_dump(mode="json") for e in entries],
-            "run_case_ids": [e.case_id for e in entries if e.decision == Decision.RUN],
+            "run_case_ids": sorted({e.case_id for e in runs}),
+            # The item of a pipeline that keys it, such as the calling task of somatic SNV.
+            "run_task_ids": sorted({int(e.item_key) for e in runs if e.item_key}),
         }
 
     @task
@@ -370,6 +380,7 @@ def case_scheduler():
     for pipeline, label, facts in (
         ("germline_snv", "germline SNV", discovered[0]),
         ("germline_cnv", "germline CNV", discovered[1]),
+        ("somatic_snv", "somatic SNV", discovered[2]),
         ("quality_control", "germline QC", discovered[3]),
         ("quality_control_somatic", "somatic QC", discovered[4]),
     ):
@@ -398,7 +409,7 @@ def case_scheduler():
         "trigger_somatic_snv_annotation",
         "[DAG] Nextflow Somatic SNV Annotation (from Cases)",
         SOMATIC_SNV_CASES_DAG_ID,
-        EXCLUDED_TENANTS_CONF,
+        _run_tasks_conf("somatic_snv"),
     )
     trigger_qc = _trigger(
         "trigger_quality_control",
@@ -412,6 +423,7 @@ def case_scheduler():
 
     decided["germline_snv"] >> trigger_germline_snv
     decided["germline_cnv"] >> trigger_germline_cnv
+    decided["somatic_snv"] >> trigger_somatic_snv
     [decided["quality_control"], decided["quality_control_somatic"]] >> trigger_qc
     processing >> [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv, trigger_qc]
     [trigger_germline_snv, trigger_germline_cnv, trigger_somatic_snv] >> trigger_import

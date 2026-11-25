@@ -45,13 +45,10 @@ The portal checks it under a row lock: a case a geneticist moved in the meantime
 
 The union of:
 
-- the cases each "from Cases" DAG would run: its own `pending_*_select.sql` query and its own
-  `select_cases` (`select_tasks` for somatic annotation, whose unit is the calling task: its cases
-  count), with the run's `excluded_tenants` (the list that DAG is given). A case that DAG would exclude
-  (sequencing pending, no gVCF, tenant not granted, two DRAGEN metrics tarballs...) is **not** counted: it
-  would sit in `processing` with nothing running for it, and never reach `in_progress`. Germline SNV, CNV
-  and quality control are the exception: the cases decided `run` for, from their facts queries, the same
-  cases their DAGs are given (below);
+- the cases each pipeline is decided `run` for, from its facts query, with the run's `excluded_tenants`: the
+  cases the "from Cases" DAGs are given (below). For somatic SNV, the cases of its calling tasks decided `run`.
+  A case decided anything else (sequencing pending, no gVCF, tenant excluded, two DRAGEN metrics tarballs...)
+  is **not** counted: it would sit in `processing` with nothing running for it, and never reach `in_progress`;
 - the cases the import still has work for (`sql/radiant/import_pending_case_select.sql`): those in
   the delta view, `staging_sequencing_experiment_delta`, and those already inserted into
   `staging_sequencing_experiment` but not loaded by `import_part` yet, with the import's own
@@ -69,10 +66,11 @@ nothing is pending for them.
 
 ## Journal
 
-Germline SNV, germline CNV and quality control (germline and somatic) are decided the same way, each with its
-own three tasks: `discover_<query>_cases` reads the facts of the candidates
-(`sql/clinical/<pipeline>_facts_select.sql`), `decide_<pipeline>` decides each case in Python (run, wait,
-blocked or skip, with all the reasons), and `journal_<pipeline>` writes it to `pipeline_journal`.
+Every pipeline but the import is decided the same way, each with its own three tasks: `discover_<query>_cases`
+reads the facts of the candidates (`sql/clinical/<pipeline>_facts_select.sql`), `decide_<pipeline>` decides each
+item in Python (run, wait, blocked or skip, with all the reasons), and `journal_<pipeline>` writes it to
+`pipeline_journal`. The item is the case, except for somatic SNV: the (case, calling task) pair, its `item_key`
+the calling task.
 
 | `<pipeline>` | `<query>` |
 | --- | --- |
@@ -80,6 +78,7 @@ blocked or skip, with all the reasons), and `journal_<pipeline>` writes it to `p
 | `germline_cnv` | `germline_cnv` |
 | `quality_control` | `qc` |
 | `quality_control_somatic` | `qc_somatic` |
+| `somatic_snv` | `somatic_snv` |
 
 - Germline SNV candidate: a germline case with no experiment yet, or with a member's current experiment not yet
   annotated, whether its documents are there or not.
@@ -89,6 +88,10 @@ blocked or skip, with all the reasons), and `journal_<pipeline>` writes it to `p
 - Germline QC candidate: a germline case where a member's current experiment has a CRAM and no QC task for the case.
 - Somatic QC candidate: a somatic case whose proband's current tumor is aligned and has no QC task for the case.
   Before its tumor is aligned, a somatic case is not a candidate, and is not journaled.
+- Somatic SNV candidate: a calling task that published an `ssnv` VCF, not annotated yet for a somatic case that
+  holds all its experiments. A tumor-normal and a tumor-only call on the same tumor are two items, both annotated.
+  A reason about the task (an experiment not completed, its VCF, its samples) holds for each of its cases; a
+  reason about the case (project, tenant) for that case only.
 
 - `run` is written on every pass. Any other decision is written only when it, or its reasons, differ from the
   case's last row (view `pipeline_state`).
@@ -98,14 +101,14 @@ blocked or skip, with all the reasons), and `journal_<pipeline>` writes it to `p
   members present as long as one of them is not annotated, with the absent member's reason on the `run` row.
   Once they are all annotated, the case waits for the absent member, and runs again when it arrives.
 - A `run` names the members it runs for, each present member not annotated yet: `first_run` when the case was
-  never annotated, `new_sequencing` when it was (a member arrived, or was sequenced again).
+  never annotated, `new_sequencing` when it was (a member arrived, or was sequenced again). A somatic SNV `run`
+  is a `first_run` naming no member: the item runs until it is annotated.
 - A reason about one member names it (`patient_id`): two members waiting are two reasons. The reasons about
   the case (project, tenant, proband count, strategy) name no one.
-- The germline SNV, CNV and quality-control "from Cases" DAGs run the cases decided `run`: `decide_<pipeline>`
-  hands them over as `case_ids` in the child's conf (both QC pipelines to the one QC DAG), and the trigger waits
-  for it. If deciding fails, no case is named and the child
-  runs nothing. The journal is written beside (`journal_<pipeline>`): nothing waits for it, and
-  if it fails `watcher` turns the run red. The other pipelines still select their own cases.
+- The "from Cases" DAGs run the items decided `run`: `decide_<pipeline>` hands them over in the child's conf, as
+  `case_ids` (both QC pipelines to the one QC DAG), or as `task_ids` for somatic SNV, and the trigger waits for
+  it. If deciding fails, nothing is named and the child runs nothing. The journal is written beside
+  (`journal_<pipeline>`): nothing waits for it, and if it fails `watcher` turns the run red.
 
 ## Variant data
 

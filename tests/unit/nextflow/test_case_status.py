@@ -10,7 +10,7 @@ from tests.unit.nextflow.conftest import member_row as snv_member_row
 from tests.unit.nextflow.qc.conftest import member_row as qc_member_row
 from tests.unit.nextflow.somatic.conftest import calling_task_rows
 
-# Germline SNV, CNV and QC are decided from the facts: the reason each one stands for, as facts.
+# Every pipeline is decided from the facts: the reason each one stands for, as facts.
 SNV_FACTS = {
     None: {},
     "pending_sequencing": {"seq_id": None, "aliquot": None, "alignment_task_id": None, "gvcf_matches": 0},
@@ -38,6 +38,14 @@ QC_FACTS = {
         "cram_matches": 0,
     },
     "no_gvcf": {"cram_url": None, "cram_matches": 0},
+    "tenant_excluded": {"tenant_code": "excluded"},
+}
+
+
+SOMATIC_SNV_FACTS = {
+    None: {},
+    "pending_sequencing": {"sequencing_status": "in_progress"},
+    "no_gvcf": {"ssnv_url": None, "ssnv_matches": 0},
     "tenant_excluded": {"tenant_code": "excluded"},
 }
 
@@ -81,7 +89,7 @@ def test_a_case_the_pipeline_would_exclude_is_not_work_waiting(reason):
     waiting = case_status.cases_with_work(
         germline_snv_rows=[snv_facts(case_id=1, reason=reason)],
         germline_cnv_rows=[cnv_facts(case_id=2, reason=reason)],
-        somatic_snv_rows=calling_task_rows(case_id=5, exclusion_reason=reason),
+        somatic_snv_rows=calling_task_rows(case_id=5, **SOMATIC_SNV_FACTS[reason]),
         qc_rows=[qc_facts(case_id=3, reason=reason)],
         qc_somatic_rows=[],
         import_rows=[],

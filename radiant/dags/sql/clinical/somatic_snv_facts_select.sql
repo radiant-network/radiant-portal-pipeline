@@ -1,8 +1,9 @@
 -- One row per (candidate somatic calling task, somatic case it belongs to, sequencing experiment
--- it called): the raw somatic SNV VCF the task published, and why it cannot run if it cannot.
+-- it called): the facts the case scheduler decides on (`decide_tasks`, radiant/tasks/nextflow/somatic/resolve.py),
+-- and the raw somatic SNV VCF the task published. No decision here.
 --
--- Consumed by `radiant-nextflow-somatic-snv-annotation-cases` (discover_scope). Design: radiant-hub
--- `docs/features/RAD-23-somatic-vep-annotation.md`.
+-- The case scheduler reads every candidate; `radiant-nextflow-somatic-snv-annotation-cases` (fetch_tasks) reads the
+-- calling tasks it was named (`params.task_ids`). Design: radiant-hub `docs/features/RAD-23-somatic-vep-annotation.md`.
 --
 -- The unit of work is the calling task, not the case: a tumor-normal and a tumor-only call on the
 -- same tumor sample are two VCFs, and both are annotated. A calling task is pending on a case when
@@ -12,8 +13,7 @@
 --
 -- Only the `ssnv` VCF is selected: the `scnv` VCF of the same task is never a trigger.
 --
--- The tenant is returned, not filtered on: clinical is one shared schema and `cases.id` is unique
--- across it. `params.excluded_tenants` is a block list, not a scope.
+-- The tenant is returned, not filtered on: an excluded tenant is a reason, decided in Python.
 WITH work_unit_experiment AS (
     -- Every somatic calling task, one row per sequencing experiment it called, with the number of
     -- experiments of the task. These three types are the ones QLIN sends with the raw VCF; listing
@@ -105,8 +105,8 @@ work_to_do AS (
                                  AND a.task_id = ct.task_id
     WHERE a.task_id IS NULL
     {% if params.task_ids %}
-      -- Targeted rerun: the named tasks only, including one with no `ssnv` VCF, so that the
-      -- operator sees why it cannot run instead of silence.
+      -- The named tasks only, including one with no `ssnv` VCF, so that its reason is decided
+      -- instead of silence.
       AND ct.task_id IN %(task_ids)s
     {% else %}
       -- A task with no `ssnv` VCF is not a candidate on a discovery run: a calling task sent the
@@ -124,19 +124,9 @@ SELECT pt.case_id                     AS case_id,
        se.aliquot                     AS aliquot,
        se.experimental_strategy_code  AS strategy,
        sa.histology_code              AS histology,
+       se.status_code                 AS sequencing_status,
        v.url                          AS ssnv_url,
-       -- Task-level reasons first: they hold for every case of the task. `pending_sequencing` is
-       -- transient, the task waits for its experiments rather than running on unfinished data.
-       CASE
-           WHEN se.status_code <> 'completed' THEN 'pending_sequencing'
-           WHEN v.task_id IS NULL             THEN 'no_ssnv'
-           WHEN v.matches > 1                 THEN 'ambiguous_ssnv'
-           WHEN pt.project_code IS NULL       THEN 'no_project_code'
-           {% if params.excluded_tenants %}
-           WHEN pt.tenant_code IN %(excluded_tenants)s THEN 'tenant_excluded'
-           {% endif %}
-           ELSE NULL
-       END                            AS exclusion_reason
+       COALESCE(v.matches, 0)         AS ssnv_matches
 FROM work_to_do pt
 JOIN work_unit_experiment te                       ON te.task_id = pt.task_id
 JOIN {{ mapping.clinical_sequencing_experiment }} se  ON se.id = te.seq_id

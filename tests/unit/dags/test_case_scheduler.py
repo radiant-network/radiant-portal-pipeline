@@ -17,6 +17,7 @@ DECIDED = {
     "germline_cnv": "trigger_germline_cnv_postprocessing",
     "quality_control": "trigger_quality_control",
     "quality_control_somatic": "trigger_quality_control",
+    "somatic_snv": "trigger_somatic_snv_annotation",
 }
 # The discovery query of each decided pipeline: `discover_<name>_cases`.
 FACTS_QUERY = {
@@ -24,12 +25,11 @@ FACTS_QUERY = {
     "germline_cnv": "germline_cnv",
     "quality_control": "qc",
     "quality_control_somatic": "qc_somatic",
+    "somatic_snv": "somatic_snv",
 }
 FACTS = {f"discover_{name}_cases" for name in FACTS_QUERY.values()}
-# Each discovery task not decided yet: the cases DAG and the task of it that runs the same query.
-DISCOVERY = {
-    "discover_somatic_snv_cases": ("radiant-nextflow-somatic-snv-annotation-cases", "discover_scope"),
-}
+# The pipelines whose item is the calling task: their child is named the calling tasks, not the cases.
+BY_TASK = {"somatic_snv"}
 
 
 def _upstream(dag, task_id):
@@ -58,6 +58,8 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "journal_quality_control",
         "decide_quality_control_somatic",
         "journal_quality_control_somatic",
+        "decide_somatic_snv",
+        "journal_somatic_snv",
         "fetch_case_statuses",
         "discover_cases",
         "set_processing",
@@ -101,18 +103,19 @@ def test_the_cases_dags_have_no_schedule_of_their_own(dag_bag):
 def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
     """Only count what the DAG would actually run: same query, same excluded tenants."""
     dag = dag_bag.get_dag(DAG_ID)
-    for task_id, (cases_dag_id, cases_task_id) in DISCOVERY.items():
+    # The scheduler decides on the facts of every candidate, and names the cases or tasks to the child.
+    for task_id in FACTS:
         discover = dag.get_task(task_id)
-        assert discover.sql == dag_bag.get_dag(cases_dag_id).get_task(cases_task_id).sql
+        assert discover.sql.startswith("-- One row per")
+        assert "the facts the case scheduler decides on" in discover.sql
+        assert "(`decide_" in discover.sql
         assert discover.parameters == {"excluded_tenants": "{{ params.excluded_tenants }}"}
         # Inherited from the DAG, not set per task: a run conf `excluded_tenants` must reach it.
         assert discover.params["excluded_tenants"] == dag.params["excluded_tenants"]
         assert discover.params["task_ids"] == []
-    # The decided pipelines: the scheduler decides on the facts, and names the cases to its child.
-    for task_id in FACTS:
-        facts = dag.get_task(task_id).sql
-        assert facts.startswith("-- One row per") and "the facts the case scheduler decides on" in facts
-        assert "(`decide_" in facts
+    # The somatic SNV child reads its named tasks with the scheduler's own query.
+    child = dag_bag.get_dag("radiant-nextflow-somatic-snv-annotation-cases").get_task("fetch_tasks")
+    assert child.sql == dag.get_task("discover_somatic_snv_cases").sql
     import_sql = dag.get_task("discover_import_cases").sql
     assert "staging_sequencing_experiment_delta" in import_sql
     # A row leaves the delta once inserted: the ones `import_part` has not loaded are still pending.
@@ -125,13 +128,12 @@ def test_the_cases_dags_are_given_the_run_s_block_list(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     for task_id, cases_dag_id in CASES_DAG_IDS.items():
         expected = {"excluded_tenants": "{{ params.excluded_tenants }}"}
+        pipelines = [pipeline for pipeline, trigger in DECIDED.items() if trigger == task_id]
+        key = "task_ids" if set(pipelines) <= BY_TASK else "case_ids"
         pulls = [
-            f"(ti.xcom_pull(task_ids='decide_{pipeline}') or {{}}).get('run_case_ids', [])"
-            for pipeline, trigger in DECIDED.items()
-            if trigger == task_id
+            f"(ti.xcom_pull(task_ids='decide_{pipeline}') or {{}}).get('run_{key}', [])" for pipeline in pipelines
         ]
-        if pulls:
-            expected["case_ids"] = f"{{{{ {' + '.join(pulls)} }}}}"
+        expected[key] = f"{{{{ {' + '.join(pulls)} }}}}"
         assert dag.get_task(task_id).conf == expected
         assert "excluded_tenants" in dag_bag.get_dag(cases_dag_id).params
     assert not dag.get_task("trigger_import").conf
@@ -152,7 +154,6 @@ def test_the_block_list_defaults_to_the_env_var(dag_bag, monkeypatch):
 def test_discover_cases_reads_every_discovery_and_the_statuses(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert _upstream(dag, "discover_cases") == {
-        *DISCOVERY,
         *FACTS,
         "discover_import_cases",
         "fetch_case_statuses",
@@ -212,7 +213,7 @@ def test_evaluation_waits_for_every_pipeline_and_stops_if_one_failed(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     second_pass = [
         "refresh_case_statuses",
-        *(f"re{task_id}" for task_id in (*DISCOVERY, *FACTS)),
+        *(f"re{task_id}" for task_id in FACTS),
         "rediscover_import_cases",
     ]
     for task_id in second_pass:
@@ -396,3 +397,24 @@ def test_germline_and_somatic_quality_control_rows_both_count_as_work(dag_bag, m
         status_rows=submitted,
     )
     assert batches == [{"tenant": "radiant", "case_ids": [3, 23]}]
+
+
+def test_decide_hands_over_the_calling_tasks_decided_run(dag_bag, monkeypatch):
+    """Somatic SNV runs per calling task: its child is named the tasks, each one once."""
+    from tests.unit.nextflow.somatic.conftest import calling_task_rows
+
+    context = {"params": {"excluded_tenants": ["other"]}}
+    monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
+    rows = (
+        calling_task_rows(task_id=70, case_id=23)
+        + calling_task_rows(task_id=70, case_id=24)
+        + calling_task_rows(task_id=71, case_id=25, tenant_code="other")
+    )
+    decided = dag_bag.get_dag(DAG_ID).get_task("decide_somatic_snv").python_callable(rows, "somatic_snv")
+    assert decided["run_task_ids"] == [70]
+    assert decided["run_case_ids"] == [23, 24]
+    assert [(e["case_id"], e["item_key"], e["decision"]) for e in decided["entries"]] == [
+        (23, "70", "run"),
+        (24, "70", "run"),
+        (25, "71", "skip"),
+    ]
