@@ -36,6 +36,8 @@ rust-develop:
 	maturin develop --release -m rust/radiant_vcf/Cargo.toml
 
 rust-test: rust-develop
+	cargo fmt --manifest-path rust/radiant_vcf/Cargo.toml --check
+	cargo clippy --manifest-path rust/radiant_vcf/Cargo.toml --all-targets -- -D warnings
 	cargo test --manifest-path rust/radiant_vcf/Cargo.toml
 	pytest tests/unit/vcf/test_rust_engine.py tests/unit/vcf/germline/test_rust_engine_parity.py \
 		tests/unit/vcf/somatic/test_rust_engine_parity.py

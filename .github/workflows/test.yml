@@ -48,9 +48,9 @@ jobs:
           echo "VIRTUAL_ENV=$PWD/.venv" >> "$GITHUB_ENV"
       - name: Install dependencies
         run: make install-dev && pip install "maturin==1.16.0"
-      # Same toolchain as Dockerfile.radiant.operator
+      # Same toolchain as Dockerfile.radiant.operator; the minimal profile has neither rustfmt nor clippy
       - name: Install Rust toolchain
-        run: rustup toolchain install 1.91.0 --profile minimal && rustup default 1.91.0
+        run: rustup toolchain install 1.91.0 --profile minimal --component rustfmt,clippy && rustup default 1.91.0
       - name: Run Rust and parity tests
         run: make rust-test
       # test_process_task_error injects its error through TableAccumulator.write_files, which the Rust path does not
