@@ -1,3 +1,4 @@
+import logging
 from collections import Counter
 from datetime import datetime
 
@@ -316,7 +317,80 @@ def test__partition_assigner_wgs_same_values_with_limits():
     _delta = [SequencingDeltaInput(**row.to_dict()).model_dump() for _, row in df.iterrows()]
     partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
     parts = Counter([p.part for p in partitioned])
-    assert parts == Counter({0: 104, 1: 100})
+    assert parts == Counter({0: 100, 1: 100, 2: 4})
+    for key in ("patient_id", "seq_id", "case_id", "family_id"):
+        parts_of_id = {}
+        for p in partitioned:
+            if getattr(p, key) is not None:
+                parts_of_id.setdefault(getattr(p, key), set()).add(p.part)
+        assert all(len(v) == 1 for v in parts_of_id.values()), f"rows sharing a {key} are in several parts"
+
+
+@pytest.mark.parametrize("sibling_first", [True, False])
+def test__partition_assigner_new_case_takes_existing_part_of_member(sibling_first):
+    sibling = create_sequencing_delta_input_from_base(
+        case_id=10, seq_id=1, task_id=1, patient_id=1, family_id=1, max_part=6, max_count=10
+    ).model_dump()
+    mother = create_sequencing_delta_input_from_base(
+        case_id=10,
+        seq_id=2,
+        task_id=1,
+        patient_id=2,
+        family_id=2,
+        patient_part=5,
+        seq_part=5,
+        max_part=6,
+        max_count=10,
+    ).model_dump()
+    _delta = [sibling, mother] if sibling_first else [mother, sibling]
+
+    partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
+    assert [p.part for p in partitioned] == [5, 5]
+
+
+def test__partition_assigner_case_patient_case_chain_takes_existing_part():
+    _delta = [
+        create_sequencing_delta_input_from_base(
+            case_id=10, seq_id=1, task_id=1, patient_id=1, family_id=1, max_part=6, max_count=10
+        ).model_dump(),
+        create_sequencing_delta_input_from_base(
+            case_id=10, seq_id=2, task_id=1, patient_id=2, family_id=2, max_part=6, max_count=10
+        ).model_dump(),
+        create_sequencing_delta_input_from_base(
+            case_id=11, seq_id=3, task_id=2, patient_id=2, family_id=3, patient_part=5, max_part=6, max_count=10
+        ).model_dump(),
+    ]
+
+    assigner = SequencingExperimentPartitionAssigner()
+    partitioned = assigner.assign_partitions(_delta)
+    assert [p.part for p in partitioned] == [5, 5, 5]
+    assert assigner.state["wgs"].count == 10
+
+
+def test__partition_assigner_linked_rows_in_two_parts_take_the_highest_and_warn(caplog):
+    _delta = [
+        create_sequencing_delta_input_from_base(
+            case_id=10, seq_id=1, patient_id=1, family_id=1, patient_part=5
+        ).model_dump(),
+        create_sequencing_delta_input_from_base(
+            case_id=10, seq_id=2, patient_id=2, family_id=2, patient_part=6
+        ).model_dump(),
+    ]
+
+    with caplog.at_level(logging.WARNING, logger="airflow.task"):
+        partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
+    assert [p.part for p in partitioned] == [6, 6]
+    assert "parts [5, 6], the group goes to part 6" in caplog.text
+
+
+def test__partition_assigner_does_not_link_rows_of_two_strategies():
+    _delta = [
+        create_sequencing_delta_input_from_base(experimental_strategy="wgs", patient_part=5).model_dump(),
+        create_sequencing_delta_input_from_base(experimental_strategy="wxs", seq_id=2, task_id=2).model_dump(),
+    ]
+
+    partitioned = SequencingExperimentPartitionAssigner().assign_partitions(_delta)
+    assert [p.part for p in partitioned] == [5, 0x00010000]
 
 
 def test__partition_assigner_match_increases_current_part_count():
