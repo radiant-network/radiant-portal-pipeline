@@ -1,0 +1,150 @@
+# ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
+version: poc-3
+
+# Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
+# Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
+scope:
+  consequences: [stop_gained, frameshift_variant, splice_acceptor_variant, splice_donor_variant, start_lost,
+                 stop_lost, missense_variant, inframe_insertion, inframe_deletion, protein_altering_variant,
+                 synonymous_variant, splice_region_variant, splice_donor_5th_base_variant,
+                 splice_donor_region_variant, splice_polypyrimidine_tract_variant]
+  spliceai_min: 0.2
+
+# Bayesian points per strength (Tavtigian 2018/2020); benign criteria count negative.
+points:
+  Supporting: 1
+  Moderate: 2
+  Strong: 4
+  VeryStrong: 8
+  StandAlone: 8
+
+# Lower bound (inclusive) of each class; below likely_benign is Benign. A stand-alone benign criterion forces Benign.
+classes:
+  pathogenic: 10
+  likely_pathogenic: 6
+  vus: 0
+  likely_benign: -6
+
+frequency:
+  min_an: 2000           # gnomAD counts for BA1 and BS1 from this many alleles
+  # BA1 and BS1 take the higher of the gnomAD AF and the AF of the tenant's not affected (a control population,
+  # Richards 2015; from their carrier frequency, Hardy-Weinberg), counted from cohort_min_pn sequenced not affected
+  # (WGS or WXS), and not for ClinVar P/LP variants (founder variants).
+  ba1_min_af: 0.05       # strictly above
+  bs1_min_af: 0.01       # strictly above
+  pm2_max_af: 0.0001     # at or below, or absent from gnomAD
+  # PM2 is dropped above this AF in the tenant's not affected.
+  pm2_cohort_max_pf: 0.01
+  cohort_min_pn: 20
+
+# REVEL (Pejaver 2022): PP3 when score >= threshold, BP4 when score <= threshold. Strongest first.
+revel:
+  pp3:
+    Strong: 0.932
+    Moderate: 0.773
+    Supporting: 0.644
+  bp4:
+    VeryStrong: 0.003
+    Strong: 0.016
+    Moderate: 0.183
+    Supporting: 0.290
+
+# SpliceAI (Walker 2023)
+spliceai:
+  pp3_min: 0.2
+  benign_max: 0.1
+
+pvs1:
+  max_loeuf: 0.6
+  # LoF a known disease mechanism: this many LoF P/LP ClinVar variants in the gene (POC value).
+  min_gene_plp_lof: 2
+  consequences: [stop_gained, frameshift_variant, splice_acceptor_variant, splice_donor_variant, start_lost]
+  # A stop or a frameshift in the last exon escapes NMD: PVS1 drops to this strength.
+  # No 50-nt rule and no exon positions yet: exon rank only.
+  nmd_escape_consequences: [stop_gained, frameshift_variant]
+  nmd_escape_strength: Strong
+
+pm4:
+  consequences: [inframe_insertion, inframe_deletion, stop_lost]
+
+bp7:
+  consequences: [synonymous_variant]
+
+# ClinVar-based criteria. POC values, to calibrate in the clinical review.
+# PM1 hotspot: P/LP missense ClinVar variants within window_bp of the variant (itself excluded), no B/LB there.
+pm1:
+  consequences: [missense_variant]
+  window_bp: 25
+  min_plp_missense: 4
+  max_blb: 0
+
+# PP2: a missense variant in a gene whose ClinVar P/LP variants are mostly missense, with few benign missense.
+pp2:
+  consequences: [missense_variant]
+  min_plp: 10
+  min_missense_share: 0.5          # P/LP missense / P/LP
+  max_benign_missense_share: 0.1   # B/LB missense / (P/LP missense + B/LB missense)
+
+# BP1: a missense variant in a gene whose ClinVar P/LP variants are mostly truncating.
+bp1:
+  consequences: [missense_variant]
+  min_plp: 10
+  min_lof_share: 0.8               # P/LP LoF / P/LP
+
+# BS2: healthy homozygotes in a gene with an OMIM inheritance. POC values.
+bs2:
+  inheritance: [AR, XLR, DR, AD, XLD, DD]
+  min_gnomad_hom: 2
+  min_local_hom_not_affected: 2   # not-affected homozygotes of the tenant (WGS + WXS)
+
+# ClinGen SVI points -> strength, for the criteria scored in points (PM3, PM6). Strongest first.
+svi_points:
+  VeryStrong: 4
+  Strong: 2
+  Moderate: 1
+  Supporting: 0.5
+
+# PM6: slivar de novo mode in an affected proband. Parentage is not loaded, so every de novo is "assumed".
+de_novo:
+  assumed_points: 0.5             # per proband, phenotype consistent with the gene but not highly specific
+
+# PM3: comphet partner (RAD-39) that is P/LP in ClinVar. "In trans" when the case is a complete trio.
+pm3:
+  points:
+    p_trans: 1.0
+    lp_trans: 0.5
+    p_unphased: 0.5
+    lp_unphased: 0.25
+
+# PS4 (Richards 2015): a variant meeting PM2, enriched in the tenant's affected vs its not affected:
+# odds ratio >= min_odds_ratio and the lower bound of its 95 % CI > ci_lower_min (Wald, Haldane +0.5).
+ps4:
+  min_odds_ratio: 5
+  ci_lower_min: 1
+
+# PP1: affected parents carrying the variant, one meiosis each (Jarvik & Browning 2016). Strongest first.
+pp1:
+  Strong: 7
+  Moderate: 5
+  Supporting: 3
+
+# BP2: in trans (complete trio) with a ClinVar pathogenic variant, in a gene that is dominant only.
+# The "in cis" branch needs phase data that is not loaded.
+bp2:
+  dominant: [AD]
+  not_recessive: [AR, XLR, DR]
+  min_carriers: 1
+
+# BS4: affected parents who do not carry the variant.
+bs4:
+  min_affected_noncarriers: 1
+
+# Criterion -> criteria it cancels when it is met.
+exclusions:
+  BA1: [BS1]
+  PVS1: [PP3, BP4, PM4]   # PM4: same truncation counted twice (Abou Tayoun 2018); PP3/BP4: Walker 2023
+  BP2: [PM3]    # same comphet pairs: PM3 assumes a recessive disease, BP2 a dominant one
+
+# Criterion -> dropped when its points and its partner's exceed max_points (Pejaver 2022: PM1 + PP3 <= 4).
+point_caps:
+  PM1: {partner: PP3, max_points: 4}

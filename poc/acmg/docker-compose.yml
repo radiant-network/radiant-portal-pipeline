@@ -1,0 +1,41 @@
+# StarRocks 4.0.16 with Arrow Flight SQL on, isolated from the portal stack (own ports and container name).
+services:
+  starrocks:
+    image: starrocks/allin1-ubuntu:4.0.16
+    container_name: starrocks_acmg_poc
+    ports:
+      - "19030:9030"   # MySQL protocol (FE)
+      - "18030:8030"   # FE HTTP (Stream Load entry, redirects to the BE)
+      - "8040:8040"    # BE HTTP: the Stream Load redirect targets this port as the BE registered it
+      - "9408:9408"    # Arrow Flight SQL (FE)
+      - "9419:9419"    # Arrow Flight (BE): the client fetches results here, not through the FE
+    entrypoint:
+      - /usr/bin/tini-static
+      - --
+      - bash
+      - -c
+      - |
+        set -e
+        grep -q arrow_flight_port starrocks/fe/conf/fe.conf || echo "arrow_flight_port = 9408" >> starrocks/fe/conf/fe.conf
+        grep -q arrow_flight_port starrocks/be/conf/be.conf || echo "arrow_flight_port = 9419" >> starrocks/be/conf/be.conf
+        # A truncate keeps its files 24 h by default: at this volume that fills the laptop disk.
+        grep -q trash_file_expire starrocks/be/conf/be.conf || printf '%s\n' \
+          "trash_file_expire_time_sec = 0" \
+          "max_garbage_sweep_interval = 180" \
+          "tablet_rowset_stale_sweep_time_sec = 60" >> starrocks/be/conf/be.conf
+        exec ./entrypoint.sh
+    healthcheck:
+      test: curl -sf http://localhost:8030/api/health || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # S3 of POC 3: StarRocks reaches it as rustfs:9000, the workers on the host as localhost:19000.
+  rustfs:
+    image: rustfs/rustfs:1.0.0
+    container_name: rustfs_acmg_poc
+    environment:
+      - RUSTFS_ACCESS_KEY=admin
+      - RUSTFS_SECRET_KEY=password
+    ports:
+      - "19000:9000"
