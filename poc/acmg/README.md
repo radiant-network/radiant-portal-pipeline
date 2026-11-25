@@ -97,7 +97,46 @@ Environment of the pod (values in the pod spec or a secret, never in this repo):
 | `S3_USE_INSTANCE_PROFILE` | `true`: the workers use the pod's role, StarRocks its BEs' role |
 | `S3_BUCKET`, `S3_REGION` | the exchange bucket, or `bucket/prefix` |
 
-## Findings of the earlier POCs
+## Findings
+
+Measured with ruleset `poc-9` on a production tenant: 696 affected probands, 10.2M classified occurrences, 61 s with 8
+workers (peak 2.5 GB per worker, at the classification step).
+
+| Class | Occurrences |
+|---|---|
+| Pathogenic | 10 |
+| Likely pathogenic | 1,007 |
+| VUS | 198,823 |
+| Likely benign | 707,975 |
+| Benign | 9,311,191 |
+
+**Against ClinVar** (variants of the tenant with a ≥ 2-star P/LP or B/LB, no conflict):
+
+| ClinVar | Variants | Same side | VUS | Opposite side |
+|---|---|---|---|---|
+| P/LP | 532 | 24 % | 68 % | 8 % |
+| B/LB | 57,567 | 92 % | 8 % | 7 variants |
+
+- P/LP mostly end as VUS: the classifier has no functional (PS3), phenotype (PP4) or literature evidence.
+- The P/LP classed benign carry BS2 (≥ 50 gnomAD homozygotes) or BS1: pathogenic recessive variants that are common or
+  incompletely penetrant. The BS2 and BP1 thresholds come from these measures (see the comments of `ruleset.yaml`).
+- Slightly optimistic: the gene-level ClinVar counts (PVS1, PP2, BP1) include the variant itself.
+
+**Against Exomiser** (its `acmg_classification`, same occurrences, candidates only): of 567 Exomiser P/LP, the POC
+classes 25 % P/LP, 43 % VUS, 32 % B/LB. The B/LB are 20 LoF variants that Exomiser scores PVS1, which the POC finds
+common (BA1, BS1, BS2; the BA1 ones in ~21 probands each, likely recurrent artefacts) or in a gene without a known
+LoF mechanism.
+
+**To make it a feature:**
+
+- ETL: a classification table per tenant, refreshed with ClinVar and the occurrences; ClinGen dosage and gene validity
+  loaded as open data (they are only IGV tracks today); gnomAD grpmax FAF for BA1/BS1 (the global AF is too coarse).
+- Portal: the class, points and criteria per occurrence, with the audit of each criterion (value, threshold).
+- Missing criteria, by expected gain: PP4 (Exomiser HPO, Biesecker 2024 strengths), PS1/PM5 (needs VEP-annotated
+  ClinVar), PS2 (needs parentage).
+- A clinical review of the POC thresholds (PM1, PP2, BP1, BS2, PS4).
+
+### Earlier POCs
 
 POC 1 (rules in StarRocks SQL) and POC 2 (Arrow Flight read, Stream Load write; Python and Rust) were dropped. At 50M
 synthetic loci, this exchange through Parquet loaded fastest (one `FILES()` load in one transaction beats Stream
