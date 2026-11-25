@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-7
+version: poc-8
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -104,11 +104,15 @@ bp1:
   min_plp: 10
   min_lof_share: 0.8               # P/LP LoF / P/LP
 
-# BS2: healthy homozygotes in a gene with an OMIM inheritance. POC values.
+# BS2: healthy homozygotes in a gene with an OMIM inheritance. Strongest first. Below Strong, gnomAD holds carriers of
+# incompletely penetrant recessive variants (prod: 0.5 % of BS2 variants 2-49 homozygotes are ClinVar P/LP, 0.04 % at 50+).
 bs2:
   inheritance: [AR, XLR, DR, AD, XLD, DD]
-  min_gnomad_hom: 2
+  gnomad_hom:
+    Strong: 50
+    Supporting: 2
   min_local_hom_not_affected: 2   # not-affected homozygotes of the tenant (WGS + WXS)
+  local_strength: Supporting
 
 # ClinGen SVI points -> strength, for the criteria scored in points (PM3, PM6). Strongest first.
 svi_points:

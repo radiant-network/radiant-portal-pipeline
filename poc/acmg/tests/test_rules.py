@@ -204,8 +204,10 @@ def test_pm4_in_frame_indel():
 
 
 def test_bs2_gnomad_or_local_homozygotes_in_omim_gene():
-    assert codes(omim_inheritance=["AR"], gnomad_hom=2, **NOT_RARE) == ["BS2"]
-    assert codes(omim_inheritance=["AR"], local_hom_not_affected=2, **NOT_RARE) == ["BS2"]
+    assert codes(omim_inheritance=["AR"], gnomad_hom=50, **NOT_RARE) == ["BS2"]
+    assert codes(omim_inheritance=["AR"], gnomad_hom=49, **NOT_RARE) == ["BS2_Supporting"]
+    assert codes(omim_inheritance=["AR"], local_hom_not_affected=2, **NOT_RARE) == ["BS2_Supporting"]
+    assert codes(gnomad_hom=50, **NOT_RARE) == []
     assert codes(gnomad_hom=5, **NOT_RARE) == []  # no OMIM inheritance
 
 

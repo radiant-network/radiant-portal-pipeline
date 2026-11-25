@@ -117,9 +117,10 @@ def pm4(rs: Ruleset) -> pl.Expr:
 def bs2(rs: Ruleset) -> pl.Expr:
     p = rs.bs2
     gnomad_hom, local_hom = pl.col("gnomad_hom"), pl.col("local_hom_not_affected")
-    healthy_hom = (gnomad_hom >= p.min_gnomad_hom).fill_null(False) | (local_hom >= p.min_local_hom_not_affected)
-    cond = _has_any(p.inheritance, "omim_inheritance") & healthy_hom
-    return _graded(rs, "BS2", [(cond, Strength.STRONG, gnomad_hom, p.min_gnomad_hom)])
+    omim = _has_any(p.inheritance, "omim_inheritance")
+    grades = [(omim & (gnomad_hom >= t).fill_null(False), s, gnomad_hom, t) for s, t in p.gnomad_hom.items()]
+    local_t = p.min_local_hom_not_affected
+    return _graded(rs, "BS2", [*grades, (omim & (local_hom >= local_t), p.local_strength, local_hom, local_t)])
 
 
 def pm6(rs: Ruleset) -> pl.Expr:

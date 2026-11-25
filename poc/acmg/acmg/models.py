@@ -123,12 +123,6 @@ class Pm4Rule(Frozen):
     consequences: list[str]
 
 
-class Bs2Rule(Frozen):
-    inheritance: list[str]
-    min_gnomad_hom: Annotated[int, Field(gt=0)]
-    min_local_hom_not_affected: Annotated[int, Field(gt=0)]
-
-
 class DeNovoRule(Frozen):
     assumed_points: Annotated[float, Field(gt=0)]
 
@@ -164,6 +158,18 @@ def strongest_first(name: str, grades: dict) -> None:
     values = list(grades.values())
     if not grades or values != sorted(values, reverse=True) or len(set(values)) != len(values):
         raise ValueError(f"{name} thresholds must strictly decrease, strongest first: {grades}")
+
+
+class Bs2Rule(Frozen):
+    inheritance: list[str]
+    gnomad_hom: Grades
+    min_local_hom_not_affected: Annotated[int, Field(gt=0)]
+    local_strength: Strength
+
+    @model_validator(mode="after")
+    def _graded_strongest_first(self):
+        strongest_first("bs2.gnomad_hom", self.gnomad_hom)
+        return self
 
 
 class Bp7Rule(Frozen):
