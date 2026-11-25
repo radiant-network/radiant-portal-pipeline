@@ -32,7 +32,7 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | variant | BP7 | synonymous + low SpliceAI | — |
 | variant | PVS1 | LoF consequence + LOEUF + LoF P/LP in the gene (`clinvar.mc`); stop or frameshift in the last exon gives `PVS1_Strong` | no 50-nt rule, no critical region |
 | variant | PM4 | in-frame indel, stop lost | no repeat-region exception |
-| variant | PM1 | ClinVar P/LP missense within ±25 bp, no B/LB; PM1 + PP3 capped at 4 points | POC thresholds |
+| variant | PM1 | ClinVar P/LP missense within ±25 bp, no B/LB missense; PM1 + PP3 capped at 4 points | POC thresholds |
 | variant | PP2, BP1 | missense and LoF shares of the gene's ClinVar P/LP (`clinvar.mc`) | POC thresholds; `mc` format to check |
 | variant | BS2 | homozygotes in gnomAD or the tenant's not-affected, gene with an OMIM inheritance | POC thresholds |
 | variant | PS4 | odds ratio affected vs not affected of the tenant (`germline_pc/pn_{wgs,wxs}_{affected,not_affected}`), CI lower bound > 1, variant meeting PM2 | individuals, not families: relatives and the case itself counted; not affected are mostly parents |

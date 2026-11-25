@@ -181,7 +181,7 @@ class Pm1Rule(Frozen):
     consequences: list[str]
     window_bp: Annotated[int, Field(gt=0)]
     min_plp_missense: Annotated[int, Field(gt=0)]
-    max_blb: Annotated[int, Field(ge=0)]
+    max_blb_missense: Annotated[int, Field(ge=0)]
 
 
 class Pp2Rule(Frozen):
@@ -265,7 +265,7 @@ class Fact(BaseModel):
     # ClinVar counts computed by variant_facts.sql (never null).
     clinvar_plp: bool = False
     clinvar_plp_missense_window: int = 0
-    clinvar_blb_window: int = 0
+    clinvar_blb_missense_window: int = 0
     gene_plp: int = 0
     gene_plp_missense: int = 0
     gene_plp_lof: int = 0

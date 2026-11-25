@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-5
+version: poc-6
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -75,19 +75,19 @@ clinvar:
   min_stars: 1
 
 # ClinVar-based criteria. POC values, to calibrate in the clinical review.
-# PM1 hotspot: P/LP missense ClinVar variants within window_bp of the variant (itself excluded), no B/LB there.
+# PM1 hotspot: P/LP missense ClinVar variants within window_bp of the variant (itself excluded), no B/LB missense there.
 pm1:
   consequences: [missense_variant]
   window_bp: 25
   min_plp_missense: 4
-  max_blb: 0
+  max_blb_missense: 0
 
 # PP2: a missense variant in a gene whose ClinVar P/LP variants are mostly missense, with few benign missense.
 pp2:
   consequences: [missense_variant]
   min_plp: 10
-  min_missense_share: 0.5          # P/LP missense / P/LP
-  max_benign_missense_share: 0.1   # B/LB missense / (P/LP missense + B/LB missense)
+  min_missense_share: 0.3          # P/LP missense / P/LP
+  max_benign_missense_share: 0.2   # B/LB missense / (P/LP missense + B/LB missense)
 
 # BP1: a missense variant in a gene whose ClinVar P/LP variants are mostly truncating.
 bp1:

@@ -38,7 +38,7 @@ clinvar_window AS (
     SELECT
         v.locus_id,
         sum(IF(cv.plp AND cv.missense, 1, 0)) AS plp_missense,
-        sum(IF(cv.blb, 1, 0)) AS blb
+        sum(IF(cv.blb AND cv.missense, 1, 0)) AS blb_missense
     FROM ${tenant_db}.snv__variant v
     JOIN clinvar_binned cv ON cv.chromosome = v.chromosome AND cv.bin = floor(v.start / ${pm1_window_bp})
     WHERE abs(cv.start - v.start) <= ${pm1_window_bp}
@@ -78,7 +78,7 @@ SELECT
     v.omim_inheritance_code AS omim_inheritance,
     coalesce(cl.plp, FALSE) AS clinvar_plp,
     CAST(coalesce(w.plp_missense, 0) AS BIGINT) AS clinvar_plp_missense_window,
-    CAST(coalesce(w.blb, 0) AS BIGINT) AS clinvar_blb_window,
+    CAST(coalesce(w.blb_missense, 0) AS BIGINT) AS clinvar_blb_missense_window,
     CAST(coalesce(cg.plp, 0) AS BIGINT) AS gene_plp,
     CAST(coalesce(cg.plp_missense, 0) AS BIGINT) AS gene_plp_missense,
     CAST(coalesce(cg.plp_lof, 0) AS BIGINT) AS gene_plp_lof,

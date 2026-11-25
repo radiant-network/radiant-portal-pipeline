@@ -174,8 +174,8 @@ def bs4(rs: Ruleset) -> pl.Expr:
 
 def pm1(rs: Ruleset) -> pl.Expr:
     p = rs.pm1
-    plp_missense, blb = pl.col("clinvar_plp_missense_window"), pl.col("clinvar_blb_window")
-    cond = _has_any(p.consequences) & (plp_missense >= p.min_plp_missense) & (blb <= p.max_blb)
+    plp_missense, blb = pl.col("clinvar_plp_missense_window"), pl.col("clinvar_blb_missense_window")
+    cond = _has_any(p.consequences) & (plp_missense >= p.min_plp_missense) & (blb <= p.max_blb_missense)
     return _graded(rs, "PM1", [(cond, Strength.MODERATE, plp_missense, p.min_plp_missense)])
 
 

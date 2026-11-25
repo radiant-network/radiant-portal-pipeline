@@ -137,7 +137,7 @@ def test_pm1_in_hotspot():
 
 
 def test_pm1_blocked_by_benign_in_window():
-    assert codes(**MISSENSE, **HOTSPOT, clinvar_blb_window=1) == []
+    assert codes(**MISSENSE, **HOTSPOT, clinvar_blb_missense_window=1) == []
 
 
 def test_pm1_needs_missense():
@@ -155,11 +155,13 @@ def test_pm1_kept_with_pp3_moderate():
 
 
 def test_pp2_in_missense_gene():
-    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=12, gene_blb_missense=1) == ["PP2"]
+    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=6, gene_blb_missense=1) == ["PP2"]
+    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=5) == []
 
 
 def test_pp2_blocked_by_benign_missense():
-    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=12, gene_blb_missense=2) == []
+    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=12, gene_blb_missense=3) == ["PP2"]
+    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=12, gene_blb_missense=4) == []
 
 
 def test_bp1_in_lof_gene():
