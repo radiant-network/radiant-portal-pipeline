@@ -6,7 +6,7 @@ from radiant.tasks.iceberg.utils import merge_schemas
 from radiant.tasks.vcf.experiment import Experiment
 from radiant.tasks.vcf.snv.common import SCHEMA as COMMON_SCHEMA
 from radiant.tasks.vcf.snv.common import Common
-from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_WT, InfoKeys, calls_without_phased
+from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_WT, InfoKeys, calls_without_phased, sample_phased
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -214,7 +214,6 @@ def process_occurrence(
     gt_types = record.gt_types
     gt_depths = record.gt_depths
     gt_alt_freqs = record.gt_alt_freqs
-    gt_phases = record.gt_phases
 
     # Tumor FORMAT
     t_dp = dp_arr[tumor_index][0] if dp_arr is not None else 0
@@ -226,7 +225,7 @@ def process_occurrence(
     t_ad_total = gt_depths[tumor_index] if gt_depths[tumor_index] > 0 else None
     t_ad_ratio = gt_alt_freqs[tumor_index] if gt_alt_freqs[tumor_index] > 0 else None
     t_af = t_ad_ratio
-    t_phased = gt_phases[tumor_index]
+    t_phased = sample_phased(record, tumor_index)
     t_sq = sq_arr[tumor_index][0] if sq_arr is not None else None
 
     # Normal FORMAT — absent for a tumor-only analysis
@@ -244,7 +243,7 @@ def process_occurrence(
         n_ad_total = gt_depths[normal_index] if gt_depths[normal_index] > 0 else None
         n_ad_ratio = gt_alt_freqs[normal_index] if gt_alt_freqs[normal_index] > 0 else None
         n_af = n_ad_ratio
-        n_phased = gt_phases[normal_index]
+        n_phased = sample_phased(record, normal_index)
         n_sq = sq_arr[normal_index][0] if sq_arr is not None else None
 
     occurrences[tumor_exp.seq_id] = {

@@ -73,13 +73,14 @@ pub fn gt_type(gts: &[i32], nper: usize, sample: usize) -> i32 {
     }
 }
 
-/// `Variant.gt_phases[i]`: `raw[i*nper] > 0 and bcf_gt_is_phased(raw[i*nper + 1])`.
+/// `vcf_utils.py::sample_phased`: `raw[i*nper] > 0 and bcf_gt_is_phased(raw[i*nper + 1])` for a sample with two
+/// alleles or more; a haploid sample (one allele, or a padded record) is never phased.
 ///
-/// cyvcf2 reads `raw[i*nper + 1]` whatever the ploidy, so a haploid sample takes the phase bit of the next
-/// sample's allele; for the last haploid sample it reads past the array (undefined), taken here as unphased.
+/// cyvcf2's `gt_phases` reads `raw[i*nper + 1]` whatever the ploidy: the next sample's allele, or past the array for
+/// the last sample (undefined: the value differed between macOS and Linux). Both engines apply the ploidy check.
 pub fn phased(gts: &[i32], nper: usize, sample: usize) -> bool {
     let i = sample * nper;
-    gts[i] > 0 && gts.get(i + 1).is_some_and(|&v| v & 1 == 1)
+    nper > 1 && gts[i] > 0 && gts[i + 1] != INT32_VECTOR_END && gts[i + 1] & 1 == 1
 }
 
 /// Where `gt_ref_depths` / `gt_alt_depths` read from.
@@ -207,9 +208,15 @@ mod tests {
 
     #[test]
     fn haploid_padding() {
-        let gts = [enc(1, false), INT32_VECTOR_END, enc(0, false), enc(1, false)];
+        let gts = [enc(1, false), INT32_VECTOR_END, enc(0, false), enc(1, true)];
         assert_eq!(calls(&gts, 2, 0), vec![1]);
         assert_eq!(gt_type(&gts, 2, 0), HOM_ALT);
+        // The padding's low bit is 1: a haploid sample in a diploid record is still unphased.
+        assert!(!phased(&gts, 2, 0));
+        assert!(phased(&gts, 2, 1));
+        // Haploid record: never phased, also for the last sample.
+        assert!(!phased(&[enc(1, false), enc(1, true)], 1, 0));
+        assert!(!phased(&[enc(1, false), enc(1, true)], 1, 1));
     }
 
     #[test]

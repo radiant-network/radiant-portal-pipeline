@@ -134,8 +134,13 @@ def _write_and_upload(reader, task, catalog, tables: dict[str, tuple[str, dict]]
         logger.info(f"Starting processing vcf for task {task.task_id} with file {task.vcf_filepath} (rust engine)")
         # Same span name as the Python path, so the traces of both engines compare.
         with tracer.start_as_current_span(f"vcf_task_{task.task_id}"):
-            files = reader.write_parquet(sinks, RUST_BATCH_RECORDS)
-            _log_stats(reader.stats(), task)
+            try:
+                files = reader.write_parquet(sinks, RUST_BATCH_RECORDS)
+                _log_stats(reader.stats(), task)
+            finally:
+                # The readers are `unsendable`: drop this reference here, so a traceback does not keep the reader
+                # for the garbage collector to drop on another thread (PyO3 then leaks it and logs a RuntimeError).
+                del reader
         for key, (name, partition_filter) in tables.items():
             rows = sum(f[1] for f in files[key])
             logger.info(f"{name}: {rows} rows in {len(files[key])} Parquet files")
@@ -161,24 +166,27 @@ def process_task_rust(task: RadiantGermlineAnnotationTask, catalog, namespace: s
         _raise_python_error(e)
         raise
 
-    logger.info(
-        f"Task {task.task_id}: parental origin from {'slivar' if reader.slivar_parental_origin else 'etl'}, "
-        f"transmission mode from {'slivar' if reader.slivar_transmission_mode else 'etl'} (rust engine)"
-    )
-    occurrence_filter = {"part": task.part, "task_id": task.task_id}
-    variant_csq_filter = {"task_id": task.task_id}
-    return _write_and_upload(
-        reader,
-        task,
-        catalog,
-        {
-            "occurrence": (f"{namespace}.germline_snv_occurrence", occurrence_filter),
-            "variant": (f"{namespace}.snv_variant", variant_csq_filter),
-            "consequence": (f"{namespace}.snv_consequence", variant_csq_filter),
-            # Same partition filter as the occurrences: a re-imported task replaces its pairs, even with none.
-            "comphet": (f"{namespace}.germline_snv_comphet", occurrence_filter),
-        },
-    )
+    try:
+        logger.info(
+            f"Task {task.task_id}: parental origin from {'slivar' if reader.slivar_parental_origin else 'etl'}, "
+            f"transmission mode from {'slivar' if reader.slivar_transmission_mode else 'etl'} (rust engine)"
+        )
+        occurrence_filter = {"part": task.part, "task_id": task.task_id}
+        variant_csq_filter = {"task_id": task.task_id}
+        return _write_and_upload(
+            reader,
+            task,
+            catalog,
+            {
+                "occurrence": (f"{namespace}.germline_snv_occurrence", occurrence_filter),
+                "variant": (f"{namespace}.snv_variant", variant_csq_filter),
+                "consequence": (f"{namespace}.snv_consequence", variant_csq_filter),
+                # Same partition filter as the occurrences: a re-imported task replaces its pairs, even with none.
+                "comphet": (f"{namespace}.germline_snv_comphet", occurrence_filter),
+            },
+        )
+    finally:
+        del reader  # see `_write_and_upload`
 
 
 def process_somatic_task_rust(task: RadiantSomaticAnnotationTask, catalog, namespace: str, vcf_threads=None) -> dict:
@@ -191,32 +199,35 @@ def process_somatic_task_rust(task: RadiantSomaticAnnotationTask, catalog, names
     reader = radiant_vcf.SomaticSnvReader(
         task.vcf_filepath, [e.aliquot for e in task.experiments], task.task_id, task.part, threads=vcf_threads
     )
-    filtered = check_samples(task, reader.file_samples, reader.samples)
-    tumor = filtered.experiments[filtered.tumor_index]
-    normal = filtered.experiments[filtered.normal_index] if filtered.normal_index is not None else None
     try:
-        reader.configure(
-            tumor_index=filtered.tumor_index,
-            tumor_seq_id=tumor.seq_id,
-            tenant_code=tumor.tenant_code,
-            normal_index=filtered.normal_index,
-            normal_seq_id=normal.seq_id if normal is not None else None,
-        )
-    except RuntimeError as e:
-        _raise_python_error(e)
-        raise
+        filtered = check_samples(task, reader.file_samples, reader.samples)
+        tumor = filtered.experiments[filtered.tumor_index]
+        normal = filtered.experiments[filtered.normal_index] if filtered.normal_index is not None else None
+        try:
+            reader.configure(
+                tumor_index=filtered.tumor_index,
+                tumor_seq_id=tumor.seq_id,
+                tenant_code=tumor.tenant_code,
+                normal_index=filtered.normal_index,
+                normal_seq_id=normal.seq_id if normal is not None else None,
+            )
+        except RuntimeError as e:
+            _raise_python_error(e)
+            raise
 
-    variant_csq_filter = {"task_id": task.task_id}
-    return _write_and_upload(
-        reader,
-        task,
-        catalog,
-        {
-            "occurrence": (f"{namespace}.somatic_snv_occurrence", {"part": task.part, "task_id": task.task_id}),
-            "variant": (f"{namespace}.snv_variant", variant_csq_filter),
-            "consequence": (f"{namespace}.snv_consequence", variant_csq_filter),
-        },
-    )
+        variant_csq_filter = {"task_id": task.task_id}
+        return _write_and_upload(
+            reader,
+            task,
+            catalog,
+            {
+                "occurrence": (f"{namespace}.somatic_snv_occurrence", {"part": task.part, "task_id": task.task_id}),
+                "variant": (f"{namespace}.snv_variant", variant_csq_filter),
+                "consequence": (f"{namespace}.snv_consequence", variant_csq_filter),
+            },
+        )
+    finally:
+        del reader  # see `_write_and_upload`
 
 
 def _raise_python_error(e: RuntimeError) -> None:

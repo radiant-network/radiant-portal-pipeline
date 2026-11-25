@@ -12,7 +12,7 @@ from radiant.tasks.vcf.snv.germline.inheritance import (
     slivar_parental_origin,
     slivar_transmission_mode,
 )
-from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT, InfoKeys
+from radiant.tasks.vcf.vcf_utils import ZYGOSITY, ZYGOSITY_HET, ZYGOSITY_HOM, ZYGOSITY_WT, InfoKeys, sample_phased
 
 SCHEMA = merge_schemas(
     COMMON_SCHEMA,
@@ -177,7 +177,6 @@ def process_occurrence(
     gt_types = record.gt_types
     gt_depths = record.gt_depths
     gt_alt_freqs = record.gt_alt_freqs
-    gt_phases = record.gt_phases
     genotypes = record.genotypes
 
     for idx, exp in enumerate(ped.experiments):
@@ -236,7 +235,7 @@ def process_occurrence(
             "ad_alt": ad_alt,
             "ad_total": ad_total if ad_total > 0 else None,
             "ad_ratio": ad_ratio if ad_ratio > 0 else None,
-            "phased": gt_phases[idx],
+            "phased": sample_phased(record, idx),
         }
 
     if ped.is_family:

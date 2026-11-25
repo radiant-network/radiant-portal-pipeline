@@ -65,8 +65,8 @@ it is set, so an environment switches engines without a new image; unset, the im
 ## Parity
 
 The Rust code is a port of the Python code and of the cyvcf2 v0.31.1 properties it reads, quirks included
-(`strict_gt` genotype types, the C `int` sum of `AD`, the `gt_phases` read of the next value, INFO scalar rules,
-raw `FORMAT/SQ` values). Each function names the Python or cyvcf2 code it ports.
+(`strict_gt` genotype types, the C `int` sum of `AD`, INFO scalar rules, raw `FORMAT/SQ` values). One quirk is
+fixed in both engines instead: see `phased` below. Each function names the Python or cyvcf2 code it ports.
 
 - `tests/unit/vcf/germline/test_rust_engine_parity.py` and `tests/unit/vcf/somatic/test_rust_engine_parity.py` run
   the real `process_task` through both engines. Python rows: the Arrow table each `TableAccumulator` would write.
@@ -138,6 +138,14 @@ germline run.
 - `somatic_snv_occurrence.tumor_sq` / `normal_sq`: a missing `FORMAT/SQ` value (`.`) is stored as NaN, not null,
   because cyvcf2's `format()` returns htslib's missing-float bit pattern, a NaN. The Rust engine reproduces it.
 - Somatic `occurrence.py` reads `INFO/CAL` (`info_cal`), but the table has no such column, so the value is dropped.
+
+## Found while porting (fixed in both engines)
+
+- `phased` / `tumor_phased` / `normal_phased` of a haploid genotype: cyvcf2's `gt_phases` reads the phase bit of the
+  second allele whatever the ploidy, so a haploid sample took the next sample's bit, and the last sample read past
+  the genotype array (undefined: the parity tests failed on Linux, not on macOS). `vcf_utils.sample_phased` and
+  `genotype.rs::phased` now give False for a haploid sample. Rows written before this change keep their value until
+  the task is imported again.
 
 ## Not done (POC scope)
 
