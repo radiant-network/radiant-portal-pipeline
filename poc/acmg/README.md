@@ -30,7 +30,7 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | variant | BA1, BS1, PM2_Supporting | `gnomad_genomes_v3` (global AF, AN) and the AF of the tenant's not affected (`snv__variant` carrier frequency, Hardy-Weinberg), the higher, except for ClinVar P/LP; PM2 dropped when common in the not affected | global AF, not grpmax; no BA1 exception list beyond ClinVar P/LP |
 | variant | PP3, BP4 | REVEL (Pejaver 2022), SpliceAI (Walker 2023) | — |
 | variant | BP7 | synonymous + low SpliceAI | — |
-| variant | PVS1 | LoF consequence + LOEUF + LoF P/LP in the gene (`clinvar.mc`); stop or frameshift in the last exon gives `PVS1_Strong` | no 50-nt rule, no critical region |
+| variant | PVS1 | LoF consequence + ClinGen HI 3 or 30, or LOEUF + LoF P/LP in the gene (`clinvar.mc`); never with HI 40; stop or frameshift in the last exon gives `PVS1_Strong` | no 50-nt rule, no critical region |
 | variant | PM4 | in-frame indel, stop lost | no repeat-region exception |
 | variant | PM1 | ClinVar P/LP missense within ±25 bp, no B/LB missense; PM1 + PP3 capped at 4 points | POC thresholds |
 | variant | PP2, BP1 | missense and LoF shares of the gene's ClinVar P/LP (`clinvar.mc`) | POC thresholds; `mc` format to check |
@@ -42,6 +42,8 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | occurrence | BP2 | in trans with a ClinVar pathogenic variant in a dominant-only gene (OMIM) | no "in cis" branch |
 
 Every ClinVar read skips variants whose best RCV has fewer than `clinvar.min_stars` stars (`clinvar_rcv_summary`).
+PVS1, PM1 and PP2 are dropped in a gene whose every ClinGen gene-disease validity is Disputed, Refuted or No Known
+Disease Relationship (`clingen.no_disease_drops`).
 
 Missing: PS1/PM5, PS2, PP4, PS3/BS3, BP3, BP5, PP5/BP6; PS4 from published cases (no literature source). Siblings: not read yet (probands only).
 
@@ -63,12 +65,22 @@ named `acmg_poc*`.
 .venv/bin/python -m acmg.exchange [--part 3 | --seq-ids 9 12]
 ```
 
+## ClinGen files
+
+Each run rebuilds `clingen_gene` in `--output-db` from two ClinGen downloads (public, CC0), copied once under
+`<S3_BUCKET>/clingen/`. Copy them again to take a newer ClinGen:
+
+| File | Source |
+|---|---|
+| `ClinGen_gene_curation_list_GRCh38.tsv` | https://ftp.clinicalgenome.org/ClinGen_gene_curation_list_GRCh38.tsv |
+| `gene-validity.csv` | https://search.clinicalgenome.org/kb/gene-validity/download |
+
 ## Run on a real cluster
 
 | | |
 |---|---|
-| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet` |
-| Writes | the run's files under `s3://<bucket>/runs/<run id>/` (deleted at the end), the three tables of `--output-db` (created if missing; **refused if it is the shared or the tenant database**) |
+| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/` |
+| Writes | the run's files under `s3://<bucket>/runs/<run id>/` (deleted at the end), the four tables of `--output-db` (created if missing; **refused if it is the shared or the tenant database**) |
 | Never | DROP, TRUNCATE, UPDATE or DELETE on a Radiant table |
 | Prints | counts per class and per criterion, file and row counts, timings |
 

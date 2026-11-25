@@ -277,3 +277,16 @@ def test_ruleset_rejects_unordered_frequencies():
     data["frequency"]["bs1_min_af"] = 0.1
     with pytest.raises(ValidationError, match="pm2_max_af < bs1_min_af < ba1_min_af"):
         Ruleset.model_validate(data)
+
+
+def test_pvs1_from_clingen_haploinsufficiency():
+    stop = {"consequences": ["stop_gained"], **NOT_RARE}
+    assert codes(**stop, clingen_hi_score=3) == ["PVS1"]
+    assert codes(**stop, clingen_hi_score=30) == ["PVS1"]
+    assert codes(**stop, clingen_hi_score=2) == []
+    assert codes(**stop, clingen_hi_score=40, gnomad_loeuf=0.3, gene_plp_lof=2) == []
+
+
+def test_gene_without_disease_drops_pathogenic_gene_criteria():
+    assert codes(consequences=["stop_gained"], clingen_hi_score=3, clingen_no_disease=True, **NOT_RARE) == []
+    assert codes(**MISSENSE, **HOTSPOT, clingen_no_disease=True) == []

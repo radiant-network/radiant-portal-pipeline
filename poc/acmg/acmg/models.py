@@ -112,6 +112,8 @@ class ScopeRule(Frozen):
 class Pvs1Rule(Frozen):
     max_loeuf: Annotated[float, Field(gt=0)]
     min_gene_plp_lof: Annotated[int, Field(ge=0)]
+    hi_scores: list[int]
+    not_hi_scores: list[int]
     consequences: list[str]
     nmd_escape_consequences: list[str]
     nmd_escape_strength: Strength
@@ -177,6 +179,10 @@ class ClinvarRule(Frozen):
     min_stars: Annotated[int, Field(ge=0, le=4)]
 
 
+class ClingenRule(Frozen):
+    no_disease_drops: list[str]
+
+
 class Pm1Rule(Frozen):
     consequences: list[str]
     window_bp: Annotated[int, Field(gt=0)]
@@ -213,6 +219,7 @@ class Ruleset(Frozen):
     pvs1: Pvs1Rule
     bp7: Bp7Rule
     clinvar: ClinvarRule
+    clingen: ClingenRule
     pm1: Pm1Rule
     pp2: Pp2Rule
     bp1: Bp1Rule
@@ -275,6 +282,9 @@ class Fact(BaseModel):
     gnomad_hom: int | None = None
     local_hom_not_affected: int = 0
     omim_inheritance: list[str] = []
+    # ClinGen: haploinsufficiency score; every gene-disease validity is Disputed, Refuted or No Known Disease.
+    clingen_hi_score: int | None = None
+    clingen_no_disease: bool = False
     # Carriers and sequenced patients of the tenant, from the ETL's frequencies (PS4).
     affected_carriers: int = 0
     affected_total: int = 0

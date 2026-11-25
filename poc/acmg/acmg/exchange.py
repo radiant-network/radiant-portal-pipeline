@@ -29,6 +29,7 @@ from urllib.parse import urlparse
 
 import polars as pl
 import pyarrow.parquet as pq
+from acmg import clingen
 from acmg.db import HERE, IDENTIFIERS, connect, execute, sql
 from acmg.models import OCCURRENCE_FACT_SCHEMA, VARIANT_FACT_SCHEMA, Ruleset
 from acmg.rules import OCCURRENCE_CRITERIA, VARIANT_CRITERIA, combine, evaluate, to_wide
@@ -197,6 +198,24 @@ def check(args) -> dict:
     return plans
 
 
+def load_clingen(output_db: str, prefix: str, s3) -> int:
+    """Rebuilds the clingen_gene table from the ClinGen files on S3, read by the variant facts."""
+    bucket = s3_settings()["bucket"]
+
+    def read(key: str) -> str:
+        with s3.open_input_stream(f"{bucket}/{key}") as f:
+            return f.read().decode()
+
+    genes = clingen.genes(read(clingen.DOSAGE), read(clingen.VALIDITY))
+    pq.write_table(genes.to_arrow(), f"{prefix}/clingen/genes.parquet", filesystem=s3)
+    columns = ", ".join(clingen.SCHEMA)
+    execute(
+        f"INSERT OVERWRITE {output_db}.clingen_gene ({columns})\nSELECT {columns}\n"
+        f"FROM FILES(\n{files_properties(f's3://{prefix}/clingen/genes.parquet')}\n)"
+    )
+    return genes.height
+
+
 def run_level(name: str, params: dict, args, prefix: str, s3) -> dict:
     level, timings = LEVELS[name], {}
     report = {"rows": 0, "criteria": Counter(), "classes": Counter()}
@@ -264,6 +283,7 @@ def run(args) -> dict:
     start = time.perf_counter()
     execute(sql("create_tables.sql", output_db=args.output_db))
     try:
+        log(clingen_genes=load_clingen(args.output_db, prefix, s3))
         steps = {name: run_level(name, params, args, prefix, s3) for name in LEVELS}
     finally:
         if not args.keep_files:

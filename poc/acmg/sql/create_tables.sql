@@ -1,5 +1,14 @@
 CREATE DATABASE IF NOT EXISTS ${output_db};
 
+-- ClinGen facts per gene, rebuilt at each run from the ClinGen downloads on S3 (acmg.clingen).
+CREATE TABLE IF NOT EXISTS ${output_db}.clingen_gene (
+    symbol VARCHAR(100) NOT NULL,
+    hi_score INT NULL,
+    no_disease BOOLEAN NOT NULL
+)
+PRIMARY KEY (symbol)
+DISTRIBUTED BY HASH(symbol) BUCKETS 1;
+
 -- Criteria met by a variant, before exclusions and caps (applied when an occurrence is classified).
 CREATE TABLE IF NOT EXISTS ${output_db}.acmg_variant_criteria (
     locus_id BIGINT NOT NULL,

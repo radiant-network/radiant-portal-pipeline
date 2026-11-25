@@ -76,6 +76,8 @@ SELECT
     CAST(coalesce(v.germline_hom_wgs_not_affected, 0) + coalesce(v.germline_hom_wxs_not_affected, 0) AS BIGINT)
         AS local_hom_not_affected,
     v.omim_inheritance_code AS omim_inheritance,
+    CAST(cgn.hi_score AS BIGINT) AS clingen_hi_score,
+    coalesce(cgn.no_disease, FALSE) AS clingen_no_disease,
     coalesce(cl.plp, FALSE) AS clinvar_plp,
     CAST(coalesce(w.plp_missense, 0) AS BIGINT) AS clinvar_plp_missense_window,
     CAST(coalesce(w.blb_missense, 0) AS BIGINT) AS clinvar_blb_missense_window,
@@ -99,3 +101,4 @@ LEFT JOIN ${shared_db}.gnomad_genomes_v3 g ON g.locus_id = c.locus_id
 LEFT JOIN clinvar_locus cl ON cl.locus_id = c.locus_id
 LEFT JOIN clinvar_window w ON w.locus_id = c.locus_id
 LEFT JOIN clinvar_gene cg ON cg.symbol = c.symbol
+LEFT JOIN ${output_db}.clingen_gene cgn ON cgn.symbol = c.symbol

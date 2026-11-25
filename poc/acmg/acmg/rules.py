@@ -97,8 +97,12 @@ def bp7(rs: Ruleset) -> pl.Expr:
 
 def pvs1(rs: Ruleset) -> pl.Expr:
     p, t = rs.pvs1, rs.pvs1.max_loeuf
-    # LoF must be a known disease mechanism of the gene: LOEUF says intolerant, ClinVar LoF P/LP says pathogenic.
-    lof = _has_any(p.consequences) & (loeuf < t) & (pl.col("gene_plp_lof") >= p.min_gene_plp_lof)
+    # LoF must be a known disease mechanism of the gene: ClinGen HI says so, or LOEUF says intolerant and ClinVar
+    # LoF P/LP says pathogenic. ClinGen "dosage sensitivity unlikely" vetoes both.
+    hi = pl.col("clingen_hi_score")
+    clinvar_lof = (loeuf < t) & (pl.col("gene_plp_lof") >= p.min_gene_plp_lof)
+    mechanism = (hi.is_in(p.hi_scores).fill_null(False) | clinvar_lof) & ~hi.is_in(p.not_hi_scores).fill_null(False)
+    lof = _has_any(p.consequences) & mechanism
     last_exon = (pl.col("exon_rank") == pl.col("exon_total")).fill_null(False)
     nmd_escape = _has_any(p.nmd_escape_consequences) & last_exon
     return _graded(
@@ -228,6 +232,14 @@ OCCURRENCE_CRITERIA = ["BS4", "PM3", "PM6", "PP1", "BP2"]
 assert sorted(VARIANT_CRITERIA + OCCURRENCE_CRITERIA) == sorted(CRITERIA)
 
 
+def _criterion(name: str, rs: Ruleset) -> pl.Expr:
+    """The criterion's evidence, dropped in a gene that ClinGen ties to no disease."""
+    expr = CRITERIA[name](rs)
+    if name in rs.clingen.no_disease_drops:
+        expr = pl.when(~pl.col("clingen_no_disease")).then(expr).otherwise(pl.lit(None, EVIDENCE_DTYPE))
+    return expr
+
+
 def _settle(exprs: dict[str, pl.Expr], rs: Ruleset) -> dict[str, pl.Expr]:
     """Evidence of each criterion after exclusions, then point caps."""
     met = {name: expr.is_not_null() for name, expr in exprs.items()}
@@ -242,7 +254,7 @@ def _settle(exprs: dict[str, pl.Expr], rs: Ruleset) -> dict[str, pl.Expr]:
 
 def evaluate(facts: pl.DataFrame | pl.LazyFrame, rs: Ruleset, names: list[str], keys: list[str]) -> pl.LazyFrame:
     """One row per criterion met: keys, criterion, code, strength, points, value, threshold, ruleset_version."""
-    wide = facts.lazy().select(*keys, **{name: CRITERIA[name](rs) for name in names})
+    wide = facts.lazy().select(*keys, **{name: _criterion(name, rs) for name in names})
     return (
         wide.unpivot(index=keys, on=names, variable_name="criterion", value_name="evidence")
         .filter(pl.col("evidence").is_not_null())
@@ -302,5 +314,5 @@ def combine(evidence: pl.DataFrame | pl.LazyFrame, rs: Ruleset, keys: list[str])
 
 def classify(facts: pl.DataFrame | pl.LazyFrame, rs: Ruleset, keys=("locus_id", "transcript_id")) -> pl.LazyFrame:
     """Both levels on one full facts row: the same result as evaluate, then combine."""
-    evidence = facts.lazy().with_columns(**{name: rule(rs) for name, rule in CRITERIA.items()})
+    evidence = facts.lazy().with_columns(**{name: _criterion(name, rs) for name in CRITERIA})
     return combine(evidence, rs, list(keys))

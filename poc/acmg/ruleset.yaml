@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-6
+version: poc-7
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -55,9 +55,13 @@ spliceai:
   benign_max: 0.1
 
 pvs1:
+  # LoF a known disease mechanism (Abou Tayoun 2018): a ClinGen haploinsufficiency score in hi_scores
+  # (3 sufficient evidence, 30 autosomal recessive), or LOEUF below max_loeuf and this many LoF P/LP ClinVar
+  # variants in the gene (POC value). Never with a score in not_hi_scores (40: dosage sensitivity unlikely).
   max_loeuf: 0.6
-  # LoF a known disease mechanism: this many LoF P/LP ClinVar variants in the gene (POC value).
   min_gene_plp_lof: 2
+  hi_scores: [3, 30]
+  not_hi_scores: [40]
   consequences: [stop_gained, frameshift_variant, splice_acceptor_variant, splice_donor_variant, start_lost]
   # A stop or a frameshift in the last exon escapes NMD: PVS1 drops to this strength.
   # No 50-nt rule and no exon positions yet: exon rank only.
@@ -73,6 +77,11 @@ bp7:
 # ClinVar review status: every criterion ignores a variant whose best RCV (`clinvar_rcv_summary`) has fewer stars.
 clinvar:
   min_stars: 1
+
+# Criteria dropped in a gene whose every ClinGen gene-disease validity is Disputed, Refuted or No Known Disease
+# Relationship. A gene ClinGen has not curated keeps them.
+clingen:
+  no_disease_drops: [PVS1, PM1, PP2]
 
 # ClinVar-based criteria. POC values, to calibrate in the clinical review.
 # PM1 hotspot: P/LP missense ClinVar variants within window_bp of the variant (itself excluded), no B/LB missense there.
