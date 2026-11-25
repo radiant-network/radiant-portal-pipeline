@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-4
+version: poc-5
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -139,8 +139,11 @@ bp2:
   not_recessive: [AR, XLR, DR]
   min_carriers: 1
 
-# BS4: affected parents who do not carry the variant.
+# BS4: affected parents who do not carry the variant, in a gene that is dominant only (OMIM): a recessive allele
+# comes from the unaffected carrier parent, and a son's X from his mother. No penetrance data: assumed full.
 bs4:
+  dominant: [AD]
+  not_recessive: [AR, XLR, DR]
   min_affected_noncarriers: 1
 
 # Criterion -> criteria it cancels when it is met.

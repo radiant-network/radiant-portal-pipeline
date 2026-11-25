@@ -149,6 +149,8 @@ class Bp2Rule(Frozen):
 
 
 class Bs4Rule(Frozen):
+    dominant: list[str]
+    not_recessive: list[str]
     min_affected_noncarriers: Annotated[int, Field(gt=0)]
 
 

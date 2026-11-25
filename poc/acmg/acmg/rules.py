@@ -151,9 +151,13 @@ def pp1(rs: Ruleset) -> pl.Expr:
     return _scored(rs, "PP1", pl.col("affected_carrier_parents"), rs.pp1)
 
 
+def _dominant_only(dominant: list[str], not_recessive: list[str]) -> pl.Expr:
+    return _has_any(dominant, "omim_inheritance") & ~_has_any(not_recessive, "omim_inheritance")
+
+
 def bp2(rs: Ruleset) -> pl.Expr:
     p = rs.bp2
-    dominant_only = _has_any(p.dominant, "omim_inheritance") & ~_has_any(p.not_recessive, "omim_inheritance")
+    dominant_only = _dominant_only(p.dominant, p.not_recessive)
     carriers = pl.col("comphet_p_trans")
     return _graded(
         rs, "BP2", [(dominant_only & (carriers >= p.min_carriers), Strength.SUPPORTING, carriers, p.min_carriers)]
@@ -161,8 +165,11 @@ def bp2(rs: Ruleset) -> pl.Expr:
 
 
 def bs4(rs: Ruleset) -> pl.Expr:
-    noncarriers, t = pl.col("affected_noncarrier_parents"), rs.bs4.min_affected_noncarriers
-    return _graded(rs, "BS4", [(noncarriers >= t, Strength.STRONG, noncarriers, t)])
+    # Recessive gene: the causal allele often comes from the unaffected carrier parent, so no segregation test.
+    p = rs.bs4
+    noncarriers, t = pl.col("affected_noncarrier_parents"), p.min_affected_noncarriers
+    cond = _dominant_only(p.dominant, p.not_recessive) & (noncarriers >= t)
+    return _graded(rs, "BS4", [(cond, Strength.STRONG, noncarriers, t)])
 
 
 def pm1(rs: Ruleset) -> pl.Expr:

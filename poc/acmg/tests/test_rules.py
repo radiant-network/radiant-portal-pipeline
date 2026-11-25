@@ -244,9 +244,11 @@ def test_pp1_meioses():
     assert codes(affected_carrier_parents=5, **NOT_RARE) == ["PP1_Moderate"]
 
 
-def test_bs4_affected_noncarrier_parent():
-    result = run(affected_noncarrier_parents=1, **NOT_RARE)
+def test_bs4_affected_noncarrier_parent_in_dominant_only_gene():
+    result = run(omim_inheritance=["AD"], affected_noncarrier_parents=1, **NOT_RARE)
     assert (result.acmg_criteria, result.acmg_points) == (["BS4"], -4)
+    assert codes(omim_inheritance=["AD", "AR"], affected_noncarrier_parents=1, **NOT_RARE) == []
+    assert codes(affected_noncarrier_parents=1, **NOT_RARE) == []
 
 
 def test_bp2_in_dominant_only_gene_cancels_pm3():

@@ -37,7 +37,7 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | variant | BS2 | homozygotes in gnomAD or the tenant's not-affected, gene with an OMIM inheritance | POC thresholds |
 | variant | PS4 | odds ratio affected vs not affected of the tenant (`germline_pc/pn_{wgs,wxs}_{affected,not_affected}`), CI lower bound > 1, variant meeting PM2 | individuals, not families: relatives and the case itself counted; not affected are mostly parents |
 | occurrence | PM6 | the slivar de novo call of the proband | all "assumed": one case = PM6_Supporting; no PS2 |
-| occurrence | PP1, BS4 | the proband's affected parents carrying / not carrying the variant | PP1 never fires with 2 parents (< 3 meioses): segregation across families is for the ETL |
+| occurrence | PP1, BS4 | the proband's affected parents carrying / not carrying the variant; BS4 in a dominant-only gene (OMIM) | PP1 never fires with 2 parents (< 3 meioses): segregation across families is for the ETL; BS4 assumes full penetrance |
 | occurrence | PM3 | the proband's comphet partner (`germline__snv__comphet`) P/LP in ClinVar; "trans" in a complete trio | — |
 | occurrence | BP2 | in trans with a ClinVar pathogenic variant in a dominant-only gene (OMIM) | no "in cis" branch |
 
