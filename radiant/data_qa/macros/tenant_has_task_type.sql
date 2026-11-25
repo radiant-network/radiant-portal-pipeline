@@ -1,7 +1,7 @@
 {#
   SQL condition: the tenant of the current pass has a non-deleted task of `task_type` in
   staging_sequencing_experiment — the same criterion import_part gates each load on (e.g.
-  somatic CNVs are only loaded for `tumor_only_variant_calling` tasks).
+  somatic CNVs are only loaded for `alignment_somatic_variant_calling` tasks, RAD-272).
 
   Meant for the `expected_if` option of should_not_be_empty / should_not_contain_only_null:
   a table that the tenant's tasks never fill is allowed to be empty, and the test turns strict

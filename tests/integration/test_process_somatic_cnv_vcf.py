@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from radiant.tasks.vcf.cnv.somatic.process import process_tasks
-from radiant.tasks.vcf.experiment import Experiment, TumorOnlyVariantCallingTask
+from radiant.tasks.vcf.experiment import AlignmentSomaticVariantCallingTask, Experiment
 from tests.integration.conftest import compress_and_index_vcf
 
 # The nine ASCN columns are absent altogether on DRAGEN 3.10.8 and declared-but-omitted per record on
@@ -32,9 +32,9 @@ def somatic_cnv_vcfs():
         yield output
 
 
-def _task(vcf_filepath: str, aliquot: str) -> TumorOnlyVariantCallingTask:
-    return TumorOnlyVariantCallingTask(
-        task_id=70,
+def _task(vcf_filepath: str, aliquot: str) -> AlignmentSomaticVariantCallingTask:
+    return AlignmentSomaticVariantCallingTask(
+        task_id=76,
         part=1,
         analysis_type="somatic",
         deleted=False,
@@ -89,7 +89,7 @@ def test_process_task(
     assert (
         (occ["aliquot"] == "TCRBOA6-T")
         & (occ["seq_id"] == 64)
-        & (occ["task_id"] == 70)
+        & (occ["task_id"] == 76)
         & (occ["part"] == 1)
         & (occ["tenant_code"] == "tenant1")
     ).all(), "Expected sample/sequencingID/taskID/part/tenant tagging not found in occurrences"

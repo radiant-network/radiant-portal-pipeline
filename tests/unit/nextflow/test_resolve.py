@@ -1,11 +1,14 @@
 import pytest
 
 from radiant.tasks.decision import Decision, Reason, ReasonCode
+from radiant.tasks.journal import Pipeline
 from radiant.tasks.nextflow.resolve import (
     CaseResolutionError,
     decide_cases,
+    outcome_entries,
     resolve_families,
     select_cases,
+    select_run_cases,
     tenants_of,
 )
 from tests.unit.nextflow.conftest import member_row
@@ -206,16 +209,100 @@ def _decided(rows, excluded_tenants=()):
 
 
 PENDING_SEQUENCING = {"seq_id": None, "aliquot": None, "alignment_task_id": None, "gvcf_matches": 0}
+# A member whose current experiment is annotated, so the case was too.
+DONE = {"annotated": True, "case_annotated": True}
+
+
+def _first_run(*patient_ids):
+    return tuple(Reason(code=ReasonCode.FIRST_RUN, patient_id=p) for p in patient_ids)
+
+
+def _new_sequencing(*patient_ids):
+    return tuple(Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=p) for p in patient_ids)
+
+
 NO_GVCF = {"alignment_task_id": None, "gvcf_url": None, "gvcf_matches": 0}
 
 
-def test_a_ready_trio_runs_without_a_reason(trio_rows):
-    assert _decided([_facts(r) for r in trio_rows]) == {1072: (Decision.RUN, ())}
+def test_a_first_run_names_every_member_it_runs_for(trio_rows):
+    assert _decided([_facts(r) for r in trio_rows]) == {1072: (Decision.RUN, _first_run(100, 101, 102))}
 
 
-def test_a_member_awaiting_sequencing_makes_the_decision_wait(trio_rows):
+def test_a_parent_not_sequenced_yet_does_not_hold_the_proband_back(trio_rows):
     rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r) for r in trio_rows]
+    assert _decided(rows) == {
+        1072: (Decision.RUN, (*_first_run(100, 102), Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101)))
+    }
+
+
+def test_a_parent_not_aligned_yet_does_not_hold_the_proband_back(trio_rows):
+    pending_alignment = {"alignment_task_id": None, "current_alignment_task_id": None, "gvcf_matches": 0}
+    rows = [_facts(r, **pending_alignment) if r["role"] == "mother" else _facts(r) for r in trio_rows]
+    assert _decided(rows)[1072][0] == Decision.RUN
+
+
+def test_after_the_partial_run_the_case_waits_for_the_absent_parent(trio_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r, annotated=True) for r in trio_rows]
     assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))}
+
+
+def test_the_case_runs_again_once_the_parent_arrives_and_says_for_whom(trio_rows):
+    rows = [_facts(r, case_annotated=True) if r["role"] == "father" else _facts(r, **DONE) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.RUN, _new_sequencing(101))}
+
+
+def test_a_member_sequenced_again_runs_the_case_again_with_its_reason(trio_rows):
+    """Its new experiment becomes the current one, not annotated for the case."""
+    rows = [
+        _facts(r, seq_id=599, case_annotated=True) if r["role"] == "proband" else _facts(r, **DONE) for r in trio_rows
+    ]
+    assert _decided(rows) == {1072: (Decision.RUN, _new_sequencing(100))}
+
+
+def test_a_singleton_sequenced_again_is_not_a_first_run(singleton_rows):
+    """No other member is annotated: only the case tells a later run from the first one."""
+    rows = [_facts(r, seq_id=699, case_annotated=True) for r in singleton_rows]
+    assert _decided(rows) == {8: (Decision.RUN, _new_sequencing(200))}
+
+
+def test_a_new_member_and_one_still_missing_are_both_named(trio_rows):
+    rows = [
+        _facts(r, case_annotated=True)
+        if r["role"] == "father"
+        else _facts(r, **PENDING_SEQUENCING, case_annotated=True)
+        if r["role"] == "mother"
+        else _facts(r, **DONE)
+        for r in trio_rows
+    ]
+    assert _decided(rows) == {
+        1072: (Decision.RUN, (*_new_sequencing(101), Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=102)))
+    }
+
+
+def test_an_absent_proband_still_makes_the_case_wait(trio_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "proband" else _facts(r) for r in trio_rows]
+    assert _decided(rows) == {1072: (Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=100),))}
+
+
+def test_a_parent_with_wrong_data_still_blocks(trio_rows):
+    rows = [_facts(r, **NO_GVCF) if r["role"] == "father" else _facts(r) for r in trio_rows]
+    assert _decided(rows)[1072] == (
+        Decision.BLOCKED,
+        (Reason(code=ReasonCode.MISSING_INPUT, detail="gvcf", patient_id=101),),
+    )
+
+
+def test_a_case_annotated_for_every_member_is_not_decided(trio_rows):
+    assert _decided([_facts(r, annotated=True) for r in trio_rows]) == {}
+
+
+def test_the_family_is_built_from_the_members_present(trio_rows, phenotype_rows):
+    rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] == "father" else _facts(r) for r in trio_rows]
+    selection = select_run_cases(rows, [])
+    assert selection.case_ids == [1072]
+    (family,) = resolve_families([m.model_dump() for m in selection.members], phenotype_rows)
+    assert [m.role for m in family.members] == ["proband", "mother"]
+    assert family.father is None
 
 
 def test_a_blocking_reason_wins_over_a_waiting_one_and_both_are_kept(trio_rows):
@@ -279,6 +366,7 @@ def test_the_facts_run_exactly_the_cases_the_pending_query_selects():
 def test_two_members_waiting_are_two_reasons(trio_rows):
     rows = [_facts(r, **PENDING_SEQUENCING) if r["role"] != "proband" else _facts(r) for r in trio_rows]
     assert set(_decided(rows)[1072][1]) == {
+        *_first_run(100),
         Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),
         Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=102),
     }
@@ -287,3 +375,57 @@ def test_two_members_waiting_are_two_reasons(trio_rows):
 def test_a_case_level_reason_names_no_member(trio_rows):
     rows = [_facts(r, project_code=None) for r in trio_rows]
     assert _decided(rows)[1072] == (Decision.BLOCKED, (Reason(code=ReasonCode.NO_PROJECT_CODE),))
+
+
+def test_the_child_selects_from_the_facts_like_the_scheduler_decides():
+    facts = [
+        _facts(member_row(case_id=case_id, **{k: v for k, v in o.items() if k != "current_alignment_task_id"}), **o)
+        for case_id, (o, _) in enumerate(SCENARIOS, start=1)
+    ]
+    selected = select_run_cases(facts, ["excluded"])
+    ran = {case_id for case_id, (decision, _) in _decided(facts, ["excluded"]).items() if decision == Decision.RUN}
+    assert set(selected.case_ids) == ran == {1}
+    assert {e.case_id for e in selected.excluded} == set(range(2, len(SCENARIOS) + 1))
+
+
+def _member(row, **overrides):
+    """A row of `germline_snv_case_members_select.sql`: no reason, no current alignment of its own."""
+    return {k: v for k, v in row.items() if k != "exclusion_reason"} | overrides
+
+
+def test_the_child_leaves_out_a_parent_with_no_gvcf_yet(trio_rows):
+    rows = [_member(r, **NO_GVCF) if r["role"] == "father" else _member(r) for r in trio_rows]
+    selection = select_run_cases(rows, [])
+    assert selection.case_ids == [1072]
+    assert sorted(m.role for m in selection.members) == ["mother", "proband"]
+
+
+def test_the_child_excludes_a_case_whose_proband_has_no_gvcf(trio_rows):
+    rows = [_member(r, **NO_GVCF) if r["role"] == "proband" else _member(r) for r in trio_rows]
+    selection = select_run_cases(rows, [])
+    assert selection.case_ids == []
+    assert [e.case_id for e in selection.excluded] == [1072]
+
+
+def test_the_child_excludes_a_case_with_two_gvcfs_for_a_member(trio_rows):
+    rows = [_member(r, gvcf_matches=2) if r["role"] == "mother" else _member(r) for r in trio_rows]
+    assert select_run_cases(rows, []).case_ids == []
+
+
+def test_outcomes_follow_the_registration_of_each_tenant():
+    selection = {
+        "case_ids": [1, 2],
+        "members": [{"case_id": 1, "tenant_code": "a"}, {"case_id": 2, "tenant_code": "b"}],
+        "excluded": [
+            {"case_id": 3, "reason": {"code": "ambiguous_input", "detail": "gvcf", "patient_id": 7}, "message": "x"}
+        ],
+    }
+    assert [(e.case_id, e.decision, e.reasons) for e in outcome_entries(selection, {"a"}, Pipeline.GERMLINE_SNV)] == [
+        (1, Decision.SUCCEEDED, ()),
+        (2, Decision.FAILED, ()),
+        (3, Decision.FAILED, (Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="gvcf", patient_id=7),)),
+    ]
+
+
+def test_no_selection_journals_nothing():
+    assert outcome_entries({}, set(), Pipeline.GERMLINE_SNV) == []

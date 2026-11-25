@@ -12,7 +12,8 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
-        "discover_scope",
+        "has_cases",
+        "fetch_case_members",
         "select_cases",
         "fetch_phenotypes",
         "resolve_cases",
@@ -21,27 +22,26 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "collect_outputs",
         "list_tenants",
         "register_tasks",
+        "journal_outcomes",
     }
     assert dag.validate() is None
 
 
-def test_it_finds_its_own_work(dag_bag):
+def test_it_runs_the_named_cases_and_decides_nothing(dag_bag):
+    """The scheduler names the cases it decided `run` for; none named runs nothing."""
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
     assert dag.schedule is None
-    assert dag.get_task("discover_scope").upstream_list == []
-    assert set(dag.params) == {"task_ids", "excluded_tenants", "dry_run"}
-    assert dag.params["task_ids"] == []
+    assert set(dag.params) == {"case_ids", "excluded_tenants", "dry_run"}
+    assert dag.params["case_ids"] == []
     assert dag.params["dry_run"] is False
-
-
-def test_discovery_uses_the_cnv_query(dag_bag):
-    """The anti-join must be on the CNV annotation task type, and the trigger the gcnv VCF."""
-    sql = dag_bag.get_dag(DAG_ID).get_task("discover_scope").sql
-    assert "radiant_germline_cnv_annotation" in sql
-    assert "'gcnv'" in sql
-    assert "'gvcf'" not in sql
-    assert "{{ mapping.starrocks_pipeline_case }}" in sql
+    fetch = dag.get_task("fetch_case_members")
+    assert {t.task_id for t in fetch.upstream_list} == {"has_cases"}
+    assert "%(case_ids)s" in fetch.sql
+    assert "{{ mapping.starrocks_current_germline_gcnv }}" in fetch.sql
+    assert "annotated" not in fetch.sql
+    assert set(fetch.parameters) == {"case_ids"}
+    assert {t.task_id for t in dag.get_task("select_cases").upstream_list} == {"fetch_case_members"}
 
 
 def test_the_pipeline_run_is_pinned_to_the_generated_inputs(dag_bag):
@@ -66,9 +66,19 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     register = dag.get_task("register_tasks")
     assert isinstance(register, MappedOperator)
-    assert register.downstream_list == []
+    assert {t.task_id for t in register.downstream_list} == {"journal_outcomes"}
     assert {t.task_id for t in register.upstream_list} == {"list_tenants", "collect_outputs", "resolve_cases"}
     assert register.partial_kwargs.get("max_active_tis_per_dagrun") == 1
+
+
+def test_the_outcomes_are_journaled_last_and_do_not_decide_the_run_state(dag_bag):
+    """A teardown: a failed pipeline or registration is a `failed` marker, and still fails the run."""
+    outcomes = dag_bag.get_dag(DAG_ID).get_task("journal_outcomes")
+    assert {t.task_id for t in outcomes.upstream_list} == {"select_cases", "register_tasks"}
+    assert outcomes.downstream_list == []
+    assert outcomes.is_teardown
+    assert not outcomes.on_failure_fail_dagrun
+    assert outcomes.retries == 2
 
 
 def test_only_one_run_at_a_time(dag_bag):

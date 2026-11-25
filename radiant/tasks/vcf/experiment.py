@@ -6,7 +6,7 @@ RADIANT_GERMLINE_ANNOTATION_TASK = "radiant_germline_annotation"
 ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK = "alignment_germline_variant_calling"
 RADIANT_GERMLINE_CNV_ANNOTATION_TASK = "radiant_germline_cnv_annotation"
 RADIANT_SOMATIC_ANNOTATION_TASK = "radiant_somatic_annotation"
-TUMOR_ONLY_VARIANT_CALLING_TASK = "tumor_only_variant_calling"
+ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK = "alignment_somatic_variant_calling"
 
 
 class Experiment(BaseModel):
@@ -22,6 +22,14 @@ class Experiment(BaseModel):
     experimental_strategy: str
     request_priority: str | None = None
     histology_type: str | None = None
+
+
+def first_row_per_experiment(rows: list[dict]) -> list[dict]:
+    """The first row of each `seq_id`, in row order: one per experiment for a task with no case in task_context."""
+    first_by_seq_id: dict[int, dict] = {}
+    for r in rows:
+        first_by_seq_id.setdefault(r["seq_id"], r)
+    return list(first_by_seq_id.values())
 
 
 class BaseTask(BaseModel, ABC):
@@ -71,10 +79,7 @@ class AlignmentGermlineVariantCallingTask(BaseTask):
     def experiment_rows(rows: list[dict]) -> list[dict]:
         # The task has no case: an experiment in two germline cases gives one row per case, which may differ by
         # `family_role` (RAD-266). The occurrences are written once per experiment, and the role plays no part.
-        first_by_seq_id: dict[int, dict] = {}
-        for r in rows:
-            first_by_seq_id.setdefault(r["seq_id"], r)
-        return list(first_by_seq_id.values())
+        return first_row_per_experiment(rows)
 
     @staticmethod
     def gather_additional_args(rows: list[dict]) -> dict:
@@ -134,25 +139,49 @@ class RadiantSomaticAnnotationTask(BaseTask):
         raise ValueError("No tumor sample found in rows for `radiant_somatic_annotation` task.")
 
 
-class TumorOnlyVariantCallingTask(BaseTask):
-    task_type: str = TUMOR_ONLY_VARIANT_CALLING_TASK
+class AlignmentSomaticVariantCallingTask(BaseTask):
+    """The tumor-only Dragen run of a somatic case (RAD-272): its somatic CNV VCF (`scnv`) is loaded as is.
+
+    The portal holds this task type to a single aliquot (TASK-007), which must be the tumor. A tumor-normal run is a
+    `somatic_variant_calling` task and has no CNV.
+    """
+
+    task_type: str = ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK
     cnv_vcf_filepath: str | None = None
 
     @staticmethod
+    def experiment_rows(rows: list[dict]) -> list[dict]:
+        # The task has no case (task_context.case_id is NULL): a tumor experiment in two somatic cases gives one row
+        # per case, as RAD-266 does for `alignment_germline_variant_calling`. The occurrences are written once per
+        # experiment.
+        return first_row_per_experiment(rows)
+
+    @staticmethod
     def gather_additional_args(rows: list[dict]) -> dict:
-        # The task type asserts tumor-only; these checks hold the file to it. A second row means a
-        # tumor-normal task mislabelled upstream, and a non-tumoral histology means a normal sample
-        # whose depths would otherwise be written as tumor values. Tumor-normal CNV is out of scope,
-        # so fail loudly rather than half-succeed.
-        if len(rows) > 1:
-            raise ValueError("`tumor_only_variant_calling` task expects a single row per task.")
+        # The task type asserts tumor-only; these checks hold the file to it. A second experiment means a
+        # tumor-normal task mislabelled upstream, and a non-tumoral histology means a normal sample whose depths
+        # would otherwise be written as tumor values. Tumor-normal CNV is out of scope, so fail loudly rather than
+        # half-succeed.
+        task_id = rows[0].get("task_id")
+        seq_ids = {r["seq_id"] for r in rows}
+        if len(seq_ids) != 1:
+            raise ValueError(
+                f"`{ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK}` task [{task_id}] expects a single experiment, "
+                f"got seq_ids: {sorted(seq_ids)}."
+            )
         if rows[0].get("histology_type") != "tumoral":
             raise ValueError(
-                f"`tumor_only_variant_calling` task [{rows[0].get('task_id')}] expects a tumoral sample, "
+                f"`{ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK}` task [{task_id}] expects a tumoral sample, "
                 f"got histology_type: {rows[0].get('histology_type')}."
             )
+        filepaths = {r.get("cnv_vcf_filepath") for r in rows}
+        if len(filepaths) != 1:
+            raise ValueError(
+                f"`{ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK}` task [{task_id}] expects a single CNV VCF, "
+                f"got: {sorted(str(f) for f in filepaths)}."
+            )
         return {
-            "cnv_vcf_filepath": rows[0].get("cnv_vcf_filepath"),
+            "cnv_vcf_filepath": filepaths.pop(),
         }
 
 
@@ -161,7 +190,7 @@ _TASK_TYPES = {
     ALIGNMENT_GERMLINE_VARIANT_CALLING_TASK: AlignmentGermlineVariantCallingTask,
     RADIANT_GERMLINE_CNV_ANNOTATION_TASK: RadiantGermlineCnvAnnotationTask,
     RADIANT_SOMATIC_ANNOTATION_TASK: RadiantSomaticAnnotationTask,
-    TUMOR_ONLY_VARIANT_CALLING_TASK: TumorOnlyVariantCallingTask,
+    ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK: AlignmentSomaticVariantCallingTask,
 }
 
 

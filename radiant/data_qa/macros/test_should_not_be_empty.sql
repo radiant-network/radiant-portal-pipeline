@@ -20,7 +20,7 @@
               name: snv_variant__should_not_be_empty
           - should_not_be_empty:
               name: somatic_cnv_occurrence__should_not_be_empty
-              expected_if: "{{ tenant_has_task_type('tumor_only_variant_calling') }}"
+              expected_if: "{{ tenant_has_task_type('alignment_somatic_variant_calling') }}"
 #}
 
 {% test should_not_be_empty(model, expected_if=none) %}

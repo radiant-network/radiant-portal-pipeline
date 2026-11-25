@@ -15,7 +15,7 @@ from radiant.dags import DAGS_DIR
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
 
 _GERMLINE = "alignment_germline_variant_calling"
-_TUMOR_ONLY = "tumor_only_variant_calling"
+_TUMOR_ONLY = "alignment_somatic_variant_calling"  # the tumor-only Dragen run (RAD-272)
 
 # Intervals, all on chromosome 1. A, B and C match each other; D starts one base after C, so its overlap with A
 # is 799 999, one base under 80% of A's 1 000 000, but it still matches B and C. E (GAIN) and F (GAINLOH) share

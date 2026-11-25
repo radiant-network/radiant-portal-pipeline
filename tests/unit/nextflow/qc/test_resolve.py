@@ -2,8 +2,17 @@ import logging
 
 import pytest
 
-from radiant.tasks.decision import Reason, ReasonCode
-from radiant.tasks.nextflow.qc.resolve import CaseResolutionError, resolve_cases, select_cases, tenants_of
+from radiant.tasks.decision import Decision, Reason, ReasonCode
+from radiant.tasks.journal import Pipeline
+from radiant.tasks.nextflow.qc.resolve import (
+    CaseResolutionError,
+    decide_cases,
+    decide_somatic_cases,
+    resolve_cases,
+    select_cases,
+    select_run_cases,
+    tenants_of,
+)
 
 from .conftest import member_row
 
@@ -51,7 +60,9 @@ def test_two_tarballs_exclude_the_case(trio_rows, singleton_rows):
     rows = [r | ambiguous if r["role"] == "father" else r for r in trio_rows]
     selection = select_cases(rows + singleton_rows)
     assert selection.case_ids == [8]
-    assert [e.reason for e in selection.excluded] == [Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="metrics")]
+    assert [e.reason for e in selection.excluded] == [
+        Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="metrics", patient_id=101)
+    ]
     assert "more than one metrics document" in selection.excluded[0].message
 
 
@@ -145,7 +156,9 @@ def test_a_germline_member_without_a_cram_is_still_excluded(trio_rows):
     ]
     selection = select_cases(rows)
     assert selection.case_ids == []
-    assert {e.reason for e in selection.excluded} == {Reason(code=ReasonCode.MISSING_INPUT, detail="cram")}
+    assert {e.reason for e in selection.excluded} == {
+        Reason(code=ReasonCode.MISSING_INPUT, detail="cram", patient_id=100)
+    }
 
 
 def test_a_tumor_with_two_tarballs_is_excluded_as_ambiguous(tumor_rows):
@@ -153,7 +166,7 @@ def test_a_tumor_with_two_tarballs_is_excluded_as_ambiguous(tumor_rows):
     selection = select_cases(rows)
     assert selection.case_ids == []
     assert [(e.case_id, e.reason) for e in selection.excluded] == [
-        (23, Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="metrics"))
+        (23, Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="metrics", patient_id=62))
     ]
 
 
@@ -164,7 +177,7 @@ def test_a_tumor_without_a_tarball_is_excluded_as_no_metrics(tumor_rows, trio_ro
         selection = select_cases(rows + trio_rows)
     assert selection.case_ids == [1072]
     assert [(e.case_id, e.reason) for e in selection.excluded] == [
-        (23, Reason(code=ReasonCode.MISSING_INPUT, detail="metrics"))
+        (23, Reason(code=ReasonCode.MISSING_INPUT, detail="metrics", patient_id=62))
     ]
     assert "case 23 excluded (missing_input:metrics)" in caplog.text
     assert "published no metrics document" in caplog.text
@@ -179,3 +192,142 @@ def test_a_targeted_rerun_of_a_tumor_without_a_tarball_fails(tumor_rows):
 def test_a_germline_case_keeps_its_type(trio_rows):
     case = resolve_cases([m.model_dump() for m in select_cases(trio_rows).members])[0]
     assert (case.case_type, case.is_somatic) == ("germline", False)
+
+
+# --- the scheduler's decision -------------------------------------------------------------
+
+
+_NOT_SEQUENCED = {
+    "seq_id": None,
+    "aliquot": None,
+    "alignment_task_id": None,
+    "current_alignment_task_id": None,
+    "cram_url": None,
+    "crai_url": None,
+    "cram_matches": 0,
+    "dragen_metrics_url": None,
+    "dragen_metrics_matches": 0,
+}
+
+
+def _father(rows):
+    return next(row for row in rows if row["role"] == "father")
+
+
+def _decided(rows, excluded_tenants=(), decide=decide_cases):
+    return [(e.case_id, e.decision, e.reasons) for e in decide(rows, list(excluded_tenants))]
+
+
+def _first_run(*patient_ids):
+    return tuple(Reason(code=ReasonCode.FIRST_RUN, patient_id=p) for p in patient_ids)
+
+
+def _new_sequencing(*patient_ids):
+    return tuple(Reason(code=ReasonCode.NEW_SEQUENCING, patient_id=p) for p in patient_ids)
+
+
+def _qc_before(rows, *not_qc_roles):
+    for row in rows:
+        row["case_annotated"] = True
+        row["annotated"] = row["role"] not in not_qc_roles
+
+
+def test_a_first_run_names_every_member(trio_rows):
+    (entry,) = decide_cases(trio_rows, [])
+    assert (entry.pipeline, entry.decision, entry.reasons) == (
+        Pipeline.QUALITY_CONTROL,
+        Decision.RUN,
+        _first_run(100, 101, 102),
+    )
+
+
+def test_a_parent_not_sequenced_yet_does_not_block_the_proband(trio_rows):
+    _father(trio_rows).update(_NOT_SEQUENCED)
+    assert _decided(trio_rows) == [
+        (1072, Decision.RUN, (*_first_run(100, 102), Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101)))
+    ]
+
+
+def test_after_the_partial_run_the_case_waits_for_the_absent_parent(trio_rows):
+    _father(trio_rows).update(_NOT_SEQUENCED)
+    _qc_before(trio_rows, "father")
+    assert _decided(trio_rows) == [
+        (1072, Decision.WAIT, (Reason(code=ReasonCode.PENDING_SEQUENCING, patient_id=101),))
+    ]
+
+
+def test_the_case_runs_again_once_the_parent_arrives_and_says_for_whom(trio_rows):
+    _qc_before(trio_rows, "father")
+    assert _decided(trio_rows) == [(1072, Decision.RUN, _new_sequencing(101))]
+
+
+def test_a_singleton_sequenced_again_is_a_new_sequencing(singleton_rows):
+    _qc_before(singleton_rows, "proband")
+    assert _decided(singleton_rows) == [(8, Decision.RUN, _new_sequencing(200))]
+
+
+def test_a_member_without_a_cram_blocks_the_case(trio_rows):
+    _father(trio_rows).update(cram_url=None, cram_matches=0)
+    assert _decided(trio_rows) == [
+        (1072, Decision.BLOCKED, (Reason(code=ReasonCode.MISSING_INPUT, detail="cram", patient_id=101),))
+    ]
+
+
+def test_two_tarballs_block_a_germline_case(trio_rows):
+    _father(trio_rows)["dragen_metrics_matches"] = 2
+    assert _decided(trio_rows) == [
+        (1072, Decision.BLOCKED, (Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="metrics", patient_id=101),))
+    ]
+
+
+def test_a_germline_member_without_a_tarball_still_runs(singleton_rows):
+    assert _decided(singleton_rows) == [(8, Decision.RUN, _first_run(200))]
+
+
+def test_an_excluded_tenant_is_skipped(trio_rows):
+    (entry,) = decide_cases(trio_rows, ["radiant"])
+    assert entry.decision == Decision.SKIP
+
+
+def test_a_somatic_first_run_names_the_tumor(tumor_rows):
+    (entry,) = decide_somatic_cases(tumor_rows, [])
+    assert (entry.pipeline, entry.decision, entry.reasons) == (
+        Pipeline.QUALITY_CONTROL_SOMATIC,
+        Decision.RUN,
+        _first_run(62),
+    )
+
+
+def test_a_tumor_sequenced_again_is_a_new_sequencing(tumor_rows):
+    tumor_rows[0]["case_annotated"] = True
+    assert _decided(tumor_rows, decide=decide_somatic_cases) == [(23, Decision.RUN, _new_sequencing(62))]
+
+
+def test_a_tumor_without_a_tarball_blocks_the_case(tumor_rows):
+    tumor_rows[0].update(dragen_metrics_url=None, dragen_metrics_matches=0)
+    assert _decided(tumor_rows, decide=decide_somatic_cases) == [
+        (23, Decision.BLOCKED, (Reason(code=ReasonCode.MISSING_INPUT, detail="metrics", patient_id=62),))
+    ]
+
+
+# --- the child's check of the named cases ---------------------------------------------------
+
+
+def test_the_child_runs_the_family_without_its_absent_parent(trio_rows):
+    _father(trio_rows).update(_NOT_SEQUENCED)
+    selection = select_run_cases(trio_rows, [])
+    assert selection.case_ids == [1072]
+    assert [m.role for m in selection.members] == ["proband", "mother"]
+
+
+def test_the_child_leaves_out_a_case_whose_proband_is_absent(trio_rows):
+    next(r for r in trio_rows if r["role"] == "proband").update(_NOT_SEQUENCED)
+    selection = select_run_cases(trio_rows, [])
+    assert selection.case_ids == []
+    assert [e.reason.code for e in selection.excluded] == ["pending_sequencing"]
+
+
+def test_the_child_skips_an_excluded_tenant(tumor_rows):
+    selection = select_run_cases(tumor_rows, ["radiant"])
+    assert selection.case_ids == []
+    assert [e.reason.code for e in selection.excluded] == ["tenant_excluded"]

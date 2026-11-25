@@ -1,4 +1,4 @@
-"""Row fixtures shaped like what `sql/clinical/pending_quality_control_select.sql` and its somatic sibling return:
+"""Row fixtures shaped like what `sql/clinical/quality_control_{,somatic_}{facts,case_members}_select.sql` return:
 one row per member."""
 
 import pytest
@@ -71,7 +71,9 @@ def member_row(
             row |= {"cram_url": urls["cram"], "crai_url": urls["crai"], "cram_matches": 1}
         if tarball:
             row |= {"dragen_metrics_url": urls["tgz"], "dragen_metrics_matches": 1}
-    return row | overrides
+    row |= overrides
+    row.setdefault("current_alignment_task_id", row["alignment_task_id"])
+    return row
 
 
 @pytest.fixture

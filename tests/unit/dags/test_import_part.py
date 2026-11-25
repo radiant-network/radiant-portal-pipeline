@@ -3,6 +3,7 @@ from airflow.utils.trigger_rule import TriggerRule
 
 from radiant.dags import NAMESPACE
 from radiant.dags.import_part import (
+    build_seq_ids,
     build_tenant_scoped_params,
     tasks_output_processor,
 )
@@ -234,6 +235,11 @@ def test_dag_contains_all_tasks(dag_bag):
         "checkpoint_after_cnv",
         "delete_sequencing_experiments",
         "update_sequencing_experiment",
+        "extract_seq_ids",
+        "fetch_gene_coverage_files",
+        "load_gene_coverage_files",
+        "insert_gene_coverage",
+        "check_gene_coverage_files",
     ]
     assert set(task_ids) == set(expected_tasks)
 
@@ -253,7 +259,7 @@ def test_cnv_exomiser_reports_load_into_their_own_table(dag_bag):
         "{{ mapping.starrocks_staging_exomiser_cnv }}",
     )
     assert cnv_load.upstream_task_ids == {"load_exomiser_files", "extract_task_ids", "sanity_check_tasks"}
-    assert "refresh_iceberg_tables" in cnv_load.downstream_task_ids
+    assert "refresh_iceberg_tables" in {t.task_id for t in cnv_load.get_flat_relatives(upstream=False)}
     upstream_of_cnv_insert = {
         t.task_id
         for t in dag.get_task("germline_cnv_occurrence.insert_germline_cnv_occurrences").get_flat_relatives(
@@ -370,6 +376,8 @@ def test_failed_task_fails_the_run(dag_bag):
     leaves = {ti.task_id for ti in DagRun._tis_for_dagrun_state(None, dag=dag, tis=tis)}
     assert "release_import_lock" not in leaves
     assert {"delete_sequencing_experiments", "update_sequencing_experiment"} <= leaves
+    # RAD-315: the gene coverage check is a leaf, so a bad covgene file fails the run.
+    assert "check_gene_coverage_files" in leaves
 
 
 def test_only_one_partition_imports_at_a_time(dag_bag):
@@ -382,3 +390,70 @@ def test_only_one_partition_imports_at_a_time(dag_bag):
     `include_deferred` -- apache/airflow#40528). See `radiant/dags/docs/import_part.md`.
     """
     assert dag_bag.get_dag(f"{NAMESPACE}-import-part").max_active_runs == 1
+
+
+def test_build_seq_ids_splits_live_and_deleted_experiments_of_all_tenants():
+    assert build_seq_ids(_MULTI_TENANT_TASKS) == {"seq_ids": [10, 11, 20], "deleted_seq_ids": [30]}
+
+
+def test_build_seq_ids_without_experiments_never_renders_an_empty_in_list():
+    assert build_seq_ids([{"task_id": 1, "deleted": False, "experiments": []}]) == {
+        "seq_ids": [-1],
+        "deleted_seq_ids": [-1],
+    }
+
+
+def test_gene_coverage_loads_in_phase_3_like_exomiser(dag_bag):
+    """RAD-315: the shared load after the Exomiser loads, the per-tenant insert after insert_exomiser, in the serial
+    Phase 3 chain (one StarRocks write at a time). The check that fails the run with the bad files is a leaf."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-part")
+
+    for upstream, downstream in (
+        ("load_exomiser_cnv_files", "fetch_gene_coverage_files"),
+        ("fetch_gene_coverage_files", "load_gene_coverage_files"),
+        ("load_gene_coverage_files", "refresh_iceberg_tables"),
+        ("insert_exomiser", "insert_gene_coverage"),
+        ("insert_gene_coverage", "insert_germline_snv_comphet"),
+        ("insert_gene_coverage", "check_gene_coverage_files"),
+        ("load_gene_coverage_files", "check_gene_coverage_files"),
+        ("extract_seq_ids", "fetch_gene_coverage_files"),
+        ("extract_seq_ids", "load_gene_coverage_files"),
+    ):
+        assert downstream in dag.get_task(upstream).downstream_task_ids, (upstream, downstream)
+
+    assert dag.get_task("check_gene_coverage_files").downstream_task_ids == set()
+    assert "load_gene_coverage_files" not in dag.get_task("checkpoint_after_vcf_imports").downstream_task_ids
+
+    load = dag.get_task("load_gene_coverage_files")
+    assert load.table == "{{ mapping.starrocks_staging_gene_coverage }}"
+    insert = dag.get_task("insert_gene_coverage")
+    assert insert.partial_kwargs["table"] == "{{ mapping.starrocks_gene_coverage }}"
+    assert insert.partial_kwargs["max_active_tis_per_dagrun"] == 1
+
+
+@pytest.mark.parametrize(
+    "tasks, expected",
+    [
+        ([{"task_type": "alignment_somatic_variant_calling", "deleted": False}], True),
+        # A part holding only deleted tumor-only runs still runs the swap that purges their CNVs.
+        ([{"task_type": "alignment_somatic_variant_calling", "deleted": True}], True),
+        ([{"task_type": "radiant_somatic_annotation"}, {"task_type": "alignment_somatic_variant_calling"}], True),
+        # RAD-272: the type of the contract before 2026-11-10 no longer loads somatic CNVs.
+        ([{"task_type": "tumor_only_variant_calling"}], False),
+        ([{"task_type": "radiant_somatic_annotation"}], False),
+        ([{"task_type": "alignment_germline_variant_calling"}], False),
+        ([], False),
+    ],
+    ids=[
+        "tumor-only-run",
+        "deleted-tumor-only-run",
+        "with-annotation",
+        "old-type",
+        "annotation-only",
+        "germline-alignment",
+        "no-task",
+    ],
+)
+def test_sanity_check_somatic_cnvs_runs_on_the_tumor_only_run_only(dag_bag, tasks, expected):
+    check = dag_bag.get_dag(f"{NAMESPACE}-import-part").get_task("somatic_cnv_occurrence.sanity_check_somatic_cnvs")
+    assert check.python_callable(tasks) is expected

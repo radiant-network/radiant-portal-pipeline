@@ -10,10 +10,10 @@ SOMATIC = "somatic"
 
 
 class QcMember(BaseModel):
-    """One member of a case: one row of `sql/clinical/pending_quality_control_select.sql` or its somatic twin.
+    """One member of a case: one row of `sql/clinical/quality_control_{,somatic_}{facts,case_members}_select.sql`.
 
-    A member with no alignment comes back with null document fields and an
-    `exclusion_reason`. A somatic case has one member, its proband's tumor sample.
+    A member with no alignment comes back with null document fields, and the `exclusion_reason` decided from its
+    facts. A somatic case has one member, its proband's tumor sample.
     """
 
     case_id: int
@@ -39,6 +39,11 @@ class QcMember(BaseModel):
     # CRAM's directory; a somatic member without one is excluded as `no_metrics`.
     dragen_metrics_url: str | None = None
     dragen_metrics_matches: int = 0
+    current_alignment_task_id: int | None = None
+    # This member's current experiment already has a QC task for the case (facts queries only).
+    annotated: bool = False
+    # The case already has a QC task, whatever the experiment (facts queries only).
+    case_annotated: bool = False
     exclusion_reason: str | None = None
 
 

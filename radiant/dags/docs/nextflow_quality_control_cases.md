@@ -1,7 +1,7 @@
 # Nextflow Quality Control (from Cases)
 
-Finds the germline and the somatic cases that have been aligned but never quality-controlled
-(for a somatic case, its tumor alone), runs the Ferlab
+Runs the germline and the somatic cases the case scheduler names (for a somatic case, its tumor
+alone) through the Ferlab
 [quality-control-pipeline](https://github.com/Ferlab-Ste-Justine/quality-control-pipeline)
 over them from their DRAGEN metrics, and registers the per-family MultiQC report back onto
 each case as a **quality_control_metrics** task.
@@ -12,18 +12,20 @@ annotation.
 
 | # | Task | Does |
 |:--|:--|:--|
-| 1 | **discover_germline**, **discover_somatic** | Run the two pending queries, one per case type |
-| 2 | **select_cases** | Joins their rows, finds eligible cases, excludes the rest with a reason |
+| 0 | **has_cases** | Skips the run when no case is named |
+| 1 | **fetch_germline_members**, **fetch_somatic_members** | Read the members of the named cases, one query per case type |
+| 2 | **select_cases** | Checks the named cases again, excludes the ones that cannot run with a reason |
 | 3 | **resolve_cases** | Builds one family per case, proband first |
 | 4 | **generate_inputs** | Writes one samplesheet for every case of the run |
 | 5 | **run_pipeline** | One launcher run, for every case |
 | 6 | **collect_outputs** | Lists what the pipeline published |
 | 7 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
+| 8 | **journal_outcomes** | Writes **succeeded** or **failed** per case to the pipeline journal (a teardown) |
 
-It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
-daily with its own `excluded_tenants`, and moves the case statuses around it. Run
-it by hand only for a targeted rerun: the `excluded_tenants` default below applies to a manual run only. The
-parameters exist for targeted reruns and for configuration, not for normal operation.
+It has **no schedule of its own and decides nothing**: `radiant-case-scheduler` decides which cases
+run, starts it daily with them as **case_ids** and its own `excluded_tenants`, and moves the case
+statuses around it. Run it by hand only to rerun named cases: the `excluded_tenants` default below
+applies to a manual run only.
 
 ---
 
@@ -31,23 +33,25 @@ parameters exist for targeted reruns and for configuration, not for normal opera
 
 | Param | Default | Meaning |
 |:--|:--|:--|
-| **task_ids** | empty | **alignment_germline_variant_calling** or **alignment_somatic_variant_calling** task ids, for a targeted rerun (a somatic one is the task that published the tarball). Empty means "find everything" |
+| **case_ids** | empty | The germline and somatic cases to run. The case scheduler passes the ones it decided **run** for. Empty runs nothing |
 | **excluded_tenants** | $RADIANT_ETL_EXCLUDED_TENANTS | Tenants left out of case processing, reported as **tenant_excluded**. Empty excludes none |
 | **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing |
 
 > **dry_run on a scheduled run is a trap.** Nothing gets registered, so every case stays
-> eligible and tomorrow's run does the same work again. Manual runs only.
+> eligible and tomorrow's run does the same work again. Manual runs only. It writes no outcome either.
 
 ---
 
 ## What counts as "needs QC"
 
-A (case, sequencing experiment) pair is eligible when the pair's *current* experiment has an
-alignment (for a germline member, one publishing a CRAM), and no **quality_control_metrics**
-task is scoped to that same pair. The rule lives in two queries, one per case type:
-sql/clinical/pending_quality_control_select.sql (germline) and
-sql/clinical/pending_quality_control_somatic_select.sql (somatic). Their two selections are the
-same as the annotation query's:
+The case scheduler decides it, on the facts of two queries, one per case type:
+sql/clinical/quality_control_facts_select.sql (germline, journal pipeline **quality_control**) and
+sql/clinical/quality_control_somatic_facts_select.sql (somatic, **quality_control_somatic**). A
+case is a candidate when a member's *current* experiment has an alignment (for a germline member,
+one publishing a CRAM), and no **quality_control_metrics** task is scoped to that (case,
+experiment) pair. This DAG reads the members of the named cases with
+sql/clinical/quality_control_{,somatic_}case_members_select.sql. All four make the same selections
+as the annotation queries:
 
 - **One experiment per (case, member)** — the newest completed one.
 - **One alignment per experiment** — the newest, of the case's alignment type.
@@ -63,7 +67,11 @@ A normal experiment of a somatic case is ignored: QC of the normal, and somalier
 tumor and the normal, are out of scope. A somatic case usually has no family row: its member's role is **proband**, its affected status comes from its family
 row when there is one, else **unknown**.
 
-Both queries return **one row per member**, with the same columns: its case type, its DRAGEN
+A germline member other than the proband not sequenced or not aligned yet does not block the case:
+it runs with the members present, and the pipeline derives the pedigree with `0` for a parent missing
+from the samplesheet. Once the member arrives, the case runs again (`new_sequencing`).
+
+The members queries return **one row per member**, with the same columns: its case type, its DRAGEN
 metrics tarball and, for a germline member, its CRAM and index. The pipeline never reads a tumor's CRAM, so the CRAM
 neither selects nor excludes a somatic case, and its columns come back empty.
 
@@ -133,13 +141,15 @@ fails the run once its polling ends: that is bad data to fix by hand.
 
 ## Nothing fails the run — it gets excluded
 
-A candidate that cannot be run is dropped with a reason and the rest continues.
-**select_cases** logs them; grep for "excluded".
+The case scheduler journals a candidate that cannot run with its decision (**wait**, **blocked**,
+**skip**) and its reasons, and does not name it. **select_cases** checks the named cases again: one
+that cannot run any more is dropped with a reason, journaled **failed**, and the rest continues.
+It logs them; grep for "excluded".
 
 | Reason | Meaning | Transient? |
 |:--|:--|:--|
-| **pending_sequencing** | A member has no completed sequencing experiment yet | Yes |
-| **pending_alignment** | A member's current experiment has no alignment task yet | Yes |
+| **pending_sequencing** | The proband has no completed sequencing experiment yet (another member is left out instead) | Yes |
+| **pending_alignment** | The proband's current experiment has no alignment task yet (another member is left out instead) | Yes |
 | **missing_input:cram** | A germline member's current alignment published no CRAM, and somalier needs one | No |
 | **ambiguous_input:cram** | More than one CRAM on one germline alignment task — a mistyped document | No, fix the data |
 | **ambiguous_input:metrics** | More than one ssup / tgz tarball on one alignment task | No, fix the data |
@@ -151,10 +161,7 @@ A candidate that cannot be run is dropped with a reason and the rest continues.
 
 A germline member with no tarball is **not** excluded: it falls back to its CRAM's directory.
 
-If every candidate is excluded the run **skips**. A skipped run is not a failed one.
-
-> **A targeted rerun behaves differently on purpose.** With **task_ids** set, an unresolvable
-> case fails the run instead of being excluded.
+If every named case is excluded the run **skips**. A skipped run is not a failed one.
 
 ---
 

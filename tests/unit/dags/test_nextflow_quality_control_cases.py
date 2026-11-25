@@ -12,8 +12,9 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
-        "discover_germline",
-        "discover_somatic",
+        "has_cases",
+        "fetch_germline_members",
+        "fetch_somatic_members",
         "select_cases",
         "resolve_cases",
         "generate_inputs",
@@ -21,36 +22,36 @@ def test_dag_contains_the_expected_stages(dag_bag):
         "collect_outputs",
         "list_tenants",
         "register_tasks",
+        "journal_outcomes",
     }
     assert dag.validate() is None
 
 
-def test_it_finds_its_own_work(dag_bag):
+def test_it_runs_the_named_cases_and_decides_nothing(dag_bag):
+    """The scheduler names the cases it decided `run` for; none named runs nothing."""
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
     assert dag.schedule is None
-    assert dag.get_task("discover_germline").upstream_list == []
-    assert dag.get_task("discover_somatic").upstream_list == []
-    assert dag.params["task_ids"] == []
+    assert set(dag.params) == {"case_ids", "excluded_tenants", "dry_run"}
+    assert dag.params["case_ids"] == []
     assert dag.params["dry_run"] is False
 
 
-def test_discovery_is_one_query_per_case_type(dag_bag):
-    """Airflow resolves the `.sql` template into its text at parse time, so check the query
-    itself: the anti-join must be on the QC task type, not the annotation one."""
+def test_the_members_are_fetched_per_case_type_for_the_named_cases(dag_bag):
+    """No anti-join: a named case runs, QC'd before or not."""
     dag = dag_bag.get_dag(DAG_ID)
-    germline, somatic = dag.get_task("discover_germline"), dag.get_task("discover_somatic")
+    germline, somatic = dag.get_task("fetch_germline_members"), dag.get_task("fetch_somatic_members")
     assert "pc.case_type = 'germline'" in germline.sql
     assert "pc.case_type = 'somatic'" in somatic.sql
-    for query in (germline, somatic):
-        assert "quality_control_metrics" in query.sql
-        assert "radiant_germline_annotation" not in query.sql
-        assert set(query.parameters) == {"task_ids", "excluded_tenants"}
-
-
-def test_both_discoveries_feed_the_selection(dag_bag):
-    dag = dag_bag.get_dag(DAG_ID)
-    assert {t.task_id for t in dag.get_task("select_cases").upstream_list} == {"discover_germline", "discover_somatic"}
+    for fetch in (germline, somatic):
+        assert {t.task_id for t in fetch.upstream_list} == {"has_cases"}
+        assert "%(case_ids)s" in fetch.sql
+        assert "quality_control_metrics" not in fetch.sql
+        assert set(fetch.parameters) == {"case_ids"}
+    assert {t.task_id for t in dag.get_task("select_cases").upstream_list} == {
+        "fetch_germline_members",
+        "fetch_somatic_members",
+    }
 
 
 def test_one_launcher_run_for_every_case(dag_bag):
@@ -85,15 +86,48 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     register = dag.get_task("register_tasks")
     assert isinstance(register, MappedOperator)
-    assert register.downstream_list == []
+    assert {t.task_id for t in register.downstream_list} == {"journal_outcomes"}
     assert {t.task_id for t in register.upstream_list} == {"list_tenants", "collect_outputs", "resolve_cases"}
     assert register.partial_kwargs.get("max_active_tis_per_dagrun") == 1
 
 
-def test_task_ids_accept_both_alignment_types(dag_bag):
-    description = dag_bag.get_dag(DAG_ID).params.get_param("task_ids").description
-    assert "alignment_germline_variant_calling" in description
-    assert "alignment_somatic_variant_calling" in description
+def test_the_outcomes_are_journaled_last_and_do_not_decide_the_run_state(dag_bag):
+    """A teardown: a failed pipeline or registration is a `failed` marker, and still fails the run."""
+    outcomes = dag_bag.get_dag(DAG_ID).get_task("journal_outcomes")
+    assert {t.task_id for t in outcomes.upstream_list} == {"select_cases", "register_tasks"}
+    assert outcomes.downstream_list == []
+    assert outcomes.is_teardown
+    assert not outcomes.on_failure_fail_dagrun
+    assert outcomes.retries == 2
+
+
+def test_each_pipeline_journals_its_own_cases(dag_bag, monkeypatch):
+    """A germline case is a `quality_control` outcome, a somatic one a `quality_control_somatic` outcome."""
+    from radiant.tasks.decision import Decision
+    from radiant.tasks.journal import Pipeline
+
+    selections = {
+        "quality_control": {"case_ids": [3], "members": [{"case_id": 3, "tenant_code": "radiant"}], "excluded": []},
+        "quality_control_somatic": {
+            "case_ids": [23],
+            "members": [{"case_id": 23, "tenant_code": "other"}],
+            "excluded": [],
+        },
+    }
+
+    class TaskInstance:
+        def xcom_pull(self, task_ids, key=None):
+            return selections if task_ids == "select_cases" else [{"tenant": "radiant", "report": {}}]
+
+    recorded = []
+    context = {"ti": TaskInstance(), "params": {"dry_run": False}, "run_id": "manual__1"}
+    monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
+    monkeypatch.setattr("radiant.tasks.journal.record", lambda entries, run_id: recorded.extend(entries) or entries)
+    assert dag_bag.get_dag(DAG_ID).get_task("journal_outcomes").python_callable() == 2
+    assert [(e.case_id, e.pipeline, e.decision) for e in recorded] == [
+        (3, Pipeline.QUALITY_CONTROL, Decision.SUCCEEDED),
+        (23, Pipeline.QUALITY_CONTROL_SOMATIC, Decision.FAILED),
+    ]
 
 
 def test_only_one_run_at_a_time(dag_bag):
