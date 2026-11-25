@@ -165,7 +165,8 @@ def test_pp2_blocked_by_benign_missense():
 
 
 def test_bp1_in_lof_gene():
-    assert codes(**MISSENSE, gene_plp=20, gene_plp_lof=16) == ["BP1"]
+    assert codes(**MISSENSE, gene_plp=20, gene_plp_lof=19) == ["BP1"]
+    assert codes(**MISSENSE, gene_plp=20, gene_plp_lof=18) == []
 
 
 def test_gene_criteria_need_enough_plp():
