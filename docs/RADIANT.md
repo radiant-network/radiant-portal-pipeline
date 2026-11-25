@@ -33,22 +33,20 @@ Partitions are assigned based on the `experimental_strategy` (e.g., WGS, WXS). E
 
 ### Assignment Logic
 
-The assigner follows these rules to ensure consistency and efficiency:
+The assigner gives a partition to each group of linked rows of the delta, never to a row alone, so that the result does not depend on the order of the rows:
 
-1.  **Consistency Check**: It first checks if a partition has already been assigned for any of the following IDs associated with the sequencing experiment:
+1.  **Linked groups**: Two rows of the same strategy are linked when they share one of these IDs, directly or through other rows (a case → patient → case chain is one group):
     *   `patient_id`
     *   `seq_id`
     *   `case_id`
     *   `family_id`
-    *   This is represented in the `staging_sequencing_experiment_delta` view in columns: `patient_part`, `seq_part`, `case_part` or `family_part`.
 
-2.  **Reuse Existing Partition**: If any of the above IDs are already associated with a partition, that partition ID is reused for the current experiment. This ensures that all experiments belonging to the same patient or family are grouped into the same partition.
-    *   **Inconsistency Warning**: If multiple different partition IDs are found for the same group of related IDs, the process will raise a `ValueError` to prevent data corruption.
+2.  **Reuse Existing Partition**: If a row of the group already has a partition in staging (columns `patient_part`, `seq_part`, `case_part` or `family_part` of the `staging_sequencing_experiment_delta` view), the whole group goes to that partition. This keeps all experiments of the same patient, case or family in the same partition.
+    *   **Linked rows in several partitions**: If the rows of a group are already in two or more partitions, for example when a new trio links a mother and a father already sequenced in other cases, the group goes to the highest one and a warning names the partitions and the IDs. The patient whose partition is not kept then has experiments in two partitions: queries on it are slower, and the germline SNV frequencies, summed over partitions, count that patient twice.
 
-3.  **New Partition Assignment**: If no existing partition is found:
-    *   The experiment is assigned to the current active partition for its strategy.
-    *   The count of experiments in that partition is incremented.
-    *   If the partition reaches its limit (e.g., 100 for WGS), a new partition ID is generated (current ID + 1) and the count is reset.
+3.  **New Partition Assignment**: If no row of the group has a partition:
+    *   If the current partition of the strategy has reached its limit (e.g., 100 for WGS), a new partition ID is generated (current ID + 1) and the count is reset. The check runs before the group, so a group is never split.
+    *   The whole group goes to the current partition, and the count grows by the size of the group.
 
 ### Data Flow
 
