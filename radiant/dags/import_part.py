@@ -337,8 +337,7 @@ def import_part():
             trigger_rule=TriggerRule.NONE_FAILED,  # If we have germline only, we don't want to skip somatic
         )
         def sanity_check_somatic_cnvs(tasks: Any) -> Any:
-            # No `not deleted` clause, unlike the SNV checks: a part holding only deleted tumor-only tasks
-            # must still run the swap, because that is what purges their rows from the partition.
+            # Deleted tasks count, as in sanity_check_any_snv.
             has_somatic_cnv = any(t.get("task_type") == ALIGNMENT_SOMATIC_VARIANT_CALLING_TASK for t in tasks)
             return has_somatic_cnv
 
@@ -473,10 +472,10 @@ def import_part():
         trigger_rule=TriggerRule.NONE_FAILED,
     )
     def sanity_check_any_snv(tasks: Any) -> Any:
+        # Deleted tasks count: the swaps are what purge their rows, and their staging rows are deleted at the end
+        # of the run, so a skipped swap leaves the rows for ever.
         has_delta_snv = any(
-            t.get("task_type") in (RADIANT_GERMLINE_ANNOTATION_TASK, RADIANT_SOMATIC_ANNOTATION_TASK)
-            and not t.get("deleted")
-            for t in tasks
+            t.get("task_type") in (RADIANT_GERMLINE_ANNOTATION_TASK, RADIANT_SOMATIC_ANNOTATION_TASK) for t in tasks
         )
         return has_delta_snv
 
@@ -557,9 +556,8 @@ def import_part():
             ignore_downstream_trigger_rules=False,
         )
         def sanity_check_delta_germline_snv(tasks: Any) -> Any:
-            has_delta_snv = any(
-                t.get("task_type") == RADIANT_GERMLINE_ANNOTATION_TASK and not t.get("deleted") for t in tasks
-            )
+            # Deleted tasks count, as in sanity_check_any_snv.
+            has_delta_snv = any(t.get("task_type") == RADIANT_GERMLINE_ANNOTATION_TASK for t in tasks)
             return has_delta_snv
 
         insert_germline_snv_occurrences = RadiantStarRocksPartitionSwapOperator.partial(
@@ -615,9 +613,8 @@ def import_part():
             trigger_rule=TriggerRule.NONE_FAILED,  # If we have germline only, we don't want to skip somatic
         )
         def sanity_check_delta_somatic_snv(tasks: Any) -> Any:
-            has_delta_snv = any(
-                t.get("task_type") == RADIANT_SOMATIC_ANNOTATION_TASK and not t.get("deleted") for t in tasks
-            )
+            # Deleted tasks count, as in sanity_check_any_snv.
+            has_delta_snv = any(t.get("task_type") == RADIANT_SOMATIC_ANNOTATION_TASK for t in tasks)
             return has_delta_snv
 
         insert_somatic_snv_occurrences = RadiantStarRocksPartitionSwapOperator.partial(

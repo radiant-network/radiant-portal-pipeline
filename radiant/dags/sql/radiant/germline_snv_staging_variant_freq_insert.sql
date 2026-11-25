@@ -1,8 +1,13 @@
-INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_germline_snv_staging_variant_frequency }}
+-- The partition is named: a dynamic overwrite replaces only the partitions it writes, so a part left with no
+-- occurrence would keep its old rows. A named one is emptied, atomically.
+INSERT OVERWRITE {{ mapping.starrocks_germline_snv_staging_variant_frequency }}
+PARTITION (tenant_code = %(tenant_code)s, part = %(part)s)
 WITH germline_sequencings AS (
     SELECT * FROM {{ mapping.starrocks_staging_sequencing_experiment }} s
     WHERE s.analysis_type = 'germline'
       AND s.tenant_code = %(tenant_code)s
+      -- A deleted task keeps its staging rows until the end of the run: its case must not count.
+      AND NOT s.deleted
       AND s.seq_id in (select seq_id from  {{ mapping.starrocks_germline_snv_occurrence }} where part = %(part)s)
 ), patients_total_count
      AS (SELECT COUNT(DISTINCT CASE WHEN s.experimental_strategy = 'wgs' then s.patient_id end)                   AS cnt_wgs,
@@ -70,7 +75,7 @@ occurrences as (SELECT o.part,
                                          then patient_id end)                                                  AS hom_wxs_not_affected
 			FROM  occurrences o
 			JOIN {{ mapping.starrocks_staging_sequencing_experiment }} s ON s.seq_id = o.seq_id
-           WHERE s.tenant_code = %(tenant_code)s
+           WHERE s.tenant_code = %(tenant_code)s AND NOT s.deleted
            GROUP BY locus_id, o.part
 )
 SELECT %(tenant_code)s AS tenant_code,

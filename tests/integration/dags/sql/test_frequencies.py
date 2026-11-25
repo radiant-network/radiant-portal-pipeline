@@ -198,6 +198,13 @@ def _run_staging_freq_insert(starrocks_session, radiant_mapping, part):
         cursor.execute(insert_sql, {"part": part, "tenant_code": "tenant1"})
 
 
+def _flag_deleted(starrocks_session, radiant_mapping, task_id):
+    """As `import_radiant` does, before `import_part` deletes the staging rows at the end of its run."""
+    table = radiant_mapping["starrocks_staging_sequencing_experiment"]
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(f"UPDATE {table} SET deleted = true WHERE task_id = %(task_id)s", {"task_id": task_id})
+
+
 def _fetch_staging_freqs(starrocks_session, radiant_mapping):
     table = radiant_mapping["starrocks_somatic_snv_staging_variant_frequency"]
     with starrocks_session.cursor() as cursor:
@@ -257,6 +264,56 @@ def test_somatic_staging_variant_frequencies_exclude_malformed_task(starrocks_se
     # Patient 13 enters neither denominator, so both are unchanged from the mixed-cohort test.
     assert {row[4] for row in rows} == {4}
     assert {row[10] for row in rows} == {3}
+
+
+def test_somatic_staging_variant_frequencies_exclude_deleted_task(starrocks_session, radiant_mapping):
+    """A deleted task keeps its staging rows until the end of the run: its patient leaves the denominators now.
+
+    Tumor-only task 102 (patient 2) is deleted. Its occurrences are still in the table, as when the swap kept them,
+    so the numerators lose patient 2 too.
+    """
+    _seed_somatic_cohort(starrocks_session, radiant_mapping)
+    _flag_deleted(starrocks_session, radiant_mapping, task_id=102)
+    _run_staging_freq_insert(starrocks_session, radiant_mapping, part=0)
+
+    rows = {row[2]: row for row in _fetch_staging_freqs(starrocks_session, radiant_mapping)}
+
+    # pn_to_wgs: {2, 3, 7} becomes {3, 7}; pc_to_wgs at 1001: {2, 3} becomes {3}. Tumor-normal is unchanged.
+    assert {row[10] for row in rows.values()} == {2}
+    assert rows[1001][9] == 1
+    assert {row[4] for row in rows.values()} == {4}
+
+
+def test_germline_staging_variant_frequencies_exclude_deleted_task(starrocks_session, radiant_mapping):
+    """A deleted germline task leaves the denominators and the carriers, although its occurrences are still there.
+
+    Task 201 is p1's (wgs affected), carrier of 1001.
+    """
+    _seed_germline_cohort(starrocks_session, radiant_mapping)
+    _flag_deleted(starrocks_session, radiant_mapping, task_id=201)
+    _run_sql(
+        starrocks_session,
+        radiant_mapping,
+        "germline_snv_staging_variant_freq_insert.sql",
+        {"part": 0, "tenant_code": "tenant1"},
+    )
+
+    rows = _fetch_by_name(
+        starrocks_session,
+        radiant_mapping["starrocks_germline_snv_staging_variant_frequency"],
+        ("locus_id", "pc_wgs", "pn_wgs", "pc_wgs_affected", "pn_wgs_affected"),
+        "locus_id",
+    )
+    by_locus = {row["locus_id"]: row for row in rows}
+
+    # Without p1: pc_wgs 5 -> 4, pn_wgs 5 -> 4, and the same for wgs affected (3 -> 2, 3 -> 2).
+    locus_1001 = by_locus[1001]
+    assert (
+        locus_1001["pc_wgs"],
+        locus_1001["pn_wgs"],
+        locus_1001["pc_wgs_affected"],
+        locus_1001["pn_wgs_affected"],
+    ) == (4, 4, 2, 2)
 
 
 def test_somatic_variant_frequencies_rollup_across_parts(starrocks_session, radiant_mapping):

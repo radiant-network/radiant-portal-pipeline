@@ -1,4 +1,6 @@
-INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_somatic_snv_staging_variant_frequency }}
+-- Named partition, as in germline_snv_staging_variant_freq_insert.sql.
+INSERT OVERWRITE {{ mapping.starrocks_somatic_snv_staging_variant_frequency }}
+PARTITION (tenant_code = %(tenant_code)s, part = %(part)s)
 WITH
 -- The tumor-only / tumor-normal verdict is a property of the task's complete aliquot set, so it is
 -- computed at task_id grain and deliberately NOT filtered on `part`. The staging table is keyed
@@ -15,6 +17,9 @@ somatic_task_kinds AS (
     FROM {{ mapping.starrocks_staging_sequencing_experiment }}
     WHERE analysis_type = 'somatic'
       AND tenant_code = %(tenant_code)s
+      -- A deleted task keeps its staging rows until the end of the run. Filtered here, it also leaves somatic_tasks
+      -- (inner join), so its patient leaves the denominators.
+      AND NOT deleted
     GROUP BY task_id
 ),
 -- One row per (task, patient, strategy) in this part, carrying the task-level verdict. The two

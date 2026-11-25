@@ -192,6 +192,24 @@ See radiant-hub docs/features/RAD-315-gene-coverage-germline-somatic-alignments.
 
 ---
 
+## SNV occurrences and frequencies
+
+A deleted SNV annotation task counts as an SNV task of the part: the SNV groups run for a part
+whose only SNV tasks are deleted. The occurrence swap is what removes their rows, and their staging
+rows are deleted at the end of the run, so no later run could remove them.
+
+| Task | Job |
+|:--|:--|
+| **insert_germline_snv_occurrence**, **insert_somatic_snv_occurrences** | Per tenant: swap the part, without the rows of the run's tasks, live or deleted, plus the rows of its live tasks |
+| **insert_stg_germline_snv_variant_freq**, **insert_stg_somatic_snv_variant_freq** | Per tenant: the part's staging frequencies, without the deleted tasks |
+| **aggregate_germline_snv_variant_freq**, **aggregate_somatic_snv_variant_freq** | Per tenant: sum every part's staging frequencies |
+| **insert_snv_variant_part**, **insert_snv_consequence_filter_part** | The part's rows of **snv\_\_variant\_partitioned** and **snv\_\_consequence\_filter\_partitioned** |
+
+> The per-part inserts overwrite their partition by name. A part left with no occurrence is emptied;
+> an overwrite of only the partitions the result holds would keep its old rows.
+
+---
+
 ## CNV frequencies
 
 **aggregate_germline_cnv_variant_freq** and **aggregate_somatic_cnv_variant_freq** run after
