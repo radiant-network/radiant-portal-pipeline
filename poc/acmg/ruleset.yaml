@@ -141,7 +141,8 @@ bs4:
 
 # Criterion -> criteria it cancels when it is met.
 exclusions:
-  BA1: [BS1]
+  BA1: [BS1, PM6]   # PM6: a common variant called de novo is an artefact (parental dropout, wrong pedigree)
+  BS1: [PM6]
   PVS1: [PP3, BP4, PM4]   # PM4: same truncation counted twice (Abou Tayoun 2018); PP3/BP4: Walker 2023
   BP2: [PM3]    # same comphet pairs: PM3 assumes a recessive disease, BP2 a dominant one
 

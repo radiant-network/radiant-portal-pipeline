@@ -214,6 +214,11 @@ def test_pm6_svi_points_from_assumed_de_novo(probands, code):
     assert codes(denovo_probands=probands, **NOT_RARE) == [code]
 
 
+def test_common_variant_called_de_novo_gets_no_pm6():
+    assert codes(denovo_probands=1, gnomad_af=0.02, **COMMON) == ["BS1"]
+    assert codes(denovo_probands=1, gnomad_af=0.06, **COMMON) == ["BA1"]
+
+
 def test_pm3_svi_points_from_comphet_partners():
     assert codes(comphet_p_trans=1, **NOT_RARE) == ["PM3"]  # 1 point
     assert codes(comphet_lp_unphased=1, **NOT_RARE) == []  # 0.25 point
