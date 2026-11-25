@@ -32,7 +32,6 @@ from radiant.tasks.vcf.snv.germline import process as germline_process  # noqa: 
 from radiant.tasks.vcf.snv.rust_engine import ENGINE_ENV  # noqa: E402
 
 RESOURCES = Path(__file__).parent.parent.parent.parent / "resources"
-GEN_TABLES = Path(__file__).parents[4] / "rust" / "radiant_vcf" / "gen_tables.py"
 
 NAMESPACE = "mock"
 SCHEMAS = {
@@ -111,7 +110,7 @@ def run_engine(engine: str, vcf_path: str, experiments: list[dict], monkeypatch)
     return out
 
 
-def experiment(seq_id, aliquot, role, affected="not_affected", sex="Female"):
+def experiment(seq_id, aliquot, role, affected="not_affected", sex="female"):
     return {
         "seq_id": seq_id,
         "patient_id": seq_id,
@@ -136,43 +135,53 @@ def pedigrees(samples: list[str]) -> list[tuple[str, list[dict]]]:
     s = samples
     if len(s) == 1:
         return [
-            ("solo_male", [experiment(1, s[0], "proband", "affected", "Male")]),
-            ("solo_female", [experiment(1, s[0], "proband", "affected", "Female")]),
+            ("solo_male", [experiment(1, s[0], "proband", "affected", "male")]),
+            ("solo_female", [experiment(1, s[0], "proband", "affected", "female")]),
         ]
     if len(s) == 2:
         return [
-            ("duo_mother", [experiment(1, s[0], "proband", "affected", "Male"), experiment(2, s[1], "mother")]),
+            ("duo_mother", [experiment(1, s[0], "proband", "affected", "male"), experiment(2, s[1], "mother")]),
             ("duo_father", [experiment(1, s[0], "proband", "affected"), experiment(2, s[1], "father", "affected")]),
         ]
     setups = [
         (
             "trio_male_unaffected_parents",
             [
-                experiment(1, s[0], "proband", "affected", "Male"),
-                experiment(2, s[1], "mother", "not_affected", "Female"),
-                experiment(3, s[2], "father", "not_affected", "Male"),
+                experiment(1, s[0], "proband", "affected", "male"),
+                experiment(2, s[1], "mother", "not_affected", "female"),
+                experiment(3, s[2], "father", "not_affected", "male"),
             ],
         ),
         (
             "trio_female_affected_father",
             [
-                experiment(1, s[0], "proband", "affected", "Female"),
-                experiment(2, s[1], "father", "affected", "Male"),
-                experiment(3, s[2], "mother", "affected", "Female"),
+                experiment(1, s[0], "proband", "affected", "female"),
+                experiment(2, s[1], "father", "affected", "male"),
+                experiment(3, s[2], "mother", "affected", "female"),
             ],
         ),
         (
             "trio_proband_last",
             [
-                experiment(1, s[2], "sibling", "affected", "Male"),
-                experiment(2, s[0], "mother", "not_affected", "Female"),
-                experiment(3, s[1], "father", "affected", "Male"),
+                experiment(1, s[2], "sibling", "affected", "male"),
+                experiment(2, s[0], "mother", "not_affected", "female"),
+                experiment(3, s[1], "father", "affected", "male"),
             ],
         ),
-        ("subset_proband_only", [experiment(1, s[0], "proband", "affected", "Male")]),
+        ("subset_proband_only", [experiment(1, s[0], "proband", "affected", "male")]),
+        # The keys of SEXUAL_TRANSMISSION_LOOKUP are capitalised, unlike the clinical sex_code (README, "Found while
+        # porting"): this setup keeps the X/Y lookup hits compared too.
+        (
+            "trio_lookup_key_sex",
+            [
+                experiment(1, s[0], "proband", "affected", "Male"),
+                experiment(2, s[1], "mother", "not_affected", "Female"),
+                experiment(3, s[2], "father", "not_affected", "Male"),
+            ],
+        ),
     ]
     if len(s) >= 4:
-        setups[0][1].append(experiment(4, s[3], "brother", "affected", "Male"))
+        setups[0][1].append(experiment(4, s[3], "brother", "affected", "male"))
     return setups
 
 
@@ -204,8 +213,8 @@ def test_rust_engine_matches_python(vcf_name, setup, experiments, tmp_path, monk
     try:
         python_rows = run_engine("python", path, experiments, monkeypatch)
     except Exception as python_error:
-        # A file the Python path rejects must be rejected by the Rust one too.
-        with pytest.raises((RuntimeError, ValueError, KeyError)):
+        # A file the Python path rejects must be rejected by the Rust one too, with the same exception type.
+        with pytest.raises(type(python_error)):
             run_engine("rust", path, experiments, monkeypatch)
         pytest.skip(f"both engines reject the file (python: {python_error})")
     rust_rows = run_engine("rust", path, experiments, monkeypatch)
@@ -240,9 +249,12 @@ def test_both_engines_raise_on_unsupported_input(vcf_name, monkeypatch):
     """No CSQ header line, or no sample at all: both engines refuse the file."""
     path = str(RESOURCES / vcf_name)
     exps = [experiment(1, "SA0001", "proband", "affected")]
+    errors = []
     for engine in ("python", "rust"):
-        with pytest.raises((KeyError, ValueError, RuntimeError)):
+        with pytest.raises((KeyError, ValueError, RuntimeError)) as info:
             run_engine(engine, path, exps, monkeypatch)
+        errors.append(info.type)
+    assert errors[0] is errors[1], f"python raises {errors[0].__name__}, rust raises {errors[1].__name__}"
 
 
 @pytest.mark.parametrize("slivar", [False, True], ids=["etl_inheritance", "slivar_inheritance"])
@@ -354,16 +366,6 @@ def write_synthetic_trio(path: Path, n_records: int, seed: int, slivar: bool = F
             )
         )
     path.write_text("\n".join(header + lines) + "\n")
-
-
-def test_tables_are_current():
-    """src/tables.rs is generated from occurrence.py: regenerate it with gen_tables.py after a table change."""
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location("gen_tables", GEN_TABLES)
-    gen = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(gen)
-    assert gen.OUT.read_text() == gen.render(), "rust/radiant_vcf/src/tables.rs is stale: run gen_tables.py"
 
 
 @pytest.fixture(autouse=True)

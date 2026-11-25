@@ -392,7 +392,7 @@ impl RecordDecoder {
         let nret = unsafe { self.int_buf.get_format_int32(hdr, rec, tag) };
         if nret < 0 {
             return Err(format!(
-                "FORMAT/{} is not an Integer field (htslib {nret}); the Python ETL does not support it either",
+                "FORMAT/{} is not an Integer field (htslib {nret}); the Rust engine supports only Integer (the Python engine loads it)",
                 tag.to_string_lossy()
             ));
         }

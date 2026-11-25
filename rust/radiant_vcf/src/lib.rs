@@ -18,8 +18,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use arrow::datatypes::Schema;
-use arrow::pyarrow::{FromPyArrow, ToPyArrow};
-use arrow::record_batch::RecordBatch;
+use arrow::pyarrow::FromPyArrow;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -63,15 +62,6 @@ fn files_dict<'py>(py: Python<'py>, files: Vec<(String, Vec<WrittenFile>)>) -> P
     for (key, files) in files {
         let rows: Vec<(String, u64, u64)> = files.into_iter().map(|f| (f.path, f.rows, f.bytes)).collect();
         d.set_item(key, rows)?;
-    }
-    Ok(d)
-}
-
-/// `{table: pyarrow.RecordBatch}`.
-fn batches_dict<'py>(py: Python<'py>, tables: &[&str], batches: Vec<RecordBatch>) -> PyResult<Bound<'py, PyDict>> {
-    let d = PyDict::new(py);
-    for (key, b) in tables.iter().zip(batches.iter()) {
-        d.set_item(*key, b.to_pyarrow(py)?)?;
     }
     Ok(d)
 }
@@ -128,12 +118,6 @@ impl GermlineSnvReader {
         Ok(Self { inner })
     }
 
-    /// The VCF samples kept, in file order.
-    #[getter]
-    fn samples(&self) -> Vec<String> {
-        self.inner.samples.clone()
-    }
-
     /// True when the parental origin comes from the slivar `po_*` tags.
     #[getter]
     fn slivar_parental_origin(&self) -> bool {
@@ -144,18 +128,6 @@ impl GermlineSnvReader {
     #[getter]
     fn slivar_transmission_mode(&self) -> bool {
         self.inner.slivar_transmission_mode
-    }
-
-    /// Reads up to `max_records` kept records. Returns a dict of `pyarrow.RecordBatch` keyed by table
-    /// (`occurrence`, `variant`, `consequence`, `comphet`), or None at the end of the file.
-    /// The GIL is released while the records are decoded.
-    #[pyo3(signature = (max_records=10000))]
-    fn next_batches<'py>(&mut self, py: Python<'py>, max_records: usize) -> PyResult<Option<Bound<'py, PyDict>>> {
-        let inner = &mut self.inner;
-        let batches = py
-            .detach(|| inner.next_batches(max_records))
-            .map_err(PyRuntimeError::new_err)?;
-        batches.map(|b| batches_dict(py, &germline::TABLES, b)).transpose()
     }
 
     /// Reads the whole file and writes each table to Parquet files in a local directory. The GIL is released
@@ -251,16 +223,6 @@ impl SomaticSnvReader {
             .map_err(PyRuntimeError::new_err)
     }
 
-    /// As `GermlineSnvReader.next_batches`, for the tables `occurrence`, `variant`, `consequence`.
-    #[pyo3(signature = (max_records=10000))]
-    fn next_batches<'py>(&mut self, py: Python<'py>, max_records: usize) -> PyResult<Option<Bound<'py, PyDict>>> {
-        let inner = &mut self.inner;
-        let batches = py
-            .detach(|| inner.next_batches(max_records))
-            .map_err(PyRuntimeError::new_err)?;
-        batches.map(|b| batches_dict(py, &somatic::TABLES, b)).transpose()
-    }
-
     /// As `GermlineSnvReader.write_parquet`, for the tables `occurrence`, `variant`, `consequence`.
     #[pyo3(signature = (sinks, batch_records=10000))]
     fn write_parquet<'py>(
@@ -283,16 +245,9 @@ impl SomaticSnvReader {
     }
 }
 
-/// `snv/common.py::locus_and_hash`, exposed for tests.
-#[pyfunction]
-fn locus_and_hash(chrom: &str, pos: i64, reference: &str, alternate: &str) -> (String, String) {
-    snv::locus_and_hash(chrom, pos, reference, alternate)
-}
-
 #[pymodule]
 fn radiant_vcf(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<GermlineSnvReader>()?;
     m.add_class::<SomaticSnvReader>()?;
-    m.add_function(wrap_pyfunction!(locus_and_hash, m)?)?;
     Ok(())
 }

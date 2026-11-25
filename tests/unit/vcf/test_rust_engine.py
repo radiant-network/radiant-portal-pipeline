@@ -1,5 +1,7 @@
 """The Python side of the Rust germline SNV engine: engine switch, writer options, partition of the files."""
 
+import importlib.util
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -95,3 +97,15 @@ def test_unpartitioned_table_has_no_partition_key(monkeypatch):
 def test_partition_key_needs_every_partition_column():
     with pytest.raises(ValueError, match="partition column part"):
         partition_key(Table(), {"task_id": 7})
+
+
+def test_tables_are_current():
+    """src/tables.rs is generated from occurrence.py: regenerate it with gen_tables.py after a table change.
+
+    Needs no extension, so it runs where the parity tests skip.
+    """
+    gen_tables = Path(__file__).parents[3] / "rust" / "radiant_vcf" / "gen_tables.py"
+    spec = importlib.util.spec_from_file_location("gen_tables", gen_tables)
+    gen = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gen)
+    assert gen.OUT.read_text() == gen.render(), "rust/radiant_vcf/src/tables.rs is stale: run gen_tables.py"

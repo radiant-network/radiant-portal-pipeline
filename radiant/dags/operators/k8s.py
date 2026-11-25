@@ -146,6 +146,9 @@ class RadiantTaskK8SOperator:
                 "LD_LIBRARY_PATH": os.getenv("RADIANT_TASK_OPERATOR_LD_LIBRARY_PATH"),
                 "RADIANT_PARQUET_FILE_SIZE_MB": os.getenv("RADIANT_PARQUET_FILE_SIZE_MB"),
             }
+            # SNV engine (rust_engine.py): passed only when set. The pod gets None as "", which would override the
+            # image default (Dockerfile.radiant.operator) with `python`.
+            | ({"RADIANT_SNV_ENGINE": os.environ["RADIANT_SNV_ENGINE"]} if os.getenv("RADIANT_SNV_ENGINE") else {})
             | iceberg_env_vars,
             **resources,
         )

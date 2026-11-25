@@ -59,7 +59,8 @@ raises. With `rust` and no extension installed, the import fails: there is no si
 
 Image: `Dockerfile.radiant.operator` builds the wheel in a cross-compiling stage (native build host, target
 `x86_64-unknown-linux-gnu`) and installs it. `--build-arg RADIANT_SNV_ENGINE=rust` sets the image default; without it
-the image keeps `python`. The DAG operators do not pass the variable, so the image value applies.
+the image keeps `python`. The SNV operators (K8s and ECS) pass `RADIANT_SNV_ENGINE` from the Airflow environment when
+it is set, so an environment switches engines without a new image; unset, the image value applies.
 
 ## Parity
 
@@ -96,6 +97,10 @@ column, through StarRocks) is identical between the two runs.
 
 Pod time includes the pod start and the S3 download of the VCF.
 
+These runs predate the CA1000019 seed: task 63 (documents 135/136) now reads
+`variants.CA1000019.snv.vep.slivar.aliquots.vcf.gz`, which the sandbox repo must ship before
+`init-qa-clinical-data` runs again.
+
 ## Benchmark
 
 `make rust-bench`. Both engines write Parquet to a local directory (Python: pyarrow with the options of
@@ -114,8 +119,9 @@ germline run.
 ## Known differences
 
 - Two experiments of a germline task with the same `seq_id`: the Python path merges them silently, the Rust one raises.
-- `FORMAT/DP` or `FORMAT/GQ` declared `Float`, or `FORMAT/SQ` declared `Integer`: the Rust engine raises. The Python
-  behaviour for these cases was not checked.
+- `FORMAT/DP` or `FORMAT/GQ` declared `Float`, `FORMAT/SQ` declared `Integer`, or `INFO/HotspotAllele` declared
+  `Float`: the Rust engine raises, the Python engine loads the file (a Float `DP`/`GQ` is cut to a whole number). Use
+  the Python engine for such a file.
 - Logging: the per-record `debug` lines for skipped records are replaced by end-of-file counters, and malformed
   `slivar_comphet` entries are reported in one warning with 5 examples, not one warning each.
 - File layout: fewer, larger files (see the flush rules above). The rows are the same.
@@ -135,5 +141,6 @@ germline run.
 
 ## Not done (POC scope)
 
-- CI: the parity tests skip without the extension; a CI job would need cargo + `maturin develop`. Trivy and the
-  release gate do not scan the Rust dependencies yet.
+- CI: the `rust-tests` job of `test.yml` builds the extension and runs `make rust-test` and the SNV integration
+  tests with `RADIANT_SNV_ENGINE=rust`; the `run-tests` job skips the parity tests (no extension). Trivy and the
+  release gate do not scan the Rust dependencies yet (maturin has no `cargo auditable` build).

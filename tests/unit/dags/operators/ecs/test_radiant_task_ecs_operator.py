@@ -49,3 +49,25 @@ def test_container_name_requires_environment(value):
     env = {} if value is None else {"RADIANT_ENVIRONMENT": value}
     with patch.dict(os.environ, env, clear=True), pytest.raises(ValueError, match="RADIANT_ENVIRONMENT"):
         RadiantTaskECSOperator._container_name()
+
+
+@pytest.mark.parametrize(("value", "expected"), [("rust", ["rust"]), ("", []), (None, [])])
+def test_snv_engine_reaches_the_snv_containers_only_when_set(value, expected):
+    """Read when the module loads, as RADIANT_PARQUET_FILE_SIZE_MB; unset or empty, the image default holds."""
+    import importlib
+
+    from radiant.dags.operators import ecs
+
+    env = {"RADIANT_ENVIRONMENT": "mock"} | ({} if value is None else {"RADIANT_SNV_ENGINE": value})
+    try:
+        with patch.dict(os.environ, env, clear=True):
+            importlib.reload(ecs)
+            for builder in (
+                ecs.ImportSNVVCF.get_create_germline_parquet_files,
+                ecs.ImportSNVVCF.get_create_somatic_parquet_files,
+            ):
+                container = _overrides(builder("ns", ECS_ENV))["containerOverrides"][0]
+                engines = [e["value"] for e in container["environment"] if e["name"] == "RADIANT_SNV_ENGINE"]
+                assert engines == expected
+    finally:
+        importlib.reload(ecs)

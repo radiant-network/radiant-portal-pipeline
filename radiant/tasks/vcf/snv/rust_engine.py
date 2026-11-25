@@ -24,10 +24,12 @@ from pyiceberg.utils.properties import property_as_int
 
 from radiant.tasks.iceberg.partition_commit import PartitionCommit
 from radiant.tasks.iceberg.table_accumulator import TableAccumulator, resolve_parquet_file_size_mb
+from radiant.tasks.tracing.trace import get_tracer
 from radiant.tasks.vcf.experiment import RadiantGermlineAnnotationTask, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.consequence import log_invalid_cds, log_source_counts
 
 logger = logging.getLogger("airflow.task")
+tracer = get_tracer(__name__)
 
 ENGINE_ENV = "RADIANT_SNV_ENGINE"
 ENGINE_PYTHON = "python"
@@ -130,8 +132,10 @@ def _write_and_upload(reader, task, catalog, tables: dict[str, tuple[str, dict]]
     with tempfile.TemporaryDirectory(prefix=f"snv-{task.task_id}-") as tmp:
         sinks = {key: sink_config(table, os.path.join(tmp, key), key) for key, table in loaded.items()}
         logger.info(f"Starting processing vcf for task {task.task_id} with file {task.vcf_filepath} (rust engine)")
-        files = reader.write_parquet(sinks, RUST_BATCH_RECORDS)
-        _log_stats(reader.stats(), task)
+        # Same span name as the Python path, so the traces of both engines compare.
+        with tracer.start_as_current_span(f"vcf_task_{task.task_id}"):
+            files = reader.write_parquet(sinks, RUST_BATCH_RECORDS)
+            _log_stats(reader.stats(), task)
         for key, (name, partition_filter) in tables.items():
             rows = sum(f[1] for f in files[key])
             logger.info(f"{name}: {rows} rows in {len(files[key])} Parquet files")
@@ -154,9 +158,7 @@ def process_task_rust(task: RadiantGermlineAnnotationTask, catalog, namespace: s
             task.vcf_filepath, experiments, task.task_id, task.part, threads=vcf_threads
         )
     except RuntimeError as e:
-        # Same error as the Python path for a VCF without any of the task's aliquots.
-        if "has no matching samples" in str(e):
-            raise ValueError(str(e)) from e
+        _raise_python_error(e)
         raise
 
     logger.info(
@@ -201,9 +203,7 @@ def process_somatic_task_rust(task: RadiantSomaticAnnotationTask, catalog, names
             normal_seq_id=normal.seq_id if normal is not None else None,
         )
     except RuntimeError as e:
-        # Same error as the Python path's `parse_csq_header` for a header without a CSQ line.
-        if "KeyError" in str(e):
-            raise KeyError(str(e)) from e
+        _raise_python_error(e)
         raise
 
     variant_csq_filter = {"task_id": task.task_id}
@@ -217,6 +217,17 @@ def process_somatic_task_rust(task: RadiantSomaticAnnotationTask, catalog, names
             "consequence": (f"{namespace}.snv_consequence", variant_csq_filter),
         },
     )
+
+
+def _raise_python_error(e: RuntimeError) -> None:
+    """Raise the exception the Python path raises for the same input, when the Rust error text maps to one."""
+    message = str(e)
+    if "has no matching samples" in message:
+        # The Python path's error for a VCF without any of the task's aliquots.
+        raise ValueError(message) from e
+    if "KeyError" in message:
+        # `parse_csq_header` on a header without a CSQ line.
+        raise KeyError(message) from e
 
 
 def _log_stats(stats: dict, task) -> None:

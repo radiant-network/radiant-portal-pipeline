@@ -16,6 +16,14 @@ _PARQUET_FILE_SIZE_ENV = {
     "value": os.getenv("RADIANT_PARQUET_FILE_SIZE_MB", ""),
 }
 
+# SNV engine (`radiant/tasks/vcf/snv/rust_engine.py`): passed only when set. An empty value would override the image
+# default (`Dockerfile.radiant.operator`) with `python`.
+_SNV_ENGINE_ENV = (
+    [{"name": "RADIANT_SNV_ENGINE", "value": os.environ["RADIANT_SNV_ENGINE"]}]
+    if os.getenv("RADIANT_SNV_ENGINE")
+    else []
+)
+
 
 class RadiantTaskECSOperator:
     @staticmethod
@@ -80,6 +88,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                                 {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
                                 {"name": "STARROCKS_BROKER_USE_INSTANCE_PROFILE", "value": "true"},
                                 _PARQUET_FILE_SIZE_ENV,
+                                *_SNV_ENGINE_ENV,
                             ],
                         }
                     ]
@@ -115,6 +124,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                                 {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
                                 {"name": "STARROCKS_BROKER_USE_INSTANCE_PROFILE", "value": "true"},
                                 _PARQUET_FILE_SIZE_ENV,
+                                *_SNV_ENGINE_ENV,
                             ],
                         }
                     ]
