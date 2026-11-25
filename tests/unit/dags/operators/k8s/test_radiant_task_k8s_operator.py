@@ -1,8 +1,6 @@
 import os
 from unittest.mock import patch
 
-import pytest
-
 from radiant.dags.operators.k8s import (
     RadiantTaskK8SOperator,
     _cnv_container_resources,
@@ -10,6 +8,7 @@ from radiant.dags.operators.k8s import (
     _metadata_container_resources,
     _snv_container_resources,
 )
+from radiant.dags.operators.utils import snv_engine_template
 
 
 def test_get_k8s_context():
@@ -121,15 +120,11 @@ def test_parquet_file_size_is_absent_when_not_overridden():
     assert context["env_vars"]["RADIANT_PARQUET_FILE_SIZE_MB"] is None
 
 
-@pytest.mark.parametrize(("value", "expected"), [("rust", "rust"), ("", None), (None, None)])
-def test_snv_engine_reaches_the_pod_only_when_set(value, expected):
-    """Unset or empty, the key stays out, so the image default holds (None would reach the pod as "")."""
-    env = {} if value is None else {"RADIANT_SNV_ENGINE": value}
-    with patch.dict(os.environ, env, clear=True):
+def test_snv_engine_reaches_the_pod_as_a_template():
+    """Rendered per run (env_vars is a template field): the run param, else the Airflow environment."""
+    with patch.dict(os.environ, {"RADIANT_SNV_ENGINE": "rust"}, clear=True):
         context = RadiantTaskK8SOperator._get_k8s_context("my-iceberg-namespace")
-
-    assert context["env_vars"].get("RADIANT_SNV_ENGINE") == expected
-    assert ("RADIANT_SNV_ENGINE" in context["env_vars"]) == (expected is not None)
+        assert context["env_vars"]["RADIANT_SNV_ENGINE"] == snv_engine_template()
 
 
 def test_task_pods_wait_for_a_node_instead_of_failing():

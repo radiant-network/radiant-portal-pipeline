@@ -94,6 +94,14 @@ dag_params = {
         default=None,
         description="Integer that represents the part that need to be processed.",
     ),
+    # Forwarded to radiant-import-snv-vcf with the rest of the run conf (prepare_config).
+    "snv_engine": Param(
+        default=None,
+        type=["null", "string"],
+        enum=[None, "python", "rust"],
+        description="SNV extraction engine of this run: python or rust. Empty: the RADIANT_SNV_ENGINE of the Airflow "
+        "environment, else python.",
+    ),
 }
 
 std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=10)

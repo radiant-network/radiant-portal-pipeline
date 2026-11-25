@@ -58,9 +58,13 @@ RADIANT_SNV_ENGINE=rust <run the extraction>
 raises. With `rust` and no extension installed, the import fails: there is no silent fallback.
 
 Image: `Dockerfile.radiant.operator` builds the wheel in a cross-compiling stage (native build host, target
-`x86_64-unknown-linux-gnu`) and installs it. `--build-arg RADIANT_SNV_ENGINE=rust` sets the image default; without it
-the image keeps `python`. The SNV operators (K8s and ECS) pass `RADIANT_SNV_ENGINE` from the Airflow environment when
-it is set, so an environment switches engines without a new image; unset, the image value applies.
+`x86_64-unknown-linux-gnu`) and installs it. The image sets no engine.
+
+Choosing the engine in a deployment: the SNV operators (K8s and ECS) set `RADIANT_SNV_ENGINE` in the writer pods from,
+in this order, the `snv_engine` param of the run (`radiant-import-part` or `radiant-import-snv-vcf`; the part forwards
+its conf to the SNV sub-DAG), the `RADIANT_SNV_ENGINE` of the Airflow environment (read when the DAGs are parsed),
+else `python`. So one run can try `rust` without changing the environment (`radiant/dags/operators/utils.py::
+snv_engine_template`).
 
 ## Parity
 

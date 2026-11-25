@@ -62,10 +62,6 @@ RUN pip install -r /opt/radiant/requirements.txt
 COPY --from=rust-builder /wheels /tmp/wheels
 RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
 
-# SNV engine (germline and somatic): `python` (default) or `rust`. A pod gets this value unless the operator sets it.
-ARG RADIANT_SNV_ENGINE=python
-ENV RADIANT_SNV_ENGINE=$RADIANT_SNV_ENGINE
-
 # Setup Radiant code
 COPY radiant /opt/radiant/radiant
 
