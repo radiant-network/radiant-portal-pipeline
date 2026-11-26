@@ -101,6 +101,16 @@ Concurrent partitions are not merely wasteful:
 
 See design/SJRA-1751-snv-vcf-ingestion-fan-out.md.
 
+### SNV engine
+
+The **snv_engine** param picks the SNV extraction engine of the run: **python** or **rust**
+(rust/radiant_vcf/README.md). It is forwarded to **radiant-import-snv-vcf** with the rest of the run conf.
+
+| snv_engine | Engine of the writers |
+|---|---|
+| empty (default) | **RADIANT_SNV_ENGINE** of the Airflow environment, else **python** |
+| **python** or **rust** | that engine, for this run only |
+
 ---
 
 ## Germline CNV sets

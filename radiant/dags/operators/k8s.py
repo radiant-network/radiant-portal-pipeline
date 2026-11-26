@@ -6,6 +6,8 @@ from airflow.providers.cncf.kubernetes.operators.pod import KubernetesPodOperato
 from airflow.providers.cncf.kubernetes.secret import Secret
 from kubernetes.client import models as k8s
 
+from radiant.dags.operators.utils import snv_engine_template
+
 
 def _container_resources(
     profile: str, cpu: str, memory: str, memory_limit: str, ephemeral_storage: str | None = None
@@ -146,6 +148,8 @@ class RadiantTaskK8SOperator:
                 "LD_LIBRARY_PATH": os.getenv("RADIANT_TASK_OPERATOR_LD_LIBRARY_PATH"),
                 "RADIANT_PARQUET_FILE_SIZE_MB": os.getenv("RADIANT_PARQUET_FILE_SIZE_MB"),
             }
+            # SNV engine, from the run's `snv_engine` param or the Airflow environment (`snv_engine_template`).
+            | {"RADIANT_SNV_ENGINE": snv_engine_template()}
             | iceberg_env_vars,
             **resources,
         )

@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import uuid
 
 import boto3
@@ -14,6 +15,21 @@ def s3_store_content(content: dict | list, prefix: str = "tmp") -> str:
     logger.info(f"Uploading content to S3: bucket={RADIANT_S3_WORKSPACE}, key={s3_key}")
     boto3.client("s3").put_object(Bucket=RADIANT_S3_WORKSPACE, Key=s3_key, Body=json.dumps(content).encode())
     return f"s3://{RADIANT_S3_WORKSPACE}/{s3_key}"
+
+
+SNV_ENGINE_PARAM = "snv_engine"
+
+
+def snv_engine_template() -> str:
+    """Jinja value of ``RADIANT_SNV_ENGINE`` for the SNV writers (``radiant/tasks/vcf/snv/rust_engine.py``).
+
+    The run's ``snv_engine`` param (``dag_run.conf``, forwarded by **import_part** to **import_snv_vcf**) wins, then
+    the Airflow environment's ``RADIANT_SNV_ENGINE``, read when the DAG is parsed. With neither, the value renders
+    empty, which the writer reads as ``python``. ``dag_run.conf`` rather than ``params``: on ECS the writers are
+    mapped over ``params``.
+    """
+    default = os.getenv("RADIANT_SNV_ENGINE") or ""
+    return f"{{{{ dag_run.conf.get('{SNV_ENGINE_PARAM}') or '{default}' }}}}"
 
 
 def _writer_results_prefix(dag_id: str, run_id: str) -> str:

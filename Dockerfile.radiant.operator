@@ -1,3 +1,49 @@
+# Rust SNV engine, germline and somatic (POC, rust/radiant_vcf/README.md): an abi3 wheel for linux/amd64.
+# The stage runs on the build host's platform and cross-compiles, so an arm64 host (minikube on Apple silicon)
+# does not compile Rust and htslib under amd64 emulation.
+FROM --platform=$BUILDPLATFORM python:3.12-slim AS rust-builder
+
+ARG BUILDARCH
+ARG RUST_TOOLCHAIN=1.91.0
+# rustup-init is checked against these SHA-256 (static.rust-lang.org/rustup/archive/<version>/<triple>/rustup-init.sha256).
+ARG RUSTUP_VERSION=1.28.2
+ARG RUSTUP_SHA256_amd64=20a06e644b0d9bd2fbdbfd52d42540bdde820ea7df86e92e533c073da0cdd43c
+ARG RUSTUP_SHA256_arm64=e3853c5a252fca15252d07cb23a1bdd9377a8c6f3efa01531109281ae47f841c
+ARG MATURIN_VERSION=1.16.0
+ENV RUSTUP_HOME=/opt/rustup CARGO_HOME=/opt/cargo PATH=/opt/cargo/bin:$PATH
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates make gcc libc6-dev libclang-dev gcc-x86-64-linux-gnu libc6-dev-amd64-cross \
+    && rm -rf /var/lib/apt/lists/* \
+    && case "$BUILDARCH" in \
+         amd64) triple=x86_64-unknown-linux-gnu; sha256=$RUSTUP_SHA256_amd64 ;; \
+         arm64) triple=aarch64-unknown-linux-gnu; sha256=$RUSTUP_SHA256_arm64 ;; \
+         *) echo "unsupported build architecture: $BUILDARCH" >&2; exit 1 ;; \
+       esac \
+    && curl --proto '=https' --tlsv1.2 -sSf -o /tmp/rustup-init \
+         "https://static.rust-lang.org/rustup/archive/$RUSTUP_VERSION/$triple/rustup-init" \
+    && echo "$sha256  /tmp/rustup-init" | sha256sum -c - \
+    && chmod +x /tmp/rustup-init \
+    && /tmp/rustup-init -y --no-modify-path --profile minimal --default-toolchain $RUST_TOOLCHAIN \
+    && rm /tmp/rustup-init \
+    && rustup target add x86_64-unknown-linux-gnu \
+    && pip install --no-cache-dir "maturin==$MATURIN_VERSION"
+
+# The C parts (htslib, zlib) and the final link use the x86_64 cross compiler. A cross build makes hts-sys
+# generate its bindings (bindgen, libclang) against the x86_64 headers.
+ENV CC_x86_64_unknown_linux_gnu=x86_64-linux-gnu-gcc \
+    AR_x86_64_unknown_linux_gnu=x86_64-linux-gnu-ar \
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-linux-gnu-gcc \
+    BINDGEN_EXTRA_CLANG_ARGS_x86_64_unknown_linux_gnu="--sysroot=/usr/x86_64-linux-gnu -I/usr/x86_64-linux-gnu/include"
+
+# Only what the build reads: an edit to the README or bench.py does not rebuild the wheel. The cache mounts keep the
+# crate downloads and the compiled dependencies between local builds (BuildKit).
+WORKDIR /build/radiant_vcf
+COPY rust/radiant_vcf/Cargo.toml rust/radiant_vcf/Cargo.lock rust/radiant_vcf/pyproject.toml rust/radiant_vcf/rustfmt.toml ./
+COPY rust/radiant_vcf/src ./src
+RUN --mount=type=cache,target=/opt/cargo/registry \
+    --mount=type=cache,target=/build/radiant_vcf/target \
+    maturin build --release --target x86_64-unknown-linux-gnu --compatibility off -o /wheels
+
 FROM --platform=linux/amd64 python:3.12-slim
 
 USER root
@@ -12,6 +58,9 @@ RUN apt-get update \
 
 COPY requirements.txt /opt/radiant/requirements.txt
 RUN pip install -r /opt/radiant/requirements.txt
+
+COPY --from=rust-builder /wheels /tmp/wheels
+RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
 
 # Setup Radiant code
 COPY radiant /opt/radiant/radiant
