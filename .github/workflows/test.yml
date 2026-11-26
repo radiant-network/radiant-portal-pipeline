@@ -10,7 +10,24 @@ jobs:
   run-tests:
     runs-on: ubuntu-latest
     steps:
+      # Depth 2: a pull_request run checks out the merge commit, whose first parent is the base branch.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      # The docker tests build both images (the Rust stage included) and check what they install: run them only when
+      # a PR changes a build input. The code copied as is (radiant/, scripts/ecs/) does not count. trivy.yml still
+      # builds and scans every image on every PR.
+      - name: Check docker build inputs
+        id: docker-inputs
+        run: |
+          changed=$(git diff --name-only HEAD^1 HEAD)
+          echo "$changed"
+          pattern='^(Dockerfile|Dockerfile\.radiant\.operator|\.dockerignore|requirements\.txt|requirements-airflow\.txt|Makefile|\.github/workflows/test\.yml)$|^(rust/radiant_vcf|tests/docker)/'
+          if echo "$changed" | grep -qE "$pattern"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -27,4 +44,38 @@ jobs:
       - name: Run integration tests
         run: make test-integration
       - name: Run docker tests
+        if: steps.docker-inputs.outputs.changed == 'true'
         run: make test-docker
+
+  # Rust SNV engine (rust/radiant_vcf, POC): builds the extension, then runs the Rust tests, the parity tests against
+  # the Python engine and the SNV integration tests (real upload and `add_files` commit) with the Rust engine. The
+  # run-tests job skips all of them: it has no extension.
+  rust-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      # `maturin develop` installs into a virtualenv
+      - name: Create virtualenv
+        run: |
+          python -m venv .venv
+          echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+          echo "VIRTUAL_ENV=$PWD/.venv" >> "$GITHUB_ENV"
+      - name: Install dependencies
+        run: make install-dev && pip install "maturin==1.16.0"
+      # Same toolchain as Dockerfile.radiant.operator; the minimal profile has neither rustfmt nor clippy
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.91.0 --profile minimal --component rustfmt,clippy && rustup default 1.91.0
+      - name: Run Rust and parity tests
+        run: make rust-test
+      # test_process_task_error injects its error through TableAccumulator.write_files, which the Rust path does not
+      # call (rust/radiant_vcf/README.md).
+      - name: Run SNV integration tests with the Rust engine
+        env:
+          RADIANT_SNV_ENGINE: rust
+        run: >-
+          pytest tests/integration/test_process_germline_snv_vcf.py tests/integration/test_process_somatic_snv_vcf.py
+          --deselect tests/integration/test_process_germline_snv_vcf.py::test_process_task_error

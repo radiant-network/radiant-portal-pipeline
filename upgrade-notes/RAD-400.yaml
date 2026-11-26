@@ -1,0 +1,26 @@
+actions:
+  - when: after
+    do: >-
+      Purge the SNV occurrences of the tasks deleted before this release. Run checks 0a and 0b of the migration file
+      in each tenant database, then sections 1, 2 and 3 in each tenant where they return rows, then check 0c in those
+      tenants and section 4 once. Without it, the variants of these tasks stay in the portal and in the frequencies:
+      no import can find them any more.
+    preconditions:
+      - No import is running (radiant-import, radiant-import-part, radiant-reannotate-open-data).
+      - radiant-case-scheduler is paused, so that no import starts during the purge.
+    refs:
+      - radiant/dags/sql/radiant/migrations/RAD-400_purge_deleted_snv_tasks.sql
+    check: Checks 0a and 0b of the RAD-400 migration file return no row in any tenant database.
+  - when: after
+    do: >-
+      Recompute the SNV frequencies, if the purge deleted any row. Trigger radiant-reannotate-open-data with the
+      conf {"recompute_frequencies": true}. It recomputes the staging frequencies of every tenant and part, then the
+      tenant frequencies, snv__variant and snv__variant_partitioned. Then unpause radiant-case-scheduler.
+    preconditions:
+      - The purge of the previous step is done.
+    refs:
+      - radiant-reannotate-open-data
+    check: >-
+      The run succeeds, and the germline__snv__staging_variant_frequency_part and
+      somatic__snv__staging_variant_frequency_part tables hold no row for a part cleared by section 2 that has no row
+      in staging_sequencing_experiment.

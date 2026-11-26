@@ -1,7 +1,7 @@
 import pytest
 from airflow.utils.trigger_rule import TriggerRule
 
-from radiant.dags import NAMESPACE
+from radiant.dags import DAGS_DIR, NAMESPACE
 from radiant.dags.import_part import (
     build_seq_ids,
     build_tenant_scoped_params,
@@ -457,3 +457,42 @@ def test_gene_coverage_loads_in_phase_3_like_exomiser(dag_bag):
 def test_sanity_check_somatic_cnvs_runs_on_the_tumor_only_run_only(dag_bag, tasks, expected):
     check = dag_bag.get_dag(f"{NAMESPACE}-import-part").get_task("somatic_cnv_occurrence.sanity_check_somatic_cnvs")
     assert check.python_callable(tasks) is expected
+
+
+_GERMLINE_SNV_CHECK = "germline_snv_occurrence.sanity_check_delta_germline_snv"
+_SOMATIC_SNV_CHECK = "somatic_snv_occurrence.sanity_check_delta_somatic_snv"
+_ANY_SNV_CHECKS = ("snv_variant.sanity_check_any_snv", "snv_consequence.sanity_check_any_snv")
+
+
+@pytest.mark.parametrize(
+    "task_type, checks",
+    [
+        ("radiant_germline_annotation", (_GERMLINE_SNV_CHECK, *_ANY_SNV_CHECKS)),
+        ("radiant_somatic_annotation", (_SOMATIC_SNV_CHECK, *_ANY_SNV_CHECKS)),
+    ],
+    ids=["germline", "somatic"],
+)
+@pytest.mark.parametrize("deleted", [False, True], ids=["live", "deleted"])
+def test_snv_checks_run_the_swaps_of_a_part_holding_an_snv_task(dag_bag, task_type, checks, deleted):
+    """A part holding only deleted SNV tasks still runs the swaps, which purge their rows."""
+    dag = dag_bag.get_dag(f"{NAMESPACE}-import-part")
+    tasks = [{"task_type": task_type, "deleted": deleted}]
+    for check in (_GERMLINE_SNV_CHECK, _SOMATIC_SNV_CHECK, *_ANY_SNV_CHECKS):
+        assert dag.get_task(check).python_callable(tasks) is (check in checks), check
+
+
+@pytest.mark.parametrize(
+    "sql_file, partition",
+    [
+        ("germline_snv_staging_variant_freq_insert.sql", "PARTITION (tenant_code = %(tenant_code)s, part = %(part)s)"),
+        ("somatic_snv_staging_variant_freq_insert.sql", "PARTITION (tenant_code = %(tenant_code)s, part = %(part)s)"),
+        ("snv_variant_part_insert_part.sql", "PARTITION (part = %(variant_part)s)"),
+        ("snv_consequence_filter_insert_part.sql", "PARTITION (part = %(part)s)"),
+    ],
+)
+def test_per_part_inserts_overwrite_their_named_partition(sql_file, partition):
+    """A dynamic overwrite replaces only the partitions the result holds: a part left with no row kept its old
+    rows. A named partition is emptied."""
+    sql = (DAGS_DIR / "sql" / "radiant" / sql_file).read_text()
+    assert partition in sql
+    assert "dynamic_overwrite" not in sql

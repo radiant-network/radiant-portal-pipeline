@@ -34,7 +34,14 @@ dag_params = {
         default=[],
         description="An array of objects representing Tasks to be processed",
         type="array",
-    )
+    ),
+    "snv_engine": Param(
+        default=None,
+        type=["null", "string"],
+        enum=[None, "python", "rust"],
+        description="SNV extraction engine of this run: python or rust. Empty: the RADIANT_SNV_ENGINE of the Airflow "
+        "environment, else python.",
+    ),
 }
 
 

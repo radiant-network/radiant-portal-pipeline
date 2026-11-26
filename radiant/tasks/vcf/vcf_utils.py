@@ -29,6 +29,24 @@ def calls_without_phased(record: Variant, sample_idx: int) -> list[int]:
     return record.genotypes[sample_idx][:-1]  # Exclude phased information
 
 
+def sample_phased(record: Variant, sample_idx: int) -> bool:
+    """Whether the genotype of a sample is phased. A haploid sample is never phased.
+
+    cyvcf2's `gt_phases` reads the phase bit of the second allele whatever the ploidy: for a haploid sample, that is
+    the next sample's first allele, or memory past the genotype array for the last sample (undefined; the value
+    differed between macOS and Linux). `genotypes` stops at the padding of a shorter genotype, so it gives the
+    sample's own ploidy.
+
+    Args:
+        record (Variant): A `cyvcf2.Variant` object representing the genetic variant.
+        sample_idx (int): The index of the sample in the VCF record.
+
+    Returns:
+        bool: True when the sample has two alleles or more and cyvcf2 reports it phased.
+    """
+    return len(record.genotypes[sample_idx]) > 2 and bool(record.gt_phases[sample_idx])
+
+
 # cyvcf2 returns htslib's raw Integer FORMAT values (htslib/vcf.h): `bcf_int32_missing` (INT32 min) for `.`, and
 # `bcf_int32_vector_end` (INT32 min + 1) for the padding after a vector shorter than the record's longest. A Float
 # value, missing or padding, comes back as NaN.
