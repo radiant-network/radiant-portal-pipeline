@@ -40,6 +40,8 @@ class Entry(BaseModel):
     item_key: str = ""
     decision: Decision
     reasons: tuple[Reason, ...] = ()
+    # On a `succeeded` outcome of a Nextflow pipeline: the task it registered for the item.
+    output_task_id: int | None = None
 
     @property
     def key(self) -> ItemKey:
@@ -70,6 +72,7 @@ def write(cursor, mapping: dict, entries: list[Entry], run_id: str, decided_at: 
             "run_id": run_id,
             "decision": str(e.decision),
             "reasons": _dump_reasons(e.reasons),
+            "output_task_id": e.output_task_id,
         }
         for e in entries
     ]

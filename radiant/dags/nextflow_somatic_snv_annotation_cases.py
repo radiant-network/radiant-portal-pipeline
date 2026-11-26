@@ -326,6 +326,7 @@ def nextflow_somatic_snv_annotation_cases():
         from airflow.sdk import get_current_context
 
         from radiant.tasks.journal import record
+        from radiant.tasks.nextflow.lineage import with_output_tasks
         from radiant.tasks.nextflow.somatic.resolve import outcome_entries
 
         context = get_current_context()
@@ -333,7 +334,13 @@ def nextflow_somatic_snv_annotation_cases():
             raise AirflowSkipException("dry run: nothing registered, nothing to journal")
         selection = context["ti"].xcom_pull(task_ids="select_tasks", key=SELECTION_KEY) or {}
         registered = {r["tenant"] for r in (context["ti"].xcom_pull(task_ids="register_tasks") or []) if r}
-        written = record(outcome_entries(selection, registered), context["run_id"])
+        # The outputs are keyed by calling task, the item's key.
+        entries = with_output_tasks(
+            outcome_entries(selection, registered),
+            context["ti"].xcom_pull(task_ids="collect_outputs"),
+            lambda e: e.item_key,
+        )
+        written = record(entries, context["run_id"])
         LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
         return len(written)
 

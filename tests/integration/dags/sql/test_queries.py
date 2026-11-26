@@ -51,6 +51,7 @@ _MOCK_PARAMS = {
     "run_id": "scheduled__2026-11-13",
     "decision": "run",
     "reasons": None,
+    "output_task_id": None,
 }
 
 # `open_data_release_insert.sql` builds its VALUES from a row list; with none it renders `VALUES ;`.

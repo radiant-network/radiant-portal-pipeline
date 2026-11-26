@@ -93,8 +93,8 @@ def test_write_sends_one_row_per_entry_with_one_timestamp():
     [(sql, rows)] = cursor.calls
     assert "INSERT INTO pipeline_journal" in sql
     assert [tuple(row.values()) for row in rows] == [
-        (812, "germline_snv", "", at, "scheduled-x", "run", None),
-        (9, "germline_snv", "", at, "scheduled-x", "wait", '[{"code": "pending_alignment", "detail": ""}]'),
+        (812, "germline_snv", "", at, "scheduled-x", "run", None, None),
+        (9, "germline_snv", "", at, "scheduled-x", "wait", '[{"code": "pending_alignment", "detail": ""}]', None),
     ]
 
 

@@ -60,3 +60,28 @@ def test_an_unchanged_decision_read_back_is_not_written_again(journal, radiant_m
     write(journal, radiant_mapping, [wait], "scheduled__j1", J1)
 
     assert to_write([wait], read_state(journal, radiant_mapping, Pipeline.GERMLINE_SNV)) == []
+
+
+def test_the_state_shows_the_task_a_run_registered(journal, radiant_mapping):
+    write(journal, radiant_mapping, [_entry(1, Decision.RUN)], "scheduled__j1", J1)
+    succeeded = Entry(case_id=1, pipeline=Pipeline.GERMLINE_SNV, decision=Decision.SUCCEEDED, output_task_id=103)
+    write(journal, radiant_mapping, [succeeded], "scheduled__j1", J2)
+
+    journal.execute(
+        f"SELECT run_id, decision, output_task_id FROM {radiant_mapping['starrocks_pipeline_state']} WHERE case_id = 1"
+    )
+    assert journal.fetchall() == (("scheduled-j1", "succeeded", 103),)
+
+
+def test_a_task_is_found_back_from_the_url_of_its_output(postgres_clinical_seeds, starrocks_session, radiant_mapping):
+    """Task 63, the seeded germline SNV annotation of case 1, from its annotated VCF."""
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(
+            f"SELECT d.url FROM {radiant_mapping['clinical_document']} d "
+            f"JOIN {radiant_mapping['clinical_task_has_document']} thd ON thd.document_id = d.id "
+            "WHERE thd.task_id = 63 AND thd.type = 'output' AND d.format_code = 'vcf'"
+        )
+        [(url,)] = cursor.fetchall()
+        sql = (DAGS_DIR / "sql" / "clinical" / "output_task_select.sql").read_text()
+        cursor.execute(jinja2.Template(sql).render(mapping=radiant_mapping), {"urls": [url, "s3://unknown.vcf.gz"]})
+        assert cursor.fetchall() == ((url, 63),)

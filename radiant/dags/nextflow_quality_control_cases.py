@@ -329,6 +329,8 @@ def nextflow_quality_control_cases():
         from airflow.sdk import get_current_context
 
         from radiant.tasks.journal import Pipeline, record
+        from radiant.tasks.nextflow.lineage import with_output_tasks
+        from radiant.tasks.nextflow.model import family_id
         from radiant.tasks.nextflow.resolve import outcome_entries
 
         context = get_current_context()
@@ -341,6 +343,9 @@ def nextflow_quality_control_cases():
             for pipeline, selection in selections.items()
             for e in outcome_entries(selection, registered, Pipeline(pipeline))
         ]
+        entries = with_output_tasks(
+            entries, context["ti"].xcom_pull(task_ids="collect_outputs"), lambda e: family_id(e.case_id)
+        )
         written = record(entries, context["run_id"])
         LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
         return len(written)

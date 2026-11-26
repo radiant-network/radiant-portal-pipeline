@@ -115,18 +115,26 @@ def test_each_pipeline_journals_its_own_cases(dag_bag, monkeypatch):
         },
     }
 
+    pulls = {
+        "select_cases": selections,
+        "register_tasks": [{"tenant": "radiant", "report": {}}],
+        "collect_outputs": {"CA3": {"json": {"url": "s3://out/CA3.json"}}},
+    }
+
     class TaskInstance:
         def xcom_pull(self, task_ids, key=None):
-            return selections if task_ids == "select_cases" else [{"tenant": "radiant", "report": {}}]
+            return pulls[task_ids]
 
     recorded = []
     context = {"ti": TaskInstance(), "params": {"dry_run": False}, "run_id": "manual__1"}
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
     monkeypatch.setattr("radiant.tasks.journal.record", lambda entries, run_id: recorded.extend(entries) or entries)
+    monkeypatch.setattr("radiant.tasks.nextflow.lineage.output_task_ids", lambda urls: {"s3://out/CA3.json": 71})
     assert dag_bag.get_dag(DAG_ID).get_task("journal_outcomes").python_callable() == 2
-    assert [(e.case_id, e.pipeline, e.decision) for e in recorded] == [
-        (3, Pipeline.QUALITY_CONTROL, Decision.SUCCEEDED),
-        (23, Pipeline.QUALITY_CONTROL_SOMATIC, Decision.FAILED),
+    # The succeeded case names the QC task registered for it.
+    assert [(e.case_id, e.pipeline, e.decision, e.output_task_id) for e in recorded] == [
+        (3, Pipeline.QUALITY_CONTROL, Decision.SUCCEEDED, 71),
+        (23, Pipeline.QUALITY_CONTROL_SOMATIC, Decision.FAILED, None),
     ]
 
 
