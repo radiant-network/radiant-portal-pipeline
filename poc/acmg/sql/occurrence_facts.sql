@@ -18,6 +18,18 @@ clinvar_locus AS (
     )
     GROUP BY locus_id
 ),
+-- OMIM inheritance of the classified transcript's gene, not of the variant's picked gene (see variant_facts.sql).
+omim_locus AS (
+    SELECT k.locus_id, any_value(om.inheritance_code) AS inheritance_code
+    FROM classified k
+    JOIN ${shared_db}.snv__consequence c ON c.locus_id = k.locus_id AND c.transcript_id = k.transcript_id
+    JOIN (
+        SELECT symbol, array_remove(array_unique_agg(inheritance_code), NULL) AS inheritance_code
+        FROM ${shared_db}.omim_gene_panel
+        GROUP BY symbol
+    ) om ON om.symbol = c.symbol
+    GROUP BY k.locus_id
+),
 sequencing AS (
     SELECT DISTINCT case_id, seq_id, family_role, affected_status
     FROM ${shared_db}.staging_sequencing_experiment
@@ -78,7 +90,7 @@ comphet AS (
 SELECT
     CAST(o.seq_id AS BIGINT) AS seq_id,
     o.locus_id,
-    v.omim_inheritance_code AS omim_inheritance,
+    om.inheritance_code AS omim_inheritance,
     CAST(o.de_novo AS BIGINT) AS denovo_probands,
     CAST(o.carrier_parents AS BIGINT) AS affected_carrier_parents,
     CAST(o.noncarrier_parents AS BIGINT) AS affected_noncarrier_parents,
@@ -87,6 +99,6 @@ SELECT
     CAST(IF(ch.category = 3, 1, 0) AS BIGINT) AS comphet_p_unphased,
     CAST(IF(ch.category = 1, 1, 0) AS BIGINT) AS comphet_lp_unphased
 FROM occurrence o
-JOIN ${tenant_db}.snv__variant v ON v.locus_id = o.locus_id
+LEFT JOIN omim_locus om ON om.locus_id = o.locus_id
 LEFT JOIN comphet ch ON ch.seq_id = o.seq_id AND ch.locus_id = o.locus_id
 WHERE o.de_novo + o.carrier_parents + o.noncarrier_parents > 0 OR ch.category IS NOT NULL

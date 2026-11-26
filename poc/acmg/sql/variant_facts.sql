@@ -46,6 +46,13 @@ clinvar_window AS (
         AND v.locus_id IN (SELECT locus_id FROM classified)
     GROUP BY v.locus_id
 ),
+-- OMIM inheritance of the classified transcript's gene: snv__variant's comes from the variant's picked gene, which
+-- can be an overlapping one.
+omim AS (
+    SELECT symbol, array_remove(array_unique_agg(inheritance_code), NULL) AS inheritance_code
+    FROM ${shared_db}.omim_gene_panel
+    GROUP BY symbol
+),
 clinvar_gene AS (
     SELECT
         symbol,
@@ -75,7 +82,7 @@ SELECT
     CAST(v.germline_pn_wxs_not_affected AS BIGINT) AS germline_pn_wxs_not_affected,
     CAST(coalesce(v.germline_hom_wgs_not_affected, 0) + coalesce(v.germline_hom_wxs_not_affected, 0) AS BIGINT)
         AS local_hom_not_affected,
-    v.omim_inheritance_code AS omim_inheritance,
+    om.inheritance_code AS omim_inheritance,
     CAST(cgn.hi_score AS BIGINT) AS clingen_hi_score,
     coalesce(cgn.no_disease, FALSE) AS clingen_no_disease,
     coalesce(cl.plp, FALSE) AS clinvar_plp,
@@ -102,3 +109,4 @@ LEFT JOIN clinvar_locus cl ON cl.locus_id = c.locus_id
 LEFT JOIN clinvar_window w ON w.locus_id = c.locus_id
 LEFT JOIN clinvar_gene cg ON cg.symbol = c.symbol
 LEFT JOIN ${output_db}.clingen_gene cgn ON cgn.symbol = c.symbol
+LEFT JOIN omim om ON om.symbol = c.symbol

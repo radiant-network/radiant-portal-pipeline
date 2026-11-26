@@ -129,3 +129,10 @@ SELECT
 FROM ${shared_db}.staging_sequencing_experiment s
 CROSS JOIN TABLE(generate_series(1, 3)) AS g(t)
 WHERE s.family_role = 'proband' AND t <= 1 + abs(murmur_hash3_32(concat('n', s.seq_id))) % 3;
+
+-- OMIM panel per gene, from the inheritance the seed gave the gene's variants.
+INSERT INTO ${shared_db}.omim_gene_panel
+SELECT DISTINCT k.symbol, concat('panel ', k.symbol), v.omim_inheritance_code
+FROM ${tenant_db}.snv__variant v
+JOIN ${shared_db}.snv__consequence k ON k.locus_id = v.locus_id
+WHERE v.omim_inheritance_code IS NOT NULL AND array_length(v.omim_inheritance_code) > 0;

@@ -137,6 +137,10 @@ def scope(args, rs: Ruleset) -> dict:
         "ruleset_version": rs.version,
         "prior": str(rs.priority.prior),
         "very_strong_odds": str(rs.priority.very_strong_odds),
+        "recessive": "[" + ", ".join(f"'{c}'" for c in rs.inheritance_fit.recessive) + "]",
+        "dominant": "[" + ", ".join(f"'{c}'" for c in rs.inheritance_fit.dominant) + "]",
+        "single_het_recessive_points": str(rs.inheritance_fit.single_het_recessive_points),
+        "healthy_parent_dominant_points": str(rs.inheritance_fit.healthy_parent_dominant_points),
         "pm1_window_bp": str(rs.pm1.window_bp),
         "clinvar_min_stars": str(rs.clinvar.min_stars),
         "cases": cases,
@@ -251,11 +255,14 @@ def run_priority(params: dict, args) -> dict:
     session = f"SET query_timeout = {int(args.query_timeout)};\nSET insert_timeout = {int(args.query_timeout)};\n"
     execute(session + sql("priority.sql", **params))
     with connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            f"SELECT pp4_points, count(*) FROM {params['output_db']}.acmg_priority"
-            f" WHERE seq_id IN ({params['cases']}) GROUP BY pp4_points ORDER BY pp4_points"
-        )
-        return {"occurrences_by_pp4_points": {int(p): n for p, n in cur.fetchall()}}
+        report = {}
+        for column in ("pp4_points", "inheritance_points"):
+            cur.execute(
+                f"SELECT {column}, count(*) FROM {params['output_db']}.acmg_priority"
+                f" WHERE seq_id IN ({params['cases']}) GROUP BY {column} ORDER BY {column}"
+            )
+            report[f"occurrences_by_{column}"] = {int(p): n for p, n in cur.fetchall()}
+        return report
 
 
 def run_level(name: str, params: dict, args, prefix: str, s3) -> dict:

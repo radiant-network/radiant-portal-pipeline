@@ -9,14 +9,17 @@ with the ACMG/AMP rules of `ruleset.yaml`, then ranks them by priority, in five 
 | 2. occurrence | `occurrence_facts.sql` | (seq_id, locus), only where the case has evidence of its own | `acmg_occurrence_criteria`: one row per criterion met |
 | 3. classification | `classification_facts.sql`: both criteria tables per occurrence | (seq_id, locus, MANE transcript) | `acmg_classification`: class, points, codes |
 | 4. phenotype | `phenotype_facts.sql`: the case's observed HPO terms | (seq_id, gene) | `acmg_phenotype`: similarity, `top`, PP4 points |
-| 5. priority | `priority.sql`, in StarRocks | (seq_id, locus, MANE transcript) | `acmg_priority`: ACMG points + PP4, as a probability |
+| 5. priority | `priority.sql`, in StarRocks | (seq_id, locus, MANE transcript) | `acmg_priority`: ACMG points + PP4 + inheritance fit, as a probability |
 
 Exclusions (BA1 cancels BS1, PVS1 cancels PP3, BP2 cancels PM3) and point caps (PM1 + PP3) apply at step 3, so the
 criteria tables hold every criterion met, with its value and threshold.
 
-PP4 enters the priority only, never the ACMG class: its strengths come from a simulation (below), not from a
-clinical review. Sort a case by `priority_probability`, the probability of pathogenicity of the points (Tavtigian
-2018: prior 0.1, 8 points = odds 350).
+PP4 and the inheritance fit enter the priority only, never the ACMG class: PP4's strengths come from a simulation
+(below), not from a clinical review. The inheritance fit takes points from a HET variant of a recessive-only gene
+(OMIM) with no comphet partner classed VUS or above (alone, it cannot explain the case), and from a variant of a
+dominant-only gene carried by a non-affected parent (unlikely causal unless the penetrance is incomplete). Sort a case by
+`priority_probability`, the probability of pathogenicity of the points (Tavtigian 2018: prior 0.1, 8 points = odds
+350).
 
 Steps 1 to 3 run the same way: StarRocks unloads the facts to Parquet on S3 (`INSERT INTO FILES()`), N worker processes
 apply the rules (Polars expressions in `acmg/rules.py`, thresholds validated by the Pydantic models of
@@ -46,6 +49,10 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | occurrence | PP1, BS4 | the proband's affected parents carrying / not carrying the variant; BS4 in a dominant-only gene (OMIM) | PP1 never fires with 2 parents (< 3 meioses): segregation across families is for the ETL; BS4 assumes full penetrance |
 | occurrence | PM3 | the proband's comphet partner (`germline__snv__comphet`) P/LP in ClinVar; "trans" in a complete trio | — |
 | occurrence | BP2 | in trans with a ClinVar pathogenic variant in a dominant-only gene (OMIM) | no "in cis" branch |
+
+OMIM inheritance (BS2, BS4, BP2, inheritance fit) is the classified transcript's gene's, from `omim_gene_panel`:
+`snv__variant.omim_inheritance_code` is the variant's picked gene's, an overlapping gene's at some loci (KDM6B
+variants carried AR, AD or nothing).
 
 Every ClinVar read skips variants whose best RCV has fewer than `clinvar.min_stars` stars (`clinvar_rcv_summary`).
 PVS1, PM1 and PP2 are dropped in a gene whose every ClinGen gene-disease validity is Disputed, Refuted or No Known
@@ -171,6 +178,12 @@ known LoF mechanism.
 
 - PP4 mostly reorders VUS: probands with ≥ 6 priority points have a median of 3 such occurrences, with or without PP4
   (p90 6, max 10).
+- Inheritance fit (`poc-12`, 3 terms + 1 noise): top 5 63 % → 77 % at −4 (69 % at −2, 82 % at −8), top 1 34 % → 41 %.
+  −4 is kept: −8 gains little and costs more on a recessive diagnosis whose second allele is missed.
+- With both inheritance rules and OMIM by gene (`poc-13`): −4 on 14 % of the occurrences and on 1,056 P/LP in 330
+  probands (healthy carriers, dominant variants from a healthy parent); occurrences with ≥ 6 priority points per
+  proband: median 5 → 2, p90 8 → 5, max 9; 42 probands have none (to review first: a missed second allele or an
+  incompletely penetrant dominant variant would end there).
 - 134 of the 348 probands have the inheritance root `HP:0000005` as their only "phenotype": no PP4 for them. With a
   phenotypic term, 202 probands, median 3 terms.
 - A broad phenotype gives no PP4: a term shared by 40 % of the annotated genes (Seizure) ties them all.
@@ -183,7 +196,10 @@ known LoF mechanism.
   frameshift at 0.017 % in gnomAD misses the flat 0.01 % PM2); the HPO ontology and gene annotations as open data.
 - Portal: the class, points and criteria per occurrence, with the audit of each criterion (value, threshold); cases
   sorted by priority.
-- Priority: the genotype's fit to the gene's inheritance (a single heterozygous variant in a recessive gene).
+- Portal: a single HET variant of a recessive gene whose phenotype fits shown as "look for a second allele" (CNV,
+  deep intronic), not only ranked down.
+- Priority: the inheritance fit's cost, unmeasured (the simulation spikes causal variants that fit, so it misses a
+  causal recessive variant whose second allele is not called: CNV, deep intronic, unclassified partner).
 - Clinical data: real phenotypes instead of `HP:0000005`.
 - Missing criteria, by expected gain: PS1/PM5 (needs VEP-annotated ClinVar), PS2 (needs parentage).
 - PVS1 decision tree (Abou Tayoun 2018): 50-nt NMD rule, in-frame exon skipping, critical region, share of the protein

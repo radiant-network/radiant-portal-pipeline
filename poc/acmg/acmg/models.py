@@ -238,6 +238,17 @@ class PriorityRule(Frozen):
     very_strong_odds: Annotated[float, Field(gt=1)]
 
 
+# Written into the priority SQL, hence the strict pattern.
+InheritanceCode = Annotated[str, Field(pattern=r"^[A-Z]+$")]
+
+
+class InheritanceFitRule(Frozen):
+    recessive: list[InheritanceCode]
+    dominant: list[InheritanceCode]
+    single_het_recessive_points: Annotated[int, Field(le=0)]
+    healthy_parent_dominant_points: Annotated[int, Field(le=0)]
+
+
 class PointCap(Frozen):
     partner: str
     max_points: Annotated[int, Field(gt=0)]
@@ -269,6 +280,7 @@ class Ruleset(Frozen):
     bp2: Bp2Rule
     pp4: Pp4Rule
     priority: PriorityRule
+    inheritance_fit: InheritanceFitRule
     exclusions: dict[str, list[str]] = {}
     point_caps: dict[str, PointCap] = {}
 

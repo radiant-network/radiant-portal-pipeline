@@ -128,7 +128,15 @@ def test_simulated_phenotype_draws_terms_then_noise():
 
 def test_pp4_raises_a_phenotype_matching_spike_above_an_equal_background():
     closure, _, terms = load()
-    back = pl.DataFrame({"seq_id": [10, 10], "locus_id": [1, 2], "symbol": ["G2", "G3"], "acmg_points": [3, 3]})
+    back = pl.DataFrame(
+        {
+            "seq_id": [10, 10],
+            "locus_id": [1, 2],
+            "symbol": ["G2", "G3"],
+            "acmg_points": [3, 3],
+            "single_het_recessive": [False, True],
+        }
+    )
     cases = [
         {"sim": i, "seq_id": 10, "phenotype": ["HP:A1"], "locus_id": 99, "symbol": "G1", "acmg_points": 3}
         for i in range(4)
@@ -141,3 +149,5 @@ def test_pp4_raises_a_phenotype_matching_spike_above_an_equal_background():
     report = simulate.evaluate(rows, table)
     assert report["acmg"]["median_rank"] == 2.0
     assert report["phenotype"]["top1"] == 1.0
+    # G3, a single heterozygous variant of a recessive gene, drops below the spike.
+    assert report["acmg_pp4_fit4"]["median_rank"] == 1.5

@@ -10,3 +10,4 @@ DROP TABLE IF EXISTS ${tenant_db}.snv__variant FORCE;
 DROP TABLE IF EXISTS ${tenant_db}.germline__snv__occurrence FORCE;
 DROP TABLE IF EXISTS ${tenant_db}.germline__snv__comphet FORCE;
 DROP TABLE IF EXISTS ${shared_db}.obs_categorical FORCE;
+DROP TABLE IF EXISTS ${shared_db}.omim_gene_panel FORCE;

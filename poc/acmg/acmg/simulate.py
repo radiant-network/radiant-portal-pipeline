@@ -22,6 +22,7 @@ BINS = [0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 1.0]
 PLP = "['Pathogenic', 'Likely_pathogenic', 'Pathogenic/Likely_pathogenic']"
 NOT_PLP = "['Benign', 'Likely_benign', 'Benign/Likely_benign', 'Uncertain_significance', " \
           "'Conflicting_classifications_of_pathogenicity', 'Conflicting_interpretations_of_pathogenicity']"
+FIT_PENALTIES = (2, 4, 8)
 # Criteria that read ClinVar at the gene or window level, the spike itself included.
 CLINVAR_CRITERIA = ("PM1", "PP2")
 
@@ -54,14 +55,20 @@ def spikes(args) -> pl.DataFrame:
 
 
 def background(args, rng: random.Random) -> pl.DataFrame:
-    """seq_id, locus_id, symbol, acmg_points of every classified occurrence of n random probands."""
+    """seq_id, locus_id, symbol, acmg_points, single_het_recessive of every classified occurrence of n random
+    probands (the last from the inheritance fit of the priority step)."""
     seq_ids = query(f"SELECT DISTINCT seq_id FROM {args.output_db}.acmg_classification")["seq_id"].to_list()
     chosen = rng.sample(sorted(seq_ids), min(args.n_background, len(seq_ids)))
     return query(f"""
-        SELECT c.seq_id, c.locus_id, k.symbol, c.acmg_points
+        SELECT c.seq_id, c.locus_id, k.symbol, c.acmg_points,
+               coalesce(p.inheritance_points, 0) < 0 AS single_het_recessive
         FROM {args.output_db}.acmg_classification c
         JOIN {args.shared_db}.snv__consequence k ON k.locus_id = c.locus_id AND k.transcript_id = c.transcript_id
-        WHERE c.seq_id IN ({', '.join(str(int(s)) for s in chosen)})""")
+        LEFT JOIN {args.output_db}.acmg_priority p
+            ON p.seq_id = c.seq_id AND p.locus_id = c.locus_id AND p.transcript_id = c.transcript_id
+        WHERE c.seq_id IN ({', '.join(str(int(s)) for s in chosen)})""").with_columns(
+        pl.col("single_het_recessive").cast(pl.Boolean)
+    )
 
 
 def hpo_coverage(args, closure: pl.DataFrame, alt: pl.DataFrame) -> dict:
@@ -130,14 +137,17 @@ def simulate(
                 .select(
                     "symbol",
                     pl.col("acmg_points").cast(pl.Int64),
+                    "single_het_recessive",
                     sim=pl.lit(c["sim"], pl.Int64),
                     is_spike=pl.lit(False),
                 )
                 .vstack(
+                    # The spike is causal: its genotype fits the gene's inheritance.
                     pl.DataFrame(
-                        {"symbol": [c["symbol"]], "acmg_points": [c["acmg_points"]], "sim": [c["sim"]],
-                         "is_spike": [True]},
-                        schema={"symbol": pl.String, "acmg_points": pl.Int64, "sim": pl.Int64, "is_spike": pl.Boolean},
+                        {"symbol": [c["symbol"]], "acmg_points": [c["acmg_points"]], "single_het_recessive": [False],
+                         "sim": [c["sim"]], "is_spike": [True]},
+                        schema={"symbol": pl.String, "acmg_points": pl.Int64, "single_het_recessive": pl.Boolean,
+                                "sim": pl.Int64, "is_spike": pl.Boolean},
                     )
                 )
                 for c in batch
@@ -172,14 +182,18 @@ def calibrate(rows: pl.DataFrame, max_points: int) -> pl.DataFrame:
 
 
 def evaluate(rows: pl.DataFrame, table: pl.DataFrame) -> dict:
-    """Spike ranks (top 1, 5, 10, median) by ACMG points, phenotype, and ACMG points + PP4."""
+    """Spike ranks (top 1, 5, 10, median) by ACMG points, phenotype, ACMG points + PP4, and the latter with each
+    inheritance-fit penalty of FIT_PENALTIES on single heterozygous variants of recessive-only genes."""
     scored = binned(rows).with_columns(pl.col("bin").cast(pl.String)).join(table.select("bin", "pp4_points"), on="bin")
     scored = scored.with_columns(
         acmg=pl.col("acmg_points").cast(pl.Float64),
         phenotype=-pl.col("top"),
         acmg_pp4=(pl.col("acmg_points") + pl.col("pp4_points")).cast(pl.Float64),
+    ).with_columns(
+        (pl.col("acmg_pp4") - pl.col("single_het_recessive").cast(pl.Float64) * p).alias(f"acmg_pp4_fit{p}")
+        for p in FIT_PENALTIES
     )
-    ranks = {name: [] for name in ("acmg", "phenotype", "acmg_pp4")}
+    ranks = {name: [] for name in ("acmg", "phenotype", "acmg_pp4", *(f"acmg_pp4_fit{p}" for p in FIT_PENALTIES))}
     for _, group in scored.group_by("sim"):
         for name in ranks:
             ranks[name].append(spike_rank(group[name], group["is_spike"]))

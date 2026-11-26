@@ -130,3 +130,11 @@ CREATE TABLE IF NOT EXISTS ${shared_db}.obs_categorical (
 )
 DUPLICATE KEY (case_id)
 DISTRIBUTED BY HASH(case_id) BUCKETS 1;
+
+CREATE TABLE IF NOT EXISTS ${shared_db}.omim_gene_panel (
+    symbol VARCHAR(30) NOT NULL,
+    panel VARCHAR(200) NOT NULL,
+    inheritance_code ARRAY<VARCHAR(5)>
+)
+DUPLICATE KEY (symbol, panel)
+DISTRIBUTED BY HASH(symbol) BUCKETS 1;

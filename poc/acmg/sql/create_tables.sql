@@ -52,12 +52,14 @@ CREATE TABLE IF NOT EXISTS ${output_db}.acmg_phenotype (
 PRIMARY KEY (seq_id, symbol)
 DISTRIBUTED BY HASH(seq_id) BUCKETS 4;
 
--- Priority of each classified occurrence: ACMG points + PP4, as a probability of pathogenicity. Sort a case by it.
+-- Priority of each classified occurrence: ACMG points + PP4 + inheritance fit, as a probability of pathogenicity.
+-- Sort a case by it.
 CREATE TABLE IF NOT EXISTS ${output_db}.acmg_priority (
     seq_id BIGINT NOT NULL,
     locus_id BIGINT NOT NULL,
     transcript_id VARCHAR(100) NOT NULL,
     pp4_points INT NOT NULL,
+    inheritance_points INT NOT NULL,
     priority_points INT NOT NULL,
     priority_probability DOUBLE NOT NULL,
     ruleset_version VARCHAR(30) NOT NULL
