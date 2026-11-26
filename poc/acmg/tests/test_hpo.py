@@ -101,6 +101,7 @@ def test_points_follow_the_supporting_ratio():
 
 def test_pp4_points_take_the_table_of_the_case_terms():
     rule = Pp4Rule(
+        blocked_by=["BP4", "BP7"],
         tables=[
             Pp4Table(min_terms=1, bins={0.05: 4, 0.25: 2}),
             Pp4Table(min_terms=2, bins={0.01: 4, 0.05: 3}),
@@ -112,7 +113,7 @@ def test_pp4_points_take_the_table_of_the_case_terms():
 
 def test_pp4_tables_must_start_at_one_term():
     with pytest.raises(ValidationError):
-        Pp4Rule(tables=[Pp4Table(min_terms=2, bins={0.01: 4})])
+        Pp4Rule(blocked_by=[], tables=[Pp4Table(min_terms=2, bins={0.01: 4})])
 
 
 def test_spike_rank_counts_ties_half():
@@ -134,11 +135,13 @@ def test_pp4_raises_a_phenotype_matching_spike_above_an_equal_background():
             "locus_id": [1, 2],
             "symbol": ["G2", "G3"],
             "acmg_points": [3, 3],
-            "single_het_recessive": [False, True],
+            "inheritance_penalized": [False, True],
+            "pp4_blocked": [False, False],
         }
     )
     cases = [
-        {"sim": i, "seq_id": 10, "phenotype": ["HP:A1"], "locus_id": 99, "symbol": "G1", "acmg_points": 3}
+        {"sim": i, "seq_id": 10, "phenotype": ["HP:A1"], "locus_id": 99, "symbol": "G1", "acmg_points": 3,
+         "pp4_blocked": False}
         for i in range(4)
     ]
     rows = simulate.simulate(cases, back, closure, terms)
@@ -151,3 +154,9 @@ def test_pp4_raises_a_phenotype_matching_spike_above_an_equal_background():
     assert report["phenotype"]["top1"] == 1.0
     # G3, a single heterozygous variant of a recessive gene, drops below the spike.
     assert report["acmg_pp4_fit4"]["median_rank"] == 1.5
+
+
+def test_pp4_blocked_by_criterion_at_any_strength():
+    criteria = pl.DataFrame({"c": ["PM2_Supporting,BP4_Moderate", "PM2_Supporting,BP7", "BS2,PVS1", "", None]})
+    flags = criteria.select(simulate.pp4_blocked(pl.col("c"), ["BP4", "BP7"]))["c"].to_list()
+    assert flags == [True, True, False, False, False]

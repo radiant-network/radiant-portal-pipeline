@@ -15,7 +15,7 @@ Exclusions (BA1 cancels BS1, PVS1 cancels PP3, BP2 cancels PM3) and point caps (
 criteria tables hold every criterion met, with its value and threshold.
 
 PP4 and the inheritance fit enter the priority only, never the ACMG class: PP4's strengths come from a simulation
-(below), not from a clinical review. The inheritance fit takes points from a HET variant of a recessive-only gene
+(below), not from a clinical review, and never adds to a variant predicted harmless (`pp4.blocked_by`: BP4, BP7). The inheritance fit takes points from a HET variant of a recessive-only gene
 (OMIM) with no comphet partner classed VUS or above (alone, it cannot explain the case), and from a variant of a
 dominant-only gene carried by a non-affected parent (unlikely causal unless the penetrance is incomplete). Sort a case by
 `priority_probability`, the probability of pathogenicity of the points (Tavtigian 2018: prior 0.1, 8 points = odds
@@ -180,6 +180,8 @@ known LoF mechanism.
   (p90 6, max 10).
 - Inheritance fit (`poc-12`, 3 terms + 1 noise): top 5 63 % → 77 % at −4 (69 % at −2, 82 % at −8), top 1 34 % → 41 %.
   −4 is kept: −8 gains little and costs more on a recessive diagnosis whose second allele is missed.
+- PP4 blocked by BP4/BP7 (`poc-15`): same top 1 and top 5 as PP4 everywhere, top 10 88 % vs 87 %, top 50 97 % vs
+  97 % (blocking every variant under 1 ACMG point instead: top 50 86 %); PP4 on 53k occurrences instead of 160k.
 - With both inheritance rules and OMIM by gene (`poc-13`): −4 on 14 % of the occurrences and on 1,056 P/LP in 330
   probands (healthy carriers, dominant variants from a healthy parent); occurrences with ≥ 6 priority points per
   proband: median 5 → 2, p90 8 → 5, max 9; 42 probands have none (to review first: a missed second allele or an

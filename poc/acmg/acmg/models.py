@@ -223,6 +223,8 @@ class Pp4Table(Frozen):
 
 
 class Pp4Rule(Frozen):
+    # Written into the priority SQL, hence the strict pattern.
+    blocked_by: list[Annotated[str, Field(pattern=r"^[A-Z]+[0-9]+$")]]
     tables: list[Pp4Table]
 
     @model_validator(mode="after")

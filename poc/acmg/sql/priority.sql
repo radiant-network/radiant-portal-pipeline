@@ -46,7 +46,9 @@ omim AS (
 scored AS (
     SELECT
         c.seq_id, c.locus_id, c.transcript_id,
-        coalesce(p.pp4_points, 0) AS pp4_points,
+        -- A code is the criterion plus an optional strength (BP4_Moderate): compare the criterion.
+        IF(arrays_overlap(array_map(x -> split_part(x, '_', 1), c.acmg_criteria), ${pp4_blocked_by}),
+            0, coalesce(p.pp4_points, 0)) AS pp4_points,
         CASE
             WHEN arrays_overlap(om.inheritance_code, ${recessive})
                 AND NOT arrays_overlap(om.inheritance_code, ${dominant})

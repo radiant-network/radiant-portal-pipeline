@@ -14,8 +14,9 @@ import re
 
 import polars as pl
 from acmg import hpo
-from acmg.db import IDENTIFIERS, connect
+from acmg.db import HERE, IDENTIFIERS, connect
 from acmg.exchange import filesystem, s3_settings
+from acmg.models import Ruleset
 
 # `top` bins (share of annotated genes scoring at least as high): upper bounds, best first.
 BINS = [0.001, 0.005, 0.01, 0.05, 0.1, 0.25, 1.0]
@@ -55,19 +56,19 @@ def spikes(args) -> pl.DataFrame:
 
 
 def background(args, rng: random.Random) -> pl.DataFrame:
-    """seq_id, locus_id, symbol, acmg_points, single_het_recessive of every classified occurrence of n random
-    probands (the last from the inheritance fit of the priority step)."""
+    """seq_id, locus_id, symbol, acmg_points, acmg_criteria (comma-joined), inheritance_penalized of every classified
+    occurrence of n random probands (the last from the inheritance fit of the priority step)."""
     seq_ids = query(f"SELECT DISTINCT seq_id FROM {args.output_db}.acmg_classification")["seq_id"].to_list()
     chosen = rng.sample(sorted(seq_ids), min(args.n_background, len(seq_ids)))
     return query(f"""
-        SELECT c.seq_id, c.locus_id, k.symbol, c.acmg_points,
-               coalesce(p.inheritance_points, 0) < 0 AS single_het_recessive
+        SELECT c.seq_id, c.locus_id, k.symbol, c.acmg_points, array_join(c.acmg_criteria, ',') AS acmg_criteria,
+               coalesce(p.inheritance_points, 0) < 0 AS inheritance_penalized
         FROM {args.output_db}.acmg_classification c
         JOIN {args.shared_db}.snv__consequence k ON k.locus_id = c.locus_id AND k.transcript_id = c.transcript_id
         LEFT JOIN {args.output_db}.acmg_priority p
             ON p.seq_id = c.seq_id AND p.locus_id = c.locus_id AND p.transcript_id = c.transcript_id
         WHERE c.seq_id IN ({', '.join(str(int(s)) for s in chosen)})""").with_columns(
-        pl.col("single_het_recessive").cast(pl.Boolean)
+        pl.col("inheritance_penalized").cast(pl.Boolean)
     )
 
 
@@ -111,6 +112,12 @@ def simulated_phenotype(
     return terms + rng.sample(pool, args.n_noise)
 
 
+def pp4_blocked(criteria: pl.Expr, blocked: list[str]) -> pl.Expr:
+    """True when one of the comma-joined codes is a blocked criterion, at any strength (BP4_Moderate is BP4)."""
+    codes = criteria.fill_null("").str.split(",")
+    return codes.list.eval(pl.element().str.split("_").list.first().is_in(blocked)).list.any()
+
+
 def spike_rank(values: pl.Series, is_spike: pl.Series) -> float:
     """1-based rank of the spike by descending value, ties counted half."""
     spike = values.filter(is_spike)[0]
@@ -137,17 +144,18 @@ def simulate(
                 .select(
                     "symbol",
                     pl.col("acmg_points").cast(pl.Int64),
-                    "single_het_recessive",
+                    "inheritance_penalized",
+                    "pp4_blocked",
                     sim=pl.lit(c["sim"], pl.Int64),
                     is_spike=pl.lit(False),
                 )
                 .vstack(
                     # The spike is causal: its genotype fits the gene's inheritance.
                     pl.DataFrame(
-                        {"symbol": [c["symbol"]], "acmg_points": [c["acmg_points"]], "single_het_recessive": [False],
-                         "sim": [c["sim"]], "is_spike": [True]},
-                        schema={"symbol": pl.String, "acmg_points": pl.Int64, "single_het_recessive": pl.Boolean,
-                                "sim": pl.Int64, "is_spike": pl.Boolean},
+                        {"symbol": [c["symbol"]], "acmg_points": [c["acmg_points"]], "inheritance_penalized": [False],
+                         "pp4_blocked": [c["pp4_blocked"]], "sim": [c["sim"]], "is_spike": [True]},
+                        schema={"symbol": pl.String, "acmg_points": pl.Int64, "inheritance_penalized": pl.Boolean,
+                                "pp4_blocked": pl.Boolean, "sim": pl.Int64, "is_spike": pl.Boolean},
                     )
                 )
                 for c in batch
@@ -182,18 +190,19 @@ def calibrate(rows: pl.DataFrame, max_points: int) -> pl.DataFrame:
 
 
 def evaluate(rows: pl.DataFrame, table: pl.DataFrame) -> dict:
-    """Spike ranks (top 1, 5, 10, median) by ACMG points, phenotype, ACMG points + PP4, and the latter with each
-    inheritance-fit penalty of FIT_PENALTIES on single heterozygous variants of recessive-only genes."""
+    """Spike ranks (top 1, 5, 10, median) by ACMG points, phenotype, ACMG points + PP4 (not where `pp4_blocked`),
+    the latter with each inheritance-fit penalty of FIT_PENALTIES, and with -4 but PP4 on every variant (`_ungated`)."""
     scored = binned(rows).with_columns(pl.col("bin").cast(pl.String)).join(table.select("bin", "pp4_points"), on="bin")
+    penalty = pl.col("inheritance_penalized").cast(pl.Float64)
+    gated = pl.when(pl.col("pp4_blocked")).then(0).otherwise(pl.col("pp4_points"))
     scored = scored.with_columns(
         acmg=pl.col("acmg_points").cast(pl.Float64),
         phenotype=-pl.col("top"),
-        acmg_pp4=(pl.col("acmg_points") + pl.col("pp4_points")).cast(pl.Float64),
-    ).with_columns(
-        (pl.col("acmg_pp4") - pl.col("single_het_recessive").cast(pl.Float64) * p).alias(f"acmg_pp4_fit{p}")
-        for p in FIT_PENALTIES
-    )
-    ranks = {name: [] for name in ("acmg", "phenotype", "acmg_pp4", *(f"acmg_pp4_fit{p}" for p in FIT_PENALTIES))}
+        acmg_pp4=(pl.col("acmg_points") + gated).cast(pl.Float64),
+        acmg_pp4_fit4_ungated=(pl.col("acmg_points") + pl.col("pp4_points")).cast(pl.Float64) - penalty * 4,
+    ).with_columns((pl.col("acmg_pp4") - penalty * p).alias(f"acmg_pp4_fit{p}") for p in FIT_PENALTIES)
+    names = ("acmg", "phenotype", "acmg_pp4", *(f"acmg_pp4_fit{p}" for p in FIT_PENALTIES), "acmg_pp4_fit4_ungated")
+    ranks = {name: [] for name in names}
     for _, group in scored.group_by("sim"):
         for name in ranks:
             ranks[name].append(spike_rank(group[name], group["is_spike"]))
@@ -236,8 +245,10 @@ def run(args) -> dict:
     }
     pool = sorted(genes.join(closure.select("term").unique(), left_on="hpo_id", right_on="term")["hpo_id"].unique())
 
+    blocked = Ruleset.load(HERE / "ruleset.yaml").pp4.blocked_by
     candidates = spikes(args).filter(pl.col("symbol").is_in(list(by_gene)))
-    back = background(args, rng)
+    candidates = candidates.with_columns(pp4_blocked=pp4_blocked(pl.col("acmg_criteria"), blocked))
+    back = background(args, rng).with_columns(pp4_blocked=pp4_blocked(pl.col("acmg_criteria"), blocked))
     seq_ids = sorted(back["seq_id"].unique())
     picked = candidates.sample(min(args.n_sims, candidates.height), seed=args.seed).to_dicts()
     cases = [
@@ -261,7 +272,9 @@ def run(args) -> dict:
         "background_occurrences_per_proband": round(back.height / max(len(seq_ids), 1)),
         "pp4_bins": table.with_columns(pl.col(pl.Float64).round(4)).to_dicts(),
         "ranks": evaluate(test, table),
-        "ranks_without_clinvar_window_criteria": evaluate(test.filter(pl.col("sim").is_in(no_clinvar)), table),
+        "ranks_without_clinvar_window_criteria": evaluate(
+            test.filter(pl.col("sim").is_in(no_clinvar)), table
+        ),
     }
 
 
