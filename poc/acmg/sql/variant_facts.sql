@@ -65,6 +65,41 @@ clinvar_gene AS (
         sum(IF(blb AND missense, 1, 0)) AS blb_missense
     FROM clinvar
     GROUP BY symbol
+),
+splice_locus AS (
+    SELECT k.locus_id, k.transcript_id, replace(v.chromosome, 'chr', '') AS chromosome, v.start
+    FROM classified k
+    JOIN ${shared_db}.snv__consequence c ON c.locus_id = k.locus_id AND c.transcript_id = k.transcript_id
+    JOIN ${tenant_db}.snv__variant v ON v.locus_id = k.locus_id
+    WHERE arrays_overlap(c.consequences, ['splice_donor_variant', 'splice_acceptor_variant'])
+),
+-- Each exon edge goes into its 1 kb bin and both neighbours, so that "within 3 bp" becomes an equi-join (as PM1).
+exon_edge AS (
+    SELECT edge.chromosome, edge.pos, floor(edge.pos / 1000) + shift.d AS bin,
+        edge.transcript_ids, edge.ensembl_phase, edge.ensembl_end_phase
+    FROM (
+        SELECT replace(chromosome, 'chr', '') AS chromosome, start AS pos, transcript_ids, ensembl_phase,
+            ensembl_end_phase
+        FROM ${shared_db}.ensembl_exon_by_gene
+        UNION ALL
+        SELECT replace(chromosome, 'chr', ''), end, transcript_ids, ensembl_phase, ensembl_end_phase
+        FROM ${shared_db}.ensembl_exon_by_gene
+    ) edge
+    CROSS JOIN (SELECT -1 AS d UNION ALL SELECT 0 UNION ALL SELECT 1) shift
+),
+-- Exon skipped by a canonical splice variant: the transcript's exon with an edge within 3 bp of it. Its frame shifts
+-- when its Ensembl start and end phases differ; an exon partly non-coding (phase -1) counts as in frame.
+splice_exon AS (
+    SELECT
+        s.locus_id,
+        s.transcript_id,
+        max(IF(x.ensembl_phase <> x.ensembl_end_phase AND x.ensembl_phase <> '-1' AND x.ensembl_end_phase <> '-1',
+            1, 0)) = 1 AS frameshift
+    FROM splice_locus s
+    JOIN exon_edge x ON x.chromosome = s.chromosome AND x.bin = floor(s.start / 1000)
+    WHERE abs(s.start - x.pos) <= 3
+        AND array_contains(array_map(t -> split_part(t, '.', 1), x.transcript_ids), s.transcript_id)
+    GROUP BY s.locus_id, s.transcript_id
 )
 SELECT
     c.locus_id,
@@ -76,6 +111,7 @@ SELECT
     CAST(c.gnomad_loeuf AS DOUBLE) AS gnomad_loeuf,
     CAST(nullif(c.exon_rank, '') AS BIGINT) AS exon_rank,
     CAST(nullif(c.exon_total, '') AS BIGINT) AS exon_total,
+    se.frameshift AS splice_frameshift,
     g.af AS gnomad_af,
     CAST(g.an AS BIGINT) AS gnomad_an,
     CAST(g.hom AS BIGINT) AS gnomad_hom,
@@ -110,6 +146,7 @@ JOIN ${tenant_db}.snv__variant v ON v.locus_id = c.locus_id
 LEFT JOIN ${shared_db}.gnomad_genomes_v3 g ON g.locus_id = c.locus_id
 LEFT JOIN clinvar_locus cl ON cl.locus_id = c.locus_id
 LEFT JOIN clinvar_window w ON w.locus_id = c.locus_id
+LEFT JOIN splice_exon se ON se.locus_id = c.locus_id AND se.transcript_id = c.transcript_id
 -- Gene joins on the current HGNC symbol: each source has its own release.
 LEFT JOIN ${output_db}.gene_symbol gs ON gs.symbol = c.symbol
 LEFT JOIN clinvar_gene cg ON cg.symbol = coalesce(gs.current, c.symbol)

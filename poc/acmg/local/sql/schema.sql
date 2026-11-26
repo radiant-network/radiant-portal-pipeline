@@ -138,3 +138,16 @@ CREATE TABLE IF NOT EXISTS ${shared_db}.omim_gene_panel (
 )
 DUPLICATE KEY (symbol, panel)
 DISTRIBUTED BY HASH(symbol) BUCKETS 1;
+
+CREATE TABLE IF NOT EXISTS ${shared_db}.ensembl_exon_by_gene (
+    gene_id VARCHAR(128) NULL,
+    exon_id VARCHAR(128) NULL,
+    chromosome VARCHAR(10) NULL,
+    start BIGINT NULL,
+    end BIGINT NULL,
+    transcript_ids ARRAY<VARCHAR(128)> NULL,
+    ensembl_phase VARCHAR(10) NULL,
+    ensembl_end_phase VARCHAR(10) NULL
+)
+DUPLICATE KEY (gene_id, exon_id)
+DISTRIBUTED BY HASH(gene_id) BUCKETS 1;

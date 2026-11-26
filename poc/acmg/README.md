@@ -39,7 +39,7 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | variant | BA1, BS1, PM2_Supporting | `gnomad_genomes_v3` (global AF, AN) and the AF of the tenant's not affected (`snv__variant` carrier frequency, Hardy-Weinberg), the higher, except for ClinVar P/LP; PM2 dropped when common in the not affected | global AF, not grpmax; no BA1 exception list beyond ClinVar P/LP |
 | variant | PP3, BP4 | REVEL (Pejaver 2022), SpliceAI (Walker 2023) | — |
 | variant | BP7 | synonymous + low SpliceAI | — |
-| variant | PVS1 | LoF consequence + ClinGen HI 3 or 30, or LOEUF + LoF P/LP in the gene (`clinvar.mc`), or many LoF P/LP whatever LOEUF (recessive genes); never with HI 40; stop or frameshift in the last exon gives `PVS1_Strong` | no 50-nt rule, no critical region |
+| variant | PVS1 | LoF consequence + ClinGen HI 3 or 30, or LOEUF + LoF P/LP in the gene (`clinvar.mc`), or many LoF P/LP whatever LOEUF (recessive genes); never with HI 40; stop or frameshift in the last exon, or a canonical splice site whose skipped exon keeps the frame (`ensembl_exon_by_gene` phases) or is not found, gives `PVS1_Strong`; start lost `PVS1_Moderate` | no 50-nt rule, no critical region, no cryptic site |
 | variant | PM4 | in-frame indel, stop lost | no repeat-region exception |
 | variant | PM1 | ClinVar P/LP missense within ±25 bp, no B/LB missense; PM1 + PP3 capped at 4 points | POC thresholds |
 | variant | PP2, BP1 | missense and LoF shares of the gene's ClinVar P/LP (`clinvar.mc`) | POC thresholds; `mc` format to check |
@@ -126,7 +126,7 @@ criteria (PM1, PP2) count the spike itself (`ranks_without_clinvar_window_criter
 
 | | |
 |---|---|
-| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/`, the HGNC file under `<S3_BUCKET>/hgnc/` |
+| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `ensembl_exon_by_gene`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/`, the HGNC file under `<S3_BUCKET>/hgnc/` |
 | Writes | the run's files under `s3://<bucket>/runs/<run id>/` (deleted at the end), the four tables of `--output-db` (created if missing; **refused if it is the shared or the tenant database**) |
 | Never | DROP, TRUNCATE, UPDATE or DELETE on a Radiant table |
 | Prints | counts per class and per criterion, file and row counts, timings |
@@ -215,10 +215,9 @@ known LoF mechanism.
   causal recessive variant whose second allele is not called: CNV, deep intronic, unclassified partner).
 - Clinical data: real phenotypes instead of `HP:0000005`.
 - Missing criteria, by expected gain: PS1/PM5 (needs VEP-annotated ClinVar), PS2 (needs parentage).
-- PVS1 decision tree (Abou Tayoun 2018): 50-nt NMD rule, in-frame exon skipping, critical region, share of the protein
-  removed, exon expression in the disease tissue. Needs MANE exon positions, protein length, a critical-region source
-  and per-exon expression. Without it PVS1 is too strong on splice sites: a TTN donor variant is VeryStrong where
-  Franklin gives Strong.
+- PVS1 decision tree (Abou Tayoun 2018), rest of it: 50-nt NMD rule, critical region, share of the protein removed,
+  exon expression in the disease tissue, cryptic splice sites. Needs protein length, a critical-region source and
+  per-exon expression. Done: exon-skipping frame from Ensembl phases, start lost `PVS1_Moderate`.
 - A clinical review of the POC thresholds (PM1, PP2, BP1, BS2, PS4, PVS1's ClinVar LoF count) and of PP4's strengths.
 
 ### CNV (not started)

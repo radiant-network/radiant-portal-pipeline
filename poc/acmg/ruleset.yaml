@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-16
+version: poc-18
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -70,6 +70,12 @@ pvs1:
   # No 50-nt rule and no exon positions yet: exon rank only.
   nmd_escape_consequences: [stop_gained, frameshift_variant]
   nmd_escape_strength: Strong
+  # Part of the decision tree (Abou Tayoun 2018): a skipped exon may keep the reading frame, and translation may start
+  # at a downstream ATG. A stop, a frameshift, or a splice site whose skipped exon shifts the frame stays VeryStrong.
+  consequence_strength:
+    splice_acceptor_variant: Strong
+    splice_donor_variant: Strong
+    start_lost: Moderate
 
 pm4:
   consequences: [inframe_insertion, inframe_deletion, stop_lost]

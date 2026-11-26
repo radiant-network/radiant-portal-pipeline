@@ -118,6 +118,7 @@ class Pvs1Rule(Frozen):
     consequences: list[str]
     nmd_escape_consequences: list[str]
     nmd_escape_strength: Strength
+    consequence_strength: dict[str, Strength]
 
 
 class Pm4Rule(Frozen):
@@ -330,6 +331,8 @@ class Fact(BaseModel):
     gene_blb_missense: int = 0
     exon_rank: int | None = None
     exon_total: int | None = None
+    # Canonical splice site: skipping its exon shifts the frame (Ensembl start and end phases differ); null if unknown.
+    splice_frameshift: bool | None = None
     gnomad_hom: int | None = None
     local_hom_not_affected: int = 0
     omim_inheritance: list[str] = []

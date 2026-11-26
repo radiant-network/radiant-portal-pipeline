@@ -107,9 +107,14 @@ def pvs1(rs: Ruleset) -> pl.Expr:
     mechanism = (hi.is_in(p.hi_scores).fill_null(False) | clinvar_lof) & ~hi.is_in(p.not_hi_scores).fill_null(False)
     lof = _has_any(p.consequences) & mechanism
     last_exon = (pl.col("exon_rank") == pl.col("exon_total")).fill_null(False)
-    nmd_escape = _has_any(p.nmd_escape_consequences) & last_exon
+    truncating = _has_any(p.nmd_escape_consequences)
+    # A stop or a frameshift, or a splice site whose exon skipping shifts the frame, keeps VeryStrong.
+    keeps = truncating | pl.col("splice_frameshift").fill_null(False)
+    by_type = [(lof & ~keeps & _has_any([c]), s, loeuf, t) for c, s in p.consequence_strength.items()]
     return _graded(
-        rs, "PVS1", [(lof & nmd_escape, p.nmd_escape_strength, loeuf, t), (lof, Strength.VERY_STRONG, loeuf, t)]
+        rs,
+        "PVS1",
+        [(lof & truncating & last_exon, p.nmd_escape_strength, loeuf, t), *by_type, (lof, Strength.VERY_STRONG, loeuf, t)],
     )
 
 

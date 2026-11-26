@@ -202,10 +202,15 @@ def test_pvs1_strong_in_last_exon():
     assert codes(**stop, exon_rank=4, exon_total=5) == ["PVS1"]
 
 
-def test_pvs1_splice_keeps_very_strong_in_last_exon():
-    assert codes(
-        consequences=["splice_donor_variant"], gnomad_loeuf=0.3, gene_plp_lof=2, exon_rank=5, exon_total=5, **NOT_RARE
-    ) == ["PVS1"]
+def test_pvs1_strength_by_consequence():
+    gene = {"gnomad_loeuf": 0.3, "gene_plp_lof": 2, **NOT_RARE}
+    assert codes(consequences=["splice_donor_variant"], exon_rank=5, exon_total=5, **gene) == ["PVS1_Strong"]
+    assert codes(consequences=["splice_acceptor_variant"], **gene) == ["PVS1_Strong"]
+    assert codes(consequences=["splice_acceptor_variant"], splice_frameshift=False, **gene) == ["PVS1_Strong"]
+    assert codes(consequences=["splice_acceptor_variant"], splice_frameshift=True, **gene) == ["PVS1"]
+    assert codes(consequences=["start_lost"], **gene) == ["PVS1_Moderate"]
+    # A frameshift that also hits the start codon is graded as a frameshift.
+    assert codes(consequences=["frameshift_variant", "start_lost"], exon_rank=1, exon_total=5, **gene) == ["PVS1"]
 
 
 def test_pm4_in_frame_indel():
