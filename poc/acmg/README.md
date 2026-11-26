@@ -210,6 +210,40 @@ known LoF mechanism.
   Franklin gives Strong.
 - A clinical review of the POC thresholds (PM1, PP2, BP1, BS2, PS4, PVS1's ClinVar LoF count) and of PP4's strengths.
 
+### CNV (not started)
+
+CNVs follow the ACMG/ClinGen CNV standard (Riggs 2020, Genet Med 22:245): points summed over 5 sections, with separate
+tables for losses and gains (P ≥ 0.99, LP 0.90 to 0.98, B ≤ −0.99). Points to check against the paper's tables 1 and 2.
+
+| Section | Evidence | Data |
+|---|---|---|
+| 1 | no gene nor functional element | `ensembl_gene` |
+| 2 | overlap with dosage-sensitive genes or regions: ClinGen HI for losses, TS for gains; benign regions; ≥ 2 HI predictors | ClinGen gene and region files, gnomAD constraint |
+| 2E (loss), 2I (gain) | both breakpoints in one gene: PVS1 on the deleted exons | reference transcript exons |
+| 3 | number of protein-coding genes | `ensembl_gene` |
+| 4O | common in the population | `gnomad_sf`, tenant not-affected frequency (`germline_cnv_variant_frequency`) |
+| 5 | de novo, inherited from a non-affected parent | `transmission_mode`, parents' affected status |
+
+Section 4 except 4O (literature, published cases) stays manual, at 0.
+
+**Missing:**
+
+- ClinGen TS: in the dosage TSV `clingen_gene` already reads; only `hi_score` is kept.
+- ClinGen region file (recurrent syndromes, benign regions, with HI and TS).
+- Reference transcript: `gene_reference_transcript` (MANE Select, else Ensembl canonical) is on ETL main, not in
+  prod yet. Until then, rebuild it from `ensembl_transcript_v1` and `mane_v1` as `gene_reference_transcript_insert.sql`
+  does, then filter `ensembl_exon_by_gene` on it.
+- Call quality floor before classifying (`filter = 'PASS'`, size, quality), stricter for WXS: a false 3 Mb call
+  scores in sections 2 and 3.
+
+**Validation:** ClinVar CNVs from `variant_summary.txt` (copy number loss or gain, deletion or duplication ≥ 1 kb, ≥
+1★: CNVs are mostly single-lab). Matched on the same type at 80 % reciprocal overlap, the rule of the gnomAD-SV and
+cohort frequencies; count the matches at 50 % too, to measure what the array breakpoints cost. Several ClinVar records
+for one CNV: majority class, conflicts counted apart. ClinVar stays out of the points, so the concordance does not
+measure ClinVar against itself.
+
+CNV + SNV comphet is a separate story, planned.
+
 ### Earlier POCs
 
 POC 1 (rules in StarRocks SQL) and POC 2 (Arrow Flight read, Stream Load write; Python and Rust) were dropped. At 50M
