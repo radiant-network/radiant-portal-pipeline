@@ -1,7 +1,14 @@
 import pytest
 
-from radiant.tasks.decision import from_query
-from radiant.tasks.nextflow.somatic.resolve import CaseResolutionError, select_tasks
+from radiant.tasks.decision import Decision, Reason, ReasonCode, from_query
+from radiant.tasks.journal import Pipeline
+from radiant.tasks.nextflow.somatic.resolve import (
+    CaseResolutionError,
+    decide_tasks,
+    outcome_entries,
+    select_run_tasks,
+    select_tasks,
+)
 from tests.unit.nextflow.somatic.conftest import calling_task_rows, row, vcf_url
 
 
@@ -117,3 +124,103 @@ def test_a_named_task_that_produced_no_row_is_an_error():
 def test_tenants_are_read_off_the_cases():
     rows = calling_task_rows(case_id=23) + calling_task_rows(task_id=71, case_id=24, tenant_code="other")
     assert select_tasks(rows).tenants == ["other", "radiant"]
+
+
+# --- the scheduler's decision -------------------------------------------------------------
+
+FIRST_RUN = (Reason(code=ReasonCode.FIRST_RUN),)
+
+
+def _decided(rows, excluded_tenants=()):
+    return [(e.case_id, e.item_key, e.decision, e.reasons) for e in decide_tasks(rows, list(excluded_tenants))]
+
+
+def test_one_item_per_case_and_calling_task():
+    rows = calling_task_rows(task_id=75, case_id=22, normal=True) + calling_task_rows(task_id=76, case_id=22)
+    entries = decide_tasks(rows, [])
+    assert {e.pipeline for e in entries} == {Pipeline.SOMATIC_SNV}
+    assert [(e.case_id, e.item_key, e.decision, e.reasons) for e in entries] == [
+        (22, "75", Decision.RUN, FIRST_RUN),
+        (22, "76", Decision.RUN, FIRST_RUN),
+    ]
+
+
+def test_a_task_held_by_two_cases_is_one_item_per_case():
+    rows = calling_task_rows(task_id=70, case_id=23) + calling_task_rows(task_id=70, case_id=24)
+    assert _decided(rows) == [(23, "70", Decision.RUN, FIRST_RUN), (24, "70", Decision.RUN, FIRST_RUN)]
+
+
+def test_an_experiment_not_completed_makes_the_task_wait_in_every_case():
+    rows = calling_task_rows(task_id=70, case_id=23, sequencing_status="in_progress") + calling_task_rows(
+        task_id=70, case_id=24, sequencing_status="in_progress"
+    )
+    waiting = (Reason(code=ReasonCode.PENDING_SEQUENCING),)
+    assert _decided(rows) == [(23, "70", Decision.WAIT, waiting), (24, "70", Decision.WAIT, waiting)]
+
+
+@pytest.mark.parametrize(
+    ("facts", "reason"),
+    [
+        ({"ssnv_url": None, "ssnv_matches": 0}, Reason(code=ReasonCode.MISSING_INPUT, detail="ssnv")),
+        ({"ssnv_matches": 2}, Reason(code=ReasonCode.AMBIGUOUS_INPUT, detail="ssnv")),
+        ({"aliquot": None}, Reason(code=ReasonCode.MISSING_ALIQUOT)),
+        ({"strategy": "rnas"}, Reason(code=ReasonCode.UNSUPPORTED_STRATEGY, detail="rnas")),
+    ],
+)
+def test_a_task_problem_blocks_the_task(facts, reason):
+    assert _decided(calling_task_rows(**facts)) == [(23, "70", Decision.BLOCKED, (reason,))]
+
+
+def test_a_case_problem_drops_that_case_only():
+    rows = calling_task_rows(task_id=70, case_id=23) + calling_task_rows(task_id=70, case_id=24, project_code=None)
+    assert _decided(rows) == [
+        (23, "70", Decision.RUN, FIRST_RUN),
+        (24, "70", Decision.BLOCKED, (Reason(code=ReasonCode.NO_PROJECT_CODE),)),
+    ]
+
+
+def test_an_excluded_tenant_is_a_skip_even_while_the_task_waits():
+    rows = calling_task_rows(sequencing_status="in_progress")
+    [(_, _, decision, reasons)] = _decided(rows, ["radiant"])
+    assert decision == Decision.SKIP
+    assert Reason(code=ReasonCode.TENANT_EXCLUDED) in reasons
+
+
+# --- the child's check and outcomes -------------------------------------------------------
+
+
+def test_the_child_drops_a_case_of_an_excluded_tenant_and_runs_the_others():
+    rows = calling_task_rows(task_id=70, case_id=23) + calling_task_rows(task_id=70, case_id=24, tenant_code="other")
+    selection = select_run_tasks(rows, ["other"])
+    assert [c.case_id for c in selection.tasks[0].cases] == [23]
+    assert [(e.task_id, e.case_ids, e.reason.code) for e in selection.excluded] == [(70, [24], "tenant_excluded")]
+
+
+def test_the_child_does_not_raise_on_a_task_that_cannot_run():
+    selection = select_run_tasks(calling_task_rows(ssnv_url=None, ssnv_matches=0), [])
+    assert selection.tasks == []
+    assert [e.reason.code for e in selection.excluded] == ["missing_input"]
+
+
+def test_each_case_of_a_task_gets_its_outcome():
+    rows = (
+        calling_task_rows(task_id=70, case_id=23)
+        + calling_task_rows(task_id=70, case_id=24, tenant_code="other")
+        + calling_task_rows(task_id=71, case_id=25, ssnv_url=None, ssnv_matches=0)
+    )
+    selection = select_run_tasks(rows, [])
+    payload = {
+        "tasks": [t.model_dump() for t in selection.tasks],
+        "excluded": [e.model_dump(mode="json") for e in selection.excluded],
+    }
+    entries = outcome_entries(payload, {"radiant"})
+    assert [(e.case_id, e.item_key, e.decision, e.reasons) for e in entries] == [
+        (23, "70", Decision.SUCCEEDED, ()),
+        (24, "70", Decision.FAILED, ()),
+        (25, "71", Decision.FAILED, (Reason(code=ReasonCode.MISSING_INPUT, detail="ssnv"),)),
+    ]
+    assert {e.pipeline for e in entries} == {Pipeline.SOMATIC_SNV}
+
+
+def test_no_selection_journals_nothing():
+    assert outcome_entries({}, set()) == []

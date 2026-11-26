@@ -9,6 +9,9 @@ exclusion:
   case it belongs to: the pipeline runs once per task;
 - a reason about one case of it (no project code, tenant excluded) drops that case only. The task
   still runs for its other cases, if it has any left.
+
+The case scheduler decides on `somatic_snv_facts_select.sql` with `decide_tasks`: one journal item per (case,
+calling task), its `item_key` the calling task.
 """
 
 import logging
@@ -16,13 +19,23 @@ from collections import defaultdict
 
 from pydantic import BaseModel
 
-from radiant.tasks.decision import Reason, ReasonCode, from_query
+from radiant.tasks.decision import Decision, Reason, ReasonCode, decision_of, from_query
+from radiant.tasks.journal import Entry, Pipeline
 from radiant.tasks.nextflow.resolve import SEQUENCING_TYPES, CaseResolutionError
 from radiant.tasks.nextflow.somatic.model import NORMAL, TUMORAL, CallingTask, CallingTaskRow, SomaticCase
 
 LOGGER = logging.getLogger(__name__)
 
-__all__ = ["CaseResolutionError", "ExcludedTask", "Selection", "select_tasks", "tenants_of"]
+__all__ = [
+    "CaseResolutionError",
+    "ExcludedTask",
+    "Selection",
+    "decide_tasks",
+    "outcome_entries",
+    "select_run_tasks",
+    "select_tasks",
+    "tenants_of",
+]
 
 # The portal accepts one aliquot on this type (`SingleAliquotTaskTypes`), so its annotation is
 # always tumor-only.
@@ -71,10 +84,7 @@ def select_tasks(
     if strict is None:
         strict = bool(requested)
 
-    parsed = [CallingTaskRow(**row) for row in rows]
-    by_task: dict[int, dict[int, list[CallingTaskRow]]] = defaultdict(lambda: defaultdict(list))
-    for row in parsed:
-        by_task[row.calling_task_id][row.case_id].append(row)
+    by_task = _by_task([CallingTaskRow(**row) for row in rows])
 
     problems: list[str] = []
     if requested:
@@ -110,6 +120,98 @@ def select_tasks(
             "%d calling task(s) or case(s) excluded, %d task(s) kept", len(selection.excluded), len(selection.tasks)
         )
     return selection
+
+
+def decide_tasks(fact_rows: list[dict], excluded_tenants: list[str]) -> list[Entry]:
+    """One journal entry per (case, calling task) of `somatic_snv_facts_select.sql`: the decision and all its
+    reasons. A reason about the task holds for each of its cases; a reason about a case, for that case only."""
+    entries = []
+    for task_id, rows_by_case in sorted(_by_task(_with_reasons(fact_rows, excluded_tenants)).items()):
+        case_ids = sorted(rows_by_case)
+        task_reasons = [reason for reason, _ in _validate_task(task_id, rows_by_case[case_ids[0]])]
+        for case_id in case_ids:
+            # From the facts, not the rows' reasons: a task reason comes first there, and would hide a skip.
+            first = rows_by_case[case_id][0]
+            case_reasons = [
+                *([Reason(code=ReasonCode.NO_PROJECT_CODE)] if first.project_code is None else []),
+                *([Reason(code=ReasonCode.TENANT_EXCLUDED)] if first.tenant_code in excluded_tenants else []),
+            ]
+            reasons = tuple(dict.fromkeys([*task_reasons, *case_reasons]))
+            # An item runs until it is annotated: every run of it is its first, or a retry after a failure.
+            decision = decision_of(reasons) if reasons else Decision.RUN
+            entries.append(
+                Entry(
+                    case_id=case_id,
+                    pipeline=Pipeline.SOMATIC_SNV,
+                    item_key=str(task_id),
+                    decision=decision,
+                    reasons=reasons or (Reason(code=ReasonCode.FIRST_RUN),),
+                )
+            )
+    return entries
+
+
+def select_run_tasks(rows: list[dict], excluded_tenants: list[str]) -> Selection:
+    """The calling tasks the scheduler decided `run` for, checked again, lenient: the data may have moved since the
+    decision. Only their (case, task) pairs not annotated yet come back from the query."""
+    return select_tasks([r.model_dump() for r in _with_reasons(rows, excluded_tenants)], strict=False)
+
+
+def outcome_entries(selection: dict, registered_tenants: set[str]) -> list[Entry]:
+    """What a run of the DAG did with its (case, calling task) pairs, as journal entries: `succeeded` once the case's
+    tenant batch is registered, `failed` otherwise, and `failed` with its reason for a pair left out."""
+    entries = [
+        Entry(
+            case_id=case["case_id"],
+            pipeline=Pipeline.SOMATIC_SNV,
+            item_key=str(task["task_id"]),
+            decision=Decision.SUCCEEDED if case["tenant_code"] in registered_tenants else Decision.FAILED,
+        )
+        for task in selection.get("tasks", [])
+        for case in task["cases"]
+    ]
+    entries += [
+        Entry(
+            case_id=case_id,
+            pipeline=Pipeline.SOMATIC_SNV,
+            item_key=str(e["task_id"]),
+            decision=Decision.FAILED,
+            reasons=(Reason(**e["reason"]),),
+        )
+        for e in selection.get("excluded", [])
+        for case_id in e["case_ids"]
+    ]
+    return entries
+
+
+def _with_reasons(rows: list[dict], excluded_tenants: list[str]) -> list[CallingTaskRow]:
+    parsed = [CallingTaskRow(**row) for row in rows]
+    for row in parsed:
+        row.exclusion_reason = _query_reason(row, excluded_tenants)
+    return parsed
+
+
+def _query_reason(row: CallingTaskRow, excluded_tenants: list[str]) -> str | None:
+    """Most specific first, the task's reasons before the case's. `pending_sequencing` is transient: the task waits
+    for its experiments rather than running on unfinished data."""
+    if row.sequencing_status != "completed":
+        return "pending_sequencing"
+    if row.ssnv_matches == 0:
+        return "no_ssnv"
+    if row.ssnv_matches > 1:
+        return "ambiguous_ssnv"
+    if row.project_code is None:
+        return "no_project_code"
+    if row.tenant_code in excluded_tenants:
+        return "tenant_excluded"
+    return None
+
+
+def _by_task(rows: list[CallingTaskRow]) -> dict[int, dict[int, list[CallingTaskRow]]]:
+    by_task: dict[int, dict[int, list[CallingTaskRow]]] = defaultdict(lambda: defaultdict(list))
+    for row in rows:
+        by_task[row.calling_task_id][row.case_id].append(row)
+    return by_task
 
 
 def tenants_of(tasks: list[CallingTask]) -> list[str]:

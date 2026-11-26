@@ -9,11 +9,11 @@ NORMAL = "normal"
 
 
 class CallingTaskRow(BaseModel):
-    """One row of `sql/clinical/pending_somatic_annotation_select.sql`: one experiment of one
+    """One row of `sql/clinical/somatic_snv_facts_select.sql`: one experiment of one
     calling task, framed by one somatic case.
 
     Everything describing the experiment or the VCF is optional: the query returns a task that
-    cannot run with its `exclusion_reason` rather than dropping it.
+    cannot run rather than dropping it, and its `exclusion_reason` is decided from these facts.
     """
 
     case_id: int
@@ -26,8 +26,10 @@ class CallingTaskRow(BaseModel):
     aliquot: str | None = None
     strategy: str | None = None
     histology: str | None = None
+    sequencing_status: str | None = None
     ssnv_url: str | None = None
-    # Set by the query when this row is why the task, or this case of it, cannot run.
+    ssnv_matches: int = 0
+    # Why the task, or this case of it, cannot run, decided from the facts. None means usable.
     exclusion_reason: str | None = None
 
 

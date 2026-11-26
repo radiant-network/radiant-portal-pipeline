@@ -13,30 +13,36 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
-        "discover_scope",
+        "has_tasks",
+        "fetch_tasks",
         "select_tasks",
         "generate_inputs",
         "run_pipeline",
         "collect_outputs",
         "list_tenants",
         "register_tasks",
+        "journal_outcomes",
     }
     assert dag.validate() is None
 
 
-def test_it_finds_its_own_work(dag_bag):
+def test_it_runs_the_named_calling_tasks_and_decides_nothing(dag_bag):
+    """The scheduler names the calling tasks it decided `run` for; none named runs nothing."""
     dag = dag_bag.get_dag(DAG_ID)
     # The case scheduler starts it; a schedule of its own would race it.
     assert dag.schedule is None
-    assert dag.get_task("discover_scope").upstream_list == []
     assert set(dag.params) == {"task_ids", "excluded_tenants", "dry_run"}
     assert dag.params["task_ids"] == []
     assert dag.params["dry_run"] is False
+    fetch = dag.get_task("fetch_tasks")
+    assert {t.task_id for t in fetch.upstream_list} == {"has_tasks"}
+    assert fetch.parameters == {"task_ids": "{{ params.task_ids }}"}
+    assert {t.task_id for t in dag.get_task("select_tasks").upstream_list} == {"fetch_tasks"}
 
 
-def test_discovery_uses_the_somatic_query(dag_bag):
+def test_the_named_tasks_are_read_with_the_somatic_query(dag_bag):
     """The anti-join is on the somatic annotation task type, and the trigger the ssnv VCF."""
-    sql = dag_bag.get_dag(DAG_ID).get_task("discover_scope").sql
+    sql = dag_bag.get_dag(DAG_ID).get_task("fetch_tasks").sql
     assert "radiant_somatic_annotation" in sql
     assert "'ssnv'" in sql
     assert "'gvcf'" not in sql
@@ -72,7 +78,7 @@ def test_registration_is_last_and_mapped_over_tenants(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     register = dag.get_task("register_tasks")
     assert isinstance(register, MappedOperator)
-    assert register.downstream_list == []
+    assert {t.task_id for t in register.downstream_list} == {"journal_outcomes"}
     assert {t.task_id for t in register.upstream_list} == {"list_tenants", "collect_outputs", "select_tasks"}
     assert register.partial_kwargs.get("max_active_tis_per_dagrun") == 1
 
@@ -132,3 +138,13 @@ def test_an_s3_error_other_than_not_found_is_not_reported_as_missing(dag_bag, mo
 
     with pytest.raises(ClientError):
         _run_generate_inputs(dag_bag, monkeypatch, code)
+
+
+def test_the_outcomes_are_journaled_last_and_do_not_decide_the_run_state(dag_bag):
+    """A teardown: a failed pipeline or registration is a `failed` marker, and still fails the run."""
+    outcomes = dag_bag.get_dag(DAG_ID).get_task("journal_outcomes")
+    assert {t.task_id for t in outcomes.upstream_list} == {"select_tasks", "register_tasks"}
+    assert outcomes.downstream_list == []
+    assert outcomes.is_teardown
+    assert not outcomes.on_failure_fail_dagrun
+    assert outcomes.retries == 2

@@ -1,7 +1,6 @@
 # Nextflow Somatic SNV Annotation (from Cases)
 
-Finds the somatic calling tasks whose raw SNV VCF was never annotated, annotates it with the same
-VEP as germline, and registers the result on the case as a **radiant_somatic_annotation** task.
+Annotates the raw SNV VCF of the calling tasks the case scheduler names with the same VEP as germline, and registers the result on the case as a **radiant_somatic_annotation** task.
 The scheduled import already loads that task: nothing changes there.
 
 The launcher is **radiant-nextflow-somatic-snv-annotation**: the germline pipeline, image and
@@ -13,16 +12,19 @@ without the split those variants would be lost.
 
 | Step | Does |
 |:--|:--|
-| **discover_scope** | Runs the pending query |
-| **select_tasks** | Keeps what can run, reports what cannot, skips the run if nothing can |
+| **has_tasks** | Skips the run when no calling task is named |
+| **fetch_tasks** | Reads the named calling tasks, for their cases not annotated yet |
+| **select_tasks** | Checks them again: keeps what can run, reports what cannot, skips the run if nothing can |
 | **generate_inputs** | Checks the raw VCFs exist, writes the samplesheet |
 | **run_pipeline** | Triggers **radiant-nextflow-somatic-snv-annotation**, and waits |
 | **collect_outputs** | Finds the VEP VCF and its index of every calling task |
 | **list_tenants**, **register_tasks** | One batch PATCH per tenant |
+| **journal_outcomes** | Writes **succeeded** or **failed** per (case, calling task) to the pipeline journal (a teardown) |
 
-It has **no schedule of its own**: **radiant-case-scheduler** starts it daily with its own
-excluded tenants, moves the case statuses around it, and starts the scheduled import after it,
-success or not. Run it by hand only for a targeted rerun.
+It has **no schedule of its own and decides nothing**: **radiant-case-scheduler** decides which
+calling tasks run, starts it daily with them as **task_ids** and its own excluded tenants, moves the
+case statuses around it, and starts the scheduled import after it, success or not. Run it by hand
+only to rerun named calling tasks.
 
 ---
 
@@ -30,7 +32,7 @@ success or not. Run it by hand only for a targeted rerun.
 
 | Param | Default | Meaning |
 |:--|:--|:--|
-| **task_ids** | empty | Calling task ids, for a targeted rerun, e.g. [70]. Empty means "find everything". |
+| **task_ids** | empty | The calling tasks to run, e.g. [70]. The case scheduler passes the ones it decided **run** for. Each runs for its cases not annotated yet; an annotated task runs nothing. Empty runs nothing. |
 | **excluded_tenants** | $RADIANT\_ETL\_EXCLUDED\_TENANTS | Tenants left out, reported as **tenant_excluded**. Empty excludes none. |
 | **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing. |
 
@@ -55,8 +57,10 @@ A calling task (**somatic_variant_calling**, **tumor_only_variant_calling** or
 - a somatic case, not draft or revoked, holds **every** sequencing experiment of the task. The
   portal refuses an input document from an experiment the case does not hold.
 
-The rule lives in **sql/clinical/pending_somatic_annotation_select.sql**. A calling task sent the
-old way (no **ssnv** VCF, annotation from QLIN) is not a candidate, and is left as it is.
+The case scheduler decides it, on the facts of **sql/clinical/somatic_snv_facts_select.sql**
+(journal pipeline **somatic_snv**, one item per case and calling task). This DAG reads its named
+tasks with the same query. A calling task sent the old way (no **ssnv** VCF, annotation from QLIN)
+is not a candidate, and is left as it is.
 
 ---
 
@@ -78,13 +82,15 @@ or missing. Nothing is run then.
 
 ## Nothing fails the run, it gets excluded
 
-A candidate that cannot be run is dropped with a reason, and the rest continues.
-**select_tasks** logs them: search the log for **excluded**.
+The case scheduler journals a candidate that cannot run with its decision (**wait**, **blocked**,
+**skip**) and its reasons, and does not name it. **select_tasks** checks the named tasks again: what
+cannot run any more is dropped with a reason, journaled **failed**, and the rest continues. It logs
+them: search the log for **excluded**.
 
 | Reason | Meaning | Scope |
 |:--|:--|:--|
 | **pending_sequencing** | an experiment of the task is not **completed** yet (transient) | the task |
-| **missing_input:ssnv** | the task published no **ssnv** VCF. Only reported for a task named in **task_ids** | the task |
+| **missing_input:ssnv** | the task published no **ssnv** VCF. Not a candidate: only reported for a task named by hand | the task |
 | **ambiguous_input:ssnv** | more than one **ssnv** VCF on one task: a mistyped document | the task |
 | **missing_aliquot** | an experiment of the task has no aliquot | the task |
 | **unsupported_samples** | not one tumoral sample plus at most one normal one, or more than one aliquot on an **alignment_somatic_variant_calling** | the task |
@@ -93,9 +99,6 @@ A candidate that cannot be run is dropped with a reason, and the rest continues.
 | **tenant_excluded** | the case's tenant is in **excluded_tenants** | that case only |
 
 If everything is excluded, the run **skips**. A skipped run is not a failed one.
-
-**A targeted rerun behaves differently on purpose.** With **task_ids** set, a task that cannot be
-resolved fails the run instead of being excluded.
 
 ---
 
