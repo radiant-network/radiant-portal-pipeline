@@ -18,7 +18,7 @@ EXOMISER_DIR = "exomiser"
 #
 # All of them are outputs of the `radiant_germline_annotation` task.
 #
-# The VCF must be declared `vcf`, not `gvcf`: `staging_external_sequencing_experiment`
+# The VCF must be declared `vcf`, not `gvcf`: `importable_task`
 # derives `vcf_filepath` from `format_code='vcf'` on an output doc of a
 # `radiant_*_annotation` task, and `exomiser_filepath` from `url LIKE '%variants.tsv'` with
 # the `exomiser` data type. The html and json match neither predicate -- they are invisible

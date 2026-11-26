@@ -84,7 +84,7 @@ def supersession_fixtures(postgres_clinical_seeds, postgres_instance):
     re-alignment, and a member still waiting to be sequenced.
 
     Documents are gVCFs only, and the annotation task carries none. Neither shape matches
-    any branch of `staging_external_sequencing_experiment`, so none of this reaches the ETL
+    any branch of `importable_task`, so none of this reaches the ETL
     staging views and no other integration test can see it.
     """
     with (

@@ -14,16 +14,15 @@ _BASE_TABLES = [
     "snv_consequence",
     "snv_consequence_filter",
     "snv_consequence_filter_partitioned",
-    # RAD-287: read by the staging view below, so created before it, in dependency order.
+    # RAD-287: read by importable_task below, so created before it, in dependency order.
     "pipeline_case",
     "current_experiment",
     "current_alignment",
     "current_germline_gvcf",
     "current_germline_gcnv",
     "case_member",
-    "staging_external_sequencing_experiment",
+    "importable_task",
     "staging_sequencing_experiment",
-    "staging_sequencing_experiment_delta",
     "snv_tmp_variant",
     "snv_staging_variant",
     "variant_lookup",

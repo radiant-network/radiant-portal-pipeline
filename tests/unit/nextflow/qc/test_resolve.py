@@ -96,7 +96,7 @@ def test_strict_mode_raises_instead(trio_rows):
             documents=False,
         )
     ]
-    with pytest.raises(CaseResolutionError, match="published no cram document"):
+    with pytest.raises(CaseResolutionError, match="has no cram: a document"):
         select_cases(rows, [900], strict=True)
 
 
@@ -180,12 +180,12 @@ def test_a_tumor_without_a_tarball_is_excluded_as_no_metrics(tumor_rows, trio_ro
         (23, Reason(code=ReasonCode.MISSING_INPUT, detail="metrics", patient_id=62))
     ]
     assert "case 23 excluded (missing_input:metrics)" in caplog.text
-    assert "published no metrics document" in caplog.text
+    assert "has no metrics: a document" in caplog.text
 
 
 def test_a_targeted_rerun_of_a_tumor_without_a_tarball_fails(tumor_rows):
     rows = [r | {"dragen_metrics_url": None, "exclusion_reason": "no_metrics"} for r in tumor_rows]
-    with pytest.raises(CaseResolutionError, match="published no metrics document"):
+    with pytest.raises(CaseResolutionError, match="has no metrics: a document"):
         select_cases(rows, [76])
 
 

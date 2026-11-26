@@ -155,7 +155,7 @@ def test_members_spanning_several_strategies_are_excluded(trio_rows):
 
 def test_a_named_task_that_cannot_run_raises(trio_rows):
     trio_rows[0]["exclusion_reason"] = "no_gcnv"
-    with pytest.raises(CaseResolutionError, match="published no gcnv document"):
+    with pytest.raises(CaseResolutionError, match="has no gcnv: a document"):
         select_cases(trio_rows, [900, 901, 902])
 
 

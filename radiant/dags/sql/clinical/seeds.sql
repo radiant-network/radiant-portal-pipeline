@@ -1384,7 +1384,7 @@ INSERT INTO {{ params.clinical_document }} (id, name, data_category_code, data_t
     -- Output of the tumor-only *calling* task 70: a raw, un-annotated somatic SNV VCF, the input of task 69. Its
     -- somatic CNV VCF (documents 263 and 264) was removed with the `tumor_only_variant_calling` route (RAD-272).
     (265, 'TCRBOA6_SRX1166091-T.snv.vcf.gz', 'genomic', 'ssnv', 'vcf', 19874233, '{{ params.vcf_bucket_prefix }}/TCRBOA6_SRX1166091-T.snv.vcf.gz', 'f27a5b910ce3d648b0a71f2c85d9e304', 'radiant'),
-    -- Outputs of QC task 71. `aggqc` matches no branch of staging_external_sequencing_experiment.
+    -- Outputs of QC task 71. `aggqc` matches no branch of importable_task.
     (266, 'CA1_multiqc_report.html', 'genomic', 'aggqc', 'html', 3772915, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/CA1_multiqc_report.html', '5d41402abc4b2a76b9719d911017c900', 'radiant'),
     (267, 'CA1_multiqc_report_data.zip', 'genomic', 'aggqc', 'zip', 1616232, '{{ params.vcf_bucket_prefix }}/qc/multiqc/CA1/CA1_multiqc_report_data.zip', '5d41402abc4b2a76b9719d911017c901', 'radiant'),
     -- Raw somatic SNV VCFs of the calling tasks 73-76 (RAD-23). 274 and 276 are already annotated

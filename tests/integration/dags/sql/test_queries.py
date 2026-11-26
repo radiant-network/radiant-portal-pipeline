@@ -268,13 +268,12 @@ def test_queries_are_valid(
             "gene_coverage",
         ],
         views=[
-            # RAD-287: read by the staging view, so created before it.
+            # RAD-287: read by importable_task, so created before it.
             "pipeline_case",
             "current_experiment",
             "current_alignment",
             "case_member",
-            "staging_external_sequencing_experiment",
-            "staging_sequencing_experiment_delta",
+            "importable_task",
         ],
         udfs=["variant_id", "cnv_id"],
     )

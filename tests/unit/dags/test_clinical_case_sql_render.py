@@ -138,9 +138,7 @@ def test_phenotypes_are_scoped_by_case_id_alone():
 
 def test_the_import_view_ignores_the_same_statuses_as_the_discovery_queries():
     """Both read `pipeline_case`, so they cannot disagree on which cases exist."""
-    text = (
-        DAGS_DIR / "sql" / "radiant" / "init" / "staging_external_sequencing_experiment_create_table.sql"
-    ).read_text()
+    text = (DAGS_DIR / "sql" / "radiant" / "init" / "importable_task_create_table.sql").read_text()
     sql = jinja2.Template(text, undefined=jinja2.StrictUndefined).render(mapping=get_radiant_mapping(_CONF))
     assert "JOIN radiant.pipeline_case pc" in sql
     assert "status_code" not in sql

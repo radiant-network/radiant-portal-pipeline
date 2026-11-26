@@ -3,17 +3,29 @@ actions:
     do: >-
       Run radiant-init-starrocks-base-tables before the next radiant-case-scheduler run. It creates the
       current_germline_gvcf and current_germline_gcnv views, which the germline SNV and CNV queries of the case
-      scheduler and of the germline SNV and CNV post-processing read, and the pipeline_journal table and
-      pipeline_state view, where the case scheduler writes its germline SNV and CNV decisions.
+      scheduler and of the germline SNV and CNV post-processing read, the importable_task view, which the import and
+      the case scheduler read, and the pipeline_journal table and pipeline_state view, where the case scheduler and
+      the import write their decisions.
     preconditions:
-      - radiant-case-scheduler is paused, or its next run is after this step. Without the views, its germline SNV
-        and CNV discovery fails, and no germline SNV or CNV case runs.
+      - radiant-case-scheduler is paused, or its next run is after this step. Without the views, its discovery
+        fails, and no case runs nor is imported.
     refs:
       - radiant-init-starrocks-base-tables
       - radiant/dags/sql/radiant/init/current_germline_gvcf_create_table.sql
       - radiant/dags/sql/radiant/init/current_germline_gcnv_create_table.sql
+      - radiant/dags/sql/radiant/init/importable_task_create_table.sql
       - radiant/dags/sql/radiant/init/pipeline_journal_create_table.sql
       - radiant/dags/sql/radiant/init/pipeline_state_create_table.sql
     check: >-
-      SELECT count(*) FROM current_germline_gvcf, then current_germline_gcnv, then pipeline_state, in the base
-      database.
+      SELECT count(*) FROM current_germline_gvcf, then current_germline_gcnv, then importable_task, then
+      pipeline_state, in the base database.
+  - when: after
+    do: >-
+      Drop the two staging views the import no longer reads. Run step 1 of the migration in the base database.
+      importable_task replaces staging_external_sequencing_experiment, and the import's facts query replaces
+      staging_sequencing_experiment_delta. Nothing breaks if they stay, but nothing keeps them up to date.
+    refs:
+      - radiant/dags/sql/radiant/migrations/RAD-288_importable_task.sql
+    check: >-
+      SHOW TABLES LIKE 'staging_%sequencing_experiment%' in the base database lists staging_sequencing_experiment
+      only.

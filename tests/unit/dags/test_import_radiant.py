@@ -8,41 +8,43 @@ def test_dag_has_expected_tasks(dag_bag):
     dag = dag_bag.get_dag("radiant-import")
     expected_tasks = {
         "start",
-        "partitioner_group.fetch_sequencing_experiment_delta",
+        "fetch_import_facts",
+        "decide_import",
+        "journal_import",
         "partitioner_group.assign_partitions",
         "partitioner_group.insert_sequencing_experiment",
-        "fetch_sequencing_experiment",
+        "flag_deleted_sequencing_experiment",
         "prepare_tenants_tables",
         "assign_priority",
         "import_part",
-        "update_sequencing_experiment_deleted",
         "data_integrity_checks",
+        "journal_import_outcomes",
     }
     assert set(dag.task_ids) == expected_tasks
 
 
 def test_dag_task_dependencies_are_correct(dag_bag):
     dag = dag_bag.get_dag("radiant-import")
-    start = dag.get_task("start")
-    fetch_delta = dag.get_task("partitioner_group.fetch_sequencing_experiment_delta")
-    assign_partitions = dag.get_task("partitioner_group.assign_partitions")
-    insert_exp = dag.get_task("partitioner_group.insert_sequencing_experiment")
-    update_deleted_exp = dag.get_task("update_sequencing_experiment_deleted")
-    fetch_exp = dag.get_task("fetch_sequencing_experiment")
-    assign_priority = dag.get_task("assign_priority")
-    import_part = dag.get_task("import_part")
 
-    # Check direct downstream dependencies
-    assert fetch_delta in start.get_direct_relatives(upstream=False)
-    assert assign_partitions in fetch_delta.get_direct_relatives(upstream=False)
-    assert insert_exp in assign_partitions.get_direct_relatives(upstream=False)
-    assert update_deleted_exp in insert_exp.get_direct_relatives(
-        upstream=False
-    ) or fetch_exp in start.get_direct_relatives(upstream=False)
-    assert fetch_exp in update_deleted_exp.get_direct_relatives(upstream=False)
-    assert assign_priority in fetch_exp.get_direct_relatives(upstream=False)
-    assert import_part in assign_priority.get_direct_relatives(upstream=False)
-    assert "data_integrity_checks" in import_part.downstream_task_ids
+    def downstream(task_id):
+        return dag.get_task(task_id).downstream_task_ids
+
+    assert "fetch_import_facts" in downstream("start")
+    assert "decide_import" in downstream("fetch_import_facts")
+    assert {"journal_import", "partitioner_group.assign_partitions"} <= downstream("decide_import")
+    assert "partitioner_group.insert_sequencing_experiment" in downstream("partitioner_group.assign_partitions")
+    assert "flag_deleted_sequencing_experiment" in downstream("partitioner_group.insert_sequencing_experiment")
+    # The staging rows are inserted and flagged before any part reads them.
+    assert {"assign_priority", "prepare_tenants_tables"} <= downstream("flag_deleted_sequencing_experiment")
+    assert "import_part" in downstream("assign_priority")
+    assert "data_integrity_checks" in downstream("import_part")
+
+
+def test_outcomes_are_journaled_whatever_the_parts_did(dag_bag):
+    """A teardown: it runs after a failed part too, and does not change the run's state."""
+    outcomes = dag_bag.get_dag("radiant-import").get_task("journal_import_outcomes")
+    assert outcomes.is_teardown
+    assert "import_part" in outcomes.upstream_task_ids
 
 
 def test_data_integrity_checks_scoped_to_this_batch_tenants(dag_bag):

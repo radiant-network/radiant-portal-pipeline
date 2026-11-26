@@ -1,4 +1,4 @@
-CREATE VIEW IF NOT EXISTS {{ mapping.starrocks_staging_external_sequencing_experiment }} AS
+CREATE VIEW IF NOT EXISTS {{ mapping.starrocks_importable_task }} AS
 with sequencing_context AS (
 	SELECT
 	pc.case_id as case_id,

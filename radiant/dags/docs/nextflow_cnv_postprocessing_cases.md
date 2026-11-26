@@ -126,7 +126,7 @@ The germline CNV occurrence insert copies the **variant_rank** 1 row onto the pr
 tasks keeps these columns empty.
 
 The variant ETL loads the slivar VCF: the
-**staging_external_sequencing_experiment** view admits the **gcnv** / **vcf** document of a
+**importable_task** view admits the **gcnv** / **vcf** document of a
 **radiant_germline_cnv_annotation** task, and **radiant-import-part** loads the proband's records
 as a CNV set of their own, under this task, with the parental origin, the transmission mode and
 the parents' calls. Once a case has a slivar VCF, the view leaves out the proband's

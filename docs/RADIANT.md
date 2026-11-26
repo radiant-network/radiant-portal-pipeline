@@ -41,7 +41,7 @@ The assigner gives a partition to each group of linked rows of the delta, never 
     *   `case_id`
     *   `family_id`
 
-2.  **Reuse Existing Partition**: If a row of the group already has a partition in staging (columns `patient_part`, `seq_part`, `case_part` or `family_part` of the `staging_sequencing_experiment_delta` view), the whole group goes to that partition. This keeps all experiments of the same patient, case or family in the same partition.
+2.  **Reuse Existing Partition**: If a row of the group already has a partition in staging (columns `patient_part`, `seq_part`, `case_part` or `family_part` of the import's facts query, `import_facts_select.sql`), the whole group goes to that partition. This keeps all experiments of the same patient, case or family in the same partition.
     *   **Linked rows in several partitions**: If the rows of a group are already in two or more partitions, for example when a new trio links a mother and a father already sequenced in other cases, the group goes to the highest one and a warning names the partitions and the IDs. The patient whose partition is not kept then has experiments in two partitions: queries on it are slower, and the germline SNV frequencies, summed over partitions, count that patient twice.
 
 3.  **New Partition Assignment**: If no row of the group has a partition:

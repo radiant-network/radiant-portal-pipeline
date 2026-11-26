@@ -25,7 +25,7 @@ EXOMISER_DIR = "exomiser"
 # The slivar VCF is the final artefact -- VEP CSQ plus the mode-of-inheritance INFO tags --
 # and is declared `gcnv`/`vcf`, the CNV analogue of the annotation DAG's `snv`/`vcf`.
 #
-# `staging_external_sequencing_experiment` admits it, on the
+# `importable_task` admits it, on the
 # `radiant_germline_cnv_annotation` task, and `import_part` loads the proband's records into
 # `germline_cnv_occurrence` (`radiant/tasks/vcf/cnv/germline/process.py`).
 #

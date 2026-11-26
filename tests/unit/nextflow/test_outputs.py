@@ -26,7 +26,7 @@ def test_outputs_are_keyed_on_the_family_id(trio):
 
 
 def test_the_annotated_vcf_is_declared_vcf_not_gvcf(trio, listing):
-    """`staging_external_sequencing_experiment` derives `vcf_filepath` from
+    """`importable_task` derives `vcf_filepath` from
     `format_code='vcf'`. Declared `gvcf`, the file would register fine and then be
     invisible to the ETL."""
     documents = collect([trio], listing, OUTDIR)["CA1072"]
