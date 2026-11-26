@@ -98,11 +98,14 @@ def bp7(rs: Ruleset) -> pl.Expr:
 def pvs1(rs: Ruleset) -> pl.Expr:
     p, t = rs.pvs1, rs.pvs1.max_loeuf
     # LoF must be a known disease mechanism of the gene: ClinGen HI says so, or ClinVar LoF P/LP says pathogenic
-    # (few in a constrained gene, more in any: LOEUF misses recessive genes). ClinGen "dosage sensitivity unlikely"
-    # vetoes all.
+    # (few in a constrained or a recessive-only gene, more in any: LOEUF misses recessive genes). ClinGen "dosage
+    # sensitivity unlikely" vetoes all.
     hi, plp_lof = pl.col("clingen_hi_score"), pl.col("gene_plp_lof")
-    clinvar_lof = ((loeuf < t) & (plp_lof >= p.min_gene_plp_lof)).fill_null(False) | (
-        plp_lof >= p.min_gene_plp_lof_any_loeuf
+    recessive = _omim_only(p.recessive_inheritance, p.dominant_inheritance)
+    clinvar_lof = (
+        ((loeuf < t) & (plp_lof >= p.min_gene_plp_lof)).fill_null(False)
+        | (plp_lof >= p.min_gene_plp_lof_any_loeuf)
+        | (recessive & (plp_lof >= p.min_gene_plp_lof_recessive))
     )
     mechanism = (hi.is_in(p.hi_scores).fill_null(False) | clinvar_lof) & ~hi.is_in(p.not_hi_scores).fill_null(False)
     lof = _has_any(p.consequences) & mechanism
@@ -164,13 +167,13 @@ def pp1(rs: Ruleset) -> pl.Expr:
     return _scored(rs, "PP1", pl.col("affected_carrier_parents"), rs.pp1)
 
 
-def _dominant_only(dominant: list[str], not_recessive: list[str]) -> pl.Expr:
-    return _has_any(dominant, "omim_inheritance") & ~_has_any(not_recessive, "omim_inheritance")
+def _omim_only(codes: list[str], excluded: list[str]) -> pl.Expr:
+    return _has_any(codes, "omim_inheritance") & ~_has_any(excluded, "omim_inheritance")
 
 
 def bp2(rs: Ruleset) -> pl.Expr:
     p = rs.bp2
-    dominant_only = _dominant_only(p.dominant, p.not_recessive)
+    dominant_only = _omim_only(p.dominant, p.not_recessive)
     carriers = pl.col("comphet_p_trans")
     return _graded(
         rs, "BP2", [(dominant_only & (carriers >= p.min_carriers), Strength.SUPPORTING, carriers, p.min_carriers)]
@@ -181,7 +184,7 @@ def bs4(rs: Ruleset) -> pl.Expr:
     # Recessive gene: the causal allele often comes from the unaffected carrier parent, so no segregation test.
     p = rs.bs4
     noncarriers, t = pl.col("affected_noncarrier_parents"), p.min_affected_noncarriers
-    cond = _dominant_only(p.dominant, p.not_recessive) & (noncarriers >= t)
+    cond = _omim_only(p.dominant, p.not_recessive) & (noncarriers >= t)
     return _graded(rs, "BS4", [(cond, Strength.STRONG, noncarriers, t)])
 
 

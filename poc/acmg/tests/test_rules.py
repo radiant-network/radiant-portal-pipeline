@@ -126,6 +126,15 @@ def test_pvs1_in_unconstrained_gene_with_many_clinvar_lof():
     assert codes(**lof, gene_plp_lof=10, clingen_hi_score=40) == []
 
 
+def test_pvs1_in_recessive_only_gene_with_few_clinvar_lof():
+    lof = {"consequences": ["frameshift_variant"], "gnomad_loeuf": 1.09, **NOT_RARE}
+    assert codes(**lof, omim_inheritance=["AR"], gene_plp_lof=3) == ["PVS1"]
+    assert codes(**lof, omim_inheritance=["AR"], gene_plp_lof=2) == []
+    # A gene also dominant keeps the LOEUF gate: a high LOEUF there says LoF is tolerated.
+    assert codes(**lof, omim_inheritance=["AR", "AD"], gene_plp_lof=3) == []
+    assert codes(**lof, gene_plp_lof=3) == []
+
+
 def test_vus_from_pp3_strong_and_pm2():
     result = run(revel_score=0.95)
     assert (result.acmg_points, result.acmg_class) == (5, "VUS")

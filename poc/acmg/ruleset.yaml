@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-18
+version: poc-19
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -57,12 +57,16 @@ spliceai:
 pvs1:
   # LoF a known disease mechanism (Abou Tayoun 2018): a ClinGen haploinsufficiency score in hi_scores
   # (3 sufficient evidence, 30 autosomal recessive), or LOEUF below max_loeuf and min_gene_plp_lof LoF P/LP ClinVar
-  # variants in the gene, or min_gene_plp_lof_any_loeuf of them whatever LOEUF (recessive genes are not
-  # constrained: healthy heterozygous carriers). POC values. Never with a score in not_hi_scores (40: dosage
-  # sensitivity unlikely).
+  # variants in the gene, or min_gene_plp_lof_any_loeuf of them whatever LOEUF, or min_gene_plp_lof_recessive of them
+  # in a gene OMIM gives a recessive inheritance and no dominant one (recessive genes are not constrained: healthy
+  # heterozygous carriers). POC values. Never with a score in not_hi_scores (40: dosage sensitivity unlikely).
   max_loeuf: 0.6
   min_gene_plp_lof: 2
   min_gene_plp_lof_any_loeuf: 10
+  # From 3: in prod, each N from 3 to 9 added true ClinVar 2-star P/LP and no false one (poc-19 measure).
+  min_gene_plp_lof_recessive: 3
+  recessive_inheritance: [AR, XLR]
+  dominant_inheritance: [AD, XLD]
   hi_scores: [3, 30]
   not_hi_scores: [40]
   consequences: [stop_gained, frameshift_variant, splice_acceptor_variant, splice_donor_variant, start_lost]

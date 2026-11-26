@@ -39,7 +39,7 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | variant | BA1, BS1, PM2_Supporting | `gnomad_genomes_v3` (global AF, AN) and the AF of the tenant's not affected (`snv__variant` carrier frequency, Hardy-Weinberg), the higher, except for ClinVar P/LP; PM2 dropped when common in the not affected | global AF, not grpmax; no BA1 exception list beyond ClinVar P/LP |
 | variant | PP3, BP4 | REVEL (Pejaver 2022), SpliceAI (Walker 2023) | — |
 | variant | BP7 | synonymous + low SpliceAI | — |
-| variant | PVS1 | LoF consequence + ClinGen HI 3 or 30, or LOEUF + LoF P/LP in the gene (`clinvar.mc`), or many LoF P/LP whatever LOEUF (recessive genes); never with HI 40; stop or frameshift in the last exon, or a canonical splice site whose skipped exon keeps the frame (`ensembl_exon_by_gene` phases) or is not found, gives `PVS1_Strong`; start lost `PVS1_Moderate` | no 50-nt rule, no critical region, no cryptic site |
+| variant | PVS1 | LoF consequence + ClinGen HI 3 or 30, or LOEUF + LoF P/LP in the gene (`clinvar.mc`), or many LoF P/LP whatever LOEUF, or a few in an OMIM recessive-only gene; never with HI 40; stop or frameshift in the last exon, or a canonical splice site whose skipped exon keeps the frame (`ensembl_exon_by_gene` phases) or is not found, gives `PVS1_Strong`; start lost `PVS1_Moderate` | no 50-nt rule, no critical region, no cryptic site |
 | variant | PM4 | in-frame indel, stop lost | no repeat-region exception |
 | variant | PM1 | ClinVar P/LP missense within ±25 bp, no B/LB missense; PM1 + PP3 capped at 4 points | POC thresholds |
 | variant | PP2, BP1 | missense and LoF shares of the gene's ClinVar P/LP (`clinvar.mc`) | POC thresholds; `mc` format to check |
