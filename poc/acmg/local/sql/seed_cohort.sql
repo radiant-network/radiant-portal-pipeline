@@ -33,12 +33,15 @@ SELECT
     IF(q < 95, 'PASS', 'LowQual'),
     IF(trio, CASE origin WHEN 'father' THEN [0, 1] WHEN 'unknown' THEN [-1, -1] ELSE [0, 0] END, NULL),
     IF(trio, CASE origin WHEN 'mother' THEN [0, 1] WHEN 'unknown' THEN [-1, -1] ELSE [0, 0] END, NULL),
-    IF(trio AND origin = 'denovo', 'autosomal_dominant_de_novo', NULL),
-    IF(trio AND origin = 'denovo', 'slivar', NULL)
+    IF(trio AND origin = 'denovo' AND unaffected_parents, 'autosomal_dominant_de_novo', NULL),
+    IF(trio AND origin = 'denovo' AND unaffected_parents, 'slivar', NULL)
 FROM (
     SELECT
         c,
         c % 5 <> 0 AS trio,
+        -- slivar calls de novo only when both parents are unaffected.
+        abs(murmur_hash3_32(concat('aff', c, '-1'))) % 10 <> 0
+            AND abs(murmur_hash3_32(concat('aff', c, '-2'))) % 10 <> 0 AS unaffected_parents,
         IF(abs(murmur_hash3_32(concat('pool', c, '-', i))) % 5 = 0,
             1 + abs(murmur_hash3_32(concat('loc', c, '-', i))) % 50000,
             1 + abs(murmur_hash3_32(concat('loc', c, '-', i))) % ${n_loci}) AS locus,

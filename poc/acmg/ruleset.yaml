@@ -135,7 +135,7 @@ svi_points:
   Moderate: 1
   Supporting: 0.5
 
-# PM6: slivar de novo mode in an affected proband. Parentage is not loaded, so every de novo is "assumed".
+# PM6: slivar de novo mode in an affected proband, both parents unaffected (slivar gate). Parentage is not loaded, so every de novo is "assumed".
 de_novo:
   assumed_points: 0.5             # per proband, phenotype consistent with the gene but not highly specific
 
