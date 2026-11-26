@@ -13,6 +13,7 @@ import jinja2
 from pydantic import BaseModel, ConfigDict
 
 from radiant.tasks.decision import Decision, Reason
+from radiant.tasks.nextflow.paths import sanitize_run_tag
 
 _SQL_DIR = Path(__file__).parents[1] / "dags" / "sql" / "radiant"
 
@@ -51,10 +52,15 @@ def to_write(entries: list[Entry], state: dict[ItemKey, Entry]) -> list[Entry]:
 
 
 def write(cursor, mapping: dict, entries: list[Entry], run_id: str, decided_at: datetime.datetime | None = None):
-    """Append `entries` to the journal, all with the same `decided_at` (UTC, naive)."""
+    """Append `entries` to the journal, all with the same `decided_at` (UTC, naive).
+
+    `run_id` is stored as its run tag: the case scheduler's run and the child runs it triggers, named after that tag,
+    then share one value.
+    """
     if not entries:
         return
     decided_at = decided_at or datetime.datetime.now(datetime.UTC).replace(tzinfo=None)
+    run_id = sanitize_run_tag(run_id)
     rows = [
         {
             "case_id": e.case_id,
