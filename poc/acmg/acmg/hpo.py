@@ -91,7 +91,8 @@ def similarity(patients: pl.DataFrame, closure: pl.DataFrame, terms: pl.DataFram
     )
     return (
         best.group_by("case", "symbol")
-        .agg(total=pl.col("ic").sum())
+        # Sorted: a float sum depends on row order, which group_by does not keep, and ties must stay exact for rank.
+        .agg(total=pl.col("ic").sort().sum())
         .join(n_terms, on="case")
         .select("case", "symbol", "n_terms", score=pl.col("total") / pl.col("n_terms"))
         .with_columns(top=pl.col("score").rank("max", descending=True).over("case") / n_genes)

@@ -87,6 +87,17 @@ def test_similarity_ranks_the_exact_gene_first_and_its_sibling_second():
     assert "G3" not in rows
 
 
+def test_similarity_does_not_depend_on_row_order():
+    closure, _, terms = load()
+    patients = pl.DataFrame({"case": [1, 1, 1, 2], "hpo_id": ["HP:A1", "HP:A2", "HP:B", "HP:A"]})
+    runs = [
+        hpo.similarity(patients.sample(fraction=1.0, shuffle=True, seed=s), closure,
+                       terms.sample(fraction=1.0, shuffle=True, seed=s)).sort("case", "symbol")
+        for s in range(20)
+    ]
+    assert all(r.equals(runs[0]) for r in runs)
+
+
 def test_normalize_maps_secondary_ids():
     _, alt, _ = load()
     assert hpo.normalize(pl.DataFrame({"case": [1], "hpo_id": ["HP:OLD"]}), alt)["hpo_id"].to_list() == ["HP:A"]

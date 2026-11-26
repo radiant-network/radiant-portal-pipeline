@@ -47,12 +47,13 @@ def spikes(args) -> pl.DataFrame:
             WHERE arrays_overlap(clin_sig, {PLP}) AND NOT arrays_overlap(clin_sig, {NOT_PLP})
                 AND locus_id IN (SELECT locus_id FROM reviewed)
         )
-        SELECT c.locus_id, any_value(k.symbol) AS symbol, max(c.acmg_points) AS acmg_points,
-               any_value(array_join(c.acmg_criteria, ',')) AS acmg_criteria
+        SELECT c.locus_id, min(k.symbol) AS symbol, max(c.acmg_points) AS acmg_points,
+               min(array_join(c.acmg_criteria, ',')) AS acmg_criteria
         FROM {args.output_db}.acmg_classification c
         JOIN {args.shared_db}.snv__consequence k ON k.locus_id = c.locus_id AND k.transcript_id = c.transcript_id
         WHERE c.locus_id IN (SELECT locus_id FROM plp)
-        GROUP BY c.locus_id""")
+        GROUP BY c.locus_id
+        ORDER BY c.locus_id""")
 
 
 def background(args, rng: random.Random) -> pl.DataFrame:
@@ -231,17 +232,19 @@ def run(args) -> dict:
     closure, alt = hpo.ontology(read(hpo.ONTOLOGY))
     genes = hpo.annotations(read(hpo.GENES))
     terms = hpo.gene_terms(closure, genes)
+    # Every list the rng draws from is sorted: group_by and set order change between runs.
     diseases = (
         genes.join(closure.select("term").unique(), left_on="hpo_id", right_on="term")
         .group_by("symbol", "disease_id")
-        .agg(pl.col("hpo_id"))
+        .agg(pl.col("hpo_id").sort())
+        .sort("symbol", "disease_id")
     )
     by_gene = {}
     for r in diseases.iter_rows(named=True):
         by_gene.setdefault(r["symbol"], []).append(r["hpo_id"])
     ancestors = {
         r["term"]: [a for a in r["ancestor"] if a not in (r["term"], hpo.PHENOTYPIC_ABNORMALITY)]
-        for r in closure.group_by("term").agg("ancestor").iter_rows(named=True)
+        for r in closure.group_by("term").agg(pl.col("ancestor").sort()).iter_rows(named=True)
     }
     pool = sorted(genes.join(closure.select("term").unique(), left_on="hpo_id", right_on="term")["hpo_id"].unique())
 
