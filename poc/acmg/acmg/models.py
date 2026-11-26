@@ -355,6 +355,7 @@ class Fact(BaseModel):
     comphet_lp_trans: int = 0
     comphet_p_unphased: int = 0
     comphet_lp_unphased: int = 0
+    comphet_partner_locus_id: int | None = None
 
 
 OCCURRENCE_FIELDS = [
@@ -365,7 +366,13 @@ OCCURRENCE_FIELDS = [
     "comphet_lp_trans",
     "comphet_p_unphased",
     "comphet_lp_unphased",
+    "comphet_partner_locus_id",
 ]
+
+
+class Detail(BaseModel):
+    name: str
+    value: float | None
 
 
 class Evidence(BaseModel):
@@ -374,6 +381,17 @@ class Evidence(BaseModel):
     points: int
     value: float | None
     threshold: float | None
+    # Which branch met the criterion (e.g. PP3 by revel or spliceai), the other values it tested, the loci it cites.
+    source: str | None
+    details: list[Detail]
+    refs: list[int]
+
+
+class Cancelled(BaseModel):
+    """A criterion met, then dropped at classification by an exclusion or a point cap."""
+
+    criterion: str
+    cancelled_by: str
 
 
 class AuditCriteria(BaseModel):
@@ -412,6 +430,7 @@ class Classification(BaseModel):
     acmg_class: AcmgClass
     acmg_points: int
     acmg_criteria: list[str]
+    acmg_cancelled: list[Cancelled]
     acmg_audit: Audit
     ruleset_version: str
 
@@ -444,4 +463,6 @@ OCCURRENCE_FACT_SCHEMA = {
     "omim_inheritance": FACT_SCHEMA["omim_inheritance"],
 } | {k: FACT_SCHEMA[k] for k in OCCURRENCE_FIELDS}
 EVIDENCE_DTYPE = pl.Struct(polars_schema(Evidence))
+DETAILS_DTYPE = pl.List(pl.Struct(polars_schema(Detail)))
+CANCELLED_DTYPE = pl.Struct(polars_schema(Cancelled))
 CLASSIFICATION_SCHEMA = polars_schema(Classification)

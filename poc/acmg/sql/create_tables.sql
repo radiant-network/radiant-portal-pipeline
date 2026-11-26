@@ -27,6 +27,9 @@ CREATE TABLE IF NOT EXISTS ${output_db}.acmg_variant_criteria (
     points INT NOT NULL,
     value DOUBLE NULL,
     threshold DOUBLE NULL,
+    source VARCHAR(30) NULL,
+    details ARRAY<STRUCT<name VARCHAR(50), value DOUBLE>>,
+    refs ARRAY<BIGINT>,
     ruleset_version VARCHAR(30) NOT NULL
 )
 PRIMARY KEY (locus_id, transcript_id, criterion)
@@ -42,6 +45,9 @@ CREATE TABLE IF NOT EXISTS ${output_db}.acmg_occurrence_criteria (
     points INT NOT NULL,
     value DOUBLE NULL,
     threshold DOUBLE NULL,
+    source VARCHAR(30) NULL,
+    details ARRAY<STRUCT<name VARCHAR(50), value DOUBLE>>,
+    refs ARRAY<BIGINT>,
     ruleset_version VARCHAR(30) NOT NULL
 )
 PRIMARY KEY (seq_id, locus_id, criterion)
@@ -83,6 +89,7 @@ CREATE TABLE IF NOT EXISTS ${output_db}.acmg_classification (
     acmg_class VARCHAR(30) NOT NULL,
     acmg_points INT NOT NULL,
     acmg_criteria ARRAY<VARCHAR(30)>,
+    acmg_cancelled ARRAY<STRUCT<criterion VARCHAR(10), cancelled_by VARCHAR(10)>>,
     ruleset_version VARCHAR(30) NOT NULL
 )
 PRIMARY KEY (seq_id, locus_id, transcript_id)

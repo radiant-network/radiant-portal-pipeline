@@ -48,7 +48,7 @@ def test_three_steps_give_the_one_pass_classification():
     )
     expected = classify(full, RULESET).collect().sort("locus_id")
     got = three_steps(FACTS)
-    columns = ["locus_id", "acmg_class", "acmg_points", "acmg_criteria"]
+    columns = ["locus_id", "acmg_class", "acmg_points", "acmg_criteria", "acmg_cancelled"]
     assert got.select(columns).to_dicts() == expected.select(columns).to_dicts()
 
 
@@ -56,6 +56,7 @@ def test_exclusion_across_levels_applies_at_classification():
     # BP2 (occurrence) cancels PM3 (occurrence), PVS1 (variant) cancels PP3 (variant): settled only when combined.
     rows = three_steps(FACTS).to_dicts()
     assert "PM3" not in rows[1]["acmg_criteria"] and "BP2" in rows[1]["acmg_criteria"]
+    assert rows[1]["acmg_cancelled"] == [{"criterion": "PM3", "cancelled_by": "BP2"}]
 
 
 def test_occurrence_without_criteria_is_vus_with_zero_points():

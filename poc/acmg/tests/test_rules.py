@@ -315,3 +315,40 @@ def test_pvs1_from_clingen_haploinsufficiency():
 def test_gene_without_disease_drops_pathogenic_gene_criteria():
     assert codes(consequences=["stop_gained"], clingen_hi_score=3, clingen_no_disease=True, **NOT_RARE) == []
     assert codes(**MISSENSE, **HOTSPOT, clingen_no_disease=True) == []
+
+
+def test_audit_names_the_branch_that_met_the_criterion():
+    assert run(revel_score=0.95, spliceai_ds=0.5, **NOT_RARE).acmg_audit.criteria.PP3.source == "revel"
+    assert run(spliceai_ds=0.5, **NOT_RARE).acmg_audit.criteria.PP3.source == "spliceai"
+    cohort = run(germline_pf_wgs_not_affected=0.04, germline_pn_wgs_not_affected=50).acmg_audit.criteria.BS1
+    assert cohort.source == "cohort" and cohort.value == pytest.approx(0.0202, abs=1e-4)
+    assert run(gnomad_af=0.02, **COMMON).acmg_audit.criteria.BS1.source == "gnomad"
+    stop = {"consequences": ["stop_gained"], **NOT_RARE}
+    assert run(**stop, clingen_hi_score=3).acmg_audit.criteria.PVS1.source == "clingen_hi"
+    assert run(**stop, gnomad_loeuf=0.3, gene_plp_lof=2).acmg_audit.criteria.PVS1.source == "clinvar_lof"
+
+
+def test_audit_details_hold_every_value_tested():
+    ps4 = run(affected_carriers=6, **COHORT).acmg_audit.criteria.PS4
+    details = {d.name: d.value for d in ps4.details}
+    assert details["affected_carriers"] == 6 and details["not_affected_total"] == 1000
+    assert details["ci_lower"] > details["ci_lower_min"]
+
+
+def test_audit_refs_cite_the_comphet_partner():
+    pm3 = run(comphet_p_trans=1, comphet_partner_locus_id=42, **NOT_RARE).acmg_audit.criteria.PM3
+    assert pm3.refs == [42]
+    assert run(gnomad_af=0.02, **COMMON).acmg_audit.criteria.BS1.refs == []
+
+
+def test_cancelled_lists_exclusions_and_caps_once():
+    lof = run(consequences=["stop_gained"], gnomad_loeuf=0.3, gene_plp_lof=2, spliceai_ds=0.9)
+    assert [c.model_dump() for c in lof.acmg_cancelled] == [{"criterion": "PP3", "cancelled_by": "PVS1"}]
+    capped = run(**MISSENSE, **HOTSPOT, revel_score=0.95)
+    assert [c.model_dump() for c in capped.acmg_cancelled] == [{"criterion": "PM1", "cancelled_by": "PP3"}]
+    common = run(denovo_probands=1, gnomad_af=0.06, **COMMON)
+    assert [c.model_dump() for c in common.acmg_cancelled] == [
+        {"criterion": "BS1", "cancelled_by": "BA1"},
+        {"criterion": "PM6", "cancelled_by": "BA1"},
+    ]
+    assert run(**NOT_RARE).acmg_cancelled == []

@@ -81,7 +81,13 @@ comphet AS (
             WHEN cl.pathogenic THEN 3
             WHEN cp.complete_trio THEN 2
             ELSE 1
-        END) AS category
+        END) AS category,
+        max_by(ch.partner_locus_id, CASE
+            WHEN cl.pathogenic AND cp.complete_trio THEN 4
+            WHEN cl.pathogenic THEN 3
+            WHEN cp.complete_trio THEN 2
+            ELSE 1
+        END) AS partner_locus_id
     FROM ${tenant_db}.germline__snv__comphet ch
     JOIN sequencing s ON s.seq_id = ch.seq_id
     JOIN case_parents cp ON cp.case_id = s.case_id
@@ -101,7 +107,8 @@ SELECT
     CAST(IF(ch.category = 4, 1, 0) AS BIGINT) AS comphet_p_trans,
     CAST(IF(ch.category = 2, 1, 0) AS BIGINT) AS comphet_lp_trans,
     CAST(IF(ch.category = 3, 1, 0) AS BIGINT) AS comphet_p_unphased,
-    CAST(IF(ch.category = 1, 1, 0) AS BIGINT) AS comphet_lp_unphased
+    CAST(IF(ch.category = 1, 1, 0) AS BIGINT) AS comphet_lp_unphased,
+    ch.partner_locus_id AS comphet_partner_locus_id
 FROM occurrence o
 LEFT JOIN omim_locus om ON om.locus_id = o.locus_id
 LEFT JOIN comphet ch ON ch.seq_id = o.seq_id AND ch.locus_id = o.locus_id

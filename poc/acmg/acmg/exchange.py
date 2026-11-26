@@ -35,8 +35,10 @@ from acmg.models import OCCURRENCE_FACT_SCHEMA, VARIANT_FACT_SCHEMA, Ruleset
 from acmg.rules import OCCURRENCE_CRITERIA, VARIANT_CRITERIA, combine, evaluate, to_wide
 from pyarrow import fs
 
-CRITERION_COLUMNS = ["criterion", "code", "strength", "points", "value", "threshold", "ruleset_version"]
-CLASS_COLUMNS = ["acmg_class", "acmg_points", "acmg_criteria", "ruleset_version"]
+CRITERION_COLUMNS = [
+    "criterion", "code", "strength", "points", "value", "threshold", "source", "details", "refs", "ruleset_version"
+]
+CLASS_COLUMNS = ["acmg_class", "acmg_points", "acmg_criteria", "acmg_cancelled", "ruleset_version"]
 PHENOTYPE_COLUMNS = ["seq_id", "symbol", "n_terms", "score", "top", "pp4_points", "ruleset_version"]
 LEVELS = {
     "variant": {

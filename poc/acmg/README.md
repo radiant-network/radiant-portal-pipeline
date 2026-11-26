@@ -7,12 +7,16 @@ with the ACMG/AMP rules of `ruleset.yaml`, then ranks them by priority, in five 
 |---|---|---|---|
 | 1. variant | `variant_facts.sql` | (locus, MANE transcript) | `acmg_variant_criteria`: one row per criterion met |
 | 2. occurrence | `occurrence_facts.sql` | (seq_id, locus), only where the case has evidence of its own | `acmg_occurrence_criteria`: one row per criterion met |
-| 3. classification | `classification_facts.sql`: both criteria tables per occurrence | (seq_id, locus, MANE transcript) | `acmg_classification`: class, points, codes |
+| 3. classification | `classification_facts.sql`: both criteria tables per occurrence | (seq_id, locus, MANE transcript) | `acmg_classification`: class, points, codes, cancelled criteria |
 | 4. phenotype | `phenotype_facts.sql`: the case's observed HPO terms | (seq_id, gene) | `acmg_phenotype`: similarity, `top`, PP4 points |
 | 5. priority | `priority.sql`, in StarRocks | (seq_id, locus, MANE transcript) | `acmg_priority`: ACMG points + PP4 + inheritance fit, as a probability |
 
 Exclusions (BA1 cancels BS1, PVS1 cancels PP3, BP2 cancels PM3) and point caps (PM1 + PP3) apply at step 3, so the
-criteria tables hold every criterion met, with its value and threshold.
+criteria tables hold every criterion met, and `acmg_classification.acmg_cancelled` the ones dropped and by which
+criterion. Each criterion row explains itself for a report: `value` and `threshold` (the main test), `source` (the
+branch that met it: `revel` or `spliceai` for PP3, `clingen_hi` or `clinvar_lof` for PVS1, `gnomad` or `cohort` for
+BA1/BS1/BS2), `details` (every other value it tested, e.g. PS4's 2x2 table and confidence bound) and `refs` (the
+comphet partner's locus for PM3/BP2). The output tables are created if missing: drop them after a column change.
 
 PP4 and the inheritance fit enter the priority only, never the ACMG class: PP4's strengths come from a simulation
 (below), not from a clinical review, and never adds to a variant predicted harmless (`pp4.blocked_by`: BP4, BP7). The inheritance fit takes points from a HET variant of a recessive-only gene
@@ -207,12 +211,14 @@ known LoF mechanism.
   loaded as open data (they are only IGV tracks today); gnomAD grpmax FAF for BA1/BS1 (the global AF is too coarse);
   gene-specific PM2/BS1 thresholds for recessive genes (maximum credible AF, Whiffin 2017: a pathogenic G6PC1
   frameshift at 0.017 % in gnomAD misses the flat 0.01 % PM2); the HPO ontology and gene annotations as open data.
-- Portal: the class, points and criteria per occurrence, with the audit of each criterion (value, threshold); cases
+- Portal: the class, points and criteria per occurrence, with each criterion's explanation (value, threshold, source, details, refs, cancellations); cases
   sorted by priority.
 - Portal: a single HET variant of a recessive gene whose phenotype fits shown as "look for a second allele" (CNV,
   deep intronic), not only ranked down.
 - Priority: the inheritance fit's cost, unmeasured (the simulation spikes causal variants that fit, so it misses a
   causal recessive variant whose second allele is not called: CNV, deep intronic, unclassified partner).
+- Priority: PP4 is not reproducible. Two prod runs minutes apart, same data, move a few dozen occurrences between PP4
+  points (4 points: 6641 then 6598), cause not found (an unstable tie in the similarity or `top` is the likely one).
 - Clinical data: real phenotypes instead of `HP:0000005`.
 - Missing criteria, by expected gain: PS1/PM5 (needs VEP-annotated ClinVar), PS2 (needs parentage).
 - PVS1 decision tree (Abou Tayoun 2018), rest of it: 50-nt NMD rule, critical region, share of the protein removed,
