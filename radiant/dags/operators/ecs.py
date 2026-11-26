@@ -4,7 +4,7 @@ from datetime import timedelta
 from airflow.providers.amazon.aws.operators import ecs
 
 from radiant.dags import ECSEnv
-from radiant.dags.operators.utils import writer_result_s3_uri
+from radiant.dags.operators.utils import snv_engine_template, writer_result_s3_uri
 
 # Propagated to the SNV extraction tasks so a memory-constrained environment can shrink the
 # TableAccumulator flush threshold, which is what sets an extraction task's memory floor. An
@@ -15,6 +15,9 @@ _PARQUET_FILE_SIZE_ENV = {
     "name": "RADIANT_PARQUET_FILE_SIZE_MB",
     "value": os.getenv("RADIANT_PARQUET_FILE_SIZE_MB", ""),
 }
+
+# SNV engine, from the run's `snv_engine` param or the Airflow environment (`snv_engine_template`).
+_SNV_ENGINE_ENV = {"name": "RADIANT_SNV_ENGINE", "value": snv_engine_template()}
 
 
 class RadiantTaskECSOperator:
@@ -80,6 +83,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                                 {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
                                 {"name": "STARROCKS_BROKER_USE_INSTANCE_PROFILE", "value": "true"},
                                 _PARQUET_FILE_SIZE_ENV,
+                                _SNV_ENGINE_ENV,
                             ],
                         }
                     ]
@@ -115,6 +119,7 @@ class ImportSNVVCF(RadiantTaskECSOperator):
                                 {"name": "PYICEBERG_CATALOG__DEFAULT__TYPE", "value": "glue"},
                                 {"name": "STARROCKS_BROKER_USE_INSTANCE_PROFILE", "value": "true"},
                                 _PARQUET_FILE_SIZE_ENV,
+                                _SNV_ENGINE_ENV,
                             ],
                         }
                     ]

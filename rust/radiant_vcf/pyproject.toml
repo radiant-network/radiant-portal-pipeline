@@ -1,0 +1,14 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "radiant-vcf"
+version = "0.1.0"
+description = "Germline and somatic SNV extraction of the Radiant ETL, in Rust (POC)"
+requires-python = ">=3.12"
+dependencies = ["pyarrow"]
+
+[tool.maturin]
+module-name = "radiant_vcf"
+features = ["pyo3/extension-module"]

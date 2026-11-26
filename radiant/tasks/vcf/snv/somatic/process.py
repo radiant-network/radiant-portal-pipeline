@@ -13,6 +13,7 @@ from radiant.tasks.utils import capture_libc_stderr_and_check_errors, download_s
 from radiant.tasks.vcf.experiment import Experiment, RadiantSomaticAnnotationTask
 from radiant.tasks.vcf.snv.common import process_common
 from radiant.tasks.vcf.snv.consequence import log_invalid_cds, log_source_counts, parse_csq_header, process_consequence
+from radiant.tasks.vcf.snv.rust_engine import ENGINE_RUST, process_somatic_task_rust, snv_engine
 from radiant.tasks.vcf.snv.somatic.occurrence import process_occurrence
 from radiant.tasks.vcf.snv.variant import process_variant
 from radiant.tasks.vcf.vcf_utils import InfoKeys
@@ -41,6 +42,8 @@ def process_task(
     variants_partition_commit = []
     consequences_partition_commit = []
     catalog = load_catalog(catalog_name, **(catalog_properties or {}))
+    if snv_engine() == ENGINE_RUST:
+        return process_somatic_task_rust(task, catalog, namespace, vcf_threads=vcf_threads)
 
     vcf = VCF(task.vcf_filepath, strict_gt=True, threads=vcf_threads)
     # The full sample list has to be captured before narrowing: `set_samples` rewrites both
@@ -55,34 +58,7 @@ def process_task(
     occurrences_table_name = f"{namespace}.somatic_snv_occurrence"
     variants_table_name = f"{namespace}.snv_variant"
     consequences_table_name = f"{namespace}.snv_consequence"
-    if not vcf.samples:
-        raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
-
-    # `set_samples` narrows to the intersection and only warns about the rest, so an aliquot the
-    # VCF does not carry would otherwise be dropped silently — turning a tumor-normal task handed
-    # a tumor-only VCF into a tumor-only analysis.
-    missing_aliquots = [exp.aliquot for exp in task.experiments if exp.aliquot not in vcf.samples]
-    if missing_aliquots:
-        raise ValueError(
-            f"Task {task.task_id} declares aliquots {missing_aliquots} that are absent from "
-            f"{task.vcf_filepath}, whose samples are {vcf_file_samples} — the task and the VCF "
-            f"disagree on the analysis."
-        )
-
-    # Here we need to sort the experiments in the same order as the samples appears
-    # in the VCF file. This is required because each row contains both the tumor and normal information.
-    # Therefore, we need to make sure the index match the order in which the samples appear in the file.
-    filtered_experiments = get_sorted_task_experiments(task.experiments, vcf.samples)
-
-    # The aliquot rule alone cannot tell a genuine tumor-only task from a tumor-normal one whose
-    # normal experiment never registered upstream. Left silent, that phantom task would be counted
-    # in the tumor-only frequency denominator.
-    if filtered_experiments.normal_index is None and len(vcf_file_samples) != 1:
-        raise ValueError(
-            f"Task {task.task_id} resolved to a single tumoral aliquot (tumor-only) but its VCF "
-            f"{task.vcf_filepath} declares {len(vcf_file_samples)} samples: {vcf_file_samples} — "
-            f"likely a tumor-normal task with a missing or mismatched normal experiment."
-        )
+    filtered_experiments = check_samples(task, vcf_file_samples, vcf.samples)
 
     csq_header = parse_csq_header(vcf)
     info_keys = InfoKeys(vcf)
@@ -170,6 +146,50 @@ def process_task(
         variants_table_name: variants_partition_commit,
         consequences_table_name: consequences_partition_commit,
     }
+
+
+def check_samples(
+    task: RadiantSomaticAnnotationTask, vcf_file_samples: list[str], samples: list[str]
+) -> FilteredExperiment:
+    """The tumor and normal samples of a task, once its aliquots are selected in the VCF. Both engines call it.
+
+    Args:
+        task: The somatic annotation task.
+        vcf_file_samples: Every sample of the VCF, before the selection.
+        samples: The samples kept by the selection, in file order.
+
+    Raises:
+        ValueError: When the task and the VCF disagree on the analysis (see each rule).
+    """
+    if not samples:
+        raise ValueError(f"Task {task.task_id} has no matching samples in the VCF file {task.vcf_filepath}")
+
+    # `set_samples` narrows to the intersection and only warns about the rest, so an aliquot the
+    # VCF does not carry would otherwise be dropped silently — turning a tumor-normal task handed
+    # a tumor-only VCF into a tumor-only analysis.
+    missing_aliquots = [exp.aliquot for exp in task.experiments if exp.aliquot not in samples]
+    if missing_aliquots:
+        raise ValueError(
+            f"Task {task.task_id} declares aliquots {missing_aliquots} that are absent from "
+            f"{task.vcf_filepath}, whose samples are {vcf_file_samples} — the task and the VCF "
+            f"disagree on the analysis."
+        )
+
+    # Here we need to sort the experiments in the same order as the samples appears
+    # in the VCF file. This is required because each row contains both the tumor and normal information.
+    # Therefore, we need to make sure the index match the order in which the samples appear in the file.
+    filtered_experiments = get_sorted_task_experiments(task.experiments, samples)
+
+    # The aliquot rule alone cannot tell a genuine tumor-only task from a tumor-normal one whose
+    # normal experiment never registered upstream. Left silent, that phantom task would be counted
+    # in the tumor-only frequency denominator.
+    if filtered_experiments.normal_index is None and len(vcf_file_samples) != 1:
+        raise ValueError(
+            f"Task {task.task_id} resolved to a single tumoral aliquot (tumor-only) but its VCF "
+            f"{task.vcf_filepath} declares {len(vcf_file_samples)} samples: {vcf_file_samples} — "
+            f"likely a tumor-normal task with a missing or mismatched normal experiment."
+        )
+    return filtered_experiments
 
 
 def get_somatic_indexes(experiments: list[Experiment], samples: list[str]) -> tuple[int, int | None]:
