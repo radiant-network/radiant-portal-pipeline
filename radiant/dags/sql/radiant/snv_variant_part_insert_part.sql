@@ -1,4 +1,5 @@
-INSERT /*+set_var(dynamic_overwrite = true)*/ OVERWRITE {{ mapping.starrocks_snv_variant_partitioned }}
+-- Named partition, as in germline_snv_staging_variant_freq_insert.sql.
+INSERT OVERWRITE {{ mapping.starrocks_snv_variant_partitioned }} PARTITION (part = %(variant_part)s)
 SELECT
     %(variant_part)s AS part,
     v.*
