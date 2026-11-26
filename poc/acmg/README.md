@@ -88,6 +88,17 @@ Each run rebuilds `clingen_gene` in `--output-db` from two ClinGen downloads (pu
 | `ClinGen_gene_curation_list_GRCh38.tsv` | https://ftp.clinicalgenome.org/ClinGen_gene_curation_list_GRCh38.tsv |
 | `gene-validity.csv` | https://search.clinicalgenome.org/kb/gene-validity/download |
 
+## Gene symbols
+
+Ensembl 114 (VEP), ClinVar, OMIM, ClinGen and HPO each name genes at their own release (SPATA5L1 is AFG2B since
+2022, CENPJ is CPAP in ClinVar but not yet in Ensembl 114). Each run rebuilds `gene_symbol` in `--output-db` from
+HGNC: every gene join goes through the current HGNC symbol, previous symbols included, aliases left out (genes share
+them). Copy the file again under `<S3_BUCKET>/hgnc/` to take a newer HGNC:
+
+| File | Source |
+|---|---|
+| `hgnc_complete_set.txt` | https://storage.googleapis.com/public-download-files/hgnc/tsv/tsv/hgnc_complete_set.txt |
+
 ## Phenotype score (PP4) simulation
 
 `acmg.simulate` measures what a phenotype score would add to the ranking of a case's variants, without a clinical
@@ -115,7 +126,7 @@ criteria (PM1, PP2) count the spike itself (`ranks_without_clinvar_window_criter
 
 | | |
 |---|---|
-| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/` |
+| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/`, the HGNC file under `<S3_BUCKET>/hgnc/` |
 | Writes | the run's files under `s3://<bucket>/runs/<run id>/` (deleted at the end), the four tables of `--output-db` (created if missing; **refused if it is the shared or the tenant database**) |
 | Never | DROP, TRUNCATE, UPDATE or DELETE on a Radiant table |
 | Prints | counts per class and per criterion, file and row counts, timings |

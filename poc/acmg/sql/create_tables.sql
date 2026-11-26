@@ -1,6 +1,14 @@
 CREATE DATABASE IF NOT EXISTS ${output_db};
 
--- ClinGen facts per gene, rebuilt at each run from the ClinGen downloads on S3 (acmg.clingen).
+-- Current HGNC symbol of each current or previous symbol, rebuilt at each run from HGNC on S3 (acmg.hgnc).
+CREATE TABLE IF NOT EXISTS ${output_db}.gene_symbol (
+    symbol VARCHAR(100) NOT NULL,
+    current VARCHAR(100) NOT NULL
+)
+PRIMARY KEY (symbol)
+DISTRIBUTED BY HASH(symbol) BUCKETS 1;
+
+-- ClinGen facts per gene (current HGNC symbol), rebuilt at each run from the ClinGen downloads on S3 (acmg.clingen).
 CREATE TABLE IF NOT EXISTS ${output_db}.clingen_gene (
     symbol VARCHAR(100) NOT NULL,
     hi_score INT NULL,

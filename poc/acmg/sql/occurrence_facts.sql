@@ -23,11 +23,15 @@ omim_locus AS (
     SELECT k.locus_id, any_value(om.inheritance_code) AS inheritance_code
     FROM classified k
     JOIN ${shared_db}.snv__consequence c ON c.locus_id = k.locus_id AND c.transcript_id = k.transcript_id
+    -- Gene join on the current HGNC symbol (see variant_facts.sql).
+    LEFT JOIN ${output_db}.gene_symbol gs ON gs.symbol = c.symbol
     JOIN (
-        SELECT symbol, array_remove(array_unique_agg(inheritance_code), NULL) AS inheritance_code
-        FROM ${shared_db}.omim_gene_panel
-        GROUP BY symbol
-    ) om ON om.symbol = c.symbol
+        SELECT coalesce(g.current, o.symbol) AS symbol,
+            array_remove(array_unique_agg(o.inheritance_code), NULL) AS inheritance_code
+        FROM ${shared_db}.omim_gene_panel o
+        LEFT JOIN ${output_db}.gene_symbol g ON g.symbol = o.symbol
+        GROUP BY coalesce(g.current, o.symbol)
+    ) om ON om.symbol = coalesce(gs.current, c.symbol)
     GROUP BY k.locus_id
 ),
 sequencing AS (

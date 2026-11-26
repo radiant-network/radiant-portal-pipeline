@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 
 import polars as pl
 import pyarrow.parquet as pq
-from acmg import clingen, hpo
+from acmg import clingen, hgnc, hpo
 from acmg.db import HERE, IDENTIFIERS, connect, execute, sql
 from acmg.models import OCCURRENCE_FACT_SCHEMA, VARIANT_FACT_SCHEMA, Ruleset
 from acmg.rules import OCCURRENCE_CRITERIA, VARIANT_CRITERIA, combine, evaluate, to_wide
@@ -215,9 +215,22 @@ def read_text(s3, key: str) -> str:
         return f.read().decode()
 
 
-def load_clingen(output_db: str, prefix: str, s3) -> int:
+def load_hgnc(output_db: str, prefix: str, s3) -> pl.DataFrame:
+    """Rebuilds the gene_symbol table from the HGNC file on S3, read by every gene join."""
+    mapping = hgnc.symbols(read_text(s3, hgnc.FILE))
+    pq.write_table(mapping.to_arrow(), f"{prefix}/hgnc/symbols.parquet", filesystem=s3)
+    columns = ", ".join(hgnc.SCHEMA)
+    execute(
+        f"INSERT OVERWRITE {output_db}.gene_symbol ({columns})\nSELECT {columns}\n"
+        f"FROM FILES(\n{files_properties(f's3://{prefix}/hgnc/symbols.parquet')}\n)"
+    )
+    return mapping
+
+
+def load_clingen(output_db: str, prefix: str, s3, symbols: pl.DataFrame) -> int:
     """Rebuilds the clingen_gene table from the ClinGen files on S3, read by the variant facts."""
     genes = clingen.genes(read_text(s3, clingen.DOSAGE), read_text(s3, clingen.VALIDITY))
+    genes = hgnc.normalize(genes, symbols).unique("symbol")
     pq.write_table(genes.to_arrow(), f"{prefix}/clingen/genes.parquet", filesystem=s3)
     columns = ", ".join(clingen.SCHEMA)
     execute(
@@ -227,13 +240,13 @@ def load_clingen(output_db: str, prefix: str, s3) -> int:
     return genes.height
 
 
-def load_phenotype(params: dict, rs: Ruleset, prefix: str, s3) -> dict:
+def load_phenotype(params: dict, rs: Ruleset, prefix: str, s3, symbols: pl.DataFrame) -> dict:
     """Rebuilds acmg_phenotype for the cases: the PP4 points of each gene, from the case's HPO terms."""
     with connect() as conn, conn.cursor() as cur:
         cur.execute(sql("phenotype_facts.sql", **params))
         patients = pl.DataFrame(cur.fetchall(), schema={"case": pl.Int64, "hpo_id": pl.String}, orient="row")
     closure, alt = hpo.ontology(read_text(s3, hpo.ONTOLOGY))
-    terms = hpo.gene_terms(closure, hpo.annotations(read_text(s3, hpo.GENES)))
+    terms = hpo.gene_terms(closure, hgnc.normalize(hpo.annotations(read_text(s3, hpo.GENES)), symbols))
     genes = (
         hpo.similarity(hpo.normalize(patients, alt), closure, terms)
         .with_columns(pp4_points=hpo.pp4_points(rs.pp4))
@@ -333,9 +346,10 @@ def run(args) -> dict:
     start = time.perf_counter()
     execute(sql("create_tables.sql", output_db=args.output_db))
     try:
-        log(clingen_genes=load_clingen(args.output_db, prefix, s3))
+        symbols = load_hgnc(args.output_db, prefix, s3)
+        log(hgnc_symbols=symbols.height, clingen_genes=load_clingen(args.output_db, prefix, s3, symbols))
         steps = {name: run_level(name, params, args, prefix, s3) for name in LEVELS}
-        steps["phenotype"] = load_phenotype(params, Ruleset.load(Path(args.ruleset)), prefix, s3)
+        steps["phenotype"] = load_phenotype(params, Ruleset.load(Path(args.ruleset)), prefix, s3, symbols)
         steps["priority"] = run_priority(params, args)
     finally:
         if not args.keep_files:

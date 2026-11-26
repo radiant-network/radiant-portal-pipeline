@@ -39,9 +39,11 @@ second_allele AS (
 ),
 -- OMIM inheritance of the classified transcript's gene (see variant_facts.sql).
 omim AS (
-    SELECT symbol, array_remove(array_unique_agg(inheritance_code), NULL) AS inheritance_code
-    FROM ${shared_db}.omim_gene_panel
-    GROUP BY symbol
+    SELECT coalesce(gs.current, o.symbol) AS symbol,
+        array_remove(array_unique_agg(o.inheritance_code), NULL) AS inheritance_code
+    FROM ${shared_db}.omim_gene_panel o
+    LEFT JOIN ${output_db}.gene_symbol gs ON gs.symbol = o.symbol
+    GROUP BY coalesce(gs.current, o.symbol)
 ),
 scored AS (
     SELECT
@@ -61,8 +63,10 @@ scored AS (
         c.acmg_points
     FROM ${output_db}.acmg_classification c
     JOIN ${shared_db}.snv__consequence k ON k.locus_id = c.locus_id AND k.transcript_id = c.transcript_id
-    LEFT JOIN omim om ON om.symbol = k.symbol
-    LEFT JOIN ${output_db}.acmg_phenotype p ON p.seq_id = c.seq_id AND p.symbol = k.symbol
+    -- Gene joins on the current HGNC symbol (see variant_facts.sql); acmg_phenotype holds current symbols.
+    LEFT JOIN ${output_db}.gene_symbol gs ON gs.symbol = k.symbol
+    LEFT JOIN omim om ON om.symbol = coalesce(gs.current, k.symbol)
+    LEFT JOIN ${output_db}.acmg_phenotype p ON p.seq_id = c.seq_id AND p.symbol = coalesce(gs.current, k.symbol)
     LEFT JOIN genotype g ON g.seq_id = c.seq_id AND g.locus_id = c.locus_id
     LEFT JOIN second_allele sa ON sa.seq_id = c.seq_id AND sa.locus_id = c.locus_id
     WHERE c.seq_id IN (${cases})

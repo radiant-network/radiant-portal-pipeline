@@ -8,13 +8,14 @@ clinvar AS (
         locus_id,
         chromosome,
         start,
-        split_part(split_part(geneinfo, '|', 1), ':', 1) AS symbol,
+        coalesce(gs.current, split_part(split_part(geneinfo, '|', 1), ':', 1)) AS symbol,
         arrays_overlap(clin_sig, ['Pathogenic']) AS pathogenic,
         arrays_overlap(clin_sig, ['Pathogenic', 'Likely_pathogenic', 'Pathogenic/Likely_pathogenic']) AS plp,
         arrays_overlap(clin_sig, ['Benign', 'Likely_benign', 'Benign/Likely_benign']) AS blb,
         array_join(mc, ',') LIKE '%missense_variant%' AS missense,
         array_join(mc, ',') REGEXP 'nonsense|frameshift_variant|splice_donor_variant|splice_acceptor_variant' AS lof
     FROM ${shared_db}.clinvar
+    LEFT JOIN ${output_db}.gene_symbol gs ON gs.symbol = split_part(split_part(geneinfo, '|', 1), ':', 1)
     -- Review status: the best star rating among the variant's RCV (one per condition).
     WHERE locus_id IN (
         SELECT locus_id FROM ${shared_db}.clinvar_rcv_summary
@@ -49,9 +50,11 @@ clinvar_window AS (
 -- OMIM inheritance of the classified transcript's gene: snv__variant's comes from the variant's picked gene, which
 -- can be an overlapping one.
 omim AS (
-    SELECT symbol, array_remove(array_unique_agg(inheritance_code), NULL) AS inheritance_code
-    FROM ${shared_db}.omim_gene_panel
-    GROUP BY symbol
+    SELECT coalesce(gs.current, o.symbol) AS symbol,
+        array_remove(array_unique_agg(o.inheritance_code), NULL) AS inheritance_code
+    FROM ${shared_db}.omim_gene_panel o
+    LEFT JOIN ${output_db}.gene_symbol gs ON gs.symbol = o.symbol
+    GROUP BY coalesce(gs.current, o.symbol)
 ),
 clinvar_gene AS (
     SELECT
@@ -107,6 +110,8 @@ JOIN ${tenant_db}.snv__variant v ON v.locus_id = c.locus_id
 LEFT JOIN ${shared_db}.gnomad_genomes_v3 g ON g.locus_id = c.locus_id
 LEFT JOIN clinvar_locus cl ON cl.locus_id = c.locus_id
 LEFT JOIN clinvar_window w ON w.locus_id = c.locus_id
-LEFT JOIN clinvar_gene cg ON cg.symbol = c.symbol
-LEFT JOIN ${output_db}.clingen_gene cgn ON cgn.symbol = c.symbol
-LEFT JOIN omim om ON om.symbol = c.symbol
+-- Gene joins on the current HGNC symbol: each source has its own release.
+LEFT JOIN ${output_db}.gene_symbol gs ON gs.symbol = c.symbol
+LEFT JOIN clinvar_gene cg ON cg.symbol = coalesce(gs.current, c.symbol)
+LEFT JOIN ${output_db}.clingen_gene cgn ON cgn.symbol = coalesce(gs.current, c.symbol)
+LEFT JOIN omim om ON om.symbol = coalesce(gs.current, c.symbol)
