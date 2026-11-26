@@ -9,3 +9,4 @@ DROP TABLE IF EXISTS ${shared_db}.staging_sequencing_experiment FORCE;
 DROP TABLE IF EXISTS ${tenant_db}.snv__variant FORCE;
 DROP TABLE IF EXISTS ${tenant_db}.germline__snv__occurrence FORCE;
 DROP TABLE IF EXISTS ${tenant_db}.germline__snv__comphet FORCE;
+DROP TABLE IF EXISTS ${shared_db}.obs_categorical FORCE;

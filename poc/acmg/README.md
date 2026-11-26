@@ -1,18 +1,24 @@
 # ACMG classifier POC
 
 Classifies the occurrences of the affected probands of a tenant (all of them, one import part, or some sequencings)
-with the ACMG/AMP rules of `ruleset.yaml`, in three steps:
+with the ACMG/AMP rules of `ruleset.yaml`, then ranks them by priority, in five steps:
 
 | Step | Facts (`sql/`) | Grain | Output (in `--output-db`) |
 |---|---|---|---|
 | 1. variant | `variant_facts.sql` | (locus, MANE transcript) | `acmg_variant_criteria`: one row per criterion met |
 | 2. occurrence | `occurrence_facts.sql` | (seq_id, locus), only where the case has evidence of its own | `acmg_occurrence_criteria`: one row per criterion met |
 | 3. classification | `classification_facts.sql`: both criteria tables per occurrence | (seq_id, locus, MANE transcript) | `acmg_classification`: class, points, codes |
+| 4. phenotype | `phenotype_facts.sql`: the case's observed HPO terms | (seq_id, gene) | `acmg_phenotype`: similarity, `top`, PP4 points |
+| 5. priority | `priority.sql`, in StarRocks | (seq_id, locus, MANE transcript) | `acmg_priority`: ACMG points + PP4, as a probability |
 
 Exclusions (BA1 cancels BS1, PVS1 cancels PP3, BP2 cancels PM3) and point caps (PM1 + PP3) apply at step 3, so the
 criteria tables hold every criterion met, with its value and threshold.
 
-Each step runs the same way: StarRocks unloads the facts to Parquet on S3 (`INSERT INTO FILES()`), N worker processes
+PP4 enters the priority only, never the ACMG class: its strengths come from a simulation (below), not from a
+clinical review. Sort a case by `priority_probability`, the probability of pathogenicity of the points (Tavtigian
+2018: prior 0.1, 8 points = odds 350).
+
+Steps 1 to 3 run the same way: StarRocks unloads the facts to Parquet on S3 (`INSERT INTO FILES()`), N worker processes
 apply the rules (Polars expressions in `acmg/rules.py`, thresholds validated by the Pydantic models of
 `acmg/models.py`), StarRocks loads their files back with one `INSERT ... SELECT FROM FILES()`. Before the load, the
 rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces them.
@@ -30,7 +36,7 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | variant | BA1, BS1, PM2_Supporting | `gnomad_genomes_v3` (global AF, AN) and the AF of the tenant's not affected (`snv__variant` carrier frequency, Hardy-Weinberg), the higher, except for ClinVar P/LP; PM2 dropped when common in the not affected | global AF, not grpmax; no BA1 exception list beyond ClinVar P/LP |
 | variant | PP3, BP4 | REVEL (Pejaver 2022), SpliceAI (Walker 2023) | — |
 | variant | BP7 | synonymous + low SpliceAI | — |
-| variant | PVS1 | LoF consequence + ClinGen HI 3 or 30, or LOEUF + LoF P/LP in the gene (`clinvar.mc`); never with HI 40; stop or frameshift in the last exon gives `PVS1_Strong` | no 50-nt rule, no critical region |
+| variant | PVS1 | LoF consequence + ClinGen HI 3 or 30, or LOEUF + LoF P/LP in the gene (`clinvar.mc`), or many LoF P/LP whatever LOEUF (recessive genes); never with HI 40; stop or frameshift in the last exon gives `PVS1_Strong` | no 50-nt rule, no critical region |
 | variant | PM4 | in-frame indel, stop lost | no repeat-region exception |
 | variant | PM1 | ClinVar P/LP missense within ±25 bp, no B/LB missense; PM1 + PP3 capped at 4 points | POC thresholds |
 | variant | PP2, BP1 | missense and LoF shares of the gene's ClinVar P/LP (`clinvar.mc`) | POC thresholds; `mc` format to check |
@@ -45,7 +51,7 @@ Every ClinVar read skips variants whose best RCV has fewer than `clinvar.min_sta
 PVS1, PM1 and PP2 are dropped in a gene whose every ClinGen gene-disease validity is Disputed, Refuted or No Known
 Disease Relationship (`clingen.no_disease_drops`).
 
-Missing: PS1/PM5, PS2, PP4, PS3/BS3, BP3, BP5, PP5/BP6; PS4 from published cases (no literature source). Siblings: not read yet (probands only).
+Missing: PS1/PM5, PS2, PP4 in the class (priority only), PS3/BS3, BP3, BP5, PP5/BP6; PS4 from published cases (no literature source). Siblings: not read yet (probands only).
 
 ## Run locally
 
@@ -75,6 +81,29 @@ Each run rebuilds `clingen_gene` in `--output-db` from two ClinGen downloads (pu
 | `ClinGen_gene_curation_list_GRCh38.tsv` | https://ftp.clinicalgenome.org/ClinGen_gene_curation_list_GRCh38.tsv |
 | `gene-validity.csv` | https://search.clinicalgenome.org/kb/gene-validity/download |
 
+## Phenotype score (PP4) simulation
+
+`acmg.simulate` measures what a phenotype score would add to the ranking of a case's variants, without a clinical
+truth: it spikes a ClinVar ≥ 2★ P/LP variant already classified into the classified occurrences of a random proband,
+with a phenotype drawn from one of its gene's diseases (5 terms, 30 % made vaguer, 2 noise terms). The score is the
+Resnik best-match average of the patient's terms to each gene's (`acmg/hpo.py`), expressed as `top`, the share of
+annotated genes scoring at least as high. Half the simulations give the likelihood ratio of each `top` bin
+(spikes vs background occurrences), turned into PP4 points (Tavtigian: Supporting = 350^(1/8)); the other half
+give the spike's rank by ACMG points, by phenotype, and by both. It also counts the tenant's affected probands with
+phenotypic HPO terms. Reads a classification run (`--output-db`) and the HPO files; writes nothing.
+
+```sh
+.venv/bin/python -m acmg.simulate --output-db acmg_poc_out [--clinical-db radiant_jdbc.public]
+```
+
+| File (under `<S3_BUCKET>/hpo/`) | Source |
+|---|---|
+| `hp.obo` | https://purl.obolibrary.org/obo/hp.obo |
+| `genes_to_phenotype.txt` | https://github.com/obophenotype/human-phenotype-ontology/releases/latest/download/genes_to_phenotype.txt |
+
+The simulation is optimistic: a disease's terms are the gene's own annotations, and the spike's gene-level ClinVar
+criteria (PM1, PP2) count the spike itself (`ranks_without_clinvar_window_criteria` leaves those spikes out).
+
 ## Run on a real cluster
 
 | | |
@@ -99,42 +128,69 @@ Environment of the pod (values in the pod spec or a secret, never in this repo):
 
 ## Findings
 
-Measured with ruleset `poc-9` on a production tenant: 696 affected probands, 10.2M classified occurrences, 61 s with 8
+Measured with ruleset `poc-11` on a production tenant: 348 affected probands, 10.2M classified occurrences, 76 s with 8
 workers (peak 2.5 GB per worker, at the classification step).
 
 | Class | Occurrences |
 |---|---|
-| Pathogenic | 10 |
-| Likely pathogenic | 1,007 |
-| VUS | 198,823 |
-| Likely benign | 707,975 |
-| Benign | 9,311,191 |
+| Pathogenic | 16 |
+| Likely pathogenic | 1,732 |
+| VUS | 198,508 |
+| Likely benign | 707,757 |
+| Benign | 9,310,993 |
 
-**Against ClinVar** (variants of the tenant with a ≥ 2-star P/LP or B/LB, no conflict):
+**Against ClinVar** (variants of the tenant with a ≥ 2-star P/LP or B/LB, no conflict; a variant takes its most
+pathogenic class across its occurrences):
 
 | ClinVar | Variants | Same side | VUS | Opposite side |
 |---|---|---|---|---|
-| P/LP | 532 | 24 % | 68 % | 8 % |
-| B/LB | 57,567 | 92 % | 8 % | 7 variants |
+| P/LP | 531 | 47 % | 47 % | 6 % |
+| B/LB | 57,249 | 92 % | 8 % | 13 variants |
 
-- P/LP mostly end as VUS: the classifier has no functional (PS3), phenotype (PP4) or literature evidence.
+- 95 % of the POC's P/LP with a ClinVar class are ClinVar P/LP.
+- PVS1 in recessive genes doubled the P/LP found (24 % in `poc-9`): LOEUF measures heterozygous LoF intolerance, so
+  it blocked PVS1 in genes whose carriers are healthy. Most of the new LP are single heterozygous LoF in recessive
+  genes: right for the variant, not an explanation of the case on its own.
 - The P/LP classed benign carry BS2 (≥ 50 gnomAD homozygotes) or BS1: pathogenic recessive variants that are common or
   incompletely penetrant. The BS2 and BP1 thresholds come from these measures (see the comments of `ruleset.yaml`).
+- Still VUS: no functional (PS3) or literature evidence (PM3 from other families' cases, as Franklin does).
 - Slightly optimistic: the gene-level ClinVar counts (PVS1, PP2, BP1) include the variant itself.
 
-**Against Exomiser** (its `acmg_classification`, same occurrences, candidates only): of 567 Exomiser P/LP, the POC
-classes 25 % P/LP, 43 % VUS, 32 % B/LB. The B/LB are 20 LoF variants that Exomiser scores PVS1, which the POC finds
-common (BA1, BS1, BS2; the BA1 ones in ~21 probands each, likely recurrent artefacts) or in a gene without a known
-LoF mechanism.
+**Against Exomiser** (`poc-9`, its `acmg_classification`, same occurrences, candidates only): of 567 Exomiser P/LP,
+the POC classes 25 % P/LP, 43 % VUS, 32 % B/LB. The B/LB are 20 LoF variants that Exomiser scores PVS1, which the POC
+finds common (BA1, BS1, BS2; the BA1 ones in ~21 probands each, likely recurrent artefacts) or in a gene without a
+known LoF mechanism.
+
+**Priority** (`acmg.simulate`, ~265 test spikes per run; share of spikes in the top 10 of their case):
+
+| Simulated phenotype | ACMG points | Phenotype | ACMG + PP4 | Median rank, ACMG + PP4 |
+|---|---|---|---|---|
+| 1 term | 43 % | 8 % | 74 % | 4.5 |
+| 3 terms + 1 noise | 40 % | 31 % | 79 % | 4.5 |
+| 5 terms + 2 noise | 35 % | 47 % | 83 % | 4 |
+
+- PP4 mostly reorders VUS: probands with ≥ 6 priority points have a median of 3 such occurrences, with or without PP4
+  (p90 6, max 10).
+- 134 of the 348 probands have the inheritance root `HP:0000005` as their only "phenotype": no PP4 for them. With a
+  phenotypic term, 202 probands, median 3 terms.
+- A broad phenotype gives no PP4: a term shared by 40 % of the annotated genes (Seizure) ties them all.
 
 **To make it a feature:**
 
 - ETL: a classification table per tenant, refreshed with ClinVar and the occurrences; ClinGen dosage and gene validity
-  loaded as open data (they are only IGV tracks today); gnomAD grpmax FAF for BA1/BS1 (the global AF is too coarse).
-- Portal: the class, points and criteria per occurrence, with the audit of each criterion (value, threshold).
-- Missing criteria, by expected gain: PP4 (Exomiser HPO, Biesecker 2024 strengths), PS1/PM5 (needs VEP-annotated
-  ClinVar), PS2 (needs parentage).
-- A clinical review of the POC thresholds (PM1, PP2, BP1, BS2, PS4).
+  loaded as open data (they are only IGV tracks today); gnomAD grpmax FAF for BA1/BS1 (the global AF is too coarse);
+  gene-specific PM2/BS1 thresholds for recessive genes (maximum credible AF, Whiffin 2017: a pathogenic G6PC1
+  frameshift at 0.017 % in gnomAD misses the flat 0.01 % PM2); the HPO ontology and gene annotations as open data.
+- Portal: the class, points and criteria per occurrence, with the audit of each criterion (value, threshold); cases
+  sorted by priority.
+- Priority: the genotype's fit to the gene's inheritance (a single heterozygous variant in a recessive gene).
+- Clinical data: real phenotypes instead of `HP:0000005`.
+- Missing criteria, by expected gain: PS1/PM5 (needs VEP-annotated ClinVar), PS2 (needs parentage).
+- PVS1 decision tree (Abou Tayoun 2018): 50-nt NMD rule, in-frame exon skipping, critical region, share of the protein
+  removed, exon expression in the disease tissue. Needs MANE exon positions, protein length, a critical-region source
+  and per-exon expression. Without it PVS1 is too strong on splice sites: a TTN donor variant is VeryStrong where
+  Franklin gives Strong.
+- A clinical review of the POC thresholds (PM1, PP2, BP1, BS2, PS4, PVS1's ClinVar LoF count) and of PP4's strengths.
 
 ### Earlier POCs
 

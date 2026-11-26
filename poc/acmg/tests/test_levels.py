@@ -71,7 +71,8 @@ def test_evaluate_keeps_criteria_met_only():
 
 def test_scope_selects_affected_probands_and_mane_select():
     args = Namespace(
-        shared_db="s", tenant_db="t", output_db="o", tenant_code="x", part=3, seq_ids=None, all_transcripts=False
+        shared_db="s", tenant_db="t", output_db="o", tenant_code="x", clinical_db="c.d", part=3, seq_ids=None,
+        all_transcripts=False,
     )
     params = scope(args, RULESET)
     assert "se.family_role = 'proband' AND se.affected_status = 'affected'" in params["cases"]

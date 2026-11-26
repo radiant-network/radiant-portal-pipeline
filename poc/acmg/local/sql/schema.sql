@@ -118,3 +118,15 @@ CREATE TABLE IF NOT EXISTS ${shared_db}.clinvar_rcv_summary (
 )
 DUPLICATE KEY (locus_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10;
+
+-- Stand-in of the clinical catalog's obs_categorical (run with --clinical-db default_catalog.<shared_db>).
+CREATE TABLE IF NOT EXISTS ${shared_db}.obs_categorical (
+    case_id INT NOT NULL,
+    patient_id VARCHAR(255),
+    observation_code VARCHAR(50),
+    coding_system VARCHAR(50),
+    code_value VARCHAR(50),
+    interpretation_code VARCHAR(50)
+)
+DUPLICATE KEY (case_id)
+DISTRIBUTED BY HASH(case_id) BUCKETS 1;

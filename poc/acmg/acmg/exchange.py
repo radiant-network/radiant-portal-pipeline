@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 
 import polars as pl
 import pyarrow.parquet as pq
-from acmg import clingen
+from acmg import clingen, hpo
 from acmg.db import HERE, IDENTIFIERS, connect, execute, sql
 from acmg.models import OCCURRENCE_FACT_SCHEMA, VARIANT_FACT_SCHEMA, Ruleset
 from acmg.rules import OCCURRENCE_CRITERIA, VARIANT_CRITERIA, combine, evaluate, to_wide
@@ -37,6 +37,7 @@ from pyarrow import fs
 
 CRITERION_COLUMNS = ["criterion", "code", "strength", "points", "value", "threshold", "ruleset_version"]
 CLASS_COLUMNS = ["acmg_class", "acmg_points", "acmg_criteria", "ruleset_version"]
+PHENOTYPE_COLUMNS = ["seq_id", "symbol", "n_terms", "score", "top", "pp4_points", "ruleset_version"]
 LEVELS = {
     "variant": {
         "facts": "variant_facts.sql",
@@ -101,7 +102,7 @@ def files_properties(path: str) -> str:
 
 def scope(args, rs: Ruleset) -> dict:
     """Template parameters of the three facts queries: the cases asked for and the (locus, transcript) classified."""
-    for key in ("shared_db", "tenant_db", "output_db", "tenant_code"):
+    for key in ("shared_db", "tenant_db", "output_db", "tenant_code", "clinical_db"):
         if not IDENTIFIERS[key].fullmatch(getattr(args, key)):
             raise ValueError(f"invalid {key}: {getattr(args, key)!r}")
     part = "" if args.part is None else f"AND o.part = {int(args.part)}"
@@ -132,6 +133,10 @@ def scope(args, rs: Ruleset) -> dict:
         "tenant_db": args.tenant_db,
         "output_db": args.output_db,
         "tenant_code": args.tenant_code,
+        "clinical_db": args.clinical_db,
+        "ruleset_version": rs.version,
+        "prior": str(rs.priority.prior),
+        "very_strong_odds": str(rs.priority.very_strong_odds),
         "pm1_window_bp": str(rs.pm1.window_bp),
         "clinvar_min_stars": str(rs.clinvar.min_stars),
         "cases": cases,
@@ -192,21 +197,22 @@ def check(args) -> dict:
     with connect() as conn, conn.cursor() as cur:
         cur.execute(f"SELECT count(*) FROM ({params['cases']}) c")
         plans["cases"] = cur.fetchone()[0]
-        for name in ("variant", "occurrence"):
-            cur.execute(f"EXPLAIN {sql(LEVELS[name]['facts'], **params)}")
+        for name, facts in (("variant", "variant_facts.sql"), ("occurrence", "occurrence_facts.sql"),
+                            ("phenotype", "phenotype_facts.sql")):
+            cur.execute(f"EXPLAIN {sql(facts, **params)}")
             plans[name] = f"valid, {len(cur.fetchall())} plan lines"
     return plans
 
 
+def read_text(s3, key: str) -> str:
+    """A file under the bucket (or bucket/prefix) of S3_BUCKET."""
+    with s3.open_input_stream(f"{s3_settings()['bucket']}/{key}") as f:
+        return f.read().decode()
+
+
 def load_clingen(output_db: str, prefix: str, s3) -> int:
     """Rebuilds the clingen_gene table from the ClinGen files on S3, read by the variant facts."""
-    bucket = s3_settings()["bucket"]
-
-    def read(key: str) -> str:
-        with s3.open_input_stream(f"{bucket}/{key}") as f:
-            return f.read().decode()
-
-    genes = clingen.genes(read(clingen.DOSAGE), read(clingen.VALIDITY))
+    genes = clingen.genes(read_text(s3, clingen.DOSAGE), read_text(s3, clingen.VALIDITY))
     pq.write_table(genes.to_arrow(), f"{prefix}/clingen/genes.parquet", filesystem=s3)
     columns = ", ".join(clingen.SCHEMA)
     execute(
@@ -214,6 +220,42 @@ def load_clingen(output_db: str, prefix: str, s3) -> int:
         f"FROM FILES(\n{files_properties(f's3://{prefix}/clingen/genes.parquet')}\n)"
     )
     return genes.height
+
+
+def load_phenotype(params: dict, rs: Ruleset, prefix: str, s3) -> dict:
+    """Rebuilds acmg_phenotype for the cases: the PP4 points of each gene, from the case's HPO terms."""
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(sql("phenotype_facts.sql", **params))
+        patients = pl.DataFrame(cur.fetchall(), schema={"case": pl.Int64, "hpo_id": pl.String}, orient="row")
+    closure, alt = hpo.ontology(read_text(s3, hpo.ONTOLOGY))
+    terms = hpo.gene_terms(closure, hpo.annotations(read_text(s3, hpo.GENES)))
+    genes = (
+        hpo.similarity(hpo.normalize(patients, alt), closure, terms)
+        .with_columns(pp4_points=hpo.pp4_points(rs.pp4))
+        .rename({"case": "seq_id"})
+        .with_columns(ruleset_version=pl.lit(rs.version))
+        .select(PHENOTYPE_COLUMNS)
+    )
+    pq.write_table(genes.to_arrow(), f"{prefix}/phenotype/genes.parquet", filesystem=s3)
+    columns = ", ".join(PHENOTYPE_COLUMNS)
+    execute(
+        f"DELETE FROM {params['output_db']}.acmg_phenotype WHERE seq_id IN ({params['cases']});\n"
+        f"INSERT INTO {params['output_db']}.acmg_phenotype ({columns})\nSELECT {columns}\n"
+        f"FROM FILES(\n{files_properties(f's3://{prefix}/phenotype/genes.parquet')}\n)"
+    )
+    pp4 = genes["pp4_points"].value_counts().sort("pp4_points")
+    return {"cases_with_terms": patients["case"].n_unique(), "case_genes_by_pp4_points": dict(pp4.iter_rows())}
+
+
+def run_priority(params: dict, args) -> dict:
+    session = f"SET query_timeout = {int(args.query_timeout)};\nSET insert_timeout = {int(args.query_timeout)};\n"
+    execute(session + sql("priority.sql", **params))
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT pp4_points, count(*) FROM {params['output_db']}.acmg_priority"
+            f" WHERE seq_id IN ({params['cases']}) GROUP BY pp4_points ORDER BY pp4_points"
+        )
+        return {"occurrences_by_pp4_points": {int(p): n for p, n in cur.fetchall()}}
 
 
 def run_level(name: str, params: dict, args, prefix: str, s3) -> dict:
@@ -285,6 +327,8 @@ def run(args) -> dict:
     try:
         log(clingen_genes=load_clingen(args.output_db, prefix, s3))
         steps = {name: run_level(name, params, args, prefix, s3) for name in LEVELS}
+        steps["phenotype"] = load_phenotype(params, Ruleset.load(Path(args.ruleset)), prefix, s3)
+        steps["priority"] = run_priority(params, args)
     finally:
         if not args.keep_files:
             s3.delete_dir(prefix)
@@ -307,6 +351,7 @@ def main() -> None:
     parser.add_argument("--shared-db", default="acmg_poc")
     parser.add_argument("--tenant-db", default="acmg_poc")
     parser.add_argument("--tenant-code", default="acmg_poc", help="tenant_code of staging_sequencing_experiment")
+    parser.add_argument("--clinical-db", default="radiant_jdbc.public", help="catalog.database of obs_categorical")
     args = parser.parse_args()
     print(json.dumps(check(args) if args.check else run(args), indent=2))
 

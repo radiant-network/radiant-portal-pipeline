@@ -97,10 +97,13 @@ def bp7(rs: Ruleset) -> pl.Expr:
 
 def pvs1(rs: Ruleset) -> pl.Expr:
     p, t = rs.pvs1, rs.pvs1.max_loeuf
-    # LoF must be a known disease mechanism of the gene: ClinGen HI says so, or LOEUF says intolerant and ClinVar
-    # LoF P/LP says pathogenic. ClinGen "dosage sensitivity unlikely" vetoes both.
-    hi = pl.col("clingen_hi_score")
-    clinvar_lof = (loeuf < t) & (pl.col("gene_plp_lof") >= p.min_gene_plp_lof)
+    # LoF must be a known disease mechanism of the gene: ClinGen HI says so, or ClinVar LoF P/LP says pathogenic
+    # (few in a constrained gene, more in any: LOEUF misses recessive genes). ClinGen "dosage sensitivity unlikely"
+    # vetoes all.
+    hi, plp_lof = pl.col("clingen_hi_score"), pl.col("gene_plp_lof")
+    clinvar_lof = ((loeuf < t) & (plp_lof >= p.min_gene_plp_lof)).fill_null(False) | (
+        plp_lof >= p.min_gene_plp_lof_any_loeuf
+    )
     mechanism = (hi.is_in(p.hi_scores).fill_null(False) | clinvar_lof) & ~hi.is_in(p.not_hi_scores).fill_null(False)
     lof = _has_any(p.consequences) & mechanism
     last_exon = (pl.col("exon_rank") == pl.col("exon_total")).fill_null(False)

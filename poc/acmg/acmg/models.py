@@ -112,6 +112,7 @@ class ScopeRule(Frozen):
 class Pvs1Rule(Frozen):
     max_loeuf: Annotated[float, Field(gt=0)]
     min_gene_plp_lof: Annotated[int, Field(ge=0)]
+    min_gene_plp_lof_any_loeuf: Annotated[int, Field(gt=0)]
     hi_scores: list[int]
     not_hi_scores: list[int]
     consequences: list[str]
@@ -209,6 +210,34 @@ class Bp1Rule(Frozen):
     min_lof_share: Probability
 
 
+class Pp4Table(Frozen):
+    min_terms: Annotated[int, Field(gt=0)]
+    bins: dict[Probability, Annotated[int, Field(gt=0)]]
+
+    @model_validator(mode="after")
+    def _narrower_scores_more(self):
+        points = [p for _, p in sorted(self.bins.items())]
+        if not points or points != sorted(points, reverse=True):
+            raise ValueError(f"pp4 points must not grow with the bin's top: {self.bins}")
+        return self
+
+
+class Pp4Rule(Frozen):
+    tables: list[Pp4Table]
+
+    @model_validator(mode="after")
+    def _by_terms(self):
+        terms = [t.min_terms for t in self.tables]
+        if not terms or terms[0] != 1 or terms != sorted(set(terms)):
+            raise ValueError(f"pp4 tables must start at min_terms 1 and increase: {terms}")
+        return self
+
+
+class PriorityRule(Frozen):
+    prior: Annotated[float, Field(gt=0, lt=1)]
+    very_strong_odds: Annotated[float, Field(gt=1)]
+
+
 class PointCap(Frozen):
     partner: str
     max_points: Annotated[int, Field(gt=0)]
@@ -238,6 +267,8 @@ class Ruleset(Frozen):
     pp1: Grades
     bs4: Bs4Rule
     bp2: Bp2Rule
+    pp4: Pp4Rule
+    priority: PriorityRule
     exclusions: dict[str, list[str]] = {}
     point_caps: dict[str, PointCap] = {}
 

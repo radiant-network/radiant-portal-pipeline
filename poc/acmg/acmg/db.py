@@ -18,6 +18,7 @@ IDENTIFIERS = {
     "tenant_db": re.compile(r"^\w+$"),
     "output_db": re.compile(r"^\w+$"),
     "tenant_code": re.compile(r"^\w+$"),
+    "clinical_db": re.compile(r"^\w+\.\w+$"),
 }
 
 

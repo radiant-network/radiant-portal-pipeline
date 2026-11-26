@@ -118,6 +118,14 @@ def test_pvs1_needs_constrained_gene():
     assert codes(consequences=["frameshift_variant"], gnomad_loeuf=0.6, gnomad_af=0.001, **COMMON) == []
 
 
+def test_pvs1_in_unconstrained_gene_with_many_clinvar_lof():
+    # A recessive gene: heterozygous LoF carriers are healthy, so LOEUF stays high.
+    lof = {"consequences": ["frameshift_variant"], "gnomad_loeuf": 0.74, **NOT_RARE}
+    assert codes(**lof, gene_plp_lof=9) == []
+    assert codes(**lof, gene_plp_lof=10) == ["PVS1"]
+    assert codes(**lof, gene_plp_lof=10, clingen_hi_score=40) == []
+
+
 def test_vus_from_pp3_strong_and_pm2():
     result = run(revel_score=0.95)
     assert (result.acmg_points, result.acmg_class) == (5, "VUS")

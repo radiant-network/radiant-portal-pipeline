@@ -115,3 +115,17 @@ FROM (
     GROUP BY o.locus_id
 ) a
 WHERE snv__variant.locus_id = a.locus_id;
+
+-- 1 to 3 HPO terms per proband, one in ten excluded (negative).
+INSERT INTO ${shared_db}.obs_categorical
+SELECT
+    s.case_id,
+    s.patient_id,
+    'phenotype',
+    'HPO',
+    element_at(['HP:0001250', 'HP:0001263', 'HP:0000252', 'HP:0001252', 'HP:0004322', 'HP:0000486'],
+               1 + abs(murmur_hash3_32(concat('hpo', s.seq_id, '-', t))) % 6),
+    IF(abs(murmur_hash3_32(concat('neg', s.seq_id, '-', t))) % 10 = 0, 'negative', 'positive')
+FROM ${shared_db}.staging_sequencing_experiment s
+CROSS JOIN TABLE(generate_series(1, 3)) AS g(t)
+WHERE s.family_role = 'proband' AND t <= 1 + abs(murmur_hash3_32(concat('n', s.seq_id))) % 3;

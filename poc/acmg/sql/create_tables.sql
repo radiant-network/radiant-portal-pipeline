@@ -39,6 +39,32 @@ CREATE TABLE IF NOT EXISTS ${output_db}.acmg_occurrence_criteria (
 PRIMARY KEY (seq_id, locus_id, criterion)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10;
 
+-- PP4 of a gene for a case, from the case's HPO terms; genes sharing no informative term with the case are left out.
+CREATE TABLE IF NOT EXISTS ${output_db}.acmg_phenotype (
+    seq_id BIGINT NOT NULL,
+    symbol VARCHAR(100) NOT NULL,
+    n_terms INT NOT NULL,
+    score DOUBLE NOT NULL,
+    top DOUBLE NOT NULL,
+    pp4_points INT NOT NULL,
+    ruleset_version VARCHAR(30) NOT NULL
+)
+PRIMARY KEY (seq_id, symbol)
+DISTRIBUTED BY HASH(seq_id) BUCKETS 4;
+
+-- Priority of each classified occurrence: ACMG points + PP4, as a probability of pathogenicity. Sort a case by it.
+CREATE TABLE IF NOT EXISTS ${output_db}.acmg_priority (
+    seq_id BIGINT NOT NULL,
+    locus_id BIGINT NOT NULL,
+    transcript_id VARCHAR(100) NOT NULL,
+    pp4_points INT NOT NULL,
+    priority_points INT NOT NULL,
+    priority_probability DOUBLE NOT NULL,
+    ruleset_version VARCHAR(30) NOT NULL
+)
+PRIMARY KEY (seq_id, locus_id, transcript_id)
+DISTRIBUTED BY HASH(locus_id) BUCKETS 10;
+
 -- ACMG class of each occurrence of a case on a classified (locus, transcript).
 CREATE TABLE IF NOT EXISTS ${output_db}.acmg_classification (
     seq_id BIGINT NOT NULL,
