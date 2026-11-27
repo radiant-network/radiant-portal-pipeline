@@ -1,11 +1,21 @@
 CREATE DATABASE IF NOT EXISTS ${output_db};
 
--- Cases whose parentage is in doubt (e.g. thousands of de novo calls), filled by hand: their de novo stay assumed (PM6).
-CREATE TABLE IF NOT EXISTS ${output_db}.parentage_doubtful (
-    seq_id BIGINT NOT NULL
+-- Pairs of related samples of the tenant (somalier relate over the whole cohort, relatedness >= 0.1), loaded
+-- outside this run: a de novo is confirmed (PS2) only when both parents are parent-child with the proband.
+CREATE TABLE IF NOT EXISTS ${output_db}.sample_relatedness (
+    sample_a VARCHAR(255) NOT NULL,
+    sample_b VARCHAR(255) NOT NULL,
+    seq_id_a INT,
+    seq_id_b INT,
+    case_a INT,
+    case_b INT,
+    relatedness DOUBLE,
+    ibs0 BIGINT,
+    ibs2 BIGINT,
+    n BIGINT
 )
-PRIMARY KEY (seq_id)
-DISTRIBUTED BY HASH(seq_id) BUCKETS 1;
+DUPLICATE KEY (sample_a, sample_b)
+DISTRIBUTED BY HASH(sample_a) BUCKETS 1;
 
 -- Criteria every ClinGen VCEP of the gene (current HGNC symbol) declares not applicable, rebuilt at each run from
 -- the CSpec registry export on S3 (acmg.cspec): the classification drops them.

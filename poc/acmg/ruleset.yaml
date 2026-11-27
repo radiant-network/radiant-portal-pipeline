@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-24
+version: poc-25
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -148,12 +148,14 @@ svi_points:
   Moderate: 1
   Supporting: 0.5
 
-# slivar de novo mode in an affected proband, both parents unaffected (slivar gate). Families are real, so parentage
-# counts as confirmed (PS2) except in the cases listed in the output db's parentage_doubtful table (PM6, assumed).
+# slivar de novo mode in an affected proband, both parents unaffected (slivar gate). Parentage confirmed (PS2) when
+# somalier finds both parents parent-child with the proband (output db's sample_relatedness), else assumed (PM6).
 # Points per proband, phenotype consistent with the gene but not highly specific.
 de_novo:
   confirmed_points: 1.0
   assumed_points: 0.5
+  parent_min_relatedness: 0.35   # first degree is 0.5
+  parent_max_ibs0_share: 0.002   # parent-child share an allele at almost every site; siblings do not
 
 # PM3: comphet partner (RAD-39) that is P/LP in ClinVar. "In trans" when the case is a complete trio.
 pm3:

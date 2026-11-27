@@ -131,6 +131,8 @@ class Pm4Rule(Frozen):
 class DeNovoRule(Frozen):
     confirmed_points: Annotated[float, Field(gt=0)]
     assumed_points: Annotated[float, Field(gt=0)]
+    parent_min_relatedness: Probability
+    parent_max_ibs0_share: Probability
 
 
 class Pm3Points(Frozen):

@@ -50,6 +50,17 @@ case_parents AS (
     FROM sequencing
     GROUP BY case_id
 ),
+-- Parents that somalier finds parent-child with the proband: high relatedness, almost no site sharing no allele
+-- (IBS0), unlike a sibling.
+confirmed_parents AS (
+    SELECT p.seq_id, count(DISTINCT r.seq_id) AS parents
+    FROM sequencing p
+    JOIN sequencing r ON r.case_id = p.case_id AND r.family_role IN ('mother', 'father')
+    JOIN ${output_db}.sample_relatedness s
+        ON (s.seq_id_a = p.seq_id AND s.seq_id_b = r.seq_id) OR (s.seq_id_b = p.seq_id AND s.seq_id_a = r.seq_id)
+    WHERE s.relatedness >= ${parent_min_relatedness} AND s.ibs0 <= ${parent_max_ibs0_share} * s.n
+    GROUP BY p.seq_id
+),
 -- Parent calls: max allele 0 = called reference, >= 1 = carrier; a no-call (-1) or no parent counts nowhere.
 occurrence AS (
     SELECT
@@ -101,8 +112,8 @@ SELECT
     CAST(o.seq_id AS BIGINT) AS seq_id,
     o.locus_id,
     om.inheritance_code AS omim_inheritance,
-    CAST(IF(pd.seq_id IS NULL, o.de_novo, 0) AS BIGINT) AS denovo_confirmed,
-    CAST(IF(pd.seq_id IS NULL, 0, o.de_novo) AS BIGINT) AS denovo_assumed,
+    CAST(IF(coalesce(cpa.parents, 0) = 2, o.de_novo, 0) AS BIGINT) AS denovo_confirmed,
+    CAST(IF(coalesce(cpa.parents, 0) = 2, 0, o.de_novo) AS BIGINT) AS denovo_assumed,
     CAST(o.carrier_parents AS BIGINT) AS affected_carrier_parents,
     CAST(o.noncarrier_parents AS BIGINT) AS affected_noncarrier_parents,
     CAST(IF(ch.category = 4, 1, 0) AS BIGINT) AS comphet_p_trans,
@@ -113,5 +124,5 @@ SELECT
 FROM occurrence o
 LEFT JOIN omim_locus om ON om.locus_id = o.locus_id
 LEFT JOIN comphet ch ON ch.seq_id = o.seq_id AND ch.locus_id = o.locus_id
-LEFT JOIN ${output_db}.parentage_doubtful pd ON pd.seq_id = o.seq_id
+LEFT JOIN confirmed_parents cpa ON cpa.seq_id = o.seq_id
 WHERE o.de_novo + o.carrier_parents + o.noncarrier_parents > 0 OR ch.category IS NOT NULL

@@ -50,7 +50,7 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | variant | PP2, BP1 | missense and LoF shares of the gene's ClinVar P/LP (`clinvar.mc`); PP2 is `disabled` (ClinGen VCEPs almost never apply it) | POC thresholds; `mc` format to check |
 | variant | BS2 | homozygotes in gnomAD (Strong from 50, else Supporting) or the tenant's not-affected (Supporting), gene with an OMIM inheritance; not on a ClinVar P/LP of `clinvar.expert_min_stars` (nor BS1) | POC thresholds; no penetrance data |
 | variant | PS4 | odds ratio affected vs not affected of the tenant (`germline_pc/pn_{wgs,wxs}_{affected,not_affected}`), CI lower bound > 1, variant meeting PM2 | individuals, not families: relatives and the case itself counted; not affected are mostly parents |
-| occurrence | PS2, PM6 | the slivar de novo call of the proband (slivar requires both parents unaffected): PS2 (confirmed, families are real), PM6 (assumed) for the cases listed in `parentage_doubtful` | no parentage check (no somalier): one case = PS2_Moderate; phenotype specificity not scored |
+| occurrence | PS2, PM6 | the slivar de novo call of the proband (slivar requires both parents unaffected): PS2 when somalier finds both parents parent-child with the proband (`sample_relatedness`), else PM6 (assumed) | one case = PS2_Moderate; phenotype specificity not scored |
 | occurrence | PP1, BS4 | the proband's affected parents carrying / not carrying the variant; BS4 in a dominant-only gene (OMIM) | PP1 never fires with 2 parents (< 3 meioses): segregation across families is for the ETL; BS4 assumes full penetrance |
 | occurrence | PM3 | the proband's comphet partner (`germline__snv__comphet`) P/LP in ClinVar; "trans" in a complete trio | — |
 | occurrence | BP2 | in trans with a ClinVar pathogenic variant in a dominant-only gene (OMIM) | no "in cis" branch |
@@ -145,6 +145,14 @@ Each run rebuilds `clinvar_protein` in `--output-db` from `<S3_BUCKET>/clinvar_p
 (~16 MB): ClinVar missense variants on MANE Select proteins, from ClinVar's `hgvs4variation.txt.gz` (~540 MB) and the
 MANE summary (public, NCBI). Build it again to take a newer ClinVar:
 `.venv/bin/python -m acmg.protein clinvar_protein.parquet`.
+
+## Sample relatedness (somalier)
+
+`sample_relatedness` in `--output-db` holds the related pairs of the tenant's samples (relatedness >= 0.1), from one
+`somalier relate` over the per-sample extracts the QC pipeline publishes (`reports/QC/<sample>/*.somalier`), the
+sample name being the aliquot. It is loaded outside the run (~1 min for 692 samples, `relate` itself 2 s). Empty, every
+de novo stays assumed (PM6). On exome, somalier's second and third degrees mostly reflect shared ancestry: only the
+first degree and duplicates are reliable.
 
 ## CSpec registry
 
@@ -292,7 +300,6 @@ or not, strength ignored):
 - Priority: PP4 is not reproducible. Two prod runs minutes apart, same data, move a few dozen occurrences between PP4
   points (4 points: 6641 then 6598), cause not found (an unstable tie in the similarity or `top` is the likely one).
 - Clinical data: real phenotypes instead of `HP:0000005`.
-- Parentage check (somalier) to replace the hand-filled `parentage_doubtful`.
 - PVS1 decision tree (Abou Tayoun 2018), rest of it: 50-nt NMD rule, critical region, share of the protein removed,
   exon expression in the disease tissue, cryptic splice sites. Needs protein length, a critical-region source and
   per-exon expression. Done: exon-skipping frame from Ensembl phases, start lost `PVS1_Moderate`.

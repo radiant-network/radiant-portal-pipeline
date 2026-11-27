@@ -147,6 +147,8 @@ def scope(args, rs: Ruleset) -> dict:
         "pm1_window_bp": str(rs.pm1.window_bp),
         "clinvar_min_stars": str(rs.clinvar.min_stars),
         "min_an": str(rs.frequency.min_an),
+        "parent_min_relatedness": str(rs.de_novo.parent_min_relatedness),
+        "parent_max_ibs0_share": str(rs.de_novo.parent_max_ibs0_share),
         "cases": cases,
         "classified": classified,
         "occurrence_part": part,
