@@ -46,8 +46,8 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | variant | PVS1 | LoF consequence + ClinGen HI 3 or 30, or LOEUF + LoF P/LP in the gene (`clinvar.mc`), or many LoF P/LP whatever LOEUF, or a few in an OMIM recessive-only gene; never with HI 40; stop or frameshift in the last exon, or a canonical splice site whose skipped exon keeps the frame (`ensembl_exon_by_gene` phases) or is not found, gives `PVS1_Strong`; start lost `PVS1_Moderate` | no 50-nt rule, no critical region, no cryptic site |
 | variant | PM4 | in-frame indel, stop lost | no repeat-region exception |
 | variant | PM1 | ClinVar P/LP missense within ±25 bp, no B/LB missense; PM1 + PP3 capped at 4 points | POC thresholds |
-| variant | PP2, BP1 | missense and LoF shares of the gene's ClinVar P/LP (`clinvar.mc`) | POC thresholds; `mc` format to check |
-| variant | BS2 | homozygotes in gnomAD (Strong from 50, else Supporting) or the tenant's not-affected (Supporting), gene with an OMIM inheritance | POC thresholds; no penetrance data |
+| variant | PP2, BP1 | missense and LoF shares of the gene's ClinVar P/LP (`clinvar.mc`); PP2 is `disabled` (ClinGen VCEPs almost never apply it) | POC thresholds; `mc` format to check |
+| variant | BS2 | homozygotes in gnomAD (Strong from 50, else Supporting) or the tenant's not-affected (Supporting), gene with an OMIM inheritance; not on a ClinVar P/LP of `clinvar.expert_min_stars` (nor BS1) | POC thresholds; no penetrance data |
 | variant | PS4 | odds ratio affected vs not affected of the tenant (`germline_pc/pn_{wgs,wxs}_{affected,not_affected}`), CI lower bound > 1, variant meeting PM2 | individuals, not families: relatives and the case itself counted; not affected are mostly parents |
 | occurrence | PM6 | the slivar de novo call of the proband (slivar requires both parents unaffected) | all "assumed": one case = PM6_Supporting; no PS2 |
 | occurrence | PP1, BS4 | the proband's affected parents carrying / not carrying the variant; BS4 in a dominant-only gene (OMIM) | PP1 never fires with 2 parents (< 3 meioses): segregation across families is for the ETL; BS4 assumes full penetrance |
@@ -72,8 +72,8 @@ A variant that a ClinGen Variant Curation Expert Panel classified (Evidence Repo
 criteria in place of the computed ones of the variant. The case's own criteria (PM3, PM6, PP1, BS4, BP2) stay, unless
 the panel applied the same base code (a panel PM3_Strong drops our PM3; a panel PS2 or PM6 drops our PM6, the same de
 novo evidence). Frequency (BA1, BS1, PM2) is the exception: when the panel and the computed criteria contradict (PM2
-against BA1 or BS1), ours stay with their own source (newer gnomAD) and the panel's frequency criteria are dropped;
-otherwise the panel's stay (gene-specific thresholds). `vcep_criteria.sql` runs after the occurrence step, so the classification combines
+against BA1 or BS1), ours stay with their own source (newer gnomAD) and the panel's frequency criteria are dropped,
+except our PM2 where gnomAD has fewer than `frequency.min_an` alleles (absent is not rare); otherwise the panel's stay (gene-specific thresholds). `vcep_criteria.sql` runs after the occurrence step, so the classification combines
 the panel's criteria with the usual exclusions and caps, and the class can differ from the panel's assertion (Tavtigian
 points vs each panel's own combining rules). Rows keep `source = clingen_vcep`, `refs` = the panel's PubMed ids; the
 panel, disease, assertion and erepo URL are in `clingen_erepo`, joined on `clinvar.name`. A rerun without the VCEP row
@@ -235,6 +235,8 @@ or not, strength ignored):
   precision is understated.
 - The 33 panel P/LP we miss lack literature criteria: PM3 26, PP4 22, PS3 17, PP1 15, PS4 12; 11 carry our BS2.
 - With the panel criteria (`poc-20`): Pathogenic 15 → 65, Likely pathogenic 1541 → 1545.
+- `poc-21` (PP2 disabled, no BS1/BS2 on a 2-star ClinVar P/LP): panel P/LP → POC LB 4 → 0, panel B/LB → POC B/LB
+  82 → 85 %, panel P/LP → POC P/LP unchanged (10 of 43). Prod with panels: Likely pathogenic 1545 → 1496.
 
 **Priority** (`acmg.simulate`, ~265 test spikes per run; share of spikes in the top 10 of their case):
 

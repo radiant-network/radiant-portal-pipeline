@@ -188,6 +188,7 @@ class Ps4Rule(Frozen):
 
 class ClinvarRule(Frozen):
     min_stars: Annotated[int, Field(ge=0, le=4)]
+    expert_min_stars: Annotated[int, Field(ge=0, le=4)]
 
 
 class ClingenRule(Frozen):
@@ -287,6 +288,7 @@ class Ruleset(Frozen):
     pp4: Pp4Rule
     priority: PriorityRule
     inheritance_fit: InheritanceFitRule
+    disabled: list[str] = []
     exclusions: dict[str, list[str]] = {}
     point_caps: dict[str, PointCap] = {}
 
@@ -326,6 +328,7 @@ class Fact(BaseModel):
     germline_pn_wxs_not_affected: int | None = None
     # ClinVar counts computed by variant_facts.sql (never null).
     clinvar_plp: bool = False
+    clinvar_plp_stars: int = 0
     clinvar_plp_missense_window: int = 0
     clinvar_blb_missense_window: int = 0
     gene_plp: int = 0

@@ -146,6 +146,7 @@ def scope(args, rs: Ruleset) -> dict:
         "healthy_parent_dominant_points": str(rs.inheritance_fit.healthy_parent_dominant_points),
         "pm1_window_bp": str(rs.pm1.window_bp),
         "clinvar_min_stars": str(rs.clinvar.min_stars),
+        "min_an": str(rs.frequency.min_an),
         "cases": cases,
         "classified": classified,
         "occurrence_part": part,

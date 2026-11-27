@@ -24,9 +24,12 @@ clinvar AS (
     )
 ),
 clinvar_locus AS (
-    SELECT locus_id, max(IF(plp, 1, 0)) = 1 AS plp
-    FROM clinvar
-    GROUP BY locus_id
+    SELECT cv.locus_id, max(IF(cv.plp, 1, 0)) = 1 AS plp, max(IF(cv.plp, r.stars, 0)) AS plp_stars
+    FROM clinvar cv
+    LEFT JOIN (
+        SELECT locus_id, max(review_status_stars) AS stars FROM ${shared_db}.clinvar_rcv_summary GROUP BY locus_id
+    ) r ON r.locus_id = cv.locus_id
+    GROUP BY cv.locus_id
 ),
 -- PM1 window: each ClinVar variant goes into its position bin and both neighbours, so that the
 -- "within window_bp" range join becomes an equi-join on (chromosome, bin).
@@ -125,6 +128,7 @@ SELECT
     CAST(cgn.hi_score AS BIGINT) AS clingen_hi_score,
     coalesce(cgn.no_disease, FALSE) AS clingen_no_disease,
     coalesce(cl.plp, FALSE) AS clinvar_plp,
+    CAST(coalesce(cl.plp_stars, 0) AS BIGINT) AS clinvar_plp_stars,
     CAST(coalesce(w.plp_missense, 0) AS BIGINT) AS clinvar_plp_missense_window,
     CAST(coalesce(w.blb_missense, 0) AS BIGINT) AS clinvar_blb_missense_window,
     CAST(coalesce(cg.plp, 0) AS BIGINT) AS gene_plp,

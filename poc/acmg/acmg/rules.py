@@ -103,9 +103,14 @@ def ba1(rs: Ruleset) -> pl.Expr:
     return _graded(rs, "BA1", [(freq > t, Strength.STAND_ALONE, freq, t, source)], details)
 
 
+def _expert_plp(rs: Ruleset) -> pl.Expr:
+    # Healthy carriers do not outweigh an expert P/LP: founder, hypomorphic or late-onset recessive variants.
+    return pl.col("clinvar_plp_stars") >= rs.clinvar.expert_min_stars
+
+
 def bs1(rs: Ruleset) -> pl.Expr:
     (freq, source, details), t = _control_frequency(rs), rs.frequency.bs1_min_af
-    return _graded(rs, "BS1", [(freq > t, Strength.STRONG, freq, t, source)], details)
+    return _graded(rs, "BS1", [((freq > t) & ~_expert_plp(rs), Strength.STRONG, freq, t, source)], details)
 
 
 def pm2(rs: Ruleset) -> pl.Expr:
@@ -184,7 +189,7 @@ def pm4(rs: Ruleset) -> pl.Expr:
 def bs2(rs: Ruleset) -> pl.Expr:
     p = rs.bs2
     gnomad_hom, local_hom = pl.col("gnomad_hom"), pl.col("local_hom_not_affected")
-    omim = _has_any(p.inheritance, "omim_inheritance")
+    omim = _has_any(p.inheritance, "omim_inheritance") & ~_expert_plp(rs)
     grades = [(omim & (gnomad_hom >= t).fill_null(False), s, gnomad_hom, t, "gnomad") for s, t in p.gnomad_hom.items()]
     local_t = p.min_local_hom_not_affected
     local = (omim & (local_hom >= local_t), p.local_strength, local_hom, local_t, "cohort")
@@ -323,6 +328,8 @@ assert sorted(VARIANT_CRITERIA + OCCURRENCE_CRITERIA + EXTERNAL_CRITERIA) == sor
 
 def _criterion(name: str, rs: Ruleset) -> pl.Expr:
     """The criterion's evidence, dropped in a gene that ClinGen ties to no disease."""
+    if name in rs.disabled:
+        return pl.lit(None, EVIDENCE_DTYPE)
     expr = CRITERIA[name](rs)
     if name in rs.clingen.no_disease_drops:
         expr = pl.when(~pl.col("clingen_no_disease")).then(expr).otherwise(pl.lit(None, EVIDENCE_DTYPE))

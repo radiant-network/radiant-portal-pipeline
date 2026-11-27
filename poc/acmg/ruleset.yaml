@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-20
+version: poc-21
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -90,6 +90,11 @@ bp7:
 # ClinVar review status: every criterion ignores a variant whose best RCV (`clinvar_rcv_summary`) has fewer stars.
 clinvar:
   min_stars: 1
+  # BS1 and BS2 skip a ClinVar P/LP from this many stars (VCEP bench: 11 of the 33 missed panel P/LP had BS2).
+  expert_min_stars: 2
+
+# Never computed. PP2: 1 of 110 POC PP2 met by a ClinGen VCEP on the same variants.
+disabled: [PP2]
 
 # Criteria dropped in a gene whose every ClinGen gene-disease validity is Disputed, Refuted or No Known Disease
 # Relationship. A gene ClinGen has not curated keeps them.

@@ -10,14 +10,14 @@ RULESET = Ruleset.load(Path(__file__).parents[1] / "ruleset.yaml")
 COMMON = {"gnomad_an": 150_000}
 
 
-def run(**fields) -> Classification:
+def run(rs: Ruleset = RULESET, **fields) -> Classification:
     fact = Fact(locus_id=1, transcript_id="T1", **fields)
-    (row,) = classify(pl.DataFrame([fact.model_dump()], schema=FACT_SCHEMA), RULESET).collect().to_dicts()
+    (row,) = classify(pl.DataFrame([fact.model_dump()], schema=FACT_SCHEMA), rs).collect().to_dicts()
     return Classification.model_validate(row)
 
 
-def codes(**fields) -> list[str]:
-    return run(**fields).acmg_criteria
+def codes(rs: Ruleset = RULESET, **fields) -> list[str]:
+    return run(rs, **fields).acmg_criteria
 
 
 def test_absent_from_gnomad_is_pm2():
@@ -171,14 +171,21 @@ def test_pm1_kept_with_pp3_moderate():
     assert (result.acmg_criteria, result.acmg_points) == (["PM1", "PP3_Moderate"], 4)
 
 
+WITH_PP2 = RULESET.model_copy(update={"disabled": []})
+
+
+def test_disabled_criterion_is_never_met():
+    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=6, gene_blb_missense=1) == []
+
+
 def test_pp2_in_missense_gene():
-    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=6, gene_blb_missense=1) == ["PP2"]
-    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=5) == []
+    assert codes(WITH_PP2, **MISSENSE, gene_plp=20, gene_plp_missense=6, gene_blb_missense=1) == ["PP2"]
+    assert codes(WITH_PP2, **MISSENSE, gene_plp=20, gene_plp_missense=5) == []
 
 
 def test_pp2_blocked_by_benign_missense():
-    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=12, gene_blb_missense=3) == ["PP2"]
-    assert codes(**MISSENSE, gene_plp=20, gene_plp_missense=12, gene_blb_missense=4) == []
+    assert codes(WITH_PP2, **MISSENSE, gene_plp=20, gene_plp_missense=12, gene_blb_missense=3) == ["PP2"]
+    assert codes(WITH_PP2, **MISSENSE, gene_plp=20, gene_plp_missense=12, gene_blb_missense=4) == []
 
 
 def test_bp1_in_lof_gene():
@@ -224,6 +231,12 @@ def test_pvs1_strength_by_consequence():
 
 def test_pm4_in_frame_indel():
     assert codes(consequences=["inframe_deletion"], **NOT_RARE) == ["PM4"]
+
+
+def test_expert_clinvar_plp_skips_bs1_and_bs2():
+    common = {"gnomad_af": 0.02, "omim_inheritance": ["AR"], "gnomad_hom": 50, **COMMON}
+    assert codes(**common, clinvar_plp_stars=1) == ["BS1", "BS2"]
+    assert codes(**common, clinvar_plp_stars=2) == []
 
 
 def test_bs2_gnomad_or_local_homozygotes_in_omim_gene():
