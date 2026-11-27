@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-25
+version: poc-26
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -150,14 +150,18 @@ svi_points:
 
 # slivar de novo mode in an affected proband, both parents unaffected (slivar gate). Parentage confirmed (PS2) when
 # somalier finds both parents parent-child with the proband (output db's sample_relatedness), else assumed (PM6).
-# Points per proband, phenotype consistent with the gene but not highly specific.
+# PS2 adds up the confirmed de novo of the tenant's affected probands, one per family, on a variant rare as for PM2
+# (else the case's own only); PM6 is the case's own. Points per proband, phenotype consistent with the gene but not
+# highly specific.
 de_novo:
   confirmed_points: 1.0
   assumed_points: 0.5
   parent_min_relatedness: 0.35   # first degree is 0.5
   parent_max_ibs0_share: 0.002   # parent-child share an allele at almost every site; siblings do not
 
-# PM3: comphet partner (RAD-39) that is P/LP in ClinVar. "In trans" when the case is a complete trio.
+# PM3: comphet partner (RAD-39) that is P/LP in ClinVar, added up over the tenant's affected probands on the variant,
+# one per family, on a variant rare as for PM2 (else the case's own only). "In trans" when the case is a complete trio
+# with both parents confirmed.
 pm3:
   points:
     p_trans: 1.0
