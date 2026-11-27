@@ -11,6 +11,8 @@ def test_dag_has_expected_tasks(dag_bag):
         "fetch_import_facts",
         "decide_import",
         "journal_import",
+        "list_processing",
+        "set_processing",
         "partitioner_group.assign_partitions",
         "partitioner_group.insert_sequencing_experiment",
         "flag_deleted_sequencing_experiment",
@@ -99,3 +101,11 @@ def test_partition_triggers_are_serialised_and_bounded(dag_bag):
     assert trigger.execution_timeout == STALE_LOCK_MAX_AGE
     # Bounded by the same constant the stale-lock reclaim uses, so the two cannot drift apart.
     assert dag_bag.get_dag("radiant-import-part").max_active_runs == 1
+
+
+def test_the_cases_to_load_move_to_processing_beside_the_load(dag_bag):
+    """Not upstream of the parts: a failed status move does not hold the data back."""
+    dag = dag_bag.get_dag("radiant-import")
+    assert {t.task_id for t in dag.get_task("set_processing").upstream_list} == {"list_processing"}
+    assert {t.task_id for t in dag.get_task("list_processing").upstream_list} == {"decide_import"}
+    assert "set_processing" not in dag.get_task("import_part").upstream_task_ids

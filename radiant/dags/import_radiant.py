@@ -10,6 +10,7 @@ from airflow.utils.state import DagRunState
 from airflow.utils.task_group import TaskGroup
 
 from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env
+from radiant.dags.pipeline_decision import list_processing, set_processing
 from radiant.tasks.locking import STALE_LOCK_MAX_AGE
 from radiant.tasks.nextflow.paths import sanitize_run_tag
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions, rows_output_processor
@@ -30,7 +31,8 @@ dag_params = {
         items={"type": "string"},
         title="Excluded tenants",
         description=(
-            "Tenants whose case statuses are left alone. The import still loads them. Defaults to "
+            "Tenants whose case statuses are left alone (`processing` here, `in_progress` in radiant-case-evaluation)."
+            " The import still loads them. Defaults to "
             f"${EXCLUDED_TENANTS_ENV}; empty excludes none. The case scheduler passes its own."
         ),
     ),
@@ -71,11 +73,16 @@ def import_radiant():
     def decide_import(fact_rows: Any) -> dict:
         from collections import Counter
 
-        from radiant.tasks.importing.resolve import decide
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.importing.resolve import decide, processing_batches
 
         decision = decide(fact_rows)
         logger.info("%d item(s) %s", len(decision.entries), dict(Counter(str(e.decision) for e in decision.entries)))
-        return decision.model_dump(mode="json")
+        excluded_tenants = get_current_context()["params"]["excluded_tenants"]
+        return decision.model_dump(mode="json") | {
+            "processing": processing_batches(decision, fact_rows, excluded_tenants)
+        }
 
     @task(task_id="journal_import", task_display_name="[PyOp] Journal the import decisions")
     def journal_import(decided: dict) -> int:
@@ -91,6 +98,8 @@ def import_radiant():
 
     decided = decide_import(fetch_import_facts.output)
     journal_import(decided)
+    # Beside the load, not before it: a failed status move must not hold the data back.
+    set_processing.expand(batch=list_processing(decided))
 
     with TaskGroup(group_id="partitioner_group") as tg_partition_group:
 
