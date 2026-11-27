@@ -32,7 +32,7 @@ def _evidence(
     criterion: str,
     strength: Strength,
     value: pl.Expr,
-    threshold: float | None,
+    threshold: float | pl.Expr | None,
     source: str | pl.Expr | None = None,
     details: dict[str, pl.Expr] | None = None,
     refs: pl.Expr | None = None,
@@ -43,7 +43,7 @@ def _evidence(
         strength=pl.lit(str(strength)),
         points=pl.lit(points, pl.Int64),
         value=value.cast(pl.Float64),
-        threshold=pl.lit(threshold, pl.Float64),
+        threshold=threshold.cast(pl.Float64) if isinstance(threshold, pl.Expr) else pl.lit(threshold, pl.Float64),
         source=source if isinstance(source, pl.Expr) else pl.lit(source, pl.String),
         details=_details(details or {}),
         refs=pl.lit([], pl.List(pl.Int64)) if refs is None else refs.cast(pl.List(pl.Int64)),
@@ -115,11 +115,14 @@ def bs1(rs: Ruleset) -> pl.Expr:
 
 def pm2(rs: Ruleset) -> pl.Expr:
     f = rs.frequency
-    rare = af.is_null() | (af <= f.pm2_max_af)
+    # Healthy carriers make a pathogenic allele of a recessive-only gene commoner.
+    recessive = _omim_only(rs.pvs1.recessive_inheritance, rs.pvs1.dominant_inheritance)
+    max_af = pl.when(recessive).then(f.pm2_max_af_recessive).otherwise(f.pm2_max_af)
+    rare = af.is_null() | (af <= max_af)
     cohort = _cohort_af(rs)
     cond = rare & ~(cohort > f.pm2_cohort_max_pf).fill_null(False)
     details = {"gnomad_an": an, "cohort_af": cohort, "cohort_max_af": pl.lit(f.pm2_cohort_max_pf)}
-    return _graded(rs, "PM2", [(cond, Strength.SUPPORTING, af.fill_null(0.0), f.pm2_max_af)], details)
+    return _graded(rs, "PM2", [(cond, Strength.SUPPORTING, af.fill_null(0.0), max_af)], details)
 
 
 def pp3(rs: Ruleset) -> pl.Expr:
@@ -257,7 +260,8 @@ def bs4(rs: Ruleset) -> pl.Expr:
     # Recessive gene: the causal allele often comes from the unaffected carrier parent, so no segregation test.
     p = rs.bs4
     noncarriers, t = pl.col("affected_noncarrier_parents"), p.min_affected_noncarriers
-    cond = _omim_only(p.dominant, p.not_recessive) & (noncarriers >= t)
+    # An affected carrier parent makes the affected non-carrier a likelier phenocopy than a failed segregation.
+    cond = _omim_only(p.dominant, p.not_recessive) & (noncarriers >= t) & (pl.col("affected_carrier_parents") == 0)
     return _graded(rs, "BS4", [(cond, Strength.STRONG, noncarriers, t)])
 
 

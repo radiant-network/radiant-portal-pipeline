@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-27
+version: poc-28
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -33,6 +33,8 @@ frequency:
   ba1_min_af: 0.05       # strictly above
   bs1_min_af: 0.01       # strictly above
   pm2_max_af: 0.0001     # at or below, or absent from gnomAD
+  # In a gene OMIM gives a recessive inheritance and no dominant one (pvs1 lists); a VCEP value (hearing loss AR).
+  pm2_max_af_recessive: 0.0007
   # PM2 is dropped above this AF in the tenant's not affected.
   pm2_cohort_max_pf: 0.01
   cohort_min_pn: 20
@@ -189,7 +191,8 @@ bp2:
   min_carriers: 1
 
 # BS4: affected parents who do not carry the variant, in a gene that is dominant only (OMIM): a recessive allele
-# comes from the unaffected carrier parent, and a son's X from his mother. No penetrance data: assumed full.
+# comes from the unaffected carrier parent, and a son's X from his mother. No penetrance data: assumed full. Not when
+# an affected parent carries the variant (the other is then likelier a phenocopy).
 bs4:
   dominant: [AD]
   not_recessive: [AR, XLR, DR]

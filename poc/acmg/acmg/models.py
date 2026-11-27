@@ -73,13 +73,14 @@ class FrequencyThresholds(Frozen):
     ba1_min_af: Probability
     bs1_min_af: Probability
     pm2_max_af: Probability
+    pm2_max_af_recessive: Probability
     pm2_cohort_max_pf: Probability
     cohort_min_pn: Annotated[int, Field(ge=0)]
 
     @model_validator(mode="after")
     def _ordered(self):
-        if not self.pm2_max_af < self.bs1_min_af < self.ba1_min_af:
-            raise ValueError("expected pm2_max_af < bs1_min_af < ba1_min_af")
+        if not self.pm2_max_af <= self.pm2_max_af_recessive < self.bs1_min_af < self.ba1_min_af:
+            raise ValueError("expected pm2_max_af <= pm2_max_af_recessive < bs1_min_af < ba1_min_af")
         return self
 
 

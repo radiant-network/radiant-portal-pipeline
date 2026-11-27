@@ -29,6 +29,12 @@ def test_pm2_edge_is_inclusive():
     assert codes(gnomad_af=0.00011, **COMMON) == []
 
 
+def test_pm2_recessive_only_gene_allows_carrier_frequencies():
+    assert codes(gnomad_af=0.0005, omim_inheritance=["AR"], **COMMON) == ["PM2_Supporting"]
+    assert codes(gnomad_af=0.0008, omim_inheritance=["AR"], **COMMON) == []
+    assert codes(gnomad_af=0.0005, omim_inheritance=["AR", "AD"], **COMMON) == []
+
+
 def test_common_in_not_affected_cohort_is_bs1_not_pm2():
     # Carrier frequencies: 4 % carriers = 2.02 % AF, 11 % carriers = 5.7 % AF.
     assert codes(germline_pf_wgs_not_affected=0.04, germline_pn_wgs_not_affected=50) == ["BS1"]
@@ -295,6 +301,7 @@ def test_bs4_affected_noncarrier_parent_in_dominant_only_gene():
     assert (result.acmg_criteria, result.acmg_points) == (["BS4"], -4)
     assert codes(omim_inheritance=["AD", "AR"], affected_noncarrier_parents=1, **NOT_RARE) == []
     assert codes(affected_noncarrier_parents=1, **NOT_RARE) == []
+    assert codes(omim_inheritance=["AD"], affected_noncarrier_parents=1, affected_carrier_parents=1, **NOT_RARE) == []
 
 
 def test_bp2_in_dominant_only_gene_cancels_pm3():
@@ -319,7 +326,7 @@ def test_ruleset_rejects_overlapping_revel_ranges():
 def test_ruleset_rejects_unordered_frequencies():
     data = RULESET.model_dump(mode="json")
     data["frequency"]["bs1_min_af"] = 0.1
-    with pytest.raises(ValidationError, match="pm2_max_af < bs1_min_af < ba1_min_af"):
+    with pytest.raises(ValidationError, match="pm2_max_af <= pm2_max_af_recessive < bs1_min_af < ba1_min_af"):
         Ruleset.model_validate(data)
 
 

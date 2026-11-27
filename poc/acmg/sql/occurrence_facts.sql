@@ -72,9 +72,9 @@ cohort AS (
     LEFT JOIN confirmed_parents cpa ON cpa.seq_id = s.seq_id
     WHERE s.family_role = 'proband' AND s.affected_status = 'affected'
 ),
--- Other probands' evidence counts on rare variants only, with PM2's rarity: gnomAD and the tenant's not affected (AF
--- from the carrier frequency, Hardy-Weinberg). A common variant recurs in many probands: in trans with the same P/LP
--- partner, or as the same false de novo. The case's own evidence always counts (a recessive founder is not that rare).
+-- Other probands' evidence counts on rare variants only, with PM2's general rarity (not the recessive-gene one):
+-- gnomAD and the tenant's not affected (AF from the carrier frequency, Hardy-Weinberg). A common variant recurs in many
+-- probands: in trans with the same P/LP partner, or as the same false de novo. The case's own evidence always counts (a recessive founder is not that rare).
 rare_locus AS (
     SELECT k.locus_id
     FROM (SELECT DISTINCT locus_id FROM classified) k
