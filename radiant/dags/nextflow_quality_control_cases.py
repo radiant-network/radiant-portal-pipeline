@@ -1,4 +1,4 @@
-"""Run the quality-control pipeline over the named cases, register the result.
+"""Decide the cases to quality-control, run the pipeline over them, register the result.
 
 `radiant-nextflow-quality-control` runs the Ferlab quality-control-pipeline. This DAG closes the
 two manual ends around it, the way `nextflow_snv_postprocessing_cases` does for annotation: it
@@ -6,14 +6,16 @@ builds the samplesheet of the named cases, triggers that DAG, then registers wha
 published back onto the cases as one `quality_control_metrics` task each, carrying the
 per-family MultiQC set as `aggqc` documents.
 
+    fetch_facts_<pipeline> -> decide_<pipeline> -> journal_<pipeline>      (quality_control, quality_control_somatic)
                  +-> fetch_germline_members -+
     has_cases ---+                           +-> select_cases -> resolve_cases -> generate_inputs -> run_pipeline
                  +-> fetch_somatic_members --+                                                         |
                                             register_tasks (one per tenant) <- collect_outputs <-------+
 
-It decides nothing. `radiant-case-scheduler` decides which cases run (`decide_cases` and
-`decide_somatic_cases`, on `sql/clinical/quality_control_{,somatic_}facts_select.sql`) and passes
-them as `case_ids`; an operator can name cases to rerun. `select_cases` checks them again,
+It decides its own cases (`radiant.dags.pipeline_decision`), one head per case type: `decide_cases` and
+`decide_somatic_cases`, on `sql/clinical/quality_control_{,somatic_}facts_select.sql`, journaled as two
+pipelines. It moves no status: quality control does not count for the case statuses yet. `case_ids` limits
+the run to the cases an operator names. `select_cases` checks the cases decided `run` again,
 leniently: a case that cannot be run is excluded with a reason, and a germline member other than
 the proband with no CRAM yet is left out of the family. Germline cases bring every family member
 present; somatic cases their tumor alone. The DRAGEN metrics
@@ -36,6 +38,8 @@ from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
+from radiant.dags.pipeline_decision import decision_head
+from radiant.tasks.journal import Pipeline
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
 LOGGER = logging.getLogger(__name__)
@@ -85,8 +89,8 @@ dag_params = {
         items={"type": "integer"},
         title="Case ids",
         description=(
-            "The germline and somatic cases to run: `radiant-case-scheduler` passes the ones it decided `run` for, "
-            "and an operator can name cases to rerun. Empty runs nothing."
+            "Limit the run to these germline and somatic cases, among the ones decided `run`. Every candidate is "
+            "still decided and journaled. Empty runs every case decided `run`."
         ),
     ),
     "dry_run": Param(
@@ -141,31 +145,47 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_quality_control_cases():
-    @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is named")
-    def has_cases() -> bool:
-        from airflow.sdk import get_current_context
+    decided_germline, _ = decision_head(
+        Pipeline.QUALITY_CONTROL,
+        "./sql/clinical/quality_control_facts_select.sql",
+        "germline QC",
+        suffix="_quality_control",
+        move_to_processing=False,
+    )
+    decided_somatic, _ = decision_head(
+        Pipeline.QUALITY_CONTROL_SOMATIC,
+        "./sql/clinical/quality_control_somatic_facts_select.sql",
+        "somatic QC",
+        suffix="_quality_control_somatic",
+        move_to_processing=False,
+    )
 
-        return bool(get_current_context()["params"]["case_ids"])
+    @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is to run")
+    def has_cases(germline: dict, somatic: dict) -> bool:
+        return bool(germline["run_case_ids"] or somatic["run_case_ids"])
 
-    def fetch_members(task_id: str, display_name: str, sql: str) -> RadiantStarRocksOperator:
+    def fetch_members(task_id: str, display_name: str, sql: str, decide_task_id: str) -> RadiantStarRocksOperator:
         return RadiantStarRocksOperator(
             task_id=task_id,
             task_display_name=f"[StarRocks] {display_name}",
             sql=sql,
-            parameters={"case_ids": "{{ params.case_ids }}"},
+            # `[-1]` when none of this case type runs: the query needs a non-empty list.
+            parameters={"case_ids": f"{{{{ ti.xcom_pull(task_ids='{decide_task_id}')['run_case_ids'] or [-1] }}}}"},
             output_processor=rows_output_processor,
             do_xcom_push=True,
         )
 
     fetch_germline_members = fetch_members(
         "fetch_germline_members",
-        "Fetch the members of the named germline cases",
+        "Fetch the members of the germline cases to run",
         "./sql/clinical/quality_control_case_members_select.sql",
+        "decide_quality_control",
     )
     fetch_somatic_members = fetch_members(
         "fetch_somatic_members",
-        "Fetch the tumor of the named somatic cases",
+        "Fetch the tumor of the somatic cases to run",
         "./sql/clinical/quality_control_somatic_case_members_select.sql",
+        "decide_quality_control_somatic",
     )
 
     @task(task_id="select_cases", task_display_name="[PyOp] Select the cases that can run")
@@ -350,7 +370,7 @@ def nextflow_quality_control_cases():
         LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
         return len(written)
 
-    has_cases() >> [fetch_germline_members, fetch_somatic_members]
+    has_cases(decided_germline, decided_somatic) >> [fetch_germline_members, fetch_somatic_members]
     selection = select_cases(fetch_germline_members.output, fetch_somatic_members.output)
     cases = resolve_cases(selection)
     paths = generate_inputs(cases)

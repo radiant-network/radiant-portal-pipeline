@@ -12,6 +12,12 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
+        "fetch_facts_quality_control",
+        "decide_quality_control",
+        "journal_quality_control",
+        "fetch_facts_quality_control_somatic",
+        "decide_quality_control_somatic",
+        "journal_quality_control_somatic",
         "has_cases",
         "fetch_germline_members",
         "fetch_somatic_members",
@@ -146,3 +152,19 @@ def test_the_queries_resolve_from_the_sql_search_path(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert dag.template_searchpath == ["/opt/airflow/dags/radiant/dags/sql"]
     assert dag.render_template_as_native_obj is True
+
+
+def test_each_case_type_is_decided_and_journaled_and_no_status_moves(dag_bag):
+    """Quality control does not count for the case statuses yet."""
+    dag = dag_bag.get_dag(DAG_ID)
+    assert not any(t.startswith("set_processing") for t in dag.task_ids)
+    assert {t.task_id for t in dag.get_task("has_cases").upstream_list} == {
+        "decide_quality_control",
+        "decide_quality_control_somatic",
+    }
+    assert dag.get_task("fetch_germline_members").parameters == {
+        "case_ids": "{{ ti.xcom_pull(task_ids='decide_quality_control')['run_case_ids'] or [-1] }}"
+    }
+    assert dag.get_task("fetch_somatic_members").parameters == {
+        "case_ids": "{{ ti.xcom_pull(task_ids='decide_quality_control_somatic')['run_case_ids'] or [-1] }}"
+    }

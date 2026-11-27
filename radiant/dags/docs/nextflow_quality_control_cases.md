@@ -1,6 +1,6 @@
 # Nextflow Quality Control (from Cases)
 
-Runs the germline and the somatic cases the case scheduler names (for a somatic case, its tumor
+Decides the germline and somatic cases to quality-control, runs them (for a somatic case, its tumor
 alone) through the Ferlab
 [quality-control-pipeline](https://github.com/Ferlab-Ste-Justine/quality-control-pipeline)
 over them from their DRAGEN metrics, and registers the per-family MultiQC report back onto
@@ -12,9 +12,10 @@ annotation.
 
 | # | Task | Does |
 |:--|:--|:--|
-| 0 | **has_cases** | Skips the run when no case is named |
-| 1 | **fetch_germline_members**, **fetch_somatic_members** | Read the members of the named cases, one query per case type |
-| 2 | **select_cases** | Checks the named cases again, excludes the ones that cannot run with a reason |
+| 0 | **fetch_facts_&lt;pipeline&gt;**, **decide_&lt;pipeline&gt;**, **journal_&lt;pipeline&gt;** | Per case type (**quality_control**, **quality_control_somatic**): the facts of every candidate, each decision, written to the pipeline journal |
+| 0 | **has_cases** | Skips the rest when no case is to run |
+| 1 | **fetch_germline_members**, **fetch_somatic_members** | Read the members of the cases to run, one query per case type |
+| 2 | **select_cases** | Checks the cases to run again, excludes the ones that cannot run with a reason |
 | 3 | **resolve_cases** | Builds one family per case, proband first |
 | 4 | **generate_inputs** | Writes one samplesheet for every case of the run |
 | 5 | **run_pipeline** | One launcher run, for every case |
@@ -22,10 +23,9 @@ annotation.
 | 7 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
 | 8 | **journal_outcomes** | Writes **succeeded** or **failed** per case to the pipeline journal (a teardown) |
 
-It has **no schedule of its own and decides nothing**: `radiant-case-scheduler` decides which cases
-run, starts it daily with them as **case_ids** and its own `excluded_tenants`, and moves the case
-statuses around it. Run it by hand only to rerun named cases: the `excluded_tenants` default below
-applies to a manual run only.
+It has **no schedule of its own**: `radiant-case-scheduler` starts it daily with its own `excluded_tenants`. It
+decides its own cases and journals them. It moves **no case status**: quality control does not count for the
+statuses yet. The `excluded_tenants` default below applies to a manual run only.
 
 ---
 
@@ -33,7 +33,7 @@ applies to a manual run only.
 
 | Param | Default | Meaning |
 |:--|:--|:--|
-| **case_ids** | empty | The germline and somatic cases to run. The case scheduler passes the ones it decided **run** for. Empty runs nothing |
+| **case_ids** | empty | Limits the run to these germline and somatic cases, among those decided **run**. Every candidate is still decided and journaled. Empty runs every case decided **run** |
 | **excluded_tenants** | $RADIANT_ETL_EXCLUDED_TENANTS | Tenants left out of case processing, reported as **tenant_excluded**. Empty excludes none |
 | **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing |
 
@@ -44,12 +44,12 @@ applies to a manual run only.
 
 ## What counts as "needs QC"
 
-The case scheduler decides it, on the facts of two queries, one per case type:
+This DAG decides it, on the facts of two queries, one per case type:
 sql/clinical/quality_control_facts_select.sql (germline, journal pipeline **quality_control**) and
 sql/clinical/quality_control_somatic_facts_select.sql (somatic, **quality_control_somatic**). A
 case is a candidate when a member's *current* experiment has an alignment (for a germline member,
 one publishing a CRAM), and no **quality_control_metrics** task is scoped to that (case,
-experiment) pair. This DAG reads the members of the named cases with
+experiment) pair. This DAG then reads the members of the cases to run with
 sql/clinical/quality_control_{,somatic_}case_members_select.sql. All four make the same selections
 as the annotation queries:
 
@@ -141,8 +141,8 @@ fails the run once its polling ends: that is bad data to fix by hand.
 
 ## Nothing fails the run — it gets excluded
 
-The case scheduler journals a candidate that cannot run with its decision (**wait**, **blocked**,
-**skip**) and its reasons, and does not name it. **select_cases** checks the named cases again: one
+**journal_&lt;pipeline&gt;** writes a candidate that cannot run with its decision (**wait**, **blocked**,
+**skip**) and its reasons, and it does not run. **select_cases** checks the cases to run again: one
 that cannot run any more is dropped with a reason, journaled **failed**, and the rest continues.
 It logs them; grep for "excluded".
 
@@ -161,7 +161,7 @@ It logs them; grep for "excluded".
 
 A germline member with no tarball is **not** excluded: it falls back to its CRAM's directory.
 
-If every named case is excluded the run **skips**. A skipped run is not a failed one.
+If every case to run is excluded the run **skips**. A skipped run is not a failed one.
 
 ---
 

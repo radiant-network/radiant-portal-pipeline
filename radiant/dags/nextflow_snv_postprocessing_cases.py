@@ -39,6 +39,8 @@ from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
+from radiant.dags.pipeline_decision import decision_head
+from radiant.tasks.journal import Pipeline
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
 LOGGER = logging.getLogger(__name__)
@@ -60,10 +62,6 @@ PORTAL_CONN_ID = "radiant_api_conn"
 
 # `select_cases` XCom: what it selected and left out, read back by `journal_outcomes`.
 SELECTION_KEY = "selection"
-
-# The status PATCH is guarded by the expected status (`submitted`), so a retry changes nothing twice.
-STATUS_RETRIES = 2
-STATUS_RETRY_DELAY = datetime.timedelta(minutes=1)
 
 # The journal write is idempotent (an unchanged marker is not written twice), so a retry is safe.
 JOURNAL_RETRIES = 2
@@ -155,56 +153,13 @@ def nextflow_snv_postprocessing_cases():
     # per tenant, and `cases.id` is a single-column primary key over all of it -- so the
     # tenant comes back with the rows rather than scoping the query. Nothing here needs
     # RADIANT_TENANT_CODE.
-    fetch_facts = RadiantStarRocksOperator(
-        task_id="fetch_facts",
-        task_display_name="[StarRocks] Facts of the germline SNV candidates",
-        sql="./sql/clinical/germline_snv_facts_select.sql",
-        output_processor=rows_output_processor,
-        do_xcom_push=True,
+    decided, processing = decision_head(
+        Pipeline.GERMLINE_SNV, "./sql/clinical/germline_snv_facts_select.sql", "germline SNV"
     )
-
-    @task(task_id="decide", task_display_name="[PyOp] Decide each candidate")
-    def decide(fact_rows: Any) -> dict:
-        from airflow.sdk import get_current_context
-
-        from radiant.tasks.journal import Pipeline
-        from radiant.tasks.nextflow.case_status import decide_run
-
-        params = get_current_context()["params"]
-        return decide_run(Pipeline.GERMLINE_SNV, fact_rows, params["excluded_tenants"], params["case_ids"])
-
-    @task(task_id="journal", task_display_name="[PyOp] Journal the decisions", retries=JOURNAL_RETRIES)
-    def journal(decided: dict) -> int:
-        from airflow.sdk import get_current_context
-
-        from radiant.tasks.journal import Entry, record
-
-        written = record([Entry(**e) for e in decided["entries"]], get_current_context()["run_id"])
-        LOGGER.info("%d row(s) written", len(written))
-        return len(written)
-
-    @task(
-        task_id="set_processing",
-        task_display_name="[PyOp] Move the cases to run to processing",
-        retries=STATUS_RETRIES,
-        retry_delay=STATUS_RETRY_DELAY,
-    )
-    def set_processing(batch: dict) -> Any:
-        from radiant.tasks.nextflow.case_status import PROCESSING, change_tenant_status
-
-        return change_tenant_status(batch, PROCESSING)
 
     @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is to run")
     def has_cases(decided: dict) -> bool:
         return bool(decided["run_case_ids"])
-
-    @task(task_id="list_processing", task_display_name="[PyOp] List the cases to move, per tenant")
-    def list_processing(decided: dict) -> list[dict]:
-        return decided["processing"]
-
-    decided = decide(fetch_facts.output)
-    journal(decided)
-    processing = set_processing.expand(batch=list_processing(decided))
 
     fetch_case_members = RadiantStarRocksOperator(
         task_id="fetch_case_members",
@@ -241,7 +196,7 @@ def nextflow_snv_postprocessing_cases():
         return _selection_payload(selection)
 
     # The cases are `processing` before their run starts.
-    [has_cases(decided), processing] >> fetch_case_members
+    [has_cases(decided), *processing] >> fetch_case_members
     selection = select_cases(fetch_case_members.output)
 
     fetch_phenotypes = RadiantStarRocksOperator(

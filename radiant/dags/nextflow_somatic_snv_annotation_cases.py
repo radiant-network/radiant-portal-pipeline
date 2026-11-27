@@ -1,4 +1,4 @@
-"""Annotate the named somatic calling tasks with VEP, register the result.
+"""Decide the somatic calling tasks to annotate with VEP, run the annotation, register the result.
 
 QLIN sends the raw somatic SNV VCF of each calling task (`somatic_variant_calling`,
 `tumor_only_variant_calling`, `alignment_somatic_variant_calling`). This DAG annotates it with the
@@ -6,15 +6,18 @@ same VEP as germline -- `radiant-nextflow-somatic-snv-annotation`, the germline 
 its `normalize` step with `tools = vep` -- and registers the result on
 the case as a `radiant_somatic_annotation` task, which the scheduled import already loads.
 
-    has_tasks -> fetch_tasks -> select_tasks -> generate_inputs -> run_pipeline -> collect_outputs
+    fetch_facts -> decide -> journal, set_processing (one per tenant)
+                -> has_tasks -> select_tasks -> generate_inputs -> run_pipeline -> collect_outputs
                                      |                                                   |
                                 list_tenants --------------> register_tasks (one per tenant)
 
 The unit of work is the calling task, not the case: a tumor-normal and a tumor-only call on the same
-tumor sample are both annotated. It decides nothing: `radiant-case-scheduler` decides which calling tasks
-run (`decide_tasks`, on `sql/clinical/somatic_snv_facts_select.sql`) and passes them as `task_ids`; an
-operator can name tasks to rerun. The same query reads them, for their (case, task) pairs not annotated
-yet, and `select_tasks` checks them again, leniently. No phenotypes, no PED, no Exomiser.
+tumor sample are both annotated. It decides its own calling tasks (`radiant.dags.pipeline_decision`):
+every candidate of `sql/clinical/somatic_snv_facts_select.sql`, decided by `decide_tasks` and journaled
+per (case, calling task). The cases of the tasks decided `run` move to `processing`; `select_tasks` checks
+those tasks again, leniently, from the same facts. `task_ids` limits the run to the tasks an operator names:
+the query then reads those only, so that a named task without its VCF gets its reason. No phenotypes, no
+PED, no Exomiser.
 
 Design: radiant-hub `docs/features/RAD-23-somatic-vep-annotation.md`.
 """
@@ -30,7 +33,8 @@ from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
-from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
+from radiant.dags.pipeline_decision import decision_head
+from radiant.tasks.journal import Pipeline
 
 LOGGER = logging.getLogger(__name__)
 
@@ -72,9 +76,9 @@ dag_params = {
         items={"type": "integer"},
         title="Calling task ids",
         description=(
-            "The `somatic_variant_calling`, `tumor_only_variant_calling` or `alignment_somatic_variant_calling` "
-            "tasks to run: `radiant-case-scheduler` passes the ones it decided `run` for, and an operator can "
-            "name tasks to rerun, e.g. [70]. Each runs for its cases not annotated yet. Empty runs nothing."
+            "Limit the run to these `somatic_variant_calling`, `tumor_only_variant_calling` or "
+            "`alignment_somatic_variant_calling` tasks, e.g. [70]: only they are decided, journaled and run, each "
+            "for its cases not annotated yet. Empty decides every candidate and runs the ones decided `run`."
         ),
     ),
     "excluded_tenants": Param(
@@ -131,23 +135,24 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_somatic_snv_annotation_cases():
-    @task.short_circuit(task_id="has_tasks", task_display_name="[PyOp] Skip when no calling task is named")
-    def has_tasks() -> bool:
-        from airflow.sdk import get_current_context
-
-        return bool(get_current_context()["params"]["task_ids"])
-
-    fetch_tasks = RadiantStarRocksOperator(
-        task_id="fetch_tasks",
-        task_display_name="[StarRocks] Fetch the named calling tasks",
-        sql="./sql/clinical/somatic_snv_facts_select.sql",
+    decided, processing = decision_head(
+        Pipeline.SOMATIC_SNV,
+        "./sql/clinical/somatic_snv_facts_select.sql",
+        "somatic SNV",
         parameters={"task_ids": "{{ params.task_ids }}"},
-        output_processor=rows_output_processor,
-        do_xcom_push=True,
     )
 
-    @task(task_id="select_tasks", task_display_name="[PyOp] Select the calling tasks that can run")
-    def select_tasks(rows: Any) -> Any:
+    @task.short_circuit(task_id="has_tasks", task_display_name="[PyOp] Skip when no calling task is to run")
+    def has_tasks(decided: dict) -> bool:
+        return bool(decided["run_task_ids"])
+
+    @task(
+        task_id="select_tasks",
+        task_display_name="[PyOp] Select the calling tasks that can run",
+        # A failed status move must not hold the data back: the run still goes red on it.
+        trigger_rule="all_done",
+    )
+    def select_tasks(decided: dict) -> Any:
         """Keep what can run, report what cannot, and skip the run if nothing can."""
         from airflow.exceptions import AirflowSkipException
         from airflow.sdk import get_current_context
@@ -155,6 +160,11 @@ def nextflow_somatic_snv_annotation_cases():
         from radiant.tasks.nextflow.somatic.resolve import select_run_tasks
 
         context = get_current_context()
+        # The facts of the (case, calling task) pairs decided `run`.
+        run = {(e["case_id"], int(e["item_key"])) for e in decided["entries"] if e["decision"] == "run"}
+        rows = [
+            r for r in context["ti"].xcom_pull(task_ids="fetch_facts") if (r["case_id"], r["calling_task_id"]) in run
+        ]
         selection = select_run_tasks(rows, context["params"]["excluded_tenants"])
         # Kept apart from the return value, so the outcomes are journaled even when nothing runs.
         context["ti"].xcom_push(
@@ -344,8 +354,9 @@ def nextflow_somatic_snv_annotation_cases():
         LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
         return len(written)
 
-    has_tasks() >> fetch_tasks
-    tasks = select_tasks(fetch_tasks.output)
+    # The cases are `processing` before their run starts.
+    tasks = select_tasks(decided)
+    [has_tasks(decided), *processing] >> tasks
     paths = generate_inputs(tasks)
 
     run_pipeline = TriggerDagRunOperator(

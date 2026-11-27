@@ -114,7 +114,7 @@ def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
         assert discover.params["excluded_tenants"] == dag.params["excluded_tenants"]
         assert discover.params["task_ids"] == []
     # The somatic SNV child reads its named tasks with the scheduler's own query.
-    child = dag_bag.get_dag("radiant-nextflow-somatic-snv-annotation-cases").get_task("fetch_tasks")
+    child = dag_bag.get_dag("radiant-nextflow-somatic-snv-annotation-cases").get_task("fetch_facts")
     assert child.sql == dag.get_task("discover_somatic_snv_cases").sql
     # The import's own facts query: what is counted is what the import will decide to run.
     import_sql = dag.get_task("discover_import_cases").sql
