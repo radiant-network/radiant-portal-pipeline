@@ -281,9 +281,11 @@ or not, strength ignored):
 | 5 terms + 2 noise | 35 % | 47 % | 83 % | 4 |
 
 - Published cases (`--cases`, poc-26, 3 terms + 1 noise, 734 cases): the PP4 bins hold (LR 511 at top 0.1 %, 45 at
-  1 %, 15 at 5 %, 12 at 10 %: 4, 4, 3, 3 points vs 4, 4, 3, 2 in `ruleset.yaml`), but the gain is smaller than the
-  circular simulation's: top 5 with inheritance fit −4 49 % → 74 % (circular 54 % → 87 %), top 1 34 % (48 %), median
-  rank 2 (1.5). With the cases of genes the 2024 release did not know yet (1,941 cases): top 5 65 %.
+  1 %, 15 at 5 %, 12 at 10 %, 3.8 at 25 %), but the gain is smaller than the circular simulation's: top 5 with
+  inheritance fit −4 49 % → 74 % (circular 54 % → 87 %), top 1 34 % (48 %), median rank 2 (1.5). 1 term: same bins as
+  before; 5 terms + 2 noise: top 10 % LR 10, top 25 % LR 3.5, top 5 75 %. `poc-27` takes these bins (top 10 % → 3,
+  top 25 % → 1 from 2 terms on; one table from 2 terms). With the cases of genes the 2024 release did not know yet
+  (1,941 cases): top 5 65 %.
 - Extra gene-phenotype sources (time-split phenopacket-store, HPO 2024-01-16 alone: top 1 22.8 %, MRR 0.336 on known
   genes): GenCC 20.3 % / 0.318, GenCC Definitive/Strong 21.8 % / 0.331, PanelApp green/amber 22.1 % / 0.329; Orphanet
   is 99 % already in HPO. None is added.
