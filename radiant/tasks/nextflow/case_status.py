@@ -1,8 +1,9 @@
-"""Which cases the case scheduler DAG moves, and to what.
+"""Which cases the pipelines move, and to what.
 
-The pipeline only ever makes two status changes: `submitted` -> `processing` when a case has
-work waiting, and `processing` -> `in_progress` once every pipeline is done with it and it has
-variant data. Everything here
+The ETL only ever makes two status changes: `submitted` -> `processing`, by the pipeline DAG that
+decides to run work on a case (`decide_run`), and `processing` -> `in_progress`, by
+`radiant-case-evaluation` once the import has loaded the case's data and no pipeline is still
+running or failed for it (`not_ready_cases`, `plan_in_progress`). Everything here
 decides *which* cases; `portal.set_case_system_status` sends the change and the portal checks
 the expected status under a row lock, so a case a geneticist moved in the meantime is left
 alone.
@@ -17,7 +18,6 @@ from collections.abc import Callable
 from pydantic import BaseModel
 
 from radiant.tasks.decision import Decision
-from radiant.tasks.importing.resolve import decide as decide_import
 from radiant.tasks.journal import Entry, Pipeline
 from radiant.tasks.nextflow.cnv.resolve import decide_cases as decide_cnv_cases
 from radiant.tasks.nextflow.qc.resolve import decide_cases as decide_qc_cases
@@ -27,15 +27,13 @@ from radiant.tasks.nextflow.somatic.resolve import decide_tasks as decide_somati
 
 LOGGER = logging.getLogger(__name__)
 
-# The pipelines decided from their facts. The scheduler journals all but the import, which journals itself.
+# The pipelines decided from their facts, by the DAG that runs them (`radiant.dags.pipeline_decision`).
 DECIDE: dict[Pipeline, Callable[[list[dict], list[str]], list[Entry]]] = {
     Pipeline.GERMLINE_SNV: decide_snv_cases,
     Pipeline.GERMLINE_CNV: decide_cnv_cases,
     Pipeline.QUALITY_CONTROL: decide_qc_cases,
     Pipeline.QUALITY_CONTROL_SOMATIC: decide_qc_somatic_cases,
     Pipeline.SOMATIC_SNV: decide_somatic_snv_tasks,
-    # The import loads every tenant: no exclusion.
-    Pipeline.IMPORT: lambda rows, _excluded_tenants: decide_import(rows).entries,
 }
 
 # The pipelines whose items hold a case back from `in_progress`. Not QC: it does not count for the statuses yet.
@@ -51,52 +49,6 @@ class CaseStatus(BaseModel):
     tenant_code: str
     status_code: str
     has_variants: bool
-
-
-def cases_with_work(
-    germline_snv_rows: list[dict],
-    germline_cnv_rows: list[dict],
-    somatic_snv_rows: list[dict],
-    qc_rows: list[dict],
-    qc_somatic_rows: list[dict],
-    import_rows: list[dict],
-    excluded_tenants: list[str] = (),
-) -> set[int]:
-    """The cases at least one pipeline will run on: the cases the scheduler decides `run` for, from the facts
-    (`DECIDE`), the ones the "from Cases" DAGs and the import are given. A case decided anything
-    else (sequencing pending, no gVCF, tenant excluded...) is not counted: it would sit in `processing` with nothing
-    running for it, and never reach `in_progress`.
-    """
-    selected = {
-        "germline snv post-processing": _run_case_ids(Pipeline.GERMLINE_SNV, germline_snv_rows, excluded_tenants),
-        "germline cnv post-processing": _run_case_ids(Pipeline.GERMLINE_CNV, germline_cnv_rows, excluded_tenants),
-        "somatic snv annotation": _run_case_ids(Pipeline.SOMATIC_SNV, somatic_snv_rows, excluded_tenants),
-        "quality control": _run_case_ids(Pipeline.QUALITY_CONTROL, qc_rows, excluded_tenants),
-        "somatic quality control": _run_case_ids(Pipeline.QUALITY_CONTROL_SOMATIC, qc_somatic_rows, excluded_tenants),
-        "import": _run_case_ids(Pipeline.IMPORT, import_rows, excluded_tenants),
-    }
-    for pipeline, case_ids in selected.items():
-        LOGGER.info("%s: %d case(s) with work waiting %s", pipeline, len(case_ids), case_ids)
-    return {case_id for case_ids in selected.values() for case_id in case_ids}
-
-
-def _run_case_ids(pipeline: Pipeline, fact_rows: list[dict], excluded_tenants: list[str]) -> list[int]:
-    return sorted({e.case_id for e in DECIDE[pipeline](fact_rows, list(excluded_tenants)) if e.decision == "run"})
-
-
-def plan_processing(status_rows: list[dict], waiting: set[int], excluded_tenants: list[str]) -> list[dict]:
-    """The `submitted` cases to move to `processing`, one `{tenant, case_ids}` per tenant.
-
-    The cases with work waiting, and also the ones that already have variants: work done before
-    this DAG saw the case (a manual rerun, data imported before the statuses existed) would
-    otherwise leave it `submitted` for ever. The same run's `evaluate_cases` moves those on.
-    """
-    cases = [CaseStatus(**row) for row in status_rows]
-    return _by_tenant(
-        [c for c in cases if c.status_code == SUBMITTED and (c.case_id in waiting or c.has_variants)],
-        excluded_tenants,
-        f"to move to {PROCESSING}",
-    )
 
 
 def plan_in_progress(

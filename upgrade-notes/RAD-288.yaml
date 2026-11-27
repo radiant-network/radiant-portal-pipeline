@@ -42,3 +42,14 @@ actions:
     check: >-
       SHOW TABLES LIKE 'staging_%sequencing_experiment%' in the base database lists staging_sequencing_experiment
       only.
+  - when: after
+    do: >-
+      Unpause radiant-case-evaluation. The case scheduler no longer moves statuses nor emails the laboratories: the
+      pipeline DAGs and the import move their cases to processing, and radiant-import starts radiant-case-evaluation,
+      which moves the ready cases to in_progress and sends the emails. Paused, it leaves every case processing and
+      sends nothing.
+    refs:
+      - radiant-case-evaluation
+      - radiant/dags/case_evaluation.py
+    check: >-
+      After the next radiant-import run that loaded data, radiant-case-evaluation has a run under the same run tag.

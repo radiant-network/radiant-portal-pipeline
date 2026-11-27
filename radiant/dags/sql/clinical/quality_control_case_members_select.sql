@@ -1,5 +1,5 @@
 -- One row per member of the named germline cases (`case_ids`): what the quality-control pipeline runs on.
--- The case scheduler decided these cases on `quality_control_facts_select.sql`. A member with no CRAM yet comes back
+-- The DAG decided these cases on `quality_control_facts_select.sql`. A member with no CRAM yet comes back
 -- with a null `cram_url`.
 WITH alignment_document AS (
     -- Every output of the current germline alignment, selected on the task, never on file name.

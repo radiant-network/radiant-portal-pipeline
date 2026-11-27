@@ -132,8 +132,8 @@ def _workspace_env() -> dict[str, str]:
     dag_display_name="Radiant - Nextflow Quality Control (from Cases)",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-    # Started by `radiant-case-scheduler`, which moves the case statuses around it. A
-    # schedule of its own would process cases without moving them, and race that DAG.
+    # Started by `radiant-case-scheduler`, after which it decides and moves its own cases. A
+    # schedule of its own would race that DAG.
     schedule=None,
     catchup=False,
     # One run at a time: two runs on the same cases would register two QC tasks each.

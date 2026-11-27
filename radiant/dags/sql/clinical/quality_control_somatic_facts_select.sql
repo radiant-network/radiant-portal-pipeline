@@ -1,4 +1,4 @@
--- One row per candidate somatic case, for its proband's current tumor: the facts the case scheduler decides on
+-- One row per candidate somatic case, for its proband's current tumor: the facts the pipeline DAG decides on
 -- (`decide_somatic_cases`, radiant/tasks/nextflow/qc/resolve.py). No decision here.
 --
 -- A candidate is a somatic case whose proband's current tumor experiment has a current

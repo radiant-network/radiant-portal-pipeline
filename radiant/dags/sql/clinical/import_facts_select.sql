@@ -1,5 +1,5 @@
 -- The facts the import decides on (`radiant.tasks.importing.resolve`): one row per (case, seq, task) it has
--- work for, read by `radiant-import` and by the case scheduler's discovery.
+-- work for, read by `radiant-import`.
 --
 -- `state` says where the row is:
 -- - `new`: in importable_task, not yet in staging (anti-join on the key only: a task never changes). Carries the

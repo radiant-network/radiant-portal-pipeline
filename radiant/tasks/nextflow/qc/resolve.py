@@ -8,7 +8,7 @@ member, the DRAGEN metrics tarball, with no CRAM -- that a case may mix strategi
 samplesheet carries `experimentalStrategy` per row, and that a somatic case is one member, its
 proband's tumor.
 
-The case scheduler decides on `quality_control_facts_select.sql` with `decide_cases`, and on its somatic sibling with
+The pipeline DAG decides on `quality_control_facts_select.sql` with `decide_cases`, and on its somatic sibling with
 `decide_somatic_cases`, the rule of germline SNV (`radiant.tasks.nextflow.resolve.decide`): a member absent but the
 proband does not block, the family runs with the members present. The pipeline accepts it: it derives the pedigree
 from the samplesheet, with `0` for a parent missing from it.

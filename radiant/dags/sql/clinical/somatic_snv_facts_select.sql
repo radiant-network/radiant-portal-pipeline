@@ -1,5 +1,5 @@
 -- One row per (candidate somatic calling task, somatic case it belongs to, sequencing experiment
--- it called): the facts the case scheduler decides on (`decide_tasks`, radiant/tasks/nextflow/somatic/resolve.py),
+-- it called): the facts the pipeline DAG decides on (`decide_tasks`, radiant/tasks/nextflow/somatic/resolve.py),
 -- and the raw somatic SNV VCF the task published. No decision here.
 --
 -- The case scheduler reads every candidate; `radiant-nextflow-somatic-snv-annotation-cases` (fetch_tasks) reads the

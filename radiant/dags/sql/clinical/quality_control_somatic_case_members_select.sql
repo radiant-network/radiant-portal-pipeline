@@ -1,5 +1,5 @@
 -- One row per named somatic case (`case_ids`), for its proband's current tumor: what the quality-control pipeline
--- runs on. The case scheduler decided these cases on `quality_control_somatic_facts_select.sql`. The pipeline never
+-- runs on. The DAG decided these cases on `quality_control_somatic_facts_select.sql`. The pipeline never
 -- reads a tumor's CRAM, so the CRAM columns are NULL; a case whose tumor is not aligned does not come back.
 WITH current_tumor AS (
     SELECT ce.case_id, ce.seq_id, ce.sample_id, ce.aliquot, ce.strategy

@@ -1,225 +1,57 @@
 # Case Scheduler
 
-The single scheduled entry point for case processing (**daily**, one run at a time). It moves
-the cases with work waiting to `processing`, runs the pipelines, then moves to `in_progress` the
-cases that every pipeline is done with and that have variant data.
+The single scheduled entry point for case processing (**daily**, one run at a time). It starts the pipelines, then
+the import. It **decides nothing and moves no status**.
 
 ```
-discover_{germline_snv,germline_cnv,somatic_snv,qc,qc_somatic,import}_cases, fetch_case_statuses
-    -> discover_cases -> set_processing (one per tenant)
-    -> trigger_germline_snv_postprocessing ---+-> trigger_import --+
-    -> trigger_somatic_snv_annotation --------+                    |
-    -> trigger_germline_cnv_postprocessing ---+--------------------+-> rediscover_{germline_snv,germline_cnv,
-    -> trigger_quality_control ------------------------------------+   somatic_snv,qc,qc_somatic,
-                                                                       import}_cases,
-                                                                       refresh_case_statuses
-    -> select_ready_cases -> evaluate_cases (one per tenant)
+trigger_germline_snv_postprocessing ---+
+trigger_somatic_snv_annotation --------+-> trigger_import
+trigger_germline_cnv_postprocessing ---+
+trigger_quality_control
+watcher (fails the run when any step failed)
 ```
 
-Each key names the case type and the variant type: **germline_snv**, **germline_cnv** and
-**somatic_snv**. Quality control has one query per case type: **qc** (germline) and **qc_somatic**
-(the tumor of the somatic cases), each decided and journaled on its own (`quality_control`,
-`quality_control_somatic`). Both name their cases to the one quality-control DAG.
+## Who does what
 
-The import waits for SNV post-processing, somatic annotation and CNV post-processing, success or
-not: it loads the annotation tasks they register (for CNV post-processing, the proband's slivar VCF,
-RAD-206). Without that order the import could run first, and the case's variants would only arrive
-with the next day's run.
+| Step | Done by |
+|---|---|
+| Decide each item, journal it (**pipeline_journal**) | each pipeline DAG at its start (**radiant.dags.pipeline_decision**), and **radiant-import** |
+| **submitted** → **processing** | the pipeline DAG that runs work on the case (germline SNV, germline CNV, somatic SNV) and **radiant-import** for the cases it loads. Not quality control: it does not count for the statuses yet |
+| **processing** → **in_progress**, lab email | **radiant-case-evaluation**, started by **radiant-import** with the cases it loaded |
 
-The four "from Cases" DAGs have no schedule of their own: this DAG is their schedule. They can
-still be run by hand for a targeted rerun, which leaves the case statuses alone.
+Why an item does or does not run is in **pipeline_journal**, per item, and **pipeline_state** gives the last row of
+each.
 
-## The only status changes
+## Order and failures
 
-| From         | To            | When                                                                        | Task             |
-| ------------ | ------------- | --------------------------------------------------------------------------- | ---------------- |
-| `submitted`  | `processing`  | the case has work waiting, or already has variant data                      | `set_processing` |
-| `processing` | `in_progress` | no pipeline has work waiting for the case any more, and it has variant data | `evaluate_cases` |
+The four pipelines run in parallel, **all_done**: a failed one never holds the others back. The import waits for
+germline SNV post-processing, somatic SNV annotation and germline CNV post-processing (the slivar VCF, RAD-206),
+whatever their outcome, since it loads the annotation tasks they register. Quality control is not upstream of it
+yet.
 
-Each change is sent to `PATCH /{tenant}/cases/status` with the status it is expected to be in.
-The portal checks it under a row lock: a case a geneticist moved in the meantime comes back
-`updated: false` with its current status, is logged, and is left alone. Every other status
-(`draft`, `in_review`, `completed`, `revoked`...) is never touched.
-
-## What counts as "work waiting"
-
-The union of:
-
-- the cases each pipeline is decided `run` for, from its facts query, with the run's `excluded_tenants`: the
-  cases the "from Cases" DAGs are given (below). For somatic SNV, the cases of its calling tasks decided `run`.
-  A case decided anything else (sequencing pending, no gVCF, tenant excluded, two DRAGEN metrics tarballs...)
-  is **not** counted: it would sit in `processing` with nothing running for it, and never reach `in_progress`;
-- the cases the import is decided `run` for, from the import's own facts (`sql/clinical/import_facts_select.sql`):
-  rows not in `staging_sequencing_experiment` yet, rows staged but not loaded by `import_part` yet (so a case
-  whose `import_part` failed does not look done), and rows of deleted tasks. A task blocked (a value missing
-  from a new row) is not counted.
-
-The question is asked twice with the same queries: before the pipelines (`discover_*`), to pick
-the cases to move to `processing`, and after them (`rediscover_*`), to hold back the cases a
-pipeline still has work for.
-
-The `submitted` cases that already have variant data are moved to `processing` too: work done
-before this DAG saw the case (a manual rerun, data imported before the statuses existed) would
-otherwise leave it `submitted` for ever. The same run's `evaluate_cases` moves them on once
-nothing is pending for them.
-
-## Journal
-
-The import decides and journals itself, in `radiant-import`. Every other pipeline is decided the same way here,
-each with its own three tasks: `discover_<query>_cases`
-reads the facts of the candidates (`sql/clinical/<pipeline>_facts_select.sql`), `decide_<pipeline>` decides each
-item in Python (run, wait, blocked or skip, with all the reasons), and `journal_<pipeline>` writes it to
-`pipeline_journal`. The item is the case, except for somatic SNV: the (case, calling task) pair, its `item_key`
-the calling task.
-
-| `<pipeline>` | `<query>` |
-| --- | --- |
-| `germline_snv` | `germline_snv` |
-| `germline_cnv` | `germline_cnv` |
-| `quality_control` | `qc` |
-| `quality_control_somatic` | `qc_somatic` |
-| `somatic_snv` | `somatic_snv` |
-
-- Germline SNV candidate: a germline case with no experiment yet, or with a member's current experiment not yet
-  annotated, whether its documents are there or not.
-- Germline CNV candidate: a germline case where a member's current experiment has a germline CNV VCF not yet
-  annotated for the case. A case where no member has one (CNVs not called, or joint-called upstream) is not a
-  candidate, and is not journaled.
-- Germline QC candidate: a germline case where a member's current experiment has a CRAM and no QC task for the case.
-- Somatic QC candidate: a somatic case whose proband's current tumor is aligned and has no QC task for the case.
-  Before its tumor is aligned, a somatic case is not a candidate, and is not journaled.
-- Somatic SNV candidate: a calling task that published an `ssnv` VCF, not annotated yet for a somatic case that
-  holds all its experiments. A tumor-normal and a tumor-only call on the same tumor are two items, both annotated.
-  A reason about the task (an experiment not completed, its VCF, its samples) holds for each of its cases; a
-  reason about the case (project, tenant) for that case only.
-
-- `run` is written on every pass. Any other decision is written only when it, or its reasons, differ from the
-  case's last row (view `pipeline_state`).
-- When a case has several reasons, skip wins over blocked, and blocked over wait.
-- Each child closes each `run` row with `succeeded` or `failed` (`journal_outcomes`).
-- A member other than the proband not sequenced or not aligned yet does not block: the case runs with the
-  members present as long as one of them is not annotated, with the absent member's reason on the `run` row.
-  Once they are all annotated, the case waits for the absent member, and runs again when it arrives.
-- A `run` names the members it runs for, each present member not annotated yet: `first_run` when the case was
-  never annotated, `new_sequencing` when it was (a member arrived, or was sequenced again). A somatic SNV `run`
-  is a `first_run` naming no member: the item runs until it is annotated.
-- A reason about one member names it (`patient_id`): two members waiting are two reasons. The reasons about
-  the case (project, tenant, proband count, strategy) name no one.
-- The "from Cases" DAGs run the items decided `run`: `decide_<pipeline>` hands them over in the child's conf, as
-  `case_ids` (both QC pipelines to the one QC DAG), or as `task_ids` for somatic SNV, and the trigger waits for
-  it. If deciding fails, nothing is named and the child runs nothing. The journal is written beside
-  (`journal_<pipeline>`): nothing waits for it, and if it fails `watcher` turns the run red.
-
-## Variant data
-
-`has_variants`, in `sql/clinical/case_status_select.sql`: at least one experiment of the case
-has been imported from an SNV or CNV VCF, and is not deleted. Imported means `ingested_at` after
-the epoch: a row is inserted with `ingested_at` at 1970-01-01 (not NULL) and only gets a real date
-once `import_part` has loaded it.
-
-## Failures do not block the data
-
-The pipelines and the import run with `trigger_rule=all_done`:
-
-- on a day with no `submitted` case `set_processing` is skipped, and the cases already in
-  `processing` or later with new files must still be processed;
-- a portal outage fails `set_processing`, and the pipelines still run;
-- a failed SNV post-processing, somatic annotation or CNV post-processing still lets the import run.
-
-## A failed import, CNV post-processing or quality control stops the run
-
-The second discovery (`rediscover_*`, `refresh_case_statuses`) runs with
-`trigger_rule=none_failed`: if **trigger_import**, **trigger_germline_cnv_postprocessing** or
-**trigger_quality_control** failed, it is `upstream_failed`, and so are `select_ready_cases` and
-`evaluate_cases`. No case is moved to `in_progress` and no laboratory is emailed; the cases stay
-`processing` and the next run that gets through evaluates them.
-
-A failed SNV post-processing or somatic annotation does not stop it, as long as the import
-succeeds: `evaluate_cases` takes **every** `processing` case, not only this run's, and holds back
-any case the second discovery still finds. A case whose pipeline failed stays `processing`, even
-with some variants in (say its SNV post-processing failed but the alignment's CNV VCF was
-imported), and is moved by the later run that finishes it. A case with nothing pending but no
-variant data stays `processing` too, and is logged as a warning by `select_ready_cases`.
-
-Since the `all_done` steps would otherwise let the run end green, `watcher` fails the run as soon
-as any step failed. Look at the failed task and at the child runs.
+A failure holds back only the cases it concerns: **radiant-case-evaluation** leaves a case **processing** while one
+of its germline SNV, germline CNV or somatic SNV items is still running or failed, and a later run that finishes it
+moves it. **watcher** turns the run red when any step failed, since the **all_done** steps would otherwise let it end
+green. Look at the failed task and at the child runs.
 
 ## Tenants
 
-A block list, `excluded_tenants`: tenants left out of case processing. It defaults to `$RADIANT_ETL_EXCLUDED_TENANTS` (comma separated, empty excludes none) and can
-be overridden per run. Discovery reports an excluded tenant's cases as `tenant_excluded`, the
-scheduler passes the same list to the four "from Cases" DAGs so they leave out exactly the same
-tenants, and the status changes skip them. The import is not filtered: it takes every tenant's
-delta, but an excluded tenant's case statuses are still left alone.
+**excluded_tenants** (default **$RADIANT_ETL_EXCLUDED_TENANTS**, comma separated, empty excludes none) is passed to
+every DAG it starts: the pipelines journal their cases as **tenant_excluded** and do not run them, and no status of
+theirs moves. The import loads every tenant's data, but leaves the excluded tenants' statuses alone.
 
-Status changes are sent once per tenant, as one mapped task each. A tenant that is not excluded
-but that the portal refuses with a 403 (the service account is not granted `can_ingest_data` at
-every lab, `'*'`, of that tenant) is logged and its task **skipped**, not failed; the other tenants
-carry on. The "from Cases" DAGs would still run Nextflow on its cases and fail at registration, so
-grant `can_ingest_data` at `'*'`, or add the tenant to `excluded_tenants`.
-
-## Notification
-
-The laboratories are emailed at the end of the run, not when the pipelines register their
-outputs: the manifest then holds every pipeline's results. Every case the run is done with is
-emailed, whether its status changed or not:
-
-- the cases moved to `in_progress`;
-- the cases already past `processing` (`in_progress`, `in_review`, `completed`...) that the first
-  discovery found work for and the second does not: new files for a case already open for
-  analysis. Their status is left alone.
-
-A `submitted` or `processing` case is not emailed until it reaches `in_progress`, and a case a
-pipeline failed on is emailed by the later run that finishes it. `discover_cases` hands its cases
-to `select_ready_cases` as the `cases_with_work` XCom, pulled rather than passed: if discovery
-failed, the cases are still moved to `in_progress` and emailed, only the others are not.
-
-The "from Cases" DAGs no longer email. `evaluate_cases` is a mapped task group, one chain per
-tenant, so a tenant skipped or failed never holds back another tenant's email:
-
-- **set_in_progress** sends the status change; no call for a tenant with nothing to move;
-- **create_case_group** POSTs `/{tenant}/case_groups` with the cases now in `in_progress` and the
-  ones to notify unchanged, under the name `results-<run tag>` (the labs see it in the manifest's
-  file name). It counts the cases an earlier attempt of the same task moved too, is skipped when
-  there is no case to notify, and on a 403 like the status change. The name is the key and the
-  call overwrites, so a retry lands on the same group;
-- **notify_labs** POSTs `/{tenant}/case_groups/{name}/notify`. The portal emails each diagnosis
-  laboratory the TSV manifest of its cases' documents, read at sending time. Skipped when
-  `notify` is false.
-
-The log holds one line per laboratory:
-
-| Status                   | Meaning                                        | Task outcome     |
-| ------------------------ | ---------------------------------------------- | ---------------- |
-| **sent**                 | Email sent with the manifest attached          | success          |
-| **skipped_no_contact**   | The organization has no `notification_emails`  | warning, success |
-| **skipped_no_documents** | Nothing registered for that laboratory's cases | warning, success |
-| **failed**               | The SMTP relay refused the email               | task fails       |
-
-> **A retry re-sends.** The portal keeps no record of what was emailed: clearing **notify_labs**
-> emails every laboratory of that tenant again. Clear one mapped instance, not the whole group.
-
-A **500** means nothing was sent: the tenant has no notification template mounted, or the SMTP
-settings are invalid. The manual **notify_cases** DAG re-sends an existing group.
-
-A case already `in_progress` (or later) that gets new data is processed and imported, keeps its
-status, and is emailed again with its whole manifest.
+A tenant that the portal refuses with a 403 (the service account is not granted **can_ingest_data** at every lab,
+**'*'**, of that tenant) has its status moves **skipped**, not failed.
 
 ## Parameters
 
-| Param              | Default                         | Meaning                                                                                                                             |
-| ------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `excluded_tenants` | `$RADIANT_ETL_EXCLUDED_TENANTS` | Tenants left out of case processing, see Tenants. Empty excludes none.                                                              |
-| `notify`           | **true**                        | Email the laboratories of the cases moved to `in_progress` and of those past it the run processed. False still creates the case group, so **notify_cases** can send later. |
+| Param | Default | Meaning |
+|---|---|---|
+| **excluded_tenants** | **$RADIANT_ETL_EXCLUDED_TENANTS** | Tenants left out of case processing, see Tenants |
+| **notify** | **true** | Passed to the import, then to **radiant-case-evaluation**: email the laboratories. False still creates the case group, so **notify_cases** can send later |
 
 ## Child runs
 
-The five child run ids are pinned to this run (`sanitize_run_tag(run_id)`), so a retry resets the
-same child run and Nextflow's `-resume` still finds its launch directory. The tag drops the `__`
-after the run type: Airflow 3.2 refuses a triggered run whose id starts with `scheduled__`.
-
-## Portal connection
-
-Uses the Airflow Connection `radiant_api_conn`, same as the "from Cases" DAGs: `host` = the API
-base url, `login` / `password` = the OIDC client credentials, `extra` =
-`{"token_url": "...", "scope": "..."}`.
+The five child run ids are pinned to this run (**sanitize_run_tag(run_id)**), so a retry resets the same child run
+and Nextflow's **-resume** still finds its launch directory, and every journal row of the run shares one run tag. The
+tag drops the **\_\_** after the run type: Airflow 3.2 refuses a triggered run whose id starts with **scheduled\_\_**.
