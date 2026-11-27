@@ -16,7 +16,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel
 
-from radiant.tasks.importing.resolve import decide_entries as decide_import
+from radiant.tasks.importing.resolve import decide as decide_import
 from radiant.tasks.journal import Entry, Pipeline
 from radiant.tasks.nextflow.cnv.resolve import decide_cases as decide_cnv_cases
 from radiant.tasks.nextflow.qc.resolve import decide_cases as decide_qc_cases
@@ -33,7 +33,8 @@ DECIDE: dict[Pipeline, Callable[[list[dict], list[str]], list[Entry]]] = {
     Pipeline.QUALITY_CONTROL: decide_qc_cases,
     Pipeline.QUALITY_CONTROL_SOMATIC: decide_qc_somatic_cases,
     Pipeline.SOMATIC_SNV: decide_somatic_snv_tasks,
-    Pipeline.IMPORT: decide_import,
+    # The import loads every tenant: no exclusion.
+    Pipeline.IMPORT: lambda rows, _excluded_tenants: decide_import(rows).entries,
 }
 
 SUBMITTED = "submitted"

@@ -1,7 +1,7 @@
 import datetime
 
 from radiant.tasks.decision import Decision, Reason, ReasonCode
-from radiant.tasks.importing.resolve import decide, decide_entries, outcome_entries
+from radiant.tasks.importing.resolve import decide, outcome_entries
 from radiant.tasks.journal import Pipeline
 from radiant.tasks.starrocks.partition import SequencingExperimentPartitionAssigner
 
@@ -99,12 +99,6 @@ def test_an_unknown_strategy_blocks_the_task():
     [entry] = decide([fact_row(experimental_strategy="rna")]).entries
     assert entry.decision == Decision.BLOCKED
     assert entry.reasons == (Reason(code=ReasonCode.UNSUPPORTED_STRATEGY, detail="rna"),)
-
-
-def test_decide_entries_ignores_excluded_tenants():
-    """The import loads every tenant."""
-    [entry] = decide_entries([fact_row(tenant_code="excluded")], ["excluded"])
-    assert entry.decision == Decision.RUN
 
 
 def test_an_item_still_in_the_facts_after_the_import_failed():

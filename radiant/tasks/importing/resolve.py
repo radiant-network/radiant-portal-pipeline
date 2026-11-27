@@ -57,11 +57,6 @@ def decide(fact_rows: list[dict]) -> ImportDecision:
     return decision
 
 
-def decide_entries(fact_rows: list[dict], excluded_tenants: list[str] = ()) -> list[Entry]:
-    """The entries only, for the case scheduler. The import loads every tenant: `excluded_tenants` does not apply."""
-    return decide(fact_rows).entries
-
-
 def outcome_entries(entries: list[dict], fact_rows_after: list[dict]) -> list[Entry]:
     """`failed` for each item decided `run` that the facts still hold after the import, `succeeded` for the others."""
     pending = {(r["case_id"], str(r["task_id"])) for r in fact_rows_after}
