@@ -60,7 +60,10 @@ variants carried AR, AD or nothing).
 
 Every ClinVar read skips variants whose best RCV has fewer than `clinvar.min_stars` stars (`clinvar_rcv_summary`).
 PVS1, PM1 and PP2 are dropped in a gene whose every ClinGen gene-disease validity is Disputed, Refuted or No Known
-Disease Relationship (`clingen.no_disease_drops`).
+Disease Relationship (`clingen.no_disease_drops`). The classification drops a criterion that every ClinGen VCEP
+specification of the transcript's gene declares not applicable (CSpec registry, 138 genes: PVS1 in 32 gain-of-function
+genes, PP3 in 5 mosaic ones...), listed in `acmg_cancelled` with `cancelled_by` CSpec. A gene in several
+specifications keeps a criterion one of them applies. Gene-specific thresholds are not read yet.
 
 Missing from the computed criteria: PS1/PM5, PP4 in the class (priority only), PS3/BS3, BP3, BP5, PP5/BP6; PS4
 from published cases (no literature source). A ClinGen VCEP gives all of them for the variants it curated (below).
@@ -135,6 +138,12 @@ newer release:
 | `erepo/erepo.tsv` | https://erepo.clinicalgenome.org/evrepo/api/classifications/all?matchMode=exact&format=tabbed (slow: ~2 min) |
 | `clinvar_citations/var_citations.txt` | https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/var_citations.txt (260 MB) |
 
+## CSpec registry
+
+Each run rebuilds `cspec_not_applicable` in `--output-db` from the released specifications of the ClinGen Criteria
+Specification Registry (public), copied once under `<S3_BUCKET>/cspec/specs.json`. Download them again to take newer
+specifications: `.venv/bin/python -m acmg.cspec specs.json` (~14 MB).
+
 ## Gene symbols
 
 Ensembl 114 (VEP), ClinVar, OMIM, ClinGen and HPO each name genes at their own release (SPATA5L1 is AFG2B since
@@ -173,7 +182,7 @@ criteria (PM1, PP2) count the spike itself (`ranks_without_clinvar_window_criter
 
 | | |
 |---|---|
-| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `ensembl_exon_by_gene`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/`, the HGNC file under `<S3_BUCKET>/hgnc/`, the erepo export under `<S3_BUCKET>/erepo/`, `var_citations.txt` under `<S3_BUCKET>/clinvar_citations/` |
+| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `ensembl_exon_by_gene`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/`, the HGNC file under `<S3_BUCKET>/hgnc/`, the erepo export under `<S3_BUCKET>/erepo/`, the CSpec export under `<S3_BUCKET>/cspec/`, `var_citations.txt` under `<S3_BUCKET>/clinvar_citations/` |
 | Writes | the run's files under `s3://<bucket>/runs/<run id>/` (deleted at the end), the tables of `--output-db` (created if missing; **refused if it is the shared or the tenant database**) |
 | Never | DROP, TRUNCATE, UPDATE or DELETE on a Radiant table |
 | Prints | counts per class and per criterion, file and row counts, timings |

@@ -342,10 +342,13 @@ def _criterion(name: str, rs: Ruleset) -> pl.Expr:
     return expr
 
 
-def _settle(exprs: dict[str, pl.Expr], rs: Ruleset) -> tuple[dict[str, pl.Expr], pl.Expr]:
-    """Evidence of each criterion after exclusions, then point caps; and the list of the criteria they dropped."""
+def _settle(
+    exprs: dict[str, pl.Expr], rs: Ruleset, cancelled: list[pl.Expr]
+) -> tuple[dict[str, pl.Expr], pl.Expr]:
+    """Evidence of each criterion after exclusions, then point caps; and the list of the criteria dropped, these and
+    the ones already in `cancelled`."""
     met = {name: expr.is_not_null() for name, expr in exprs.items()}
-    cancelled = []
+    cancelled = list(cancelled)
     for winner, losers in rs.exclusions.items():
         for loser in losers:
             cancelled.append(_cancelled(loser, winner, met[winner] & exprs[loser].is_not_null()))
@@ -379,13 +382,23 @@ def evaluate(facts: pl.DataFrame | pl.LazyFrame, rs: Ruleset, names: list[str], 
 
 def to_wide(rows: pl.DataFrame, keys: list[str]) -> pl.DataFrame:
     """From `keys` + a `criteria` list of criterion rows (as evaluate writes them) to one Evidence column per
-    criterion, null when not met."""
+    criterion, null when not met. With a `not_applicable` list column (CSpec), its criteria are dropped and listed in
+    `cspec_cancelled`."""
+    na = [c for c in ("not_applicable",) if c in rows.columns]
     met = (
-        rows.select(*keys, "criteria")
+        rows.select(*keys, "criteria", *na)
         .explode("criteria")
         .filter(pl.col("criteria").struct.field("criterion").is_not_null())
         .unnest("criteria")
     )
+    cancelled = None
+    if na:
+        # On the long form (~2 criteria per row), not 31 list lookups per wide row: 3x faster at classification.
+        hit = pl.col("not_applicable").list.contains(pl.col("criterion")).fill_null(False)
+        cancelled = met.filter(hit).group_by(keys).agg(
+            cspec_cancelled=pl.struct(criterion="criterion", cancelled_by=pl.lit("CSpec"))
+        )
+        met = met.filter(~hit).drop("not_applicable")
     # The classification query passes only what combine reads: the explanation fields stay in the criteria tables.
     fields = EVIDENCE_DTYPE.to_schema()
     met = met.with_columns(pl.lit(None, t).alias(f) for f, t in fields.items() if f not in met.columns).select(
@@ -394,13 +407,19 @@ def to_wide(rows: pl.DataFrame, keys: list[str]) -> pl.DataFrame:
     wide = rows.select(keys)
     if met.height:
         wide = wide.join(met.pivot(on="criterion", index=keys, values="evidence"), on=keys, how="left")
+    if cancelled is not None:
+        wide = wide.join(cancelled, on=keys, how="left").with_columns(
+            pl.col("cspec_cancelled").fill_null([]).cast(pl.List(CANCELLED_DTYPE))
+        )
     return wide.with_columns(pl.lit(None, EVIDENCE_DTYPE).alias(c) for c in CRITERIA if c not in wide.columns)
 
 
 def combine(evidence: pl.DataFrame | pl.LazyFrame, rs: Ruleset, keys: list[str]) -> pl.LazyFrame:
-    """Classification from one Evidence column per criterion."""
+    """Classification from one Evidence column per criterion; `cspec_cancelled`, when there, lists the criteria
+    to_wide already dropped."""
     # One struct column per criterion: a list of structs would be simpler, but Polars builds it ~15x slower.
-    exprs, cancelled = _settle({name: pl.col(name) for name in CRITERIA}, rs)
+    dropped = [pl.col("cspec_cancelled")] if "cspec_cancelled" in evidence.lazy().collect_schema().names() else []
+    exprs, cancelled = _settle({name: pl.col(name) for name in CRITERIA}, rs, dropped)
     fields = lambda name: [pl.col(c).struct.field(name) for c in exprs]  # noqa: E731
     stand_alone_benign = pl.any_horizontal(
         [(s == Strength.STAND_ALONE) & (p < 0) for s, p in zip(fields("strength"), fields("points"), strict=True)]

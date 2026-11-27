@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 
 import polars as pl
 import pyarrow.parquet as pq
-from acmg import citations, clingen, erepo, hgnc, hpo
+from acmg import citations, clingen, cspec, erepo, hgnc, hpo
 from acmg.db import HERE, IDENTIFIERS, connect, execute, sql
 from acmg.models import OCCURRENCE_FACT_SCHEMA, VARIANT_FACT_SCHEMA, Ruleset
 from acmg.rules import OCCURRENCE_CRITERIA, VARIANT_CRITERIA, combine, evaluate, to_wide
@@ -243,6 +243,18 @@ def load_clingen(output_db: str, prefix: str, s3, symbols: pl.DataFrame) -> int:
     return genes.height
 
 
+def load_cspec(output_db: str, prefix: str, s3, symbols: pl.DataFrame) -> int:
+    """Rebuilds the cspec_not_applicable table from the CSpec export on S3, read by the classification."""
+    rows = hgnc.normalize(cspec.not_applicable(json.loads(read_text(s3, cspec.SPECS))), symbols).unique()
+    pq.write_table(rows.to_arrow(), f"{prefix}/cspec/not_applicable.parquet", filesystem=s3)
+    columns = ", ".join(cspec.SCHEMA)
+    execute(
+        f"INSERT OVERWRITE {output_db}.cspec_not_applicable ({columns})\nSELECT {columns}\n"
+        f"FROM FILES(\n{files_properties(f's3://{prefix}/cspec/not_applicable.parquet')}\n)"
+    )
+    return rows.height
+
+
 def load_erepo(output_db: str, prefix: str, s3, rs: Ruleset) -> dict:
     """Rebuilds the clingen_erepo table from the ClinGen Evidence Repository export on S3, read by the VCEP step."""
     variants, unmapped = erepo.classifications(read_text(s3, erepo.FILE), rs)
@@ -388,6 +400,7 @@ def run(args) -> dict:
         rs = Ruleset.load(Path(args.ruleset))
         symbols = load_hgnc(args.output_db, prefix, s3)
         log(hgnc_symbols=symbols.height, clingen_genes=load_clingen(args.output_db, prefix, s3, symbols))
+        log(cspec_not_applicable=load_cspec(args.output_db, prefix, s3, symbols))
         log(erepo=load_erepo(args.output_db, prefix, s3, rs))
         log(clinvar_citation_variations=load_citations(args.output_db, prefix, s3))
         steps = {}

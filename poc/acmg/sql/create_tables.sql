@@ -7,6 +7,15 @@ CREATE TABLE IF NOT EXISTS ${output_db}.parentage_doubtful (
 PRIMARY KEY (seq_id)
 DISTRIBUTED BY HASH(seq_id) BUCKETS 1;
 
+-- Criteria every ClinGen VCEP of the gene (current HGNC symbol) declares not applicable, rebuilt at each run from
+-- the CSpec registry export on S3 (acmg.cspec): the classification drops them.
+CREATE TABLE IF NOT EXISTS ${output_db}.cspec_not_applicable (
+    symbol VARCHAR(100) NOT NULL,
+    criterion VARCHAR(10) NOT NULL
+)
+PRIMARY KEY (symbol, criterion)
+DISTRIBUTED BY HASH(symbol) BUCKETS 1;
+
 -- Current HGNC symbol of each current or previous symbol, rebuilt at each run from HGNC on S3 (acmg.hgnc).
 CREATE TABLE IF NOT EXISTS ${output_db}.gene_symbol (
     symbol VARCHAR(100) NOT NULL,

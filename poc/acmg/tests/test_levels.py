@@ -59,6 +59,18 @@ def test_exclusion_across_levels_applies_at_classification():
     assert rows[1]["acmg_cancelled"] == [{"criterion": "PM3", "cancelled_by": "BP2"}]
 
 
+def test_cspec_not_applicable_criterion_is_dropped_and_listed():
+    row = {"seq_id": 7, "locus_id": 1, "transcript_id": "T1", "not_applicable": ["PVS1", "PP2"]}
+    criteria = [
+        {"criterion": "PVS1", "code": "PVS1", "strength": "Very Strong", "points": 8, "value": None, "threshold": None},
+        {"criterion": "PM2", "code": "PM2_Supporting", "strength": "Supporting", "points": 1, "value": None,
+         "threshold": None},
+    ]  # fmt: skip
+    got = combine(to_wide(pl.DataFrame([row | {"criteria": criteria}]), KEYS), RULESET, KEYS).collect().row(0, named=True)
+    assert (got["acmg_criteria"], got["acmg_points"]) == (["PM2_Supporting"], 1)
+    assert got["acmg_cancelled"] == [{"criterion": "PVS1", "cancelled_by": "CSpec"}]
+
+
 def test_occurrence_without_criteria_is_vus_with_zero_points():
     last = three_steps(FACTS).row(3, named=True)
     assert (last["acmg_class"], last["acmg_points"], last["acmg_criteria"]) == ("VUS", 0, [])
