@@ -129,6 +129,7 @@ class Pm4Rule(Frozen):
 
 
 class DeNovoRule(Frozen):
+    confirmed_points: Annotated[float, Field(gt=0)]
     assumed_points: Annotated[float, Field(gt=0)]
 
 
@@ -351,7 +352,8 @@ class Fact(BaseModel):
     not_affected_carriers: int = 0
     not_affected_total: int = 0
     # The case's own evidence, from occurrence_facts.sql: counts over its affected members (the proband for now).
-    denovo_probands: int = 0
+    denovo_confirmed: int = 0
+    denovo_assumed: int = 0
     affected_carrier_parents: int = 0
     affected_noncarrier_parents: int = 0
     comphet_p_trans: int = 0
@@ -362,7 +364,8 @@ class Fact(BaseModel):
 
 
 OCCURRENCE_FIELDS = [
-    "denovo_probands",
+    "denovo_confirmed",
+    "denovo_assumed",
     "affected_carrier_parents",
     "affected_noncarrier_parents",
     "comphet_p_trans",
@@ -409,6 +412,7 @@ class AuditCriteria(BaseModel):
     PM3: Evidence | None = None
     PM4: Evidence | None = None
     PM6: Evidence | None = None
+    PS2: Evidence | None = None
     PS4: Evidence | None = None
     PP1: Evidence | None = None
     PP2: Evidence | None = None
@@ -420,7 +424,6 @@ class AuditCriteria(BaseModel):
     PVS1: Evidence | None = None
     # Only a ClinGen VCEP gives these: nothing to compute them from.
     PS1: Evidence | None = None
-    PS2: Evidence | None = None
     PS3: Evidence | None = None
     PM5: Evidence | None = None
     PP4: Evidence | None = None

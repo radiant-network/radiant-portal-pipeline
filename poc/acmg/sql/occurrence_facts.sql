@@ -101,7 +101,8 @@ SELECT
     CAST(o.seq_id AS BIGINT) AS seq_id,
     o.locus_id,
     om.inheritance_code AS omim_inheritance,
-    CAST(o.de_novo AS BIGINT) AS denovo_probands,
+    CAST(IF(pd.seq_id IS NULL, o.de_novo, 0) AS BIGINT) AS denovo_confirmed,
+    CAST(IF(pd.seq_id IS NULL, 0, o.de_novo) AS BIGINT) AS denovo_assumed,
     CAST(o.carrier_parents AS BIGINT) AS affected_carrier_parents,
     CAST(o.noncarrier_parents AS BIGINT) AS affected_noncarrier_parents,
     CAST(IF(ch.category = 4, 1, 0) AS BIGINT) AS comphet_p_trans,
@@ -112,4 +113,5 @@ SELECT
 FROM occurrence o
 LEFT JOIN omim_locus om ON om.locus_id = o.locus_id
 LEFT JOIN comphet ch ON ch.seq_id = o.seq_id AND ch.locus_id = o.locus_id
+LEFT JOIN ${output_db}.parentage_doubtful pd ON pd.seq_id = o.seq_id
 WHERE o.de_novo + o.carrier_parents + o.noncarrier_parents > 0 OR ch.category IS NOT NULL

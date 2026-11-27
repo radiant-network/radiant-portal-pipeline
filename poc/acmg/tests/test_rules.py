@@ -251,12 +251,18 @@ def test_bs2_gnomad_or_local_homozygotes_in_omim_gene():
     ("probands", "code"), [(1, "PM6_Supporting"), (2, "PM6"), (4, "PM6_Strong"), (8, "PM6_VeryStrong")]
 )
 def test_pm6_svi_points_from_assumed_de_novo(probands, code):
-    assert codes(denovo_probands=probands, **NOT_RARE) == [code]
+    assert codes(denovo_assumed=probands, **NOT_RARE) == [code]
 
 
-def test_common_variant_called_de_novo_gets_no_pm6():
-    assert codes(denovo_probands=1, gnomad_af=0.02, **COMMON) == ["BS1"]
-    assert codes(denovo_probands=1, gnomad_af=0.06, **COMMON) == ["BA1"]
+@pytest.mark.parametrize(("probands", "code"), [(1, "PS2_Moderate"), (2, "PS2"), (4, "PS2_VeryStrong")])
+def test_ps2_svi_points_from_confirmed_de_novo(probands, code):
+    assert codes(denovo_confirmed=probands, **NOT_RARE) == [code]
+
+
+def test_common_variant_called_de_novo_gets_no_ps2_or_pm6():
+    for denovo in ("denovo_confirmed", "denovo_assumed"):
+        assert codes(**{denovo: 1}, gnomad_af=0.02, **COMMON) == ["BS1"]
+        assert codes(**{denovo: 1}, gnomad_af=0.06, **COMMON) == ["BA1"]
 
 
 def test_pm3_svi_points_from_comphet_partners():
@@ -359,9 +365,9 @@ def test_cancelled_lists_exclusions_and_caps_once():
     assert [c.model_dump() for c in lof.acmg_cancelled] == [{"criterion": "PP3", "cancelled_by": "PVS1"}]
     capped = run(**MISSENSE, **HOTSPOT, revel_score=0.95)
     assert [c.model_dump() for c in capped.acmg_cancelled] == [{"criterion": "PM1", "cancelled_by": "PP3"}]
-    common = run(denovo_probands=1, gnomad_af=0.06, **COMMON)
+    common = run(denovo_confirmed=1, gnomad_af=0.06, **COMMON)
     assert [c.model_dump() for c in common.acmg_cancelled] == [
         {"criterion": "BS1", "cancelled_by": "BA1"},
-        {"criterion": "PM6", "cancelled_by": "BA1"},
+        {"criterion": "PS2", "cancelled_by": "BA1"},
     ]
     assert run(**NOT_RARE).acmg_cancelled == []

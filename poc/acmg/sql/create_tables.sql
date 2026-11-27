@@ -1,5 +1,12 @@
 CREATE DATABASE IF NOT EXISTS ${output_db};
 
+-- Cases whose parentage is in doubt (e.g. thousands of de novo calls), filled by hand: their de novo stay assumed (PM6).
+CREATE TABLE IF NOT EXISTS ${output_db}.parentage_doubtful (
+    seq_id BIGINT NOT NULL
+)
+PRIMARY KEY (seq_id)
+DISTRIBUTED BY HASH(seq_id) BUCKETS 1;
+
 -- Current HGNC symbol of each current or previous symbol, rebuilt at each run from HGNC on S3 (acmg.hgnc).
 CREATE TABLE IF NOT EXISTS ${output_db}.gene_symbol (
     symbol VARCHAR(100) NOT NULL,

@@ -2,7 +2,7 @@
 -- computed ones of the variant, except on frequency (BA1, BS1, PM2): when the panel and the computed criteria point in
 -- opposite directions (PM2 against BA1 or BS1), our frequency criteria stay (newer gnomAD) and the panel's are dropped;
 -- otherwise the panel's replace ours (gene-specific thresholds). The case's own criteria stay unless the panel applied
--- the same one: a panel PS2 or PM6 is the de novo evidence of our PM6, so it drops it.
+-- the same one: a panel PS2 or PM6 is the same de novo evidence as ours (PS2 or PM6), so it drops it.
 -- Runs after the variant and occurrence steps, before the classification: a rerun without the VCEP row restores them.
 DELETE FROM ${output_db}.acmg_variant_criteria
 WHERE criterion NOT IN ('BA1', 'BS1', 'PM2')
@@ -36,7 +36,7 @@ WHERE criterion IN ('BA1', 'BS1', 'PM2')
 
 DELETE FROM ${output_db}.acmg_occurrence_criteria
 WHERE seq_id IN (${cases})
-    AND concat(locus_id, ':', criterion) IN (
+    AND concat(locus_id, ':', IF(criterion = 'PS2', 'PM6', criterion)) IN (
         SELECT concat(cv.locus_id, ':', IF(u.c.criterion = 'PS2', 'PM6', u.c.criterion))
         FROM ${shared_db}.clinvar cv
         JOIN ${output_db}.clingen_erepo e ON e.variation_id = cv.name

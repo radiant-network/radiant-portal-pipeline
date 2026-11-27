@@ -23,7 +23,7 @@ def apply_panel(panel: list[str], ours: tuple[str, ...] = (), gnomad_an: int | N
         " DISTRIBUTED BY HASH(locus_id) BUCKETS 1;\n"
         f"INSERT INTO {DB}.clingen_erepo (variation_id, criteria) VALUES ('100', {criteria(*panel)});\n"
         f"INSERT INTO {DB}.acmg_occurrence_criteria (seq_id, locus_id, criterion, code, strength, points, ruleset_version)"
-        " VALUES (7, 1, 'PM3', 'PM3', 'Moderate', 2, 'x'), (7, 1, 'PM6', 'PM6', 'Supporting', 1, 'x'),"
+        " VALUES (7, 1, 'PM3', 'PM3', 'Moderate', 2, 'x'), (7, 1, 'PS2', 'PS2_Moderate', 'Moderate', 2, 'x'),"
         " (7, 1, 'BS4', 'BS4', 'Strong', -4, 'x'), (8, 1, 'PM3', 'PM3', 'Moderate', 2, 'x')"
     )
     if gnomad_an is not None:
@@ -70,14 +70,14 @@ def local_starrocks():
 
 
 def test_case_criteria_stay_when_the_panel_did_not_apply_them():
-    assert occurrence_after(["PS3_Strong"]) == ["BS4", "PM3", "PM6"]
+    assert occurrence_after(["PS3_Strong"]) == ["BS4", "PM3", "PS2"]
 
 
 def test_panel_pm3_drops_ours_whatever_the_strength():
-    assert occurrence_after(["PM3_Strong"]) == ["BS4", "PM6"]
+    assert occurrence_after(["PM3_Strong"]) == ["BS4", "PS2"]
 
 
-def test_panel_ps2_drops_our_pm6():
+def test_panel_de_novo_drops_ours():
     assert occurrence_after(["PS2_Strong"]) == ["BS4", "PM3"]
     assert occurrence_after(["PM6_Supporting"]) == ["BS4", "PM3"]
 

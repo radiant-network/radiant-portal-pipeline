@@ -9,7 +9,7 @@ from acmg.rules import OCCURRENCE_CRITERIA, VARIANT_CRITERIA, classify, combine,
 RULESET = Ruleset.load(Path(__file__).parents[1] / "ruleset.yaml")
 KEYS = ["seq_id", "locus_id", "transcript_id"]
 FACTS = [
-    {"consequences": ["stop_gained"], "gnomad_loeuf": 0.3, "gene_plp_lof": 2, "denovo_probands": 1},  # PVS1, PM2, PM6
+    {"consequences": ["stop_gained"], "gnomad_loeuf": 0.3, "gene_plp_lof": 2, "denovo_confirmed": 1},  # PVS1, PM2, PS2
     {"consequences": ["missense_variant"], "revel_score": 0.95, "comphet_p_trans": 1, "omim_inheritance": ["AD"]},
     {"gnomad_af": 0.2, "gnomad_an": 150_000, "affected_noncarrier_parents": 1, "omim_inheritance": ["AD"]},  # BA1, BS4
     {"gnomad_af": 0.001, "gnomad_an": 150_000},  # nothing met

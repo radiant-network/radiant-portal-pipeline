@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-21
+version: poc-22
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -133,16 +133,19 @@ bs2:
   min_local_hom_not_affected: 2   # not-affected homozygotes of the tenant (WGS + WXS)
   local_strength: Supporting
 
-# ClinGen SVI points -> strength, for the criteria scored in points (PM3, PM6). Strongest first.
+# ClinGen SVI points -> strength, for the criteria scored in points (PM3, PS2, PM6). Strongest first.
 svi_points:
   VeryStrong: 4
   Strong: 2
   Moderate: 1
   Supporting: 0.5
 
-# PM6: slivar de novo mode in an affected proband, both parents unaffected (slivar gate). Parentage is not loaded, so every de novo is "assumed".
+# slivar de novo mode in an affected proband, both parents unaffected (slivar gate). Families are real, so parentage
+# counts as confirmed (PS2) except in the cases listed in the output db's parentage_doubtful table (PM6, assumed).
+# Points per proband, phenotype consistent with the gene but not highly specific.
 de_novo:
-  assumed_points: 0.5             # per proband, phenotype consistent with the gene but not highly specific
+  confirmed_points: 1.0
+  assumed_points: 0.5
 
 # PM3: comphet partner (RAD-39) that is P/LP in ClinVar. "In trans" when the case is a complete trio.
 pm3:
@@ -214,8 +217,8 @@ inheritance_fit:
 
 # Criterion -> criteria it cancels when it is met.
 exclusions:
-  BA1: [BS1, PM6]   # PM6: a common variant called de novo is an artefact (parental dropout, wrong pedigree)
-  BS1: [PM6]
+  BA1: [BS1, PS2, PM6]   # a common variant called de novo is an artefact (parental dropout, wrong pedigree)
+  BS1: [PS2, PM6]
   PVS1: [PP3, BP4, PM4]   # PM4: same truncation counted twice (Abou Tayoun 2018); PP3/BP4: Walker 2023
   BP2: [PM3]    # same comphet pairs: PM3 assumes a recessive disease, BP2 a dominant one
 

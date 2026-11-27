@@ -196,9 +196,14 @@ def bs2(rs: Ruleset) -> pl.Expr:
     return _graded(rs, "BS2", [*grades, local], {"gnomad_hom": gnomad_hom, "cohort_hom": local_hom})
 
 
+def ps2(rs: Ruleset) -> pl.Expr:
+    points = pl.col("denovo_confirmed") * rs.de_novo.confirmed_points
+    return _scored(rs, "PS2", points, rs.svi_points, details={"denovo_probands": pl.col("denovo_confirmed")})
+
+
 def pm6(rs: Ruleset) -> pl.Expr:
-    points = pl.col("denovo_probands") * rs.de_novo.assumed_points
-    return _scored(rs, "PM6", points, rs.svi_points, details={"denovo_probands": pl.col("denovo_probands")})
+    points = pl.col("denovo_assumed") * rs.de_novo.assumed_points
+    return _scored(rs, "PM6", points, rs.svi_points, details={"denovo_probands": pl.col("denovo_assumed")})
 
 
 def pm3(rs: Ruleset) -> pl.Expr:
@@ -306,6 +311,7 @@ CRITERIA = {
     "PM3": pm3,
     "PM4": pm4,
     "PM6": pm6,
+    "PS2": ps2,
     "PS4": ps4,
     "PP1": pp1,
     "PP2": pp2,
@@ -317,12 +323,12 @@ CRITERIA = {
     "PVS1": pvs1,
 }
 # Criteria only a ClinGen VCEP gives (acmg.erepo): the columns exist so that its evidence is combined, never computed.
-EXTERNAL_CRITERIA = ["PS1", "PS2", "PS3", "PM5", "PP4", "PP5", "BS3", "BP3", "BP5", "BP6"]
+EXTERNAL_CRITERIA = ["PS1", "PS3", "PM5", "PP4", "PP5", "BS3", "BP3", "BP5", "BP6"]
 CRITERIA |= dict.fromkeys(EXTERNAL_CRITERIA, _external)
 
 
 VARIANT_CRITERIA = ["BA1", "BS1", "BS2", "PM2", "PM1", "PM4", "PS4", "PP2", "PP3", "BP1", "BP4", "BP7", "PVS1"]
-OCCURRENCE_CRITERIA = ["BS4", "PM3", "PM6", "PP1", "BP2"]
+OCCURRENCE_CRITERIA = ["BS4", "PM3", "PS2", "PM6", "PP1", "BP2"]
 assert sorted(VARIANT_CRITERIA + OCCURRENCE_CRITERIA + EXTERNAL_CRITERIA) == sorted(CRITERIA)
 
 
@@ -348,7 +354,7 @@ def _settle(exprs: dict[str, pl.Expr], rs: Ruleset) -> tuple[dict[str, pl.Expr],
         total = exprs[capped].struct.field("points") + exprs[cap.partner].struct.field("points").fill_null(0)
         cancelled.append(_cancelled(capped, cap.partner, (total > cap.max_points).fill_null(False)))
         exprs[capped] = pl.when(total <= cap.max_points).then(exprs[capped]).otherwise(pl.lit(None, EVIDENCE_DTYPE))
-    # A loser of two winners (PM6 under BA1 and BS1) is listed once, under its first.
+    # A loser of two winners (PS2 under BA1 and BS1) is listed once, under its first.
     unique = pl.concat_list(cancelled).list.drop_nulls().list.eval(
         pl.element().filter(pl.element().struct.field("criterion").is_first_distinct())
     )
