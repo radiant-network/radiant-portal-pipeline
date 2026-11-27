@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-28
+version: poc-29
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -224,12 +224,13 @@ priority:
 # - A HET variant in a recessive-only gene, with no comphet partner classed VUS or above, cannot explain the case
 #   alone (a second allele may be missed: CNV, deep intronic). HOM, HEM (a boy's X) and UNK are never penalized.
 # - A variant in a dominant-only gene carried by a non-affected parent: unlikely causal, unless the penetrance is
-#   incomplete.
+#   incomplete. Half the recessive penalty: clinicians kept such variants P/LP (incomplete penetrance), and the
+#   simulation cannot weigh it (a spike is never inherited).
 inheritance_fit:
   recessive: [AR, XLR]
   dominant: [AD, XLD]
   single_het_recessive_points: -4
-  healthy_parent_dominant_points: -4
+  healthy_parent_dominant_points: -2
 
 # Criterion -> criteria it cancels when it is met.
 exclusions:

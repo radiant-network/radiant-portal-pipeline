@@ -11,7 +11,9 @@ def criteria(*codes: str) -> str:
     return "[" + ", ".join(f"row('{c.split('_')[0]}', '{c}', 'Strong', 4)" for c in codes) + "]"
 
 
-def apply_panel(panel: list[str], ours: tuple[str, ...] = (), gnomad_an: int | None = 150_000) -> None:
+def apply_panel(
+    panel: list[str], ours: tuple[str, ...] = (), gnomad_an: int | None = 150_000, gnomad_af: float = 0.00001
+) -> None:
     """Runs the VCEP step for a panel with these codes on a variant whose computed criteria are `ours`."""
     execute(f"DROP DATABASE IF EXISTS {DB} FORCE; CREATE DATABASE {DB}")
     execute(sql("create_tables.sql", output_db=DB))
@@ -19,7 +21,7 @@ def apply_panel(panel: list[str], ours: tuple[str, ...] = (), gnomad_an: int | N
         f"CREATE TABLE {DB}.clinvar (locus_id BIGINT, name VARCHAR(20)) DUPLICATE KEY (locus_id)"
         " DISTRIBUTED BY HASH(locus_id) BUCKETS 1;\n"
         f"INSERT INTO {DB}.clinvar VALUES (1, '100');\n"
-        f"CREATE TABLE {DB}.gnomad_genomes_v3 (locus_id BIGINT, an BIGINT) DUPLICATE KEY (locus_id)"
+        f"CREATE TABLE {DB}.gnomad_genomes_v3 (locus_id BIGINT, an BIGINT, af DOUBLE) DUPLICATE KEY (locus_id)"
         " DISTRIBUTED BY HASH(locus_id) BUCKETS 1;\n"
         f"INSERT INTO {DB}.clingen_erepo (variation_id, criteria) VALUES ('100', {criteria(*panel)});\n"
         f"INSERT INTO {DB}.acmg_occurrence_criteria (seq_id, locus_id, criterion, code, strength, points, ruleset_version)"
@@ -27,7 +29,7 @@ def apply_panel(panel: list[str], ours: tuple[str, ...] = (), gnomad_an: int | N
         " (7, 1, 'BS4', 'BS4', 'Strong', -4, 'x'), (8, 1, 'PM3', 'PM3', 'Moderate', 2, 'x')"
     )
     if gnomad_an is not None:
-        execute(f"INSERT INTO {DB}.gnomad_genomes_v3 VALUES (1, {gnomad_an})")
+        execute(f"INSERT INTO {DB}.gnomad_genomes_v3 VALUES (1, {gnomad_an}, {gnomad_af})")
     if ours:
         rows = ", ".join(f"(1, 'T1', '{c}', '{c}', 'Strong', 0, 'gnomad', 'x')" for c in ours)
         execute(
@@ -36,7 +38,7 @@ def apply_panel(panel: list[str], ours: tuple[str, ...] = (), gnomad_an: int | N
         )
     params = {
         "shared_db": DB, "output_db": DB, "classified": CLASSIFIED, "cases": CASES, "ruleset_version": "x",
-        "min_an": 2000,
+        "min_an": 2000, "pm2_max_af": 0.0001,
     }  # fmt: skip
     execute(sql("vcep_criteria.sql", **params))
 
@@ -95,6 +97,10 @@ def test_frequency_contradiction_keeps_ours_panel_ba1_against_our_pm2():
 def test_panel_ba1_wins_over_our_pm2_where_gnomad_is_thin():
     assert variant_after(["BA1"], ("PM2", "PP3"), gnomad_an=None) == [("BA1", "clingen_vcep")]
     assert variant_after(["BA1"], ("PM2", "PP3"), gnomad_an=1000) == [("BA1", "clingen_vcep")]
+
+
+def test_panel_bs1_wins_over_our_recessive_gene_pm2():
+    assert variant_after(["BS1"], ("PM2", "PP3"), gnomad_af=0.0005) == [("BS1", "clingen_vcep")]
 
 
 def test_no_frequency_contradiction_keeps_the_panels():

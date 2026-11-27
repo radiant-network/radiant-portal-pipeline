@@ -27,10 +27,11 @@ WHERE criterion IN ('BA1', 'BS1', 'PM2')
             FROM ${output_db}.acmg_variant_criteria
             GROUP BY locus_id
         ) o ON o.locus_id = cv.locus_id
-        -- Our PM2 only stands against a panel's BA1/BS1 where gnomAD covers the position: absent is not rare.
+        -- Our PM2 only stands against a panel's BA1/BS1 where gnomAD covers the position (absent is not rare), and at
+        -- the general threshold: the recessive-gene one is no match for a panel's gene-specific BS1.
         LEFT JOIN ${shared_db}.gnomad_genomes_v3 g ON g.locus_id = cv.locus_id
         WHERE (o.bs = 1 AND array_contains(array_map(c -> c.criterion, e.criteria), 'PM2'))
-            OR (o.pm2 = 1 AND g.an >= ${min_an}
+            OR (o.pm2 = 1 AND g.an >= ${min_an} AND g.af <= ${pm2_max_af}
                 AND arrays_overlap(array_map(c -> c.criterion, e.criteria), ['BA1', 'BS1']))
     );
 

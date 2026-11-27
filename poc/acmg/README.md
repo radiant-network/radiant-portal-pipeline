@@ -293,6 +293,11 @@ or not, strength ignored):
   (p90 6, max 10).
 - Inheritance fit (`poc-12`, 3 terms + 1 noise): top 5 63 % → 77 % at −4 (69 % at −2, 82 % at −8), top 1 34 % → 41 %.
   −4 is kept: −8 gains little and costs more on a recessive diagnosis whose second allele is missed.
+- Clinician interpretations (17 cases, poc-28): the dominant healthy-carrier-parent penalty cost real P/LP variants
+  (incomplete penetrance) that the simulation cannot see; at −2 (`poc-29`) a P moves 5.5 → 1 and an LP 411 → 104, the
+  others lose at most half a rank; removed, an LP drops 1 → 2.5. The recessive penalty stays −4. Removing BP1 only
+  moved two VUS (480 → 280, 466 → 264): kept. Class gaps left are literature or functional evidence (PS3, PS4, PM5
+  outside ClinVar, PP1, PP5) and PVS1 in the last exon (Strong, as the ClinGen tree says).
 - PP4 blocked by BP4/BP7 (`poc-15`): same top 1 and top 5 as PP4 everywhere, top 10 88 % vs 87 %, top 50 97 % vs
   97 % (blocking every variant under 1 ACMG point instead: top 50 86 %); PP4 on 53k occurrences instead of 160k.
 - With both inheritance rules and OMIM by gene (`poc-13`): −4 on 14 % of the occurrences and on 1,056 P/LP in 330
