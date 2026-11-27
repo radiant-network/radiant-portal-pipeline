@@ -203,6 +203,17 @@ class Pm1Rule(Frozen):
     max_blb_missense: Annotated[int, Field(ge=0)]
 
 
+class ResidueStrengths(Frozen):
+    pathogenic: Strength
+    likely_pathogenic: Strength
+
+
+class SameResidueRule(Frozen):
+    max_spliceai: Probability
+    ps1: ResidueStrengths
+    pm5: ResidueStrengths
+
+
 class Pp2Rule(Frozen):
     consequences: list[str]
     min_plp: Annotated[int, Field(gt=0)]
@@ -275,6 +286,7 @@ class Ruleset(Frozen):
     clinvar: ClinvarRule
     clingen: ClingenRule
     pm1: Pm1Rule
+    same_residue: SameResidueRule
     pp2: Pp2Rule
     bp1: Bp1Rule
     pm4: Pm4Rule
@@ -332,6 +344,9 @@ class Fact(BaseModel):
     clinvar_plp_stars: int = 0
     clinvar_plp_missense_window: int = 0
     clinvar_blb_missense_window: int = 0
+    # ClinVar missense of another variant at the same MANE Select residue: 2 Pathogenic, 1 Likely pathogenic, 0 none.
+    clinvar_same_aa: int = 0
+    clinvar_same_residue: int = 0
     gene_plp: int = 0
     gene_plp_missense: int = 0
     gene_plp_lof: int = 0
@@ -413,6 +428,8 @@ class AuditCriteria(BaseModel):
     PM4: Evidence | None = None
     PM6: Evidence | None = None
     PS2: Evidence | None = None
+    PS1: Evidence | None = None
+    PM5: Evidence | None = None
     PS4: Evidence | None = None
     PP1: Evidence | None = None
     PP2: Evidence | None = None
@@ -423,9 +440,7 @@ class AuditCriteria(BaseModel):
     BP7: Evidence | None = None
     PVS1: Evidence | None = None
     # Only a ClinGen VCEP gives these: nothing to compute them from.
-    PS1: Evidence | None = None
     PS3: Evidence | None = None
-    PM5: Evidence | None = None
     PP4: Evidence | None = None
     PP5: Evidence | None = None
     BS3: Evidence | None = None

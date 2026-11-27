@@ -1,5 +1,5 @@
 # ACMG/AMP thresholds read by every engine of the POC. Bump `version` on any change: it is stored with each result.
-version: poc-23
+version: poc-24
 
 # Classified: the MANE Select consequence of a locus, when it has one of these consequences or a splice signal.
 # Everything else (intergenic, deep intronic, UTR without SpliceAI signal) would only get frequency criteria.
@@ -103,6 +103,14 @@ clingen:
 
 # ClinVar-based criteria. POC values, to calibrate in the clinical review.
 # PM1 hotspot: P/LP missense ClinVar variants within window_bp of the variant (itself excluded), no B/LB missense there.
+# PS1 / PM5 (missense): a ClinVar P or LP missense of another variant (another nucleotide change) at the same MANE
+# Select residue, same amino acid (PS1) or another one (PM5), when the variant is not predicted to alter splicing
+# (SpliceAI, Walker 2023). Strength from the reference's class.
+same_residue:
+  max_spliceai: 0.1
+  ps1: {pathogenic: Strong, likely_pathogenic: Moderate}
+  pm5: {pathogenic: Moderate, likely_pathogenic: Supporting}
+
 pm1:
   consequences: [missense_variant]
   window_bp: 25
@@ -220,6 +228,7 @@ exclusions:
   BA1: [BS1, PS2, PM6]   # a common variant called de novo is an artefact (parental dropout, wrong pedigree)
   BS1: [PS2, PM6]
   PVS1: [PP3, BP4, PM4]   # PM4: same truncation counted twice (Abou Tayoun 2018); PP3/BP4: Walker 2023
+  PS1: [PM5]    # same residue counted once
   BP2: [PM3]    # same comphet pairs: PM3 assumes a recessive disease, BP2 a dominant one
 
 # Criterion -> dropped when its points and its partner's exceed max_points (Pejaver 2022: PM1 + PP3 <= 4).

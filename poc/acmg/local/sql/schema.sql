@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS ${shared_db}.snv__consequence (
     is_picked BOOLEAN NULL,
     is_mane_select BOOLEAN NULL,
     revel_score FLOAT NULL,
-    gnomad_loeuf FLOAT NULL
+    gnomad_loeuf FLOAT NULL,
+    aa_change VARCHAR(2000) NULL
 )
 PRIMARY KEY (locus_id, symbol, transcript_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10;

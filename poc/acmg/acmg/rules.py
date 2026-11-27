@@ -269,6 +269,24 @@ def pm1(rs: Ruleset) -> pl.Expr:
     return _graded(rs, "PM1", [(cond, Strength.MODERATE, plp_missense, p.min_plp_missense)], details)
 
 
+def _same_residue(rs: Ruleset, criterion: str, column: str, strengths) -> pl.Expr:
+    reference = pl.col(column)
+    ok = _has_any(["missense_variant"]) & (spliceai.fill_null(0.0) <= rs.same_residue.max_spliceai)
+    grades = [
+        (ok & (reference == 2), strengths.pathogenic, reference, 2),
+        (ok & (reference == 1), strengths.likely_pathogenic, reference, 1),
+    ]
+    return _graded(rs, criterion, grades, {"spliceai_ds": spliceai})
+
+
+def ps1(rs: Ruleset) -> pl.Expr:
+    return _same_residue(rs, "PS1", "clinvar_same_aa", rs.same_residue.ps1)
+
+
+def pm5(rs: Ruleset) -> pl.Expr:
+    return _same_residue(rs, "PM5", "clinvar_same_residue", rs.same_residue.pm5)
+
+
 def pp2(rs: Ruleset) -> pl.Expr:
     p = rs.pp2
     plp, plp_missense, blb_missense = pl.col("gene_plp"), pl.col("gene_plp_missense"), pl.col("gene_blb_missense")
@@ -312,6 +330,8 @@ CRITERIA = {
     "PM4": pm4,
     "PM6": pm6,
     "PS2": ps2,
+    "PS1": ps1,
+    "PM5": pm5,
     "PS4": ps4,
     "PP1": pp1,
     "PP2": pp2,
@@ -323,11 +343,11 @@ CRITERIA = {
     "PVS1": pvs1,
 }
 # Criteria only a ClinGen VCEP gives (acmg.erepo): the columns exist so that its evidence is combined, never computed.
-EXTERNAL_CRITERIA = ["PS1", "PS3", "PM5", "PP4", "PP5", "BS3", "BP3", "BP5", "BP6"]
+EXTERNAL_CRITERIA = ["PS3", "PP4", "PP5", "BS3", "BP3", "BP5", "BP6"]
 CRITERIA |= dict.fromkeys(EXTERNAL_CRITERIA, _external)
 
 
-VARIANT_CRITERIA = ["BA1", "BS1", "BS2", "PM2", "PM1", "PM4", "PS4", "PP2", "PP3", "BP1", "BP4", "BP7", "PVS1"]
+VARIANT_CRITERIA = ["BA1", "BS1", "BS2", "PM2", "PM1", "PM4", "PS1", "PM5", "PS4", "PP2", "PP3", "BP1", "BP4", "BP7", "PVS1"]
 OCCURRENCE_CRITERIA = ["BS4", "PM3", "PS2", "PM6", "PP1", "BP2"]
 assert sorted(VARIANT_CRITERIA + OCCURRENCE_CRITERIA + EXTERNAL_CRITERIA) == sorted(CRITERIA)
 

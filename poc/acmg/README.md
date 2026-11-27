@@ -46,6 +46,7 @@ rows of the scope are deleted: a rerun (new ClinVar, new occurrences) replaces t
 | variant | PVS1 | LoF consequence + ClinGen HI 3 or 30, or LOEUF + LoF P/LP in the gene (`clinvar.mc`), or many LoF P/LP whatever LOEUF, or a few in an OMIM recessive-only gene; never with HI 40; stop or frameshift in the last exon, or a canonical splice site whose skipped exon keeps the frame (`ensembl_exon_by_gene` phases) or is not found, gives `PVS1_Strong`; start lost `PVS1_Moderate` | no 50-nt rule, no critical region, no cryptic site |
 | variant | PM4 | in-frame indel, stop lost | no repeat-region exception |
 | variant | PM1 | ClinVar P/LP missense within ±25 bp, no B/LB missense; PM1 + PP3 capped at 4 points | POC thresholds |
+| variant | PS1, PM5 | ClinVar P/LP missense of another variant at the same MANE Select residue: same amino acid (PS1: Strong, Moderate from an LP) or another one (PM5: Moderate, Supporting from an LP); SpliceAI <= 0.1; PS1 cancels PM5 | the reference's own splicing effect is not checked; no Grantham comparison for PM5 |
 | variant | PP2, BP1 | missense and LoF shares of the gene's ClinVar P/LP (`clinvar.mc`); PP2 is `disabled` (ClinGen VCEPs almost never apply it) | POC thresholds; `mc` format to check |
 | variant | BS2 | homozygotes in gnomAD (Strong from 50, else Supporting) or the tenant's not-affected (Supporting), gene with an OMIM inheritance; not on a ClinVar P/LP of `clinvar.expert_min_stars` (nor BS1) | POC thresholds; no penetrance data |
 | variant | PS4 | odds ratio affected vs not affected of the tenant (`germline_pc/pn_{wgs,wxs}_{affected,not_affected}`), CI lower bound > 1, variant meeting PM2 | individuals, not families: relatives and the case itself counted; not affected are mostly parents |
@@ -65,7 +66,7 @@ specification of the transcript's gene declares not applicable (CSpec registry, 
 genes, PP3 in 5 mosaic ones...), listed in `acmg_cancelled` with `cancelled_by` CSpec. A gene in several
 specifications keeps a criterion one of them applies. Gene-specific thresholds are not read yet.
 
-Missing from the computed criteria: PS1/PM5, PP4 in the class (priority only), PS3/BS3, BP3, BP5, PP5/BP6; PS4
+Missing from the computed criteria: PP4 in the class (priority only), PS3/BS3, BP3, BP5, PP5/BP6; PS4
 from published cases (no literature source). A ClinGen VCEP gives all of them for the variants it curated (below).
 Siblings: not read yet (probands only).
 
@@ -138,6 +139,13 @@ newer release:
 | `erepo/erepo.tsv` | https://erepo.clinicalgenome.org/evrepo/api/classifications/all?matchMode=exact&format=tabbed (slow: ~2 min) |
 | `clinvar_citations/var_citations.txt` | https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/var_citations.txt (260 MB) |
 
+## ClinVar by protein residue
+
+Each run rebuilds `clinvar_protein` in `--output-db` from `<S3_BUCKET>/clinvar_protein/clinvar_protein.parquet`
+(~16 MB): ClinVar missense variants on MANE Select proteins, from ClinVar's `hgvs4variation.txt.gz` (~540 MB) and the
+MANE summary (public, NCBI). Build it again to take a newer ClinVar:
+`.venv/bin/python -m acmg.protein clinvar_protein.parquet`.
+
 ## CSpec registry
 
 Each run rebuilds `cspec_not_applicable` in `--output-db` from the released specifications of the ClinGen Criteria
@@ -182,7 +190,7 @@ criteria (PM1, PP2) count the spike itself (`ranks_without_clinvar_window_criter
 
 | | |
 |---|---|
-| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `ensembl_exon_by_gene`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/`, the HGNC file under `<S3_BUCKET>/hgnc/`, the erepo export under `<S3_BUCKET>/erepo/`, the CSpec export under `<S3_BUCKET>/cspec/`, `var_citations.txt` under `<S3_BUCKET>/clinvar_citations/` |
+| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `ensembl_exon_by_gene`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/`, the HGNC file under `<S3_BUCKET>/hgnc/`, the erepo export under `<S3_BUCKET>/erepo/`, the CSpec export under `<S3_BUCKET>/cspec/`, `<S3_BUCKET>/clinvar_protein/`, `var_citations.txt` under `<S3_BUCKET>/clinvar_citations/` |
 | Writes | the run's files under `s3://<bucket>/runs/<run id>/` (deleted at the end), the tables of `--output-db` (created if missing; **refused if it is the shared or the tenant database**) |
 | Never | DROP, TRUNCATE, UPDATE or DELETE on a Radiant table |
 | Prints | counts per class and per criterion, file and row counts, timings |
@@ -284,8 +292,7 @@ or not, strength ignored):
 - Priority: PP4 is not reproducible. Two prod runs minutes apart, same data, move a few dozen occurrences between PP4
   points (4 points: 6641 then 6598), cause not found (an unstable tie in the similarity or `top` is the likely one).
 - Clinical data: real phenotypes instead of `HP:0000005`.
-- Missing criteria, by expected gain: PS1/PM5 (needs VEP-annotated ClinVar). Parentage check (somalier) to replace
-  the hand-filled `parentage_doubtful`.
+- Parentage check (somalier) to replace the hand-filled `parentage_doubtful`.
 - PVS1 decision tree (Abou Tayoun 2018), rest of it: 50-nt NMD rule, critical region, share of the protein removed,
   exon expression in the disease tissue, cryptic splice sites. Needs protein length, a critical-region source and
   per-exon expression. Done: exon-skipping frame from Ensembl phases, start lost `PVS1_Moderate`.

@@ -371,3 +371,22 @@ def test_cancelled_lists_exclusions_and_caps_once():
         {"criterion": "PS2", "cancelled_by": "BA1"},
     ]
     assert run(**NOT_RARE).acmg_cancelled == []
+
+
+@pytest.mark.parametrize(
+    ("reference", "ps1", "pm5"), [(2, "PS1", "PM5"), (1, "PS1_Moderate", "PM5_Supporting")]
+)
+def test_ps1_pm5_strength_from_the_clinvar_reference(reference, ps1, pm5):
+    assert codes(**MISSENSE, clinvar_same_aa=reference) == [ps1]
+    assert codes(**MISSENSE, clinvar_same_residue=reference) == [pm5]
+
+
+def test_ps1_pm5_need_a_missense_not_altering_splicing():
+    assert codes(**MISSENSE, clinvar_same_aa=2, spliceai_ds=0.5) == ["PP3"]
+    assert "PS1" not in codes(consequences=["synonymous_variant"], gnomad_af=0.001, **COMMON, clinvar_same_aa=2)
+
+
+def test_ps1_cancels_pm5_at_the_same_residue():
+    both = run(**MISSENSE, clinvar_same_aa=2, clinvar_same_residue=2)
+    assert both.acmg_criteria == ["PS1"]
+    assert [c.model_dump() for c in both.acmg_cancelled] == [{"criterion": "PM5", "cancelled_by": "PS1"}]

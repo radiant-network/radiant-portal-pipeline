@@ -16,6 +16,17 @@ CREATE TABLE IF NOT EXISTS ${output_db}.cspec_not_applicable (
 PRIMARY KEY (symbol, criterion)
 DISTRIBUTED BY HASH(symbol) BUCKETS 1;
 
+-- ClinVar missense variants by MANE Select residue, rebuilt at each run from the file on S3 (acmg.protein): PS1, PM5.
+CREATE TABLE IF NOT EXISTS ${output_db}.clinvar_protein (
+    transcript_id VARCHAR(50) NOT NULL,
+    position INT NOT NULL,
+    variation_id VARCHAR(20) NOT NULL,
+    ref_aa VARCHAR(3),
+    alt_aa VARCHAR(3)
+)
+DUPLICATE KEY (transcript_id, position)
+DISTRIBUTED BY HASH(transcript_id) BUCKETS 8;
+
 -- Current HGNC symbol of each current or previous symbol, rebuilt at each run from HGNC on S3 (acmg.hgnc).
 CREATE TABLE IF NOT EXISTS ${output_db}.gene_symbol (
     symbol VARCHAR(100) NOT NULL,

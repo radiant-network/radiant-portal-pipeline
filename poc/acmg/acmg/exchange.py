@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 
 import polars as pl
 import pyarrow.parquet as pq
-from acmg import citations, clingen, cspec, erepo, hgnc, hpo
+from acmg import citations, clingen, cspec, erepo, hgnc, hpo, protein
 from acmg.db import HERE, IDENTIFIERS, connect, execute, sql
 from acmg.models import OCCURRENCE_FACT_SCHEMA, VARIANT_FACT_SCHEMA, Ruleset
 from acmg.rules import OCCURRENCE_CRITERIA, VARIANT_CRITERIA, combine, evaluate, to_wide
@@ -255,6 +255,18 @@ def load_cspec(output_db: str, prefix: str, s3, symbols: pl.DataFrame) -> int:
     return rows.height
 
 
+def load_protein(output_db: str) -> int:
+    """Rebuilds the clinvar_protein table from the file on S3 (acmg.protein), read by the variant facts."""
+    columns = ", ".join(protein.SCHEMA)
+    execute(
+        f"INSERT OVERWRITE {output_db}.clinvar_protein ({columns})\nSELECT {columns}\n"
+        f"FROM FILES(\n{files_properties(f's3://{s3_settings()['bucket']}/{protein.FILE}')}\n)"
+    )
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) FROM {output_db}.clinvar_protein")
+        return cur.fetchone()[0]
+
+
 def load_erepo(output_db: str, prefix: str, s3, rs: Ruleset) -> dict:
     """Rebuilds the clingen_erepo table from the ClinGen Evidence Repository export on S3, read by the VCEP step."""
     variants, unmapped = erepo.classifications(read_text(s3, erepo.FILE), rs)
@@ -401,6 +413,7 @@ def run(args) -> dict:
         symbols = load_hgnc(args.output_db, prefix, s3)
         log(hgnc_symbols=symbols.height, clingen_genes=load_clingen(args.output_db, prefix, s3, symbols))
         log(cspec_not_applicable=load_cspec(args.output_db, prefix, s3, symbols))
+        log(clinvar_protein=load_protein(args.output_db))
         log(erepo=load_erepo(args.output_db, prefix, s3, rs))
         log(clinvar_citation_variations=load_citations(args.output_db, prefix, s3))
         steps = {}

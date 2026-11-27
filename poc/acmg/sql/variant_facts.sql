@@ -6,6 +6,7 @@ WITH classified AS (
 clinvar AS (
     SELECT
         locus_id,
+        name,
         chromosome,
         start,
         coalesce(gs.current, split_part(split_part(geneinfo, '|', 1), ':', 1)) AS symbol,
@@ -49,6 +50,29 @@ clinvar_window AS (
         AND cv.locus_id <> v.locus_id
         AND v.locus_id IN (SELECT locus_id FROM classified)
     GROUP BY v.locus_id
+),
+-- PS1/PM5: ClinVar P/LP missense of another variant at the same residue of the classified MANE Select transcript.
+missense_residue AS (
+    SELECT
+        k.locus_id,
+        k.transcript_id,
+        CAST(regexp_extract(c.aa_change, '^p[.]([A-Z][a-z]{2})([0-9]+)([A-Z][a-z]{2})$$', 2) AS INT) AS position,
+        regexp_extract(c.aa_change, '^p[.]([A-Z][a-z]{2})([0-9]+)([A-Z][a-z]{2})$$', 3) AS alt_aa
+    FROM classified k
+    JOIN ${shared_db}.snv__consequence c ON c.locus_id = k.locus_id AND c.transcript_id = k.transcript_id
+    WHERE array_contains(c.consequences, 'missense_variant')
+),
+same_residue AS (
+    SELECT
+        m.locus_id,
+        m.transcript_id,
+        max(IF(p.alt_aa = m.alt_aa, IF(cv.pathogenic, 2, 1), 0)) AS same_aa,
+        max(IF(p.alt_aa <> m.alt_aa, IF(cv.pathogenic, 2, 1), 0)) AS same_residue
+    FROM missense_residue m
+    JOIN ${output_db}.clinvar_protein p ON p.transcript_id = m.transcript_id AND p.position = m.position
+    JOIN clinvar cv ON cv.name = p.variation_id AND cv.plp
+    WHERE cv.locus_id <> m.locus_id
+    GROUP BY m.locus_id, m.transcript_id
 ),
 -- OMIM inheritance of the classified transcript's gene: snv__variant's comes from the variant's picked gene, which
 -- can be an overlapping one.
@@ -131,6 +155,8 @@ SELECT
     CAST(coalesce(cl.plp_stars, 0) AS BIGINT) AS clinvar_plp_stars,
     CAST(coalesce(w.plp_missense, 0) AS BIGINT) AS clinvar_plp_missense_window,
     CAST(coalesce(w.blb_missense, 0) AS BIGINT) AS clinvar_blb_missense_window,
+    CAST(coalesce(sr.same_aa, 0) AS BIGINT) AS clinvar_same_aa,
+    CAST(coalesce(sr.same_residue, 0) AS BIGINT) AS clinvar_same_residue,
     CAST(coalesce(cg.plp, 0) AS BIGINT) AS gene_plp,
     CAST(coalesce(cg.plp_missense, 0) AS BIGINT) AS gene_plp_missense,
     CAST(coalesce(cg.plp_lof, 0) AS BIGINT) AS gene_plp_lof,
@@ -151,6 +177,7 @@ LEFT JOIN ${shared_db}.gnomad_genomes_v3 g ON g.locus_id = c.locus_id
 LEFT JOIN clinvar_locus cl ON cl.locus_id = c.locus_id
 LEFT JOIN clinvar_window w ON w.locus_id = c.locus_id
 LEFT JOIN splice_exon se ON se.locus_id = c.locus_id AND se.transcript_id = c.transcript_id
+LEFT JOIN same_residue sr ON sr.locus_id = c.locus_id AND sr.transcript_id = c.transcript_id
 -- Gene joins on the current HGNC symbol: each source has its own release.
 LEFT JOIN ${output_db}.gene_symbol gs ON gs.symbol = c.symbol
 LEFT JOIN clinvar_gene cg ON cg.symbol = coalesce(gs.current, c.symbol)
