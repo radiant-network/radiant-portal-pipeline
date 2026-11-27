@@ -218,3 +218,43 @@ def not_ready_cases(state_rows: list[dict]) -> set[int]:
         for row in state_rows
         if row["pipeline"] in pipelines and row["decision"] in (Decision.RUN, Decision.FAILED)
     }
+
+
+def decide_run(pipeline: Pipeline, fact_rows: list[dict], excluded_tenants: list[str], named: list[int] = ()) -> dict:
+    """What a pipeline DAG decides at its start, from its facts: every candidate's decision, and the items to run.
+
+    `named` (cases, or calling tasks for somatic SNV) limits what runs, not what is decided: an item decided `run`
+    but not named is left out of the journal, so it does not wait for an outcome this run never writes; the next run
+    decides it again. `processing` lists, per tenant, the cases to move to `processing`.
+    """
+    by_task = pipeline == Pipeline.SOMATIC_SNV
+    entries = DECIDE[pipeline](fact_rows, list(excluded_tenants))
+    named = set(named)
+
+    def runs(entry: Entry) -> bool:
+        key = int(entry.item_key) if by_task else entry.case_id
+        return entry.decision == Decision.RUN and (not named or key in named)
+
+    journaled = [e for e in entries if e.decision != Decision.RUN or runs(e)]
+    run = [e for e in journaled if e.decision == Decision.RUN]
+    tenant_of = {row["case_id"]: row["tenant_code"] for row in fact_rows}
+    by_tenant: dict[str, set[int]] = {}
+    for entry in run:
+        by_tenant.setdefault(tenant_of[entry.case_id], set()).add(entry.case_id)
+    LOGGER.info(
+        "%s: %d item(s) decided, %d to run%s",
+        pipeline,
+        len(entries),
+        len(run),
+        f" (named: {sorted(named)})" if named else "",
+    )
+    return {
+        "entries": [e.model_dump(mode="json") for e in journaled],
+        "run_case_ids": sorted({e.case_id for e in run}),
+        "run_task_ids": sorted({int(e.item_key) for e in run}) if by_task else [],
+        "processing": [
+            {"tenant": tenant, "case_ids": sorted(case_ids)}
+            for tenant, case_ids in sorted(by_tenant.items())
+            if tenant not in excluded_tenants
+        ],
+    }

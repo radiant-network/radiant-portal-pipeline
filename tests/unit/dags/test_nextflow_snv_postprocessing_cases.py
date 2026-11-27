@@ -12,6 +12,11 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
+        "fetch_facts",
+        "decide",
+        "journal",
+        "list_processing",
+        "set_processing",
         "has_cases",
         "fetch_case_members",
         "select_cases",
@@ -28,14 +33,23 @@ def test_dag_contains_the_expected_stages(dag_bag):
 
 
 def test_it_finds_its_own_work(dag_bag):
-    """The point of the whole thing: a scheduled run is given nothing and discovers the
-    cases that have been aligned but never annotated."""
+    """A scheduled run is given nothing: it decides every candidate, journals it, moves the cases to run to
+    `processing`, then runs them."""
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
     assert dag.schedule is None
-    assert {t.task_id for t in dag.get_task("fetch_case_members").upstream_list} == {"has_cases"}
+    assert "-- One row per" in dag.get_task("fetch_facts").sql
+    assert _upstream(dag, "decide") == {"fetch_facts"}
+    assert _upstream(dag, "journal") == {"decide"}
+    assert _upstream(dag, "fetch_case_members") == {"has_cases", "set_processing"}
+    # A failed status move does not hold the data back.
+    assert dag.get_task("fetch_case_members").trigger_rule == "all_done"
     # No default would make a scheduled run fail validation at trigger time.
     assert dag.params["case_ids"] == []
+
+
+def _upstream(dag, task_id):
+    return {t.task_id for t in dag.get_task(task_id).upstream_list}
 
 
 def test_phenotypes_are_fetched_for_the_selected_cases_only(dag_bag):
@@ -93,9 +107,11 @@ def test_it_does_not_email_the_laboratories(dag_bag):
     assert not {"create_case_group", "notify_labs"} & set(dag.task_ids)
 
 
-def test_it_runs_the_named_cases_and_decides_nothing(dag_bag):
-    """The scheduler names the cases it decided `run` for; none named runs nothing."""
+def test_it_runs_the_cases_it_decided(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
+    assert dag.get_task("fetch_case_members").parameters == {
+        "case_ids": "{{ ti.xcom_pull(task_ids='decide')['run_case_ids'] }}"
+    }
     assert "%(case_ids)s" in dag.get_task("fetch_case_members").sql
     assert "annotated" not in dag.get_task("fetch_case_members").sql
     assert set(dag.get_task("fetch_case_members").parameters) == {"case_ids"}

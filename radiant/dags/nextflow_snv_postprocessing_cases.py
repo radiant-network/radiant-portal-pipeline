@@ -1,4 +1,4 @@
-"""Run the post-processing pipeline over the named germline cases, register the result.
+"""Decide the germline cases to post-process, run the pipeline over them, register the result.
 
 `radiant-nextflow-snv-postprocessing` runs the Ferlab post-processing pipeline. This DAG closes
 the two manual ends around it: it builds the samplesheet, PED files and phenopackets of the
@@ -6,17 +6,18 @@ named cases from the clinical model, triggers that DAG, then registers what the 
 back onto the cases as a `radiant_germline_annotation` task, with the Exomiser reports among
 its outputs.
 
-    has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_cases
-                                                                                  |
-                                                       generate_inputs -> run_pipeline
-                                                                                  |
-              register_tasks (one per tenant) <- collect_outputs <----------------+
+    fetch_facts -> decide -> journal, set_processing (one per tenant)
+                -> has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_cases
+                                                                                                |
+                                                                     generate_inputs -> run_pipeline
+                                                                                                |
+                            register_tasks (one per tenant) <- collect_outputs <----------------+
 
-It decides nothing. `radiant-case-scheduler` decides which cases run (`decide_cases`, on
-`sql/clinical/germline_snv_facts_select.sql`) and passes them as `case_ids`; an operator can
-name cases to rerun. `select_cases` checks them again, leniently, since the data may have moved:
-a case that cannot be run is excluded with a reason and reported, never fatal, and a member other
-than the proband with no gVCF yet is left out of the family.
+It decides its own cases: every candidate of `sql/clinical/germline_snv_facts_select.sql`, decided by
+`decide_cases` and journaled in `pipeline_journal`. The cases decided `run` move to `processing`, then run.
+`case_ids` limits the run to the cases an operator names. `select_cases` checks them again, leniently: a case
+that cannot be run is excluded with a reason and reported, never fatal, and a member other than the proband
+with no gVCF yet is left out of the family.
 
 Paths are derived from the run, not parameterised: `{root}/{run_tag}` for both inputs and
 outputs, where `run_tag` comes from `run_id`. That gives each run its own output location --
@@ -60,6 +61,10 @@ PORTAL_CONN_ID = "radiant_api_conn"
 # `select_cases` XCom: what it selected and left out, read back by `journal_outcomes`.
 SELECTION_KEY = "selection"
 
+# The status PATCH is guarded by the expected status (`submitted`), so a retry changes nothing twice.
+STATUS_RETRIES = 2
+STATUS_RETRY_DELAY = datetime.timedelta(minutes=1)
+
 # The journal write is idempotent (an unchanged marker is not written twice), so a retry is safe.
 JOURNAL_RETRIES = 2
 JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
@@ -87,8 +92,8 @@ dag_params = {
         items={"type": "integer"},
         title="Case ids",
         description=(
-            "The cases to run: `radiant-case-scheduler` passes the ones it decided `run` for, and an operator can "
-            "name cases to rerun. Empty runs nothing."
+            "Limit the run to these cases, among the ones decided `run`. Every candidate is still decided and "
+            "journaled. Empty runs every case decided `run`."
         ),
     ),
     "dry_run": Param(
@@ -150,17 +155,64 @@ def nextflow_snv_postprocessing_cases():
     # per tenant, and `cases.id` is a single-column primary key over all of it -- so the
     # tenant comes back with the rows rather than scoping the query. Nothing here needs
     # RADIANT_TENANT_CODE.
-    @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is named")
-    def has_cases() -> bool:
+    fetch_facts = RadiantStarRocksOperator(
+        task_id="fetch_facts",
+        task_display_name="[StarRocks] Facts of the germline SNV candidates",
+        sql="./sql/clinical/germline_snv_facts_select.sql",
+        output_processor=rows_output_processor,
+        do_xcom_push=True,
+    )
+
+    @task(task_id="decide", task_display_name="[PyOp] Decide each candidate")
+    def decide(fact_rows: Any) -> dict:
         from airflow.sdk import get_current_context
 
-        return bool(get_current_context()["params"]["case_ids"])
+        from radiant.tasks.journal import Pipeline
+        from radiant.tasks.nextflow.case_status import decide_run
+
+        params = get_current_context()["params"]
+        return decide_run(Pipeline.GERMLINE_SNV, fact_rows, params["excluded_tenants"], params["case_ids"])
+
+    @task(task_id="journal", task_display_name="[PyOp] Journal the decisions", retries=JOURNAL_RETRIES)
+    def journal(decided: dict) -> int:
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.journal import Entry, record
+
+        written = record([Entry(**e) for e in decided["entries"]], get_current_context()["run_id"])
+        LOGGER.info("%d row(s) written", len(written))
+        return len(written)
+
+    @task(
+        task_id="set_processing",
+        task_display_name="[PyOp] Move the cases to run to processing",
+        retries=STATUS_RETRIES,
+        retry_delay=STATUS_RETRY_DELAY,
+    )
+    def set_processing(batch: dict) -> Any:
+        from radiant.tasks.nextflow.case_status import PROCESSING, change_tenant_status
+
+        return change_tenant_status(batch, PROCESSING)
+
+    @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is to run")
+    def has_cases(decided: dict) -> bool:
+        return bool(decided["run_case_ids"])
+
+    @task(task_id="list_processing", task_display_name="[PyOp] List the cases to move, per tenant")
+    def list_processing(decided: dict) -> list[dict]:
+        return decided["processing"]
+
+    decided = decide(fetch_facts.output)
+    journal(decided)
+    processing = set_processing.expand(batch=list_processing(decided))
 
     fetch_case_members = RadiantStarRocksOperator(
         task_id="fetch_case_members",
         task_display_name="[StarRocks] Fetch the members of the named cases",
         sql="./sql/clinical/germline_snv_case_members_select.sql",
-        parameters={"case_ids": "{{ params.case_ids }}"},
+        parameters={"case_ids": "{{ ti.xcom_pull(task_ids='decide')['run_case_ids'] }}"},
+        # A failed status move must not hold the data back: the run still goes red on it.
+        trigger_rule="all_done",
         output_processor=rows_output_processor,
         do_xcom_push=True,
     )
@@ -188,7 +240,8 @@ def nextflow_snv_postprocessing_cases():
         )
         return _selection_payload(selection)
 
-    has_cases() >> fetch_case_members
+    # The cases are `processing` before their run starts.
+    [has_cases(decided), processing] >> fetch_case_members
     selection = select_cases(fetch_case_members.output)
 
     fetch_phenotypes = RadiantStarRocksOperator(

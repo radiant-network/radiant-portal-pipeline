@@ -310,3 +310,34 @@ def test_a_case_is_not_ready_while_one_of_its_pipelines_runs_or_failed():
         _state(6, "import", "run", "13"),
     ]
     assert case_status.not_ready_cases(state) == {1, 2, 3}
+
+
+def test_a_pipeline_decides_every_candidate_and_runs_the_ones_decided_run():
+    from radiant.tasks.journal import Pipeline
+
+    rows = [snv_facts(case_id=1), snv_facts(case_id=2, reason="no_gvcf"), snv_facts(case_id=3)]
+    rows[2] = rows[2] | {"tenant_code": "other"}
+    decided = case_status.decide_run(Pipeline.GERMLINE_SNV, rows, [])
+    assert {(e["case_id"], e["decision"]) for e in decided["entries"]} == {(1, "run"), (2, "blocked"), (3, "run")}
+    assert decided["run_case_ids"] == [1, 3]
+    assert decided["processing"] == [{"tenant": "other", "case_ids": [3]}, {"tenant": "radiant", "case_ids": [1]}]
+
+
+def test_named_cases_limit_what_runs_not_what_is_decided():
+    """A case decided `run` but not named is not journaled: this run writes no outcome for it."""
+    from radiant.tasks.journal import Pipeline
+
+    rows = [snv_facts(case_id=1), snv_facts(case_id=2, reason="no_gvcf"), snv_facts(case_id=3)]
+    decided = case_status.decide_run(Pipeline.GERMLINE_SNV, rows, [], named=[3])
+    assert {(e["case_id"], e["decision"]) for e in decided["entries"]} == {(2, "blocked"), (3, "run")}
+    assert decided["run_case_ids"] == [3]
+
+
+def test_an_excluded_tenant_is_not_moved():
+    from radiant.tasks.journal import Pipeline
+
+    decided = case_status.decide_run(
+        Pipeline.GERMLINE_SNV, [snv_facts(case_id=1, reason="tenant_excluded")], ["excluded"]
+    )
+    assert decided["run_case_ids"] == []
+    assert decided["processing"] == []
