@@ -6,6 +6,7 @@ import psycopg2
 import pytest
 
 from radiant.dags import DAGS_DIR
+from radiant.tasks.importing.resolve import decide
 from tests.integration.fixtures_common import execute_clinical
 
 _SQL_DIR = os.path.join(DAGS_DIR, "sql")
@@ -57,10 +58,24 @@ def _run_radiant_sql(starrocks_session, radiant_mapping, sql_file):
         return cursor.fetchall()
 
 
+def _facts_sql(radiant_mapping):
+    with open(os.path.join(_SQL_DIR, "clinical", "import_facts_select.sql")) as f:
+        return jinja2.Template(f.read()).render(mapping=radiant_mapping)
+
+
+def _facts(starrocks_session, radiant_mapping):
+    """The rows of `import_facts_select.sql`, as dicts."""
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(_facts_sql(radiant_mapping))
+        columns = [d[0] for d in cursor.description]
+        return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
+
+
 @pytest.fixture(scope="session")
-def sequencing_experiment_tables(starrocks_session, radiant_mapping, pipeline_views):
+def sequencing_experiment_tables(starrocks_session, radiant_mapping, pipeline_views, sequencing_delta_columns):
     """
-    Fixture to create a temporary sequencing_experiment table for testing.
+    Fixture to create the staging table, the importable_task view, and `import_new_row`: the `new` rows of the
+    import's facts, with the columns of the staging delta.
     """
     _run_radiant_sql(
         starrocks_session,
@@ -70,13 +85,14 @@ def sequencing_experiment_tables(starrocks_session, radiant_mapping, pipeline_vi
     _run_radiant_sql(
         starrocks_session,
         radiant_mapping,
-        sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_external_sequencing_experiment_create_table.sql"),
+        sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "importable_task_create_table.sql"),
     )
-    _run_radiant_sql(
-        starrocks_session,
-        radiant_mapping,
-        sql_file=os.path.join(_RADIANT_SQL_PATH, "init", "staging_sequencing_experiment_delta_create_table.sql"),
-    )
+    with starrocks_session.cursor() as cursor:
+        cursor.execute("DROP VIEW IF EXISTS import_new_row")
+        cursor.execute(
+            f"CREATE VIEW import_new_row AS SELECT {', '.join(sequencing_delta_columns)} "
+            f"FROM ({_facts_sql(radiant_mapping)}) f WHERE f.state = 'new'"
+        )
     yield
 
 
@@ -87,7 +103,7 @@ def test_sequencing_experiment_empty(
     Test the case where we "start from scratch" with nothing in the sequencing_experiment table.
     """
     with starrocks_session.cursor() as cursor:
-        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        cursor.execute("SELECT * FROM import_new_row;")
         results = cursor.fetchall()
 
     assert results is not None, "Results should not be None"
@@ -110,9 +126,7 @@ def test_seeded_trio_takes_the_probands_cnvs_from_the_slivar_vcf(
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
         # The CNV rows only: the SNV annotation task 63 of case 1 is not part of the rule.
-        cursor.execute(
-            "SELECT * FROM staging_sequencing_experiment_delta WHERE case_id = 1 AND cnv_vcf_filepath IS NOT NULL;"
-        )
+        cursor.execute("SELECT * FROM import_new_row WHERE case_id = 1 AND cnv_vcf_filepath IS NOT NULL;")
         case_1 = pd.DataFrame(cursor.fetchall(), columns=sequencing_delta_columns)
 
     assert sorted((int(r.seq_id), int(r.task_id), r.family_role) for r in case_1.itertuples()) == [
@@ -150,7 +164,7 @@ def test_sequencing_experiment_delta_carries_tumor_only_tasks(
     """
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
-        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        cursor.execute("SELECT * FROM import_new_row;")
         results = cursor.fetchall()
 
     somatic = pd.DataFrame(results, columns=sequencing_delta_columns).query("analysis_type == 'somatic'")
@@ -197,7 +211,7 @@ def test_sequencing_experiment_delta_gates_somatic_cnv_documents(
     """
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
-        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        cursor.execute("SELECT * FROM import_new_row;")
         results = cursor.fetchall()
 
     delta = pd.DataFrame(results, columns=sequencing_delta_columns)
@@ -225,7 +239,7 @@ def test_sequencing_experiment_delta_gates_somatic_cnv_documents(
 def _delta(starrocks_session, sequencing_delta_columns):
     with starrocks_session.cursor() as cursor:
         cursor.execute("TRUNCATE TABLE staging_sequencing_experiment;")
-        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        cursor.execute("SELECT * FROM import_new_row;")
         return pd.DataFrame(cursor.fetchall(), columns=sequencing_delta_columns)
 
 
@@ -446,9 +460,7 @@ def _stage(starrocks_session, radiant_mapping, case_id):
     """Write the case's delta rows to staging and flag the deleted tasks, as `import_radiant` does. Returns the
     delta's (seq_id, task_id) pairs: the run's tasks."""
     with starrocks_session.cursor() as cursor:
-        cursor.execute(
-            "SELECT seq_id, task_id FROM staging_sequencing_experiment_delta WHERE case_id = %s", (case_id,)
-        )
+        cursor.execute("SELECT seq_id, task_id FROM import_new_row WHERE case_id = %s", (case_id,))
         run = sorted((int(seq_id), int(task_id)) for seq_id, task_id in cursor.fetchall())
         cursor.execute(
             """
@@ -457,16 +469,17 @@ def _stage(starrocks_session, radiant_mapping, case_id):
                    experimental_strategy, tenant_code, request_priority, vcf_filepath, cnv_vcf_filepath,
                    exomiser_filepath, sex, family_id, family_role, affected_status, histology_type, created_at,
                    updated_at, now() AS ingested_at, false AS deleted
-            FROM staging_sequencing_experiment_delta
+            FROM import_new_row
             WHERE case_id = %s
             """,
             (case_id,),
         )
-    _run_radiant_sql(
-        starrocks_session,
-        radiant_mapping,
-        sql_file=os.path.join(_RADIANT_SQL_PATH, "sequencing_experiment_update_deleted.sql"),
-    )
+    deleted = decide(_facts(starrocks_session, radiant_mapping)).deleted_task_ids
+    with (
+        open(os.path.join(_RADIANT_SQL_PATH, "sequencing_experiment_update_deleted.sql")) as f,
+        starrocks_session.cursor() as cursor,
+    ):
+        cursor.execute(jinja2.Template(f.read()).render(mapping=radiant_mapping), {"task_ids": deleted or [-1]})
     return run
 
 
@@ -526,7 +539,7 @@ def test_a_new_proband_alignment_task_after_the_slivar_vcf_is_not_imported(
     assert _stage(starrocks_session, radiant_mapping, 9620) == []
     assert _staged(starrocks_session, 9620) == before
     with starrocks_session.cursor() as cursor:
-        cursor.execute("SELECT count(1) FROM staging_external_sequencing_experiment WHERE task_id = 9624")
+        cursor.execute("SELECT count(1) FROM importable_task WHERE task_id = 9624")
         assert cursor.fetchone() == (0,)
         cursor.execute(f"SELECT count(1) FROM {radiant_mapping['clinical_task']} WHERE id = 9624")
         assert cursor.fetchone() == (1,)
@@ -700,9 +713,9 @@ def test_sequencing_experiment_no_delta(
                               updated_at,
                               '1970-01-01 00:00:00' AS ingested_at,
                               false as deleted
-                       FROM staging_external_sequencing_experiment
+                       FROM importable_task
                        """)
-        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        cursor.execute("SELECT * FROM import_new_row;")
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
@@ -742,7 +755,7 @@ def test_sequencing_experiment_existing_wgs_task_partition(
                               updated_at,
                               '1970-01-01 00:00:00' AS ingested_at,
                               false as deleted
-                       FROM staging_external_sequencing_experiment
+                       FROM importable_task
                        WHERE seq_id = 22
                          AND task_id = 65
                        """)
@@ -771,16 +784,16 @@ def test_sequencing_experiment_existing_wgs_task_partition(
                               updated_at,
                               '1970-01-01 00:00:00' AS ingested_at,
                               false as deleted
-                       FROM staging_external_sequencing_experiment
+                       FROM importable_task
                        WHERE seq_id = 4
                          AND task_id = 4
                        """)
-        cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+        cursor.execute("SELECT * FROM import_new_row;")
         results = cursor.fetchall()
 
     result_df = pd.DataFrame(results, columns=sequencing_delta_columns)
     # The 18-row baseline less task 65, the only one of the two inserts that the view actually emits:
-    # seq 4 / task 4 matches no row in staging_external_sequencing_experiment, so it subtracts nothing.
+    # seq 4 / task 4 matches no row in importable_task, so it subtracts nothing.
     assert len(result_df) == 17
 
 
@@ -818,14 +831,13 @@ def test_case_status_change_does_not_reimport_case(
                               updated_at,
                               UTC_TIMESTAMP()       AS ingested_at,
                               false as deleted
-                       FROM staging_external_sequencing_experiment
+                       FROM importable_task
                        WHERE case_id = 8
                        """)
         cursor.execute("SELECT COUNT(*) FROM staging_sequencing_experiment;")
         assert cursor.fetchone()[0] > 0
 
-    pending_sql = os.path.join(_RADIANT_SQL_PATH, "import_pending_case_select.sql")
-    assert 8 not in {row[0] for row in _run_radiant_sql(starrocks_session, radiant_mapping, pending_sql)}
+    assert 8 not in {row["case_id"] for row in _facts(starrocks_session, radiant_mapping)}
 
     with (
         psycopg2.connect(
@@ -844,9 +856,9 @@ def test_case_status_change_does_not_reimport_case(
         pg_conn.commit()
         try:
             with starrocks_session.cursor() as cursor:
-                cursor.execute("SELECT * FROM staging_sequencing_experiment_delta;")
+                cursor.execute("SELECT * FROM import_new_row;")
                 result_df = pd.DataFrame(cursor.fetchall(), columns=sequencing_delta_columns)
-            pending = {row[0] for row in _run_radiant_sql(starrocks_session, radiant_mapping, pending_sql)}
+            pending = {row["case_id"] for row in _facts(starrocks_session, radiant_mapping)}
         finally:
             pg_cursor.execute(
                 "UPDATE cases SET status_code = %s, updated_on = %s WHERE id = 8", (status_code, updated_on)
@@ -1037,3 +1049,53 @@ def test_sequencing_experiment_delta_reads_the_somatic_cnv_of_the_tumor_only_run
     assert (int(row["seq_id"]), row["histology_type"]) == (9641, "tumoral")
     assert row["cnv_vcf_filepath"] == "s3://test-vcf/A9641-T.cnv.vcf.gz"
     assert pd.isna(row["vcf_filepath"]), "the raw un-annotated ssnv VCF leaked into vcf_filepath"
+
+
+def _stage_case(starrocks_session, case_id, ingested_at, task_id=None):
+    """Copy importable_task rows of `case_id` into staging, part 0, with `ingested_at`; optionally under `task_id`."""
+    task = task_id if task_id is not None else "task_id"
+    with starrocks_session.cursor() as cursor:
+        cursor.execute(
+            f"""
+            INSERT INTO staging_sequencing_experiment
+            SELECT case_id, seq_id, {task}, task_type, 0 AS part, analysis_type, aliquot, patient_id,
+                   experimental_strategy, tenant_code, request_priority, vcf_filepath, cnv_vcf_filepath,
+                   exomiser_filepath, sex, family_id, family_role, affected_status, histology_type, created_at,
+                   updated_at, '{ingested_at}' AS ingested_at, false AS deleted
+            FROM importable_task
+            WHERE case_id = %s
+            """,
+            (case_id,),
+        )
+
+
+def _facts_of_case(starrocks_session, radiant_mapping, case_id):
+    return sorted(
+        (r["state"], int(r["task_id"]), bool(r["deleted"]))
+        for r in _facts(starrocks_session, radiant_mapping)
+        if r["case_id"] == case_id
+    )
+
+
+def test_a_row_staged_but_not_loaded_is_still_a_fact(empty_staging, starrocks_session, radiant_mapping):
+    """Its `import_part` failed: `ingested_at` stays at the epoch, and the next import retries it."""
+    _stage_case(starrocks_session, 8, "1970-01-01 00:00:00")
+    assert _facts_of_case(starrocks_session, radiant_mapping, 8) == [("staged", 22, False), ("staged", 65, False)]
+    entries = [e for e in decide(_facts(starrocks_session, radiant_mapping)).entries if e.case_id == 8]
+    assert {str(r) for e in entries for r in e.reasons} == {"retry"}
+
+
+def test_a_loaded_row_is_no_fact(empty_staging, starrocks_session, radiant_mapping):
+    _stage_case(starrocks_session, 8, "2099-01-01 00:00:00")
+    assert _facts_of_case(starrocks_session, radiant_mapping, 8) == []
+
+
+def test_a_staged_row_of_a_task_gone_from_the_clinical_model_is_deleted(
+    empty_staging, starrocks_session, radiant_mapping
+):
+    """Detected on the fly, before any flag: the decision flags it and `import_part` purges its data."""
+    _stage_case(starrocks_session, 8, "2099-01-01 00:00:00", task_id=999999)
+    facts = _facts_of_case(starrocks_session, radiant_mapping, 8)
+    # Task 65 is new again (staged under another id), task 999999 is gone.
+    assert ("staged", 999999, True) in facts
+    assert decide(_facts(starrocks_session, radiant_mapping)).deleted_task_ids == [999999]

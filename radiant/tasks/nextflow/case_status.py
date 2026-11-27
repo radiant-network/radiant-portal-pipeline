@@ -16,6 +16,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel
 
+from radiant.tasks.importing.resolve import decide as decide_import
 from radiant.tasks.journal import Entry, Pipeline
 from radiant.tasks.nextflow.cnv.resolve import decide_cases as decide_cnv_cases
 from radiant.tasks.nextflow.qc.resolve import decide_cases as decide_qc_cases
@@ -25,13 +26,15 @@ from radiant.tasks.nextflow.somatic.resolve import decide_tasks as decide_somati
 
 LOGGER = logging.getLogger(__name__)
 
-# The pipelines the case scheduler decides from their facts, and journals.
+# The pipelines decided from their facts. The scheduler journals all but the import, which journals itself.
 DECIDE: dict[Pipeline, Callable[[list[dict], list[str]], list[Entry]]] = {
     Pipeline.GERMLINE_SNV: decide_snv_cases,
     Pipeline.GERMLINE_CNV: decide_cnv_cases,
     Pipeline.QUALITY_CONTROL: decide_qc_cases,
     Pipeline.QUALITY_CONTROL_SOMATIC: decide_qc_somatic_cases,
     Pipeline.SOMATIC_SNV: decide_somatic_snv_tasks,
+    # The import loads every tenant: no exclusion.
+    Pipeline.IMPORT: lambda rows, _excluded_tenants: decide_import(rows).entries,
 }
 
 SUBMITTED = "submitted"
@@ -56,7 +59,7 @@ def cases_with_work(
     excluded_tenants: list[str] = (),
 ) -> set[int]:
     """The cases at least one pipeline will run on: the cases the scheduler decides `run` for, from the facts
-    (`DECIDE`), the ones the "from Cases" DAGs are given, and the cases in the import delta. A case decided anything
+    (`DECIDE`), the ones the "from Cases" DAGs and the import are given. A case decided anything
     else (sequencing pending, no gVCF, tenant excluded...) is not counted: it would sit in `processing` with nothing
     running for it, and never reach `in_progress`.
     """
@@ -66,7 +69,7 @@ def cases_with_work(
         "somatic snv annotation": _run_case_ids(Pipeline.SOMATIC_SNV, somatic_snv_rows, excluded_tenants),
         "quality control": _run_case_ids(Pipeline.QUALITY_CONTROL, qc_rows, excluded_tenants),
         "somatic quality control": _run_case_ids(Pipeline.QUALITY_CONTROL_SOMATIC, qc_somatic_rows, excluded_tenants),
-        "import": sorted({row["case_id"] for row in import_rows}),
+        "import": _run_case_ids(Pipeline.IMPORT, import_rows, excluded_tenants),
     }
     for pipeline, case_ids in selected.items():
         LOGGER.info("%s: %d case(s) with work waiting %s", pipeline, len(case_ids), case_ids)

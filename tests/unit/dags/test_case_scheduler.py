@@ -116,10 +116,9 @@ def test_discovery_uses_each_cases_dag_query_and_the_run_s_block_list(dag_bag):
     # The somatic SNV child reads its named tasks with the scheduler's own query.
     child = dag_bag.get_dag("radiant-nextflow-somatic-snv-annotation-cases").get_task("fetch_tasks")
     assert child.sql == dag.get_task("discover_somatic_snv_cases").sql
+    # The import's own facts query: what is counted is what the import will decide to run.
     import_sql = dag.get_task("discover_import_cases").sql
-    assert "staging_sequencing_experiment_delta" in import_sql
-    # A row leaves the delta once inserted: the ones `import_part` has not loaded are still pending.
-    assert "se.updated_at >= COALESCE(se.ingested_at, '1970-01-01 00:00:00') OR se.deleted" in import_sql
+    assert import_sql == dag_bag.get_dag("radiant-import").get_task("fetch_import_facts").sql
 
 
 def test_the_cases_dags_are_given_the_run_s_block_list(dag_bag):

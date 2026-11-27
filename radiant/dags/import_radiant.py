@@ -1,6 +1,5 @@
 import datetime
 import logging
-from collections.abc import Sequence
 from typing import Any
 
 from airflow.decorators import dag, task
@@ -11,29 +10,15 @@ from airflow.utils.task_group import TaskGroup
 
 from radiant.dags import DEFAULT_ARGS, NAMESPACE
 from radiant.tasks.locking import STALE_LOCK_MAX_AGE
-from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions
+from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions, rows_output_processor
 
 logger = logging.getLogger(__name__)
 
 std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=10)
 
-
-def experiment_delta_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
-    from radiant.tasks.starrocks.partition import SequencingDeltaInput
-
-    column_names = [desc[0] for desc in descriptions[0]]
-    dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
-    delta = [vars(SequencingDeltaInput(**row)) for row in dict_rows]
-    return [delta]
-
-
-def experiment_output_processor(results: list[Any], descriptions: list[Sequence[Sequence] | None]) -> list[Any]:
-    from radiant.tasks.starrocks.partition import SequencingDeltaOutput
-
-    column_names = [desc[0] for desc in descriptions[0]]
-    dict_rows = [dict(zip(column_names, row, strict=False)) for row in results[0]]
-    delta = [vars(SequencingDeltaOutput(**row)) for row in dict_rows]
-    return [delta]
+# Retried: the run's state ignores this teardown, so a failed write is only seen on its own task.
+JOURNAL_RETRIES = 2
+JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
 
 
 @dag(
@@ -50,27 +35,49 @@ def experiment_output_processor(results: list[Any], descriptions: list[Sequence[
 def import_radiant():
     start = EmptyOperator(task_id="start", task_display_name="[Start]")
 
-    with TaskGroup(group_id="partitioner_group") as tg_partition_group:
-        fetch_sequencing_experiment_delta = RadiantStarRocksOperator(
-            task_id="fetch_sequencing_experiment_delta",
-            sql="SELECT * FROM {{ mapping.starrocks_staging_sequencing_experiment_delta }}",
-            task_display_name="[StarRocks] Get Sequencing Experiment Delta",
-            output_processor=experiment_delta_output_processor,
-            do_xcom_push=True,
-        )
+    fetch_import_facts = RadiantStarRocksOperator(
+        task_id="fetch_import_facts",
+        sql="./sql/clinical/import_facts_select.sql",
+        task_display_name="[StarRocks] Facts of the import candidates",
+        output_processor=rows_output_processor,
+        do_xcom_push=True,
+    )
 
-        @task.short_circuit(
-            task_id="assign_partitions",
-            task_display_name="[PyOp] Assign Partitions",
-            ignore_downstream_trigger_rules=False,
-        )
-        def assign_partitions(delta: Any) -> Any:
+    @task(task_id="decide_import", task_display_name="[PyOp] Decide the import")
+    def decide_import(fact_rows: Any) -> dict:
+        from collections import Counter
+
+        from radiant.tasks.importing.resolve import decide
+
+        decision = decide(fact_rows)
+        logger.info("%d item(s) %s", len(decision.entries), dict(Counter(str(e.decision) for e in decision.entries)))
+        return decision.model_dump(mode="json")
+
+    @task(task_id="journal_import", task_display_name="[PyOp] Journal the import decisions")
+    def journal_import(decided: dict) -> int:
+        """Writes the journal only: nothing waits for it."""
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.journal import Entry, record
+
+        context = get_current_context()
+        written = record([Entry(**e) for e in decided["entries"]], context["run_id"], context["dag_run"].conf)
+        logger.info("%d row(s) written", len(written))
+        return len(written)
+
+    decided = decide_import(fetch_import_facts.output)
+    journal_import(decided)
+
+    with TaskGroup(group_id="partitioner_group") as tg_partition_group:
+
+        @task(task_id="assign_partitions", task_display_name="[PyOp] Assign Partitions")
+        def assign_partitions(decided: dict) -> Any:
             from radiant.tasks.starrocks.partition import SequencingExperimentPartitionAssigner
 
             assigner = SequencingExperimentPartitionAssigner()
-            return [row.__dict__ for row in assigner.assign_partitions(delta)]
+            return [row.__dict__ for row in assigner.assign_partitions(decided["new_rows"])]
 
-        assigned_partitions = assign_partitions(fetch_sequencing_experiment_delta.output)
+        assigned_partitions = assign_partitions(decided)
 
         @task(
             task_id="insert_sequencing_experiment",
@@ -88,6 +95,10 @@ def import_radiant():
             from radiant.dags import DAGS_DIR
             from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
+            if not sequencing_experiment:
+                logger.info("No new sequencing experiment to insert.")
+                return
+
             context = get_current_context()
             dag_conf = context["dag_run"].conf or {}
             _path = os.path.join(DAGS_DIR.resolve(), "sql/radiant/sequencing_experiment_insert.sql")
@@ -104,31 +115,23 @@ def import_radiant():
 
         insert_new_sequencing_experiment(assigned_partitions)
 
-    updated_deleted_sequencing_experiment = RadiantStarRocksOperator(
-        task_id="update_sequencing_experiment_deleted",
+    flag_deleted_sequencing_experiment = RadiantStarRocksOperator(
+        task_id="flag_deleted_sequencing_experiment",
         sql="./sql/radiant/sequencing_experiment_update_deleted.sql",
-        task_display_name="[StarRocks] Flag sequencing experiment to delete",
-        trigger_rule="none_failed",
-    )
-
-    fetch_sequencing_experiment = RadiantStarRocksOperator(
-        task_id="fetch_sequencing_experiment",
-        sql="./sql/radiant/sequencing_experiment_select.sql",
-        task_display_name="[StarRocks] Fetch Sequencing Experiments to process",
-        output_processor=experiment_output_processor,
-        do_xcom_push=True,
-        trigger_rule="none_failed",
+        task_display_name="[StarRocks] Flag the sequencing experiments of deleted tasks",
+        parameters={
+            "task_ids": "{{ (ti.xcom_pull(task_ids='decide_import') or {}).get('deleted_task_ids') or [-1] }}"
+        },
     )
 
     @task.short_circuit(task_id="assign_priority", task_display_name="[PyOp] Compute Priority")
-    def assign_priority(sequencing_experiment_to_process: Any) -> Any:
-        from radiant.tasks.starrocks.partition import SequencingExperimentPriorityAssigner
-
-        prioritized = SequencingExperimentPriorityAssigner.assign_priorities(sequencing_experiment_to_process)
+    def assign_priority(assigned: Any, decided: dict) -> Any:
         from airflow.sdk import get_current_context
 
-        context = get_current_context()
-        dag_conf = context["dag_run"].conf or {}
+        from radiant.tasks.starrocks.partition import SequencingExperimentPriorityAssigner
+
+        prioritized = SequencingExperimentPriorityAssigner.assign_priorities([*assigned, *decided["staged_rows"]])
+        dag_conf = get_current_context()["dag_run"].conf or {}
         return [{**dag_conf, **{"part": part}} for part in prioritized]
 
     @task.short_circuit(
@@ -137,7 +140,7 @@ def import_radiant():
         retries=2,
         retry_delay=datetime.timedelta(seconds=30),
     )
-    def prepare_tenants_tables(sequencing_experiment_to_process: Any) -> Any:
+    def prepare_tenants_tables(assigned: Any, decided: dict) -> Any:
         import os
 
         import jinja2
@@ -147,7 +150,7 @@ def import_radiant():
         from radiant.dags import DAGS_DIR
         from radiant.tasks.data.radiant_tables import STARROCKS_RADIANT_PER_TENANT_MAPPING, get_radiant_mapping
 
-        tenants = {s["tenant_code"] for s in sequencing_experiment_to_process}
+        tenants = {s["tenant_code"] for s in [*assigned, *decided["staged_rows"]]}
         if not tenants:
             logger.info("No tenants to prepare, stopping the execution.")
             return []
@@ -176,8 +179,8 @@ def import_radiant():
 
         return sorted(tenants)
 
-    priority = assign_priority(fetch_sequencing_experiment.output)
-    prepare_tenants = prepare_tenants_tables(fetch_sequencing_experiment.output)
+    priority = assign_priority(assigned_partitions, decided)
+    prepare_tenants = prepare_tenants_tables(assigned_partitions, decided)
 
     import_parts = TriggerDagRunOperator.partial(
         task_id="import_part",
@@ -207,15 +210,39 @@ def import_radiant():
         conf={"tenants": "{{ ti.xcom_pull(task_ids='prepare_tenants_tables') }}"},
     )
 
+    @task(
+        task_id="journal_import_outcomes",
+        task_display_name="[PyOp] Journal what the import did with its items",
+        retries=JOURNAL_RETRIES,
+        retry_delay=JOURNAL_RETRY_DELAY,
+    )
+    def journal_import_outcomes() -> int:
+        """`failed` for each item decided `run` that the facts still hold, `succeeded` for the others."""
+        from airflow.sdk import get_current_context
+
+        from radiant.tasks.importing.resolve import fetch_facts, outcome_entries
+        from radiant.tasks.journal import record
+
+        context = get_current_context()
+        conf = context["dag_run"].conf or {}
+        decided = context["ti"].xcom_pull(task_ids="decide_import") or {}
+        entries = outcome_entries(decided.get("entries", []), fetch_facts(conf))
+        written = record(entries, context["run_id"], conf)
+        logger.info("journaled %d outcome(s)", len(written))
+        return len(written)
+
     (
         start
+        >> fetch_import_facts
+        >> decided
         >> tg_partition_group
-        >> updated_deleted_sequencing_experiment
-        >> fetch_sequencing_experiment
+        >> flag_deleted_sequencing_experiment
         >> prepare_tenants
         >> import_parts
         >> run_data_integrity_checks
     )
+    flag_deleted_sequencing_experiment >> priority
+    import_parts >> journal_import_outcomes().as_teardown()
 
 
 import_radiant()

@@ -17,6 +17,8 @@ def test_each_code_leads_to_one_scheduler_decision():
     assert {code: code.decision for code in ReasonCode} == {
         ReasonCode.FIRST_RUN: Decision.RUN,
         ReasonCode.NEW_SEQUENCING: Decision.RUN,
+        ReasonCode.RETRY: Decision.RUN,
+        ReasonCode.TASK_DELETED: Decision.RUN,
         ReasonCode.PENDING_SEQUENCING: Decision.WAIT,
         ReasonCode.PENDING_ALIGNMENT: Decision.WAIT,
         ReasonCode.MISSING_INPUT: Decision.BLOCKED,
@@ -59,7 +61,9 @@ def test_an_unknown_query_code_raises():
 
 def test_the_text_fills_in_the_detail():
     reason = Reason(code=ReasonCode.MISSING_INPUT, detail="cram")
-    assert reason.text == "its current alignment published no cram document"
+    assert (
+        reason.text == "has no cram: a document its current alignment did not publish, or a value the import requires"
+    )
     assert str(reason) == "missing_input:cram"
     assert reason.decision == Decision.BLOCKED
 

@@ -164,11 +164,8 @@ def _discovery(prefix: str, trigger_rule: TriggerRule) -> list[RadiantStarRocksO
             "Facts of the somatic QC candidates",
             "./sql/clinical/quality_control_somatic_facts_select.sql",
         ),
-        query(
-            "import",
-            "Cases the import has work for",
-            "./sql/radiant/import_pending_case_select.sql",
-        ),
+        # Decided here only to count the cases: the import decides again, and journals, when it runs.
+        query("import", "Facts of the import candidates", "./sql/clinical/import_facts_select.sql"),
     ]
 
 

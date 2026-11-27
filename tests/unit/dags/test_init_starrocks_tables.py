@@ -12,9 +12,8 @@ _BASE_TABLES = [
     "current_germline_gvcf",
     "current_germline_gcnv",
     "case_member",
-    "staging_external_sequencing_experiment",
+    "importable_task",
     "staging_sequencing_experiment",
-    "staging_sequencing_experiment_delta",
     "snv_tmp_variant",
     "snv_staging_variant",
     "variant_lookup",
@@ -36,7 +35,7 @@ def test_dag_is_importable(dag_bag):
 def test_dag_has_correct_number_of_tasks(dag_bag):
     dag = dag_bag.get_dag(_BASE_DAG_ID)
     # 23 base radiant tables and views + 2 clinical tables + 25 open data tables + 2 UDFs
-    assert len(dag.tasks) == 52
+    assert len(dag.tasks) == 51
 
 
 def test_dag_has_all_base_tasks(dag_bag):

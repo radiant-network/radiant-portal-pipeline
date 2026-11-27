@@ -36,8 +36,10 @@ class ReasonCode(StrEnum):
     FIRST_RUN = (
         "first_run",
         Decision.RUN,
-        "never processed by this pipeline: the case, or this calling task for the case",
+        "never processed by this pipeline: the case, or this task for the case",
     )
+    RETRY = "retry", Decision.RUN, "an earlier import staged it but did not finish loading it"
+    TASK_DELETED = "task_deleted", Decision.RUN, "the clinical model no longer has the task: its data is purged"
     NEW_SEQUENCING = (
         "new_sequencing",
         Decision.RUN,
@@ -50,7 +52,11 @@ class ReasonCode(StrEnum):
         Decision.WAIT,
         "its current sequencing experiment has no alignment task yet",
     )
-    MISSING_INPUT = "missing_input", Decision.BLOCKED, "its current alignment published no {detail} document"
+    MISSING_INPUT = (
+        "missing_input",
+        Decision.BLOCKED,
+        "has no {detail}: a document its current alignment did not publish, or a value the import requires",
+    )
     AMBIGUOUS_INPUT = (
         "ambiguous_input",
         Decision.BLOCKED,

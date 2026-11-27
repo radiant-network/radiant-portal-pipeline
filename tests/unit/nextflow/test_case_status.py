@@ -5,6 +5,7 @@ from airflow.exceptions import AirflowSkipException
 
 from radiant.tasks.nextflow import case_status
 from radiant.tasks.nextflow.portal import PortalError
+from tests.unit.importing.test_resolve import fact_row as import_fact_row
 from tests.unit.nextflow.cnv.conftest import member_row as cnv_member_row
 from tests.unit.nextflow.conftest import member_row as snv_member_row
 from tests.unit.nextflow.qc.conftest import member_row as qc_member_row
@@ -71,14 +72,14 @@ def status_row(case_id, status_code="submitted", has_variants=False, tenant_code
     return {"case_id": case_id, "tenant_code": tenant_code, "status_code": status_code, "has_variants": has_variants}
 
 
-def test_work_waiting_is_the_union_of_every_pipeline_and_the_import_delta():
+def test_work_waiting_is_the_union_of_every_pipeline_and_the_import():
     waiting = case_status.cases_with_work(
         germline_snv_rows=[snv_facts(case_id=1)],
         germline_cnv_rows=[cnv_facts(case_id=2)],
         somatic_snv_rows=calling_task_rows(case_id=5),
         qc_rows=[qc_facts(case_id=3)],
         qc_somatic_rows=[tumor_facts(case_id=6)],
-        import_rows=[{"case_id": 4}, {"case_id": 4}],
+        import_rows=[import_fact_row(case_id=4, seq_id=1), import_fact_row(case_id=4, seq_id=2)],
     )
     assert waiting == {1, 2, 3, 4, 5, 6}
 
@@ -92,7 +93,8 @@ def test_a_case_the_pipeline_would_exclude_is_not_work_waiting(reason):
         somatic_snv_rows=calling_task_rows(case_id=5, **SOMATIC_SNV_FACTS[reason]),
         qc_rows=[qc_facts(case_id=3, reason=reason)],
         qc_somatic_rows=[],
-        import_rows=[],
+        # Blocked: a value the import requires is missing.
+        import_rows=[import_fact_row(case_id=4, sex=None)],
         excluded_tenants=["excluded"],
     )
     assert waiting == set()

@@ -35,5 +35,5 @@ def test_the_view_is_created_in_the_base_database(view):
 
 def test_the_views_are_created_in_dependency_order_before_the_staging_view():
     """The init DAG chains its tasks in list order; a view must exist before a view reading it."""
-    positions = [_BASE_TABLES.index(name) for name in [*_VIEWS, "staging_external_sequencing_experiment"]]
+    positions = [_BASE_TABLES.index(name) for name in [*_VIEWS, "importable_task"]]
     assert positions == sorted(positions)

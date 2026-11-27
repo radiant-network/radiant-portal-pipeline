@@ -49,11 +49,10 @@ The union of:
   cases the "from Cases" DAGs are given (below). For somatic SNV, the cases of its calling tasks decided `run`.
   A case decided anything else (sequencing pending, no gVCF, tenant excluded, two DRAGEN metrics tarballs...)
   is **not** counted: it would sit in `processing` with nothing running for it, and never reach `in_progress`;
-- the cases the import still has work for (`sql/radiant/import_pending_case_select.sql`): those in
-  the delta view, `staging_sequencing_experiment_delta`, and those already inserted into
-  `staging_sequencing_experiment` but not loaded by `import_part` yet, with the import's own
-  predicate. A row leaves the delta as soon as it is inserted, so without the second part a case
-  whose `import_part` failed would look done.
+- the cases the import is decided `run` for, from the import's own facts (`sql/clinical/import_facts_select.sql`):
+  rows not in `staging_sequencing_experiment` yet, rows staged but not loaded by `import_part` yet (so a case
+  whose `import_part` failed does not look done), and rows of deleted tasks. A task blocked (a value missing
+  from a new row) is not counted.
 
 The question is asked twice with the same queries: before the pipelines (`discover_*`), to pick
 the cases to move to `processing`, and after them (`rediscover_*`), to hold back the cases a
@@ -66,7 +65,8 @@ nothing is pending for them.
 
 ## Journal
 
-Every pipeline but the import is decided the same way, each with its own three tasks: `discover_<query>_cases`
+The import decides and journals itself, in `radiant-import`. Every other pipeline is decided the same way here,
+each with its own three tasks: `discover_<query>_cases`
 reads the facts of the candidates (`sql/clinical/<pipeline>_facts_select.sql`), `decide_<pipeline>` decides each
 item in Python (run, wait, blocked or skip, with all the reasons), and `journal_<pipeline>` writes it to
 `pipeline_journal`. The item is the case, except for somatic SNV: the (case, calling task) pair, its `item_key`

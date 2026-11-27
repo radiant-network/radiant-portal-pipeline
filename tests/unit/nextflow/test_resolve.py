@@ -130,7 +130,7 @@ def test_members_spanning_several_strategies_are_excluded(trio_rows):
 def test_a_named_task_that_cannot_run_raises(trio_rows):
     """An operator asked for this specific work, so silence would be the wrong answer."""
     trio_rows[0]["exclusion_reason"] = "no_gvcf"
-    with pytest.raises(CaseResolutionError, match="published no gvcf document"):
+    with pytest.raises(CaseResolutionError, match="has no gvcf: a document"):
         select_cases(trio_rows, [900, 901, 902])
 
 
@@ -149,7 +149,7 @@ def test_strict_reports_every_problem_at_once(trio_rows, singleton_rows):
     with pytest.raises(CaseResolutionError) as excinfo:
         select_cases(trio_rows + singleton_rows, [900, 901, 902, 910, 999])
     message = str(excinfo.value)
-    assert "published no gvcf document" in message
+    assert "has no gvcf: a document" in message
     assert "unsupported experimental strategy" in message
     assert "[999]" in message
 

@@ -18,7 +18,7 @@ VEP_DIR = "ensemblvep"
 # logical name -> (relative key template, data_type_code, format_code)
 #
 # The VEP VCF is the final artefact: the run stops after VEP (`tools = vep`). It is declared
-# `ssnv`/`vcf`, which is what `staging_external_sequencing_experiment` reads as `vcf_filepath` on a
+# `ssnv`/`vcf`, which is what `importable_task` reads as `vcf_filepath` on a
 # `radiant_somatic_annotation` task. The index rides along because the loader reads the `.tbi`
 # next to the VCF; the pipeline indexes the VEP output and publishes both.
 OUTPUT_SPEC = {
