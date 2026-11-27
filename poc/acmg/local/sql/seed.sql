@@ -115,7 +115,8 @@ SELECT
             'SO:0001583|missense_variant', 'SO:0001819|synonymous_variant')
         ELSE IF(r2 < 0.6, 'SO:0001583|missense_variant', 'SO:0001627|intron_variant')
     END],
-    concat('GENE', n % 20000, ':', n % 20000)
+    concat('GENE', n % 20000, ':', n % 20000),
+    CAST(IF(shift = 0, n, 10000000000 + n) AS STRING)
 FROM (
     -- Hashes of n, not rand(): StarRocks inlines this subquery and would draw rand() again at each use.
     SELECT
@@ -135,7 +136,8 @@ SELECT
     (n DIV 22) * 50 + 1 + k * 5 - 20,
     ['Pathogenic'],
     ['SO:0001583|missense_variant'],
-    concat('GENE', n % 20000, ':', n % 20000)
+    concat('GENE', n % 20000, ':', n % 20000),
+    CAST(20000000000 + n * 8 + k AS STRING)
 FROM TABLE(generate_series(${first}, ${last})) AS g(n)
 CROSS JOIN TABLE(generate_series(0, 7)) AS h(k)
 WHERE n % 2500 = 0;

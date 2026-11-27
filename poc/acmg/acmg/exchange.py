@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 
 import polars as pl
 import pyarrow.parquet as pq
-from acmg import clingen, hgnc, hpo
+from acmg import citations, clingen, erepo, hgnc, hpo
 from acmg.db import HERE, IDENTIFIERS, connect, execute, sql
 from acmg.models import OCCURRENCE_FACT_SCHEMA, VARIANT_FACT_SCHEMA, Ruleset
 from acmg.rules import OCCURRENCE_CRITERIA, VARIANT_CRITERIA, combine, evaluate, to_wide
@@ -242,6 +242,42 @@ def load_clingen(output_db: str, prefix: str, s3, symbols: pl.DataFrame) -> int:
     return genes.height
 
 
+def load_erepo(output_db: str, prefix: str, s3, rs: Ruleset) -> dict:
+    """Rebuilds the clingen_erepo table from the ClinGen Evidence Repository export on S3, read by the VCEP step."""
+    variants, unmapped = erepo.classifications(read_text(s3, erepo.FILE), rs)
+    pq.write_table(variants.to_arrow(), f"{prefix}/erepo/variants.parquet", filesystem=s3)
+    columns = ", ".join(erepo.SCHEMA)
+    execute(
+        f"INSERT OVERWRITE {output_db}.clingen_erepo ({columns})\nSELECT {columns}\n"
+        f"FROM FILES(\n{files_properties(f's3://{prefix}/erepo/variants.parquet')}\n)"
+    )
+    return {"variants": variants.height, "unmapped_codes": dict(unmapped)}
+
+
+def load_citations(output_db: str, prefix: str, s3) -> int:
+    """Rebuilds the clinvar_citation table from var_citations.txt on S3, read by the priority."""
+    variations = citations.variations(read_text(s3, citations.FILE))
+    pq.write_table(variations.to_arrow(), f"{prefix}/clinvar_citations/variations.parquet", filesystem=s3)
+    columns = ", ".join(citations.SCHEMA)
+    execute(
+        f"INSERT OVERWRITE {output_db}.clinvar_citation ({columns})\nSELECT {columns}\n"
+        f"FROM FILES(\n{files_properties(f's3://{prefix}/clinvar_citations/variations.parquet')}\n)"
+    )
+    return variations.height
+
+
+def replace_with_vcep(params: dict) -> dict:
+    """Swaps the computed criteria of the variants a VCEP curated for the VCEP's (sql/vcep_criteria.sql)."""
+    execute(sql("vcep_criteria.sql", **params))
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT count(DISTINCT locus_id), count(*) FROM {params['output_db']}.acmg_variant_criteria"
+            f" WHERE source = 'clingen_vcep' AND locus_id IN (SELECT locus_id FROM ({params['classified']}) k)"
+        )
+        variants, criteria = cur.fetchone()
+    return {"variants": variants, "criteria": criteria}
+
+
 def load_phenotype(params: dict, rs: Ruleset, prefix: str, s3, symbols: pl.DataFrame) -> dict:
     """Rebuilds acmg_phenotype for the cases: the PP4 points of each gene, from the case's HPO terms."""
     with connect() as conn, conn.cursor() as cur:
@@ -348,10 +384,18 @@ def run(args) -> dict:
     start = time.perf_counter()
     execute(sql("create_tables.sql", output_db=args.output_db))
     try:
+        rs = Ruleset.load(Path(args.ruleset))
         symbols = load_hgnc(args.output_db, prefix, s3)
         log(hgnc_symbols=symbols.height, clingen_genes=load_clingen(args.output_db, prefix, s3, symbols))
-        steps = {name: run_level(name, params, args, prefix, s3) for name in LEVELS}
-        steps["phenotype"] = load_phenotype(params, Ruleset.load(Path(args.ruleset)), prefix, s3, symbols)
+        log(erepo=load_erepo(args.output_db, prefix, s3, rs))
+        log(clinvar_citation_variations=load_citations(args.output_db, prefix, s3))
+        steps = {}
+        for name in LEVELS:
+            steps[name] = run_level(name, params, args, prefix, s3)
+            # The VCEP's criteria replace the computed ones once both criteria levels are loaded.
+            if name == "occurrence" and not args.no_vcep:
+                steps["vcep"] = replace_with_vcep(params)
+        steps["phenotype"] = load_phenotype(params, rs, prefix, s3, symbols)
         steps["priority"] = run_priority(params, args)
     finally:
         if not args.keep_files:
@@ -370,6 +414,7 @@ def main() -> None:
     parser.add_argument("--ruleset", default=str(HERE / "ruleset.yaml"))
     parser.add_argument("--all-transcripts", action="store_true", help="every transcript, not only MANE Select")
     parser.add_argument("--keep-files", action="store_true", help="leave the run's files on S3")
+    parser.add_argument("--no-vcep", action="store_true", help="keep the computed criteria of VCEP-curated variants")
     parser.add_argument("--check", action="store_true", help="EXPLAIN the facts queries only: no read, no write")
     parser.add_argument("--query-timeout", type=int, default=3600, help="seconds an unload or a load may run")
     parser.add_argument("--shared-db", default="acmg_poc")

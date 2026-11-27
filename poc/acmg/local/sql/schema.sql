@@ -107,7 +107,9 @@ CREATE TABLE IF NOT EXISTS ${shared_db}.clinvar (
     start BIGINT,
     clin_sig ARRAY<VARCHAR(100)>,
     mc ARRAY<VARCHAR(100)>,
-    geneinfo VARCHAR(1000)
+    geneinfo VARCHAR(1000),
+    -- ClinVar variation id, here the locus id.
+    name VARCHAR(20)
 )
 DUPLICATE KEY (locus_id)
 DISTRIBUTED BY HASH(locus_id) BUCKETS 10;

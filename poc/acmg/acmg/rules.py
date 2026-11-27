@@ -286,6 +286,10 @@ def bp1(rs: Ruleset) -> pl.Expr:
     return _graded(rs, "BP1", [(cond, Strength.SUPPORTING, lof_share, p.min_lof_share)], details)
 
 
+def _external(rs: Ruleset) -> pl.Expr:
+    return pl.lit(None, EVIDENCE_DTYPE)
+
+
 # Output order of the codes and of the audit.
 CRITERIA = {
     "BA1": ba1,
@@ -307,11 +311,14 @@ CRITERIA = {
     "BP7": bp7,
     "PVS1": pvs1,
 }
+# Criteria only a ClinGen VCEP gives (acmg.erepo): the columns exist so that its evidence is combined, never computed.
+EXTERNAL_CRITERIA = ["PS1", "PS2", "PS3", "PM5", "PP4", "PP5", "BS3", "BP3", "BP5", "BP6"]
+CRITERIA |= dict.fromkeys(EXTERNAL_CRITERIA, _external)
 
 
 VARIANT_CRITERIA = ["BA1", "BS1", "BS2", "PM2", "PM1", "PM4", "PS4", "PP2", "PP3", "BP1", "BP4", "BP7", "PVS1"]
 OCCURRENCE_CRITERIA = ["BS4", "PM3", "PM6", "PP1", "BP2"]
-assert sorted(VARIANT_CRITERIA + OCCURRENCE_CRITERIA) == sorted(CRITERIA)
+assert sorted(VARIANT_CRITERIA + OCCURRENCE_CRITERIA + EXTERNAL_CRITERIA) == sorted(CRITERIA)
 
 
 def _criterion(name: str, rs: Ruleset) -> pl.Expr:

@@ -5,11 +5,11 @@ with the ACMG/AMP rules of `ruleset.yaml`, then ranks them by priority, in five 
 
 | Step | Facts (`sql/`) | Grain | Output (in `--output-db`) |
 |---|---|---|---|
-| 1. variant | `variant_facts.sql` | (locus, MANE transcript) | `acmg_variant_criteria`: one row per criterion met |
+| 1. variant | `variant_facts.sql`, then `vcep_criteria.sql` | (locus, MANE transcript) | `acmg_variant_criteria`: one row per criterion met |
 | 2. occurrence | `occurrence_facts.sql` | (seq_id, locus), only where the case has evidence of its own | `acmg_occurrence_criteria`: one row per criterion met |
 | 3. classification | `classification_facts.sql`: both criteria tables per occurrence | (seq_id, locus, MANE transcript) | `acmg_classification`: class, points, codes, cancelled criteria |
 | 4. phenotype | `phenotype_facts.sql`: the case's observed HPO terms | (seq_id, gene) | `acmg_phenotype`: similarity, `top`, PP4 points |
-| 5. priority | `priority.sql`, in StarRocks | (seq_id, locus, MANE transcript) | `acmg_priority`: ACMG points + PP4 + inheritance fit, as a probability |
+| 5. priority | `priority.sql`, in StarRocks | (seq_id, locus, MANE transcript) | `acmg_priority`: ACMG points + PP4 + inheritance fit, as a probability; `pmid_count` and `published` (ClinVar citations) |
 
 Exclusions (BA1 cancels BS1, PVS1 cancels PP3, BP2 cancels PM3) and point caps (PM1 + PP3) apply at step 3, so the
 criteria tables hold every criterion met, and `acmg_classification.acmg_cancelled` the ones dropped and by which
@@ -62,7 +62,38 @@ Every ClinVar read skips variants whose best RCV has fewer than `clinvar.min_sta
 PVS1, PM1 and PP2 are dropped in a gene whose every ClinGen gene-disease validity is Disputed, Refuted or No Known
 Disease Relationship (`clingen.no_disease_drops`).
 
-Missing: PS1/PM5, PS2, PP4 in the class (priority only), PS3/BS3, BP3, BP5, PP5/BP6; PS4 from published cases (no literature source). Siblings: not read yet (probands only).
+Missing from the computed criteria: PS1/PM5, PS2, PP4 in the class (priority only), PS3/BS3, BP3, BP5, PP5/BP6; PS4
+from published cases (no literature source). A ClinGen VCEP gives all of them for the variants it curated (below).
+Siblings: not read yet (probands only).
+
+### ClinGen VCEP classifications
+
+A variant that a ClinGen Variant Curation Expert Panel classified (Evidence Repository, "erepo") takes the panel's met
+criteria in place of the computed ones of the variant. The case's own criteria (PM3, PM6, PP1, BS4, BP2) stay, unless
+the panel applied the same base code (a panel PM3_Strong drops our PM3; a panel PS2 or PM6 drops our PM6, the same de
+novo evidence). Frequency (BA1, BS1, PM2) is the exception: when the panel and the computed criteria contradict (PM2
+against BA1 or BS1), ours stay with their own source (newer gnomAD) and the panel's frequency criteria are dropped;
+otherwise the panel's stay (gene-specific thresholds). `vcep_criteria.sql` runs after the occurrence step, so the classification combines
+the panel's criteria with the usual exclusions and caps, and the class can differ from the panel's assertion (Tavtigian
+points vs each panel's own combining rules). Rows keep `source = clingen_vcep`, `refs` = the panel's PubMed ids; the
+panel, disease, assertion and erepo URL are in `clingen_erepo`, joined on `clinvar.name`. A rerun without the VCEP row
+restores the computed criteria.
+
+- **Match key:** the ClinVar Variation ID (`clinvar.name`, as the ETL's RCV join reads it). Left out: classifications
+  not in ClinVar yet (`-`, 11 % of the export, a third of them SNVs that a chromosome/position/ref/alt match on the
+  GRCh38 HGVS would catch), retracted ones, and those with no criterion met. The latest approved classification wins when
+  a variant has several (panels, diseases).
+- **Codes:** `PM3_Very Strong` and `BA1`-style codes map to criterion + strength (`Supporting`, `Moderate`, `Strong`,
+  `Very Strong`, `Stand Alone`); a code without suffix has its ACMG 2015 strength. PS1, PS2, PS3, PM5, PP4, PP5, BS3,
+  BP3, BP5, BP6 are criteria only a panel gives (`EXTERNAL_CRITERIA`); a code that maps to no criterion is counted in the
+  run log (`erepo.unmapped_codes`). PP4 from a panel keeps our own PP4 out of the priority (`pp4.blocked_by`).
+
+## ClinVar citations
+
+`var_citations.txt` gives the PubMed articles ClinVar cites for each variation (other sources are left out).
+`acmg_priority` carries `pmid_count` and `published` (at least one article) for the report; they never change a point.
+They stay out of the criteria `refs`: PVS1, PM1, PP2 and BP1 rest on the gene's other ClinVar variants, not on the
+articles about this one.
 
 ## Run locally
 
@@ -76,7 +107,8 @@ uv venv .venv --python 3.12 && uv pip install --python .venv/bin/python -r requi
 
 `local/` (the setup and its seed SQL) drops and refills synthetic stand-ins of the Radiant tables. It is not in the
 `acmg` package, nor in the image (`.dockerignore`), and refuses any StarRocks but a local one and any database not
-named `acmg_poc*`.
+named `acmg_poc*`. Its ClinVar `name` is the locus id: a VCEP or citation file for the local run uses locus ids as
+variation ids (a header-only file will do).
 
 ```sh
 .venv/bin/python -m acmg.exchange [--part 3 | --seq-ids 9 12]
@@ -91,6 +123,17 @@ Each run rebuilds `clingen_gene` in `--output-db` from two ClinGen downloads (pu
 |---|---|
 | `ClinGen_gene_curation_list_GRCh38.tsv` | https://ftp.clinicalgenome.org/ClinGen_gene_curation_list_GRCh38.tsv |
 | `gene-validity.csv` | https://search.clinicalgenome.org/kb/gene-validity/download |
+
+## ClinGen Evidence Repository and ClinVar citations
+
+Each run rebuilds `clingen_erepo` and `clinvar_citation` in `--output-db` from two downloads, copied once under
+`<S3_BUCKET>/erepo/` and `<S3_BUCKET>/clinvar_citations/` (public; ClinVar is public domain). Copy them again to take a
+newer release:
+
+| File | Source |
+|---|---|
+| `erepo/erepo.tsv` | https://erepo.clinicalgenome.org/evrepo/api/classifications/all?matchMode=exact&format=tabbed (slow: ~2 min) |
+| `clinvar_citations/var_citations.txt` | https://ftp.ncbi.nlm.nih.gov/pub/clinvar/tab_delimited/var_citations.txt (260 MB) |
 
 ## Gene symbols
 
@@ -130,8 +173,8 @@ criteria (PM1, PP2) count the spike itself (`ranks_without_clinvar_window_criter
 
 | | |
 |---|---|
-| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `ensembl_exon_by_gene`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/`, the HGNC file under `<S3_BUCKET>/hgnc/` |
-| Writes | the run's files under `s3://<bucket>/runs/<run id>/` (deleted at the end), the four tables of `--output-db` (created if missing; **refused if it is the shared or the tenant database**) |
+| Reads | the three facts queries: `<shared db>.snv__consequence`, `gnomad_genomes_v3`, `clinvar`, `clinvar_rcv_summary`, `ensembl_exon_by_gene`, `staging_sequencing_experiment`, `<tenant db>.snv__variant`, `germline__snv__occurrence`, `germline__snv__comphet`; the ClinGen files under `<S3_BUCKET>/clingen/`, the HGNC file under `<S3_BUCKET>/hgnc/`, the erepo export under `<S3_BUCKET>/erepo/`, `var_citations.txt` under `<S3_BUCKET>/clinvar_citations/` |
+| Writes | the run's files under `s3://<bucket>/runs/<run id>/` (deleted at the end), the tables of `--output-db` (created if missing; **refused if it is the shared or the tenant database**) |
 | Never | DROP, TRUNCATE, UPDATE or DELETE on a Radiant table |
 | Prints | counts per class and per criterion, file and row counts, timings |
 
@@ -182,6 +225,16 @@ pathogenic class across its occurrences):
 the POC classes 25 % P/LP, 43 % VUS, 32 % B/LB. The B/LB are 20 LoF variants that Exomiser scores PVS1, which the POC
 finds common (BA1, BS1, BS2; the BA1 ones in ~21 probands each, likely recurrent artefacts) or in a gene without a
 known LoF mechanism.
+
+**Against ClinGen VCEP criteria** (`poc-20 --no-vcep`, the 697 curated variants the tenant carries; criterion present
+or not, strength ignored):
+
+- Class: panel B/LB 605 → POC B/LB 82 %, VUS 18 %, P/LP 0. Panel P/LP 43 → POC P/LP 23 %, VUS 29, LB 4.
+- Criteria: PVS1 precision 75 %, recall 80 %. BA1 precision 100 %, recall 27 % (panels' gene-specific thresholds; we
+  give BS1). PM2 precision 38 %, PM1 9 %, PP2 1 % (1 of 110). Panels skip BS2/BP4/BP7 once BA1 is met, so their
+  precision is understated.
+- The 33 panel P/LP we miss lack literature criteria: PM3 26, PP4 22, PS3 17, PP1 15, PS4 12; 11 carry our BS2.
+- With the panel criteria (`poc-20`): Pathogenic 15 → 65, Likely pathogenic 1541 → 1545.
 
 **Priority** (`acmg.simulate`, ~265 test spikes per run; share of spikes in the top 10 of their case):
 

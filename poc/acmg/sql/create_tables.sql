@@ -17,6 +17,29 @@ CREATE TABLE IF NOT EXISTS ${output_db}.clingen_gene (
 PRIMARY KEY (symbol)
 DISTRIBUTED BY HASH(symbol) BUCKETS 1;
 
+-- ClinGen VCEP classifications by ClinVar variation (clinvar.name), rebuilt at each run from the erepo export on S3
+-- (acmg.erepo). The criteria replace the computed ones of the variant: acmg_variant_criteria rows with source clingen_vcep.
+CREATE TABLE IF NOT EXISTS ${output_db}.clingen_erepo (
+    variation_id VARCHAR(20) NOT NULL,
+    assertion VARCHAR(30),
+    panel VARCHAR(200),
+    disease VARCHAR(500),
+    mondo_id VARCHAR(30),
+    url VARCHAR(500),
+    pmids ARRAY<BIGINT>,
+    criteria ARRAY<STRUCT<criterion VARCHAR(10), code VARCHAR(30), strength VARCHAR(20), points INT>>
+)
+PRIMARY KEY (variation_id)
+DISTRIBUTED BY HASH(variation_id) BUCKETS 1;
+
+-- PubMed articles ClinVar cites per variation (clinvar.name), rebuilt at each run from var_citations.txt on S3.
+CREATE TABLE IF NOT EXISTS ${output_db}.clinvar_citation (
+    variation_id VARCHAR(20) NOT NULL,
+    pmids ARRAY<BIGINT>
+)
+PRIMARY KEY (variation_id)
+DISTRIBUTED BY HASH(variation_id) BUCKETS 1;
+
 -- Criteria met by a variant, before exclusions and caps (applied when an occurrence is classified).
 CREATE TABLE IF NOT EXISTS ${output_db}.acmg_variant_criteria (
     locus_id BIGINT NOT NULL,
@@ -76,6 +99,9 @@ CREATE TABLE IF NOT EXISTS ${output_db}.acmg_priority (
     inheritance_points INT NOT NULL,
     priority_points INT NOT NULL,
     priority_probability DOUBLE NOT NULL,
+    -- ClinVar's PubMed citations of the variant: for the reader, never in the points.
+    pmid_count INT NOT NULL,
+    published BOOLEAN NOT NULL,
     ruleset_version VARCHAR(30) NOT NULL
 )
 PRIMARY KEY (seq_id, locus_id, transcript_id)

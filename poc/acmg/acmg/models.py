@@ -415,6 +415,17 @@ class AuditCriteria(BaseModel):
     BP4: Evidence | None = None
     BP7: Evidence | None = None
     PVS1: Evidence | None = None
+    # Only a ClinGen VCEP gives these: nothing to compute them from.
+    PS1: Evidence | None = None
+    PS2: Evidence | None = None
+    PS3: Evidence | None = None
+    PM5: Evidence | None = None
+    PP4: Evidence | None = None
+    PP5: Evidence | None = None
+    BS3: Evidence | None = None
+    BP3: Evidence | None = None
+    BP5: Evidence | None = None
+    BP6: Evidence | None = None
 
 
 class Audit(BaseModel):

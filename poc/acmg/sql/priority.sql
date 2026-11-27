@@ -5,7 +5,7 @@ DELETE FROM ${output_db}.acmg_priority WHERE seq_id IN (${cases});
 
 INSERT INTO ${output_db}.acmg_priority
     (seq_id, locus_id, transcript_id, pp4_points, inheritance_points, priority_points, priority_probability,
-     ruleset_version)
+     pmid_count, published, ruleset_version)
 WITH case_parents AS (
     SELECT
         p.seq_id,
@@ -45,6 +45,14 @@ omim AS (
     LEFT JOIN ${output_db}.gene_symbol gs ON gs.symbol = o.symbol
     GROUP BY coalesce(gs.current, o.symbol)
 ),
+-- ClinVar's PubMed citations per locus.
+citations AS (
+    SELECT cv.locus_id, max(array_length(ci.pmids)) AS pmid_count
+    FROM ${shared_db}.clinvar cv
+    JOIN ${output_db}.clinvar_citation ci ON ci.variation_id = cv.name
+    WHERE cv.locus_id IN (SELECT locus_id FROM ${output_db}.acmg_classification WHERE seq_id IN (${cases}))
+    GROUP BY cv.locus_id
+),
 scored AS (
     SELECT
         c.seq_id, c.locus_id, c.transcript_id,
@@ -60,7 +68,8 @@ scored AS (
                 AND g.healthy_carrier_parent THEN ${healthy_parent_dominant_points}
             ELSE 0
         END AS inheritance_points,
-        c.acmg_points
+        c.acmg_points,
+        coalesce(ct.pmid_count, 0) AS pmid_count
     FROM ${output_db}.acmg_classification c
     JOIN ${shared_db}.snv__consequence k ON k.locus_id = c.locus_id AND k.transcript_id = c.transcript_id
     -- Gene joins on the current HGNC symbol (see variant_facts.sql); acmg_phenotype holds current symbols.
@@ -69,10 +78,11 @@ scored AS (
     LEFT JOIN ${output_db}.acmg_phenotype p ON p.seq_id = c.seq_id AND p.symbol = coalesce(gs.current, k.symbol)
     LEFT JOIN genotype g ON g.seq_id = c.seq_id AND g.locus_id = c.locus_id
     LEFT JOIN second_allele sa ON sa.seq_id = c.seq_id AND sa.locus_id = c.locus_id
+    LEFT JOIN citations ct ON ct.locus_id = c.locus_id
     WHERE c.seq_id IN (${cases})
 )
 SELECT
     seq_id, locus_id, transcript_id, pp4_points, inheritance_points, points,
     pow(${very_strong_odds}, points / 8.0) * ${prior} / ((pow(${very_strong_odds}, points / 8.0) - 1) * ${prior} + 1),
-    '${ruleset_version}'
+    pmid_count, pmid_count > 0, '${ruleset_version}'
 FROM (SELECT *, acmg_points + pp4_points + inheritance_points AS points FROM scored) t;
