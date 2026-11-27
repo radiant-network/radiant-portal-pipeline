@@ -85,3 +85,20 @@ def test_a_task_is_found_back_from_the_url_of_its_output(postgres_clinical_seeds
         sql = (DAGS_DIR / "sql" / "clinical" / "output_task_select.sql").read_text()
         cursor.execute(jinja2.Template(sql).render(mapping=radiant_mapping), {"urls": [url, "s3://unknown.vcf.gz"]})
         assert cursor.fetchall() == ((url, 63),)
+
+
+def test_the_evaluation_reads_the_items_of_its_cases(journal, radiant_mapping):
+    write(
+        journal,
+        radiant_mapping,
+        [
+            _entry(1, Decision.RUN),
+            _entry(1, Decision.WAIT, ALIGNMENT, pipeline=Pipeline.GERMLINE_CNV),
+            _entry(2, Decision.RUN),
+        ],
+        "scheduled__j1",
+        J1,
+    )
+    sql = (DAGS_DIR / "sql" / "radiant" / "pipeline_state_of_cases_select.sql").read_text()
+    journal.execute(jinja2.Template(sql).render(mapping=radiant_mapping), {"case_ids": [1]})
+    assert sorted(journal.fetchall()) == [(1, "germline_cnv", "", "wait"), (1, "germline_snv", "", "run")]

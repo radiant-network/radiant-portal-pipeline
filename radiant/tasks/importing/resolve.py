@@ -72,6 +72,19 @@ def outcome_entries(entries: list[dict], fact_rows_after: list[dict]) -> list[En
     ]
 
 
+def cases_with_new_data(entries: list[dict], outcomes: list[Entry]) -> list[int]:
+    """The cases with an item `succeeded` that was decided `first_run` or `retry`: data to analyse. A purge
+    (`task_deleted`) brings none."""
+    loading = {
+        (e.case_id, e.item_key)
+        for e in map(Entry.model_validate, entries)
+        if e.decision == Decision.RUN and {r.code for r in e.reasons} & {ReasonCode.FIRST_RUN, ReasonCode.RETRY}
+    }
+    return sorted(
+        {o.case_id for o in outcomes if o.decision == Decision.SUCCEEDED and (o.case_id, o.item_key) in loading}
+    )
+
+
 def fetch_facts(conf: dict | None = None) -> list[dict]:
     """The facts, over the Airflow StarRocks connection."""
     from airflow.hooks.base import BaseHook

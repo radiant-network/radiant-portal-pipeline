@@ -25,4 +25,8 @@ SELECT pc.case_id            AS case_id,
        i.case_id IS NOT NULL AS has_variants
 FROM {{ mapping.starrocks_pipeline_case }} pc
 LEFT JOIN imported i ON i.case_id = pc.case_id
+{%- if params.get('case_ids') %}
+-- `radiant-case-evaluation`: the cases it was named only.
+WHERE pc.case_id IN %(case_ids)s
+{%- endif %}
 ORDER BY pc.case_id

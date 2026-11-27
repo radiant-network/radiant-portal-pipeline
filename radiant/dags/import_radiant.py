@@ -3,22 +3,44 @@ import logging
 from typing import Any
 
 from airflow.decorators import dag, task
+from airflow.models.param import Param
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.utils.state import DagRunState
 from airflow.utils.task_group import TaskGroup
 
-from radiant.dags import DEFAULT_ARGS, NAMESPACE
+from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env
 from radiant.tasks.locking import STALE_LOCK_MAX_AGE
+from radiant.tasks.nextflow.paths import sanitize_run_tag
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, SubmitTaskOptions, rows_output_processor
 
 logger = logging.getLogger(__name__)
 
 std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=10)
 
-# Retried: the run's state ignores this teardown, so a failed write is only seen on its own task.
+# The journal write is idempotent (an unchanged row is not written twice), so a retry is safe.
 JOURNAL_RETRIES = 2
 JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
+
+# Handed on to `radiant-case-evaluation`, which moves the statuses and emails: the import itself loads every tenant.
+dag_params = {
+    "excluded_tenants": Param(
+        excluded_tenants_from_env(),
+        type="array",
+        items={"type": "string"},
+        title="Excluded tenants",
+        description=(
+            "Tenants whose case statuses are left alone. The import still loads them. Defaults to "
+            f"${EXCLUDED_TENANTS_ENV}; empty excludes none. The case scheduler passes its own."
+        ),
+    ),
+    "notify": Param(
+        True,
+        type="boolean",
+        title="Notify the laboratories",
+        description="Passed to radiant-case-evaluation: email the laboratories of the cases it moves or finds ready.",
+    ),
+}
 
 
 @dag(
@@ -29,8 +51,10 @@ JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
     tags=["radiant", "scheduled"],
     dag_display_name="Radiant - Scheduled Import",
     dag_id=f"{NAMESPACE}-import",
+    params=dag_params,
     render_template_as_native_obj=True,
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
+    user_defined_macros={"sanitize_run_tag": sanitize_run_tag},
 )
 def import_radiant():
     start = EmptyOperator(task_id="start", task_display_name="[Start]")
@@ -215,21 +239,45 @@ def import_radiant():
         task_display_name="[PyOp] Journal what the import did with its items",
         retries=JOURNAL_RETRIES,
         retry_delay=JOURNAL_RETRY_DELAY,
+        trigger_rule="all_done",
     )
-    def journal_import_outcomes() -> int:
-        """`failed` for each item decided `run` that the facts still hold, `succeeded` for the others."""
+    def journal_import_outcomes() -> list[int]:
+        """`failed` for each item decided `run` that the facts still hold, `succeeded` for the others. Returns the
+        cases that got new data, for the evaluation."""
         from airflow.sdk import get_current_context
 
-        from radiant.tasks.importing.resolve import fetch_facts, outcome_entries
+        from radiant.tasks.importing.resolve import cases_with_new_data, fetch_facts, outcome_entries
         from radiant.tasks.journal import record
 
         context = get_current_context()
         conf = context["dag_run"].conf or {}
         decided = context["ti"].xcom_pull(task_ids="decide_import") or {}
-        entries = outcome_entries(decided.get("entries", []), fetch_facts(conf))
-        written = record(entries, context["run_id"], conf)
-        logger.info("journaled %d outcome(s)", len(written))
-        return len(written)
+        outcomes = outcome_entries(decided.get("entries", []), fetch_facts(conf))
+        written = record(outcomes, context["run_id"], conf)
+        case_ids = cases_with_new_data(decided.get("entries", []), outcomes)
+        logger.info("journaled %d outcome(s); %d case(s) with new data: %s", len(written), len(case_ids), case_ids)
+        return case_ids
+
+    outcomes = journal_import_outcomes()
+
+    # Not waiting: the statuses and the emails are that DAG's, a portal failure there does not fail the import.
+    trigger_case_evaluation = TriggerDagRunOperator(
+        task_id="trigger_case_evaluation",
+        task_display_name="[DAG] Case Evaluation (in_progress, emails)",
+        trigger_dag_id=f"{NAMESPACE}-case-evaluation",
+        trigger_run_id="{{ sanitize_run_tag(run_id) }}",
+        reset_dag_run=True,
+        wait_for_completion=False,
+        conf={
+            "case_ids": "{{ ti.xcom_pull(task_ids='journal_import_outcomes') }}",
+            "excluded_tenants": "{{ params.excluded_tenants }}",
+            "notify": "{{ params.notify }}",
+        },
+    )
+
+    @task.short_circuit(task_id="has_cases_to_evaluate", task_display_name="[PyOp] Skip when no case got new data")
+    def has_cases_to_evaluate(case_ids: Any) -> bool:
+        return bool(case_ids)
 
     (
         start
@@ -242,7 +290,8 @@ def import_radiant():
         >> run_data_integrity_checks
     )
     flag_deleted_sequencing_experiment >> priority
-    import_parts >> journal_import_outcomes().as_teardown()
+    import_parts >> outcomes
+    has_cases_to_evaluate(outcomes) >> trigger_case_evaluation
 
 
 import_radiant()

@@ -110,3 +110,20 @@ def test_an_item_still_in_the_facts_after_the_import_failed():
         (1, "10"): Decision.SUCCEEDED,
         (2, "11"): Decision.FAILED,
     }
+
+
+def test_the_cases_with_new_data_are_the_ones_loaded_not_purged():
+    from radiant.tasks.importing.resolve import cases_with_new_data
+
+    decided = decide(
+        [
+            fact_row(case_id=1),
+            fact_row(case_id=2, task_id=11, state="staged"),
+            fact_row(case_id=3, task_id=12, state="staged", deleted=1),
+            fact_row(case_id=4, task_id=13),
+        ]
+    )
+    entries = [e.model_dump(mode="json") for e in decided.entries]
+    # Case 4's item is still in the facts after the import: it failed.
+    outcomes = outcome_entries(entries, [fact_row(case_id=4, task_id=13)])
+    assert cases_with_new_data(entries, outcomes) == [1, 2]

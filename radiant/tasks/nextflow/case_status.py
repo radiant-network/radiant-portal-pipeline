@@ -16,6 +16,7 @@ from collections.abc import Callable
 
 from pydantic import BaseModel
 
+from radiant.tasks.decision import Decision
 from radiant.tasks.importing.resolve import decide as decide_import
 from radiant.tasks.journal import Entry, Pipeline
 from radiant.tasks.nextflow.cnv.resolve import decide_cases as decide_cnv_cases
@@ -36,6 +37,9 @@ DECIDE: dict[Pipeline, Callable[[list[dict], list[str]], list[Entry]]] = {
     # The import loads every tenant: no exclusion.
     Pipeline.IMPORT: lambda rows, _excluded_tenants: decide_import(rows).entries,
 }
+
+# The pipelines whose items hold a case back from `in_progress`. Not QC: it does not count for the statuses yet.
+READINESS_PIPELINES = (Pipeline.GERMLINE_SNV, Pipeline.GERMLINE_CNV, Pipeline.SOMATIC_SNV)
 
 SUBMITTED = "submitted"
 PROCESSING = "processing"
@@ -203,3 +207,14 @@ def skip_if_not_granted(tenant: str, call: Callable, *args):
             raise
         LOGGER.warning("tenant '%s' skipped: %s", tenant, error)
         raise AirflowSkipException(f"tenant '{tenant}' is not granted to the service account") from None
+
+
+def not_ready_cases(state_rows: list[dict]) -> set[int]:
+    """The cases one of whose `READINESS_PIPELINES` items is still running (last row `run`, no outcome yet) or
+    `failed`, from `pipeline_state`. `wait`, `blocked` and `skip` do not hold a case back."""
+    pipelines = {str(p) for p in READINESS_PIPELINES}
+    return {
+        row["case_id"]
+        for row in state_rows
+        if row["pipeline"] in pipelines and row["decision"] in (Decision.RUN, Decision.FAILED)
+    }

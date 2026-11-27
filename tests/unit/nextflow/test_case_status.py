@@ -288,3 +288,25 @@ def test_a_case_group_refused_for_the_tenant_is_skipped(caplog):
     with caplog.at_level(logging.WARNING), pytest.raises(AirflowSkipException, match="qlin"):
         case_status.skip_if_not_granted("qlin", post_group, "results-x", [1])
     assert "tenant 'qlin' skipped" in caplog.text
+
+
+def _state(case_id, pipeline, decision, item_key=""):
+    return {"case_id": case_id, "pipeline": pipeline, "item_key": item_key, "decision": decision}
+
+
+def test_a_case_is_not_ready_while_one_of_its_pipelines_runs_or_failed():
+    state = [
+        _state(1, "germline_snv", "succeeded"),
+        _state(1, "germline_cnv", "failed"),
+        _state(2, "germline_snv", "run"),
+        _state(3, "somatic_snv", "succeeded", "70"),
+        _state(3, "somatic_snv", "run", "71"),
+        # wait, blocked and skip do not hold a case back.
+        _state(4, "germline_snv", "succeeded"),
+        _state(4, "germline_cnv", "blocked"),
+        _state(5, "germline_snv", "wait"),
+        # Neither quality control nor the import counts.
+        _state(6, "quality_control", "failed"),
+        _state(6, "import", "run", "13"),
+    ]
+    assert case_status.not_ready_cases(state) == {1, 2, 3}

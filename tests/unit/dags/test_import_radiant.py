@@ -19,6 +19,8 @@ def test_dag_has_expected_tasks(dag_bag):
         "import_part",
         "data_integrity_checks",
         "journal_import_outcomes",
+        "has_cases_to_evaluate",
+        "trigger_case_evaluation",
     }
     assert set(dag.task_ids) == expected_tasks
 
@@ -41,10 +43,24 @@ def test_dag_task_dependencies_are_correct(dag_bag):
 
 
 def test_outcomes_are_journaled_whatever_the_parts_did(dag_bag):
-    """A teardown: it runs after a failed part too, and does not change the run's state."""
+    """All done: a failed part still journals its outcomes, and the cases of the other parts are evaluated."""
     outcomes = dag_bag.get_dag("radiant-import").get_task("journal_import_outcomes")
-    assert outcomes.is_teardown
+    assert outcomes.trigger_rule == "all_done"
     assert "import_part" in outcomes.upstream_task_ids
+
+
+def test_the_cases_with_new_data_are_handed_to_the_evaluation(dag_bag):
+    dag = dag_bag.get_dag("radiant-import")
+    trigger = dag.get_task("trigger_case_evaluation")
+    assert trigger.trigger_dag_id == "radiant-case-evaluation"
+    # The statuses and emails are that DAG's: a failure there does not fail the import.
+    assert trigger.wait_for_completion is False
+    assert trigger.conf == {
+        "case_ids": "{{ ti.xcom_pull(task_ids='journal_import_outcomes') }}",
+        "excluded_tenants": "{{ params.excluded_tenants }}",
+        "notify": "{{ params.notify }}",
+    }
+    assert dag.get_task("has_cases_to_evaluate").upstream_task_ids == {"journal_import_outcomes"}
 
 
 def test_data_integrity_checks_scoped_to_this_batch_tenants(dag_bag):
