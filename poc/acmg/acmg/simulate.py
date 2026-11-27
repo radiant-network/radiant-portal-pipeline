@@ -1,7 +1,9 @@
 """Ranking benchmark of the phenotype score (no clinical truth needed): a ClinVar P/LP variant already classified is
-spiked into the classified occurrences of a random proband, with a phenotype drawn from one of its gene's diseases
-(some terms made vaguer, some noise terms added). Half the simulations calibrate PP4 points per phenotype bin
-(likelihood ratio -> Bayesian points), the other half measure the spike's rank with and without them.
+spiked into the classified occurrences of a random proband, with a phenotype drawn from one of its gene's diseases,
+or with --cases from a published case of the gene (some terms made vaguer, some noise terms added). Drawing from the
+annotations that score the genes is circular: give --cases published after the --genes-file release. Half the
+simulations calibrate PP4 points per phenotype bin (likelihood ratio -> Bayesian points), the other half measure the
+spike's rank with and without them.
 
 Reads the output of a classification run (--output-db) and the HPO files under s3://<bucket>/hpo/. Writes nothing.
 Prints aggregates only: bins, ranks, and how many probands of the tenant have HPO terms.
@@ -111,6 +113,19 @@ def simulated_phenotype(
     terms = rng.sample(disease, min(args.n_terms, len(disease)))
     terms = [rng.choice(ancestors[t]) if ancestors.get(t) and rng.random() < args.imprecision else t for t in terms]
     return terms + rng.sample(pool, args.n_noise)
+
+
+def published_cases(text: str, closure: pl.DataFrame, alt: pl.DataFrame) -> list[tuple[str, list[str]]]:
+    """(gene, sorted phenotypic terms) per case of a TSV with columns case, gene, hpo_id, sorted by case."""
+    rows = hpo.normalize(pl.read_csv(text.encode(), separator="\t", infer_schema=False), alt)
+    return [
+        (r["gene"], r["hpo_id"])
+        for r in rows.join(closure.select("term").unique(), left_on="hpo_id", right_on="term")
+        .group_by("case", "gene")
+        .agg(pl.col("hpo_id").sort())
+        .sort("case")
+        .iter_rows(named=True)
+    ]
 
 
 def pp4_blocked(criteria: pl.Expr, blocked: list[str]) -> pl.Expr:
@@ -230,7 +245,7 @@ def run(args) -> dict:
             return f.read().decode()
 
     closure, alt = hpo.ontology(read(hpo.ONTOLOGY))
-    genes = hpo.annotations(read(hpo.GENES))
+    genes = hpo.annotations(read(args.genes_file))
     terms = hpo.gene_terms(closure, genes)
     # Every list the rng draws from is sorted: group_by and set order change between runs.
     diseases = (
@@ -249,19 +264,34 @@ def run(args) -> dict:
     pool = sorted(genes.join(closure.select("term").unique(), left_on="hpo_id", right_on="term")["hpo_id"].unique())
 
     blocked = Ruleset.load(HERE / "ruleset.yaml").pp4.blocked_by
-    candidates = spikes(args).filter(pl.col("symbol").is_in(list(by_gene)))
+    candidates = spikes(args)
+    if not args.cases:
+        candidates = candidates.filter(pl.col("symbol").is_in(list(by_gene)))
     candidates = candidates.with_columns(pp4_blocked=pp4_blocked(pl.col("acmg_criteria"), blocked))
     back = background(args, rng).with_columns(pp4_blocked=pp4_blocked(pl.col("acmg_criteria"), blocked))
     seq_ids = sorted(back["seq_id"].unique())
-    picked = candidates.sample(min(args.n_sims, candidates.height), seed=args.seed).to_dicts()
+    if args.cases:
+        # One simulation per published case: a classified P/LP variant of its gene, the case's own terms.
+        by_symbol = {
+            k[0]: g.sort("locus_id").to_dicts() for k, g in candidates.partition_by("symbol", as_dict=True).items()
+        }
+        published = published_cases(read(args.cases), closure, alt)
+        # Few published genes have a classified variant: the others borrow a random spike's evidence.
+        every = candidates.sort("locus_id").to_dicts()
+        picked = [({**rng.choice(by_symbol.get(g, every)), "symbol": g}, phenotype) for g, phenotype in published]
+    else:
+        picked = [
+            (s, rng.choice(by_gene[s["symbol"]]))
+            for s in candidates.sample(min(args.n_sims, candidates.height), seed=args.seed).to_dicts()
+        ]
     cases = [
         {
             "sim": i,
             "seq_id": rng.choice(seq_ids),
-            "phenotype": simulated_phenotype(rng, rng.choice(by_gene[s["symbol"]]), ancestors, pool, args),
+            "phenotype": simulated_phenotype(rng, source, ancestors, pool, args),
             **s,
         }
-        for i, s in enumerate(picked)
+        for i, (s, source) in enumerate(picked)
     ]
     rows = simulate(cases, back, closure, terms)
     calibration, test = rows.filter(pl.col("sim") % 2 == 0), rows.filter(pl.col("sim") % 2 == 1)
@@ -287,6 +317,9 @@ def main() -> None:
     parser.add_argument("--shared-db", default="acmg_poc")
     parser.add_argument("--tenant-code", default="acmg_poc")
     parser.add_argument("--clinical-db", default="radiant_jdbc.public", help="catalog.database of obs_categorical")
+    parser.add_argument("--genes-file", default=hpo.GENES, help="bucket key of the gene annotations to score with")
+    parser.add_argument("--cases", help="bucket key of published cases (TSV case, gene, hpo_id) to take phenotypes "
+                        "from, instead of the gene's annotations; then one simulation per case, --n-sims ignored")
     parser.add_argument("--n-sims", type=int, default=1000)
     parser.add_argument("--n-background", type=int, default=100, help="probands drawn as backgrounds")
     parser.add_argument("--n-terms", type=int, default=5, help="disease terms given to the simulated patient")

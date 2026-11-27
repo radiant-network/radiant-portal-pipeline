@@ -54,7 +54,13 @@ GENES = (
     "2\tG2\tHP:A2\ta2\t-\tOMIM:2\n"
     "3\tG3\tHP:B\tb\t-\tOMIM:3\n"
     "3\tG3\tHP:X\tx\t-\tOMIM:3\n"
+    "2\tG2\tHP:B\tb\tHP:0040285\tOMIM:2\n"
 )
+
+
+def test_annotations_skip_excluded_phenotypes():
+    genes = hpo.annotations(GENES)
+    assert genes.filter(pl.col("symbol") == "G2")["hpo_id"].to_list() == ["HP:A2"]
 
 
 def load():
@@ -136,6 +142,12 @@ def test_simulated_phenotype_draws_terms_then_noise():
     args = SimpleNamespace(n_terms=2, n_noise=1, imprecision=0.0)
     terms = simulate.simulated_phenotype(random.Random(1), ["HP:A1", "HP:A2", "HP:B"], {}, ["HP:B"], args)
     assert len(terms) == 3 and terms[-1] == "HP:B"
+
+
+def test_published_cases_keep_phenotypic_primary_terms_per_case():
+    closure, alt, _ = load()
+    text = "case\tgene\thpo_id\nc2\tG3\tHP:B\nc1\tG1\tHP:A1\nc1\tG1\tHP:GONE\n"
+    assert simulate.published_cases(text, closure, alt) == [("G1", ["HP:A1"]), ("G3", ["HP:B"])]
 
 
 def test_pp4_raises_a_phenotype_matching_spike_above_an_equal_background():

@@ -10,6 +10,8 @@ ONTOLOGY = "hpo/hp.obo"
 GENES = "hpo/genes_to_phenotype.txt"
 # Only phenotypic abnormalities: the other branches (inheritance, onset, frequency) describe no patient feature.
 PHENOTYPIC_ABNORMALITY = "HP:0000118"
+# Older releases list a phenotype the disease lacks as a row with this frequency.
+EXCLUDED = "HP:0040285"
 
 
 def ontology(text: str) -> tuple[pl.DataFrame, pl.DataFrame]:
@@ -48,6 +50,7 @@ def annotations(text: str) -> pl.DataFrame:
     """symbol, disease_id, hpo_id: the HPO terms of each disease of a gene."""
     return (
         pl.read_csv(text.encode(), separator="\t", infer_schema=False)
+        .filter(pl.col("frequency") != EXCLUDED)
         .select(symbol="gene_symbol", disease_id="disease_id", hpo_id="hpo_id")
         .unique()
     )

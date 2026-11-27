@@ -191,8 +191,17 @@ phenotypic HPO terms. Reads a classification run (`--output-db`) and the HPO fil
 | `hp.obo` | https://purl.obolibrary.org/obo/hp.obo |
 | `genes_to_phenotype.txt` | https://github.com/obophenotype/human-phenotype-ontology/releases/latest/download/genes_to_phenotype.txt |
 
-The simulation is optimistic: a disease's terms are the gene's own annotations, and the spike's gene-level ClinVar
-criteria (PM1, PP2) count the spike itself (`ranks_without_clinvar_window_criteria` leaves those spikes out).
+The simulation is optimistic: a disease's terms are the gene's own annotations (circular). `--cases` takes the
+phenotypes of published cases instead (phenopacket-store, one TSV row per case, gene and observed term), scored against
+an older `--genes-file` release than the cases, so that no case fed the annotations; one simulation per case, the
+spike taken in the case's gene or, failing that, its evidence borrowed from a random spike. Also, the spike's
+gene-level ClinVar criteria (PM1, PP2) count the spike itself (`ranks_without_clinvar_window_criteria` leaves those
+spikes out).
+
+| File (under `<S3_BUCKET>/hpo/`), for `--cases` | Source |
+|---|---|
+| `genes_to_phenotype_2024-01-16.txt` | `genes_to_phenotype.txt` of HPO release v2024-01-16 |
+| `phenopackets_after_2024-01-16_known_genes.tsv` | phenopacket-store 0.1.27 cases whose PubMed publication date is after 2024-01-16 and whose gene the 2024-01-16 release annotates |
 
 ## Run on a real cluster
 
@@ -271,6 +280,13 @@ or not, strength ignored):
 | 3 terms + 1 noise | 40 % | 31 % | 79 % | 4.5 |
 | 5 terms + 2 noise | 35 % | 47 % | 83 % | 4 |
 
+- Published cases (`--cases`, poc-26, 3 terms + 1 noise, 734 cases): the PP4 bins hold (LR 511 at top 0.1 %, 45 at
+  1 %, 15 at 5 %, 12 at 10 %: 4, 4, 3, 3 points vs 4, 4, 3, 2 in `ruleset.yaml`), but the gain is smaller than the
+  circular simulation's: top 5 with inheritance fit −4 49 % → 74 % (circular 54 % → 87 %), top 1 34 % (48 %), median
+  rank 2 (1.5). With the cases of genes the 2024 release did not know yet (1,941 cases): top 5 65 %.
+- Extra gene-phenotype sources (time-split phenopacket-store, HPO 2024-01-16 alone: top 1 22.8 %, MRR 0.336 on known
+  genes): GenCC 20.3 % / 0.318, GenCC Definitive/Strong 21.8 % / 0.331, PanelApp green/amber 22.1 % / 0.329; Orphanet
+  is 99 % already in HPO. None is added.
 - PP4 mostly reorders VUS: probands with ≥ 6 priority points have a median of 3 such occurrences, with or without PP4
   (p90 6, max 10).
 - Inheritance fit (`poc-12`, 3 terms + 1 noise): top 5 63 % → 77 % at −4 (69 % at −2, 82 % at −8), top 1 34 % → 41 %.
