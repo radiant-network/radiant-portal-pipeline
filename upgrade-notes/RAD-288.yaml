@@ -1,6 +1,19 @@
 actions:
   - when: after
     do: >-
+      Add the output_task_id column to pipeline_journal, where the table already exists. Run the migration in the
+      base database: it adds the column and drops the pipeline_state view, which the next step creates again with
+      it. The Nextflow "from Cases" DAGs write in that column the task they registered for each item.
+    preconditions:
+      - pipeline_journal exists in the base database (an environment that deployed it from main). Otherwise skip
+        this step, the next one creates the table with the column.
+      - No radiant-case-scheduler, radiant-import or "from Cases" DAG is running.
+    refs:
+      - radiant/dags/sql/radiant/migrations/RAD-288_pipeline_journal_output_task.sql
+    check: >-
+      DESCRIBE pipeline_journal in the base database lists output_task_id.
+  - when: after
+    do: >-
       Run radiant-init-starrocks-base-tables before the next radiant-case-scheduler run. It creates the
       current_germline_gvcf and current_germline_gcnv views, which the germline SNV and CNV queries of the case
       scheduler and of the germline SNV and CNV post-processing read, the importable_task view, which the import and
@@ -29,3 +42,14 @@ actions:
     check: >-
       SHOW TABLES LIKE 'staging_%sequencing_experiment%' in the base database lists staging_sequencing_experiment
       only.
+  - when: after
+    do: >-
+      Unpause radiant-case-release. The case scheduler no longer moves statuses nor emails the laboratories: the
+      pipeline DAGs and the import move their cases to processing, and radiant-import starts radiant-case-release,
+      which moves the ready cases to in_progress and sends the emails. Paused, it leaves every case processing and
+      sends nothing.
+    refs:
+      - radiant-case-release
+      - radiant/dags/case_release.py
+    check: >-
+      After the next radiant-import run that loaded data, radiant-case-release has a run under the same run tag.

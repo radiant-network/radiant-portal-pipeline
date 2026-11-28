@@ -10,21 +10,25 @@ clinical model, and turning its outputs into portal tasks.
 
 | # | Task | Does |
 |:--|:--|:--|
-| 0 | **has_cases** | Skips the run when no case is named |
-| 1 | **fetch_case_members** | The members of the named cases, with their current experiment and gVCF |
-| 2 | **select_cases** | Checks the named cases again, excludes the rest with a reason |
+| 0 | **fetch_facts** | The facts of every candidate (sql/clinical/germline_snv_facts_select.sql) |
+| 0 | **decide** | Decides each candidate: run, wait, blocked or skip, with its reasons |
+| 0 | **journal** | Writes the decisions to the pipeline journal |
+| 0 | **set_processing** | Moves the cases to run from `submitted` to `processing`, one mapped instance per tenant |
+| 0 | **has_cases** | Skips the rest when no case is to run |
+| 1 | **fetch_case_members** | The members of the cases to run, with their current experiment and gVCF |
+| 2 | **select_cases** | Checks the cases to run again, excludes the rest with a reason |
 | 3 | **fetch_phenotypes** | Pulls each family's phenotypes |
 | 4 | **resolve_cases** | Builds the families |
 | 5 | **generate_inputs** | Writes the samplesheet, PEDs and phenopackets to S3 |
 | 6 | **run_pipeline** | Triggers the pipeline DAG and waits |
 | 7 | **collect_outputs** | Lists what the pipeline published |
 | 8 | **register_tasks** | PATCHes the portal, one mapped instance per tenant |
-| 9 | **journal_outcomes** | Writes `succeeded` or `failed` for each named case to the pipeline journal, whatever happened |
+| 9 | **journal_outcomes** | Writes `succeeded` or `failed` for each case run to the pipeline journal, whatever happened |
 
-It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it
-daily with its own `excluded_tenants`, and moves the case statuses around it. Run
-it by hand only for a targeted rerun: the `excluded_tenants` default below applies to a manual run only. The
-parameters below exist for targeted reruns and for configuration, not for normal operation.
+It has **no schedule of its own and takes no input**: `radiant-case-scheduler` starts it daily with its own
+`excluded_tenants`. A manual run without **case_ids** does the same work as a scheduled one: the `excluded_tenants`
+default below applies to a manual run only. A status move that fails does not hold the run back (the members fetch
+runs **all_done**); the run still ends red.
 
 ---
 
@@ -33,7 +37,7 @@ parameters below exist for targeted reruns and for configuration, not for normal
 | Param | Default | Meaning |
 |:--|:--|:--|
 | **excluded_tenants** | $RADIANT_ETL_EXCLUDED_TENANTS | Tenants left out of case processing, reported as **tenant_excluded**. Empty excludes none |
-| **case_ids** | empty | The cases to run. **radiant-case-scheduler** passes the ones it decided `run` for; an operator names cases to rerun. Empty runs nothing |
+| **case_ids** | empty | Limits the run to these cases, among those decided `run`. Every candidate is still decided and journaled, but a case decided `run` and not named is not journaled: no outcome would close it. Empty runs every case decided `run` |
 | **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing |
 
 > **dry_run on a scheduled run is a trap.** A dry run registers nothing, so every case stays
@@ -52,10 +56,10 @@ run may span several tenants; registration groups by tenant and sends one batch 
 
 ## What counts as "needs annotating"
 
-This DAG decides nothing: **radiant-case-scheduler** does (**decide_cases**, on
-sql/clinical/germline_snv_facts_select.sql, written to the pipeline journal). A case runs when no
+This DAG decides (**decide_cases**, on sql/clinical/germline_snv_facts_select.sql, written to the pipeline
+journal). A case runs when no
 **radiant_germline_annotation** is scoped to a (case, current experiment) pair whose member has a gVCF, and nothing
-blocks it. This DAG reads the members of the cases it is given with
+blocks it. This DAG then reads the members of the cases to run with
 sql/clinical/germline_snv_case_members_select.sql; both queries read the gVCF from the view **current_germline_gvcf**.
 
 Two selections make it work, and both matter more than they look:
@@ -80,8 +84,8 @@ re-discovered and the pipeline re-run every night, for ever.
 
 ## Nothing fails the run any more — it gets excluded
 
-The scheduler only names cases it decided **run** for; why the others do not run is in the pipeline journal.
-**select_cases** checks the named cases again, since the data may have moved since the decision: a case that
+Only the cases decided **run** go on; why the others do not run is in the pipeline journal.
+**select_cases** checks them again with the members query: a case that
 cannot be run is dropped with a reason and the rest of the run continues. It logs each one; grep its task log for
 "excluded".
 
@@ -234,10 +238,8 @@ The grant is client_credentials — no browser, no device approval.
 
 ## Notification
 
-This DAG does not email the laboratories. **radiant-case-scheduler** does, once the cases
-reach `in_progress`, so the manifest holds every pipeline's results (SNV, CNV, QC) rather than
-this run's alone. See its documentation. A manual rerun of this DAG therefore sends nothing; use
-the **notify_cases** DAG to email an ad-hoc list of cases.
+This DAG does not email the laboratories. **radiant-case-release** does, once **radiant-import** has loaded the
+case's new data, so the manifest holds the results of every pipeline. See their documentation.
 
 ---
 
@@ -288,21 +290,22 @@ the member arrives, the case runs again with the whole family. Both annotations 
 emailed each time. The proband is never left out: without it the case waits.
 
 A member present with wrong data (two gVCFs, no aliquot) still blocks the case. Here, a member other than the
-proband with no gVCF is left out; the scheduler has already told "not aligned yet" from "aligned without a gVCF"
+proband with no gVCF is left out; the decision has already told "not aligned yet" from "aligned without a gVCF"
 (**blocked**).
 
 ## The journal: succeeded or failed
 
-**journal_outcomes** runs last, whatever happened before it, and writes a marker per named case to
-**pipeline_journal**, under this run's id. It closes the `run` row the scheduler wrote. It is an Airflow teardown:
+**journal_outcomes** runs last, whatever happened before it, and writes a marker per case run to
+**pipeline_journal**, under this run's id. It closes the `run` row **journal** wrote. A **succeeded** row names the
+**radiant_germline_annotation** task registered (**output_task_id**). It is an Airflow teardown:
 the run's state ignores it, so a failed pipeline or registration still fails the run.
 
 - **succeeded**: the case's tenant batch is registered.
 - **failed**: the pipeline, the output collection or the case's tenant batch failed. A failure is always the whole
   run or a whole tenant's batch, so the marker carries no reason: the task logs say why.
-- **failed**, with its reason: a named case the check left out (the data moved since the scheduler decided).
+- **failed**, with its reason: a case the members check left out.
 
-A dry run writes nothing. A `failed` case runs again on the next scheduler run, its facts unchanged.
+A dry run writes nothing. A `failed` case runs again on the next run, its facts unchanged.
 
 If the write fails, the run stays green (the teardown does not count) and only **journal_outcomes** is red. It is
 retried twice; past that, the case's `run` row stays open. The data is not affected: the batch is registered.
@@ -312,7 +315,7 @@ retried twice; past that, the case's `run` row stays open. The data is not affec
 Not every germline case has per-sample gVCFs. Some were joint-called upstream: their
 alignment tasks publish only CRAM and CNV, and the variants arrive through a
 **family_variant_calling** task emitting a single joint VCF. These never run — with no gVCFs
-there is nothing for step: genotype to do. The scheduler journals them once as **blocked**,
+there is nothing for step: genotype to do. They are journaled once as **blocked**,
 **missing_input:gvcf**, and writes again only if that changes.
 
 They do have a real need: the same sequencing data re-examined under a different clinical

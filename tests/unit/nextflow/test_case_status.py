@@ -5,11 +5,9 @@ from airflow.exceptions import AirflowSkipException
 
 from radiant.tasks.nextflow import case_status
 from radiant.tasks.nextflow.portal import PortalError
-from tests.unit.importing.test_resolve import fact_row as import_fact_row
 from tests.unit.nextflow.cnv.conftest import member_row as cnv_member_row
 from tests.unit.nextflow.conftest import member_row as snv_member_row
 from tests.unit.nextflow.qc.conftest import member_row as qc_member_row
-from tests.unit.nextflow.somatic.conftest import calling_task_rows
 
 # Every pipeline is decided from the facts: the reason each one stands for, as facts.
 SNV_FACTS = {
@@ -70,71 +68,6 @@ def snv_facts(case_id, reason=None):
 
 def status_row(case_id, status_code="submitted", has_variants=False, tenant_code="radiant"):
     return {"case_id": case_id, "tenant_code": tenant_code, "status_code": status_code, "has_variants": has_variants}
-
-
-def test_work_waiting_is_the_union_of_every_pipeline_and_the_import():
-    waiting = case_status.cases_with_work(
-        germline_snv_rows=[snv_facts(case_id=1)],
-        germline_cnv_rows=[cnv_facts(case_id=2)],
-        somatic_snv_rows=calling_task_rows(case_id=5),
-        qc_rows=[qc_facts(case_id=3)],
-        qc_somatic_rows=[tumor_facts(case_id=6)],
-        import_rows=[import_fact_row(case_id=4, seq_id=1), import_fact_row(case_id=4, seq_id=2)],
-    )
-    assert waiting == {1, 2, 3, 4, 5, 6}
-
-
-@pytest.mark.parametrize("reason", ["pending_sequencing", "no_gvcf", "tenant_excluded"])
-def test_a_case_the_pipeline_would_exclude_is_not_work_waiting(reason):
-    """Moved to `processing`, it would wait there with nothing running for it."""
-    waiting = case_status.cases_with_work(
-        germline_snv_rows=[snv_facts(case_id=1, reason=reason)],
-        germline_cnv_rows=[cnv_facts(case_id=2, reason=reason)],
-        somatic_snv_rows=calling_task_rows(case_id=5, **SOMATIC_SNV_FACTS[reason]),
-        qc_rows=[qc_facts(case_id=3, reason=reason)],
-        qc_somatic_rows=[],
-        # Blocked: a value the import requires is missing.
-        import_rows=[import_fact_row(case_id=4, sex=None)],
-        excluded_tenants=["excluded"],
-    )
-    assert waiting == set()
-
-
-def test_a_qc_case_with_two_metrics_tarballs_is_not_work_waiting():
-    """Blocked: it would hold the case in processing for ever."""
-    row = qc_facts(case_id=3, dragen_metrics_matches=2)
-    assert case_status.cases_with_work([], [], [], [row], [], []) == set()
-
-
-def test_a_qc_case_without_a_metrics_tarball_is_work_waiting():
-    """The QC DAG runs it on its CRAM's directory: there is no S3 search to fail."""
-    assert case_status.cases_with_work([], [], [], [qc_facts(case_id=3, tarball=False)], [], []) == {3}
-
-
-def test_a_tumor_only_case_waiting_for_qc_is_work_waiting():
-    assert case_status.cases_with_work([], [], [], [], [tumor_facts()], []) == {23}
-
-
-def test_a_tumor_without_a_metrics_tarball_is_not_work_waiting():
-    """Blocked: a tumor has no CRAM-directory fallback."""
-    assert case_status.cases_with_work([], [], [], [], [tumor_facts(tarball=False)], []) == set()
-
-
-def test_nothing_discovered_is_no_work():
-    assert case_status.cases_with_work([], [], [], [], [], []) == set()
-
-
-def test_only_submitted_cases_with_work_or_variants_move_to_processing():
-    rows = [
-        status_row(1),  # work waiting
-        status_row(2, has_variants=True),  # work done before the control DAG saw it
-        status_row(3),  # nothing to do yet
-        status_row(4, status_code="processing"),  # already there
-        status_row(5, status_code="processing", has_variants=True),
-    ]
-    assert case_status.plan_processing(rows, waiting={1, 4}, excluded_tenants=[]) == [
-        {"tenant": "radiant", "case_ids": [1, 2]}
-    ]
 
 
 def test_every_done_processing_case_with_variants_moves_to_in_progress_not_only_this_runs():
@@ -199,27 +132,24 @@ def test_has_variants_is_read_from_the_query_s_integer():
 
 def test_changes_are_batched_once_per_tenant():
     rows = [
-        status_row(3, tenant_code="radiant"),
-        status_row(1, tenant_code="qlin"),
-        status_row(2, tenant_code="radiant"),
+        status_row(3, status_code="processing", tenant_code="radiant", has_variants=True),
+        status_row(1, status_code="processing", tenant_code="qlin", has_variants=True),
+        status_row(2, status_code="processing", tenant_code="radiant", has_variants=True),
     ]
-    assert case_status.plan_processing(rows, waiting={1, 2, 3}, excluded_tenants=[]) == [
-        {"tenant": "qlin", "case_ids": [1]},
-        {"tenant": "radiant", "case_ids": [2, 3]},
+    assert case_status.plan_in_progress(rows, processed=set(), waiting=set(), excluded_tenants=[]) == [
+        {"tenant": "qlin", "case_ids": [1], "processed_case_ids": []},
+        {"tenant": "radiant", "case_ids": [2, 3], "processed_case_ids": []},
     ]
 
 
 def test_an_excluded_tenant_s_cases_are_never_moved(caplog):
-    """Not even those with variants: the import is not filtered by tenant."""
+    """Not even those with variants: the import loads every tenant."""
     rows = [
         status_row(1, tenant_code="radiant", has_variants=True),
         status_row(2, tenant_code="qlin"),
         status_row(3, status_code="processing", tenant_code="radiant", has_variants=True),
     ]
     with caplog.at_level(logging.INFO):
-        assert case_status.plan_processing(rows, waiting={1, 2}, excluded_tenants=["radiant"]) == [
-            {"tenant": "qlin", "case_ids": [2]}
-        ]
         assert case_status.plan_in_progress(rows, processed=set(), waiting=set(), excluded_tenants=["radiant"]) == []
         finished = [status_row(4, status_code="in_progress", tenant_code="radiant")]
         assert case_status.plan_in_progress(finished, processed={4}, waiting=set(), excluded_tenants=["radiant"]) == []
@@ -288,3 +218,56 @@ def test_a_case_group_refused_for_the_tenant_is_skipped(caplog):
     with caplog.at_level(logging.WARNING), pytest.raises(AirflowSkipException, match="qlin"):
         case_status.skip_if_not_granted("qlin", post_group, "results-x", [1])
     assert "tenant 'qlin' skipped" in caplog.text
+
+
+def _state(case_id, pipeline, decision, item_key=""):
+    return {"case_id": case_id, "pipeline": pipeline, "item_key": item_key, "decision": decision}
+
+
+def test_a_case_is_not_ready_while_one_of_its_pipelines_runs_or_failed():
+    state = [
+        _state(1, "germline_snv", "succeeded"),
+        _state(1, "germline_cnv", "failed"),
+        _state(2, "germline_snv", "run"),
+        _state(3, "somatic_snv", "succeeded", "70"),
+        _state(3, "somatic_snv", "run", "71"),
+        # wait, blocked and skip do not hold a case back.
+        _state(4, "germline_snv", "succeeded"),
+        _state(4, "germline_cnv", "blocked"),
+        _state(5, "germline_snv", "wait"),
+        # Neither quality control nor the import counts.
+        _state(6, "quality_control", "failed"),
+        _state(6, "import", "run", "13"),
+    ]
+    assert case_status.not_ready_cases(state) == {1, 2, 3}
+
+
+def test_a_pipeline_decides_every_candidate_and_runs_the_ones_decided_run():
+    from radiant.tasks.journal import Pipeline
+
+    rows = [snv_facts(case_id=1), snv_facts(case_id=2, reason="no_gvcf"), snv_facts(case_id=3)]
+    rows[2] = rows[2] | {"tenant_code": "other"}
+    decided = case_status.decide_run(Pipeline.GERMLINE_SNV, rows, [])
+    assert {(e["case_id"], e["decision"]) for e in decided["entries"]} == {(1, "run"), (2, "blocked"), (3, "run")}
+    assert decided["run_case_ids"] == [1, 3]
+    assert decided["processing"] == [{"tenant": "other", "case_ids": [3]}, {"tenant": "radiant", "case_ids": [1]}]
+
+
+def test_named_cases_limit_what_runs_not_what_is_decided():
+    """A case decided `run` but not named is not journaled: this run writes no outcome for it."""
+    from radiant.tasks.journal import Pipeline
+
+    rows = [snv_facts(case_id=1), snv_facts(case_id=2, reason="no_gvcf"), snv_facts(case_id=3)]
+    decided = case_status.decide_run(Pipeline.GERMLINE_SNV, rows, [], named=[3])
+    assert {(e["case_id"], e["decision"]) for e in decided["entries"]} == {(2, "blocked"), (3, "run")}
+    assert decided["run_case_ids"] == [3]
+
+
+def test_an_excluded_tenant_is_not_moved():
+    from radiant.tasks.journal import Pipeline
+
+    decided = case_status.decide_run(
+        Pipeline.GERMLINE_SNV, [snv_facts(case_id=1, reason="tenant_excluded")], ["excluded"]
+    )
+    assert decided["run_case_ids"] == []
+    assert decided["processing"] == []

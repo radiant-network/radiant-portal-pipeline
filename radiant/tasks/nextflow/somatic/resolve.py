@@ -10,7 +10,7 @@ exclusion:
 - a reason about one case of it (no project code, tenant excluded) drops that case only. The task
   still runs for its other cases, if it has any left.
 
-The case scheduler decides on `somatic_snv_facts_select.sql` with `decide_tasks`: one journal item per (case,
+The pipeline DAG decides on `somatic_snv_facts_select.sql` with `decide_tasks`: one journal item per (case,
 calling task), its `item_key` the calling task.
 """
 

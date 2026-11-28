@@ -1,4 +1,4 @@
--- One row per (candidate germline case, family member): the facts the case scheduler decides on
+-- One row per (candidate germline case, family member): the facts the pipeline DAG decides on
 -- (`decide_cases`, radiant/tasks/nextflow/cnv/resolve.py). No decision here.
 --
 -- A candidate is a germline case where a member's current experiment has a germline CNV VCF not annotated for the

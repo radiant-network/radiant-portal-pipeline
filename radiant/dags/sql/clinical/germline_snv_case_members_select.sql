@@ -1,5 +1,5 @@
 -- One row per member of the named germline cases (`case_ids`): what the post-processing pipeline runs on.
--- The case scheduler decided these cases on `germline_snv_facts_select.sql`; both read the gVCF from the view
+-- The DAG decided these cases on `germline_snv_facts_select.sql`; both read the gVCF from the view
 -- `current_germline_gvcf`. A member with no gVCF yet comes back with a null `gvcf_url`.
 SELECT pc.case_id                      AS case_id,
        pc.submitter_case_id            AS submitter_case_id,

@@ -1,5 +1,5 @@
 -- One row per member of the named germline cases (`case_ids`): what the CNV post-processing pipeline runs on.
--- The case scheduler decided these cases on `germline_cnv_facts_select.sql`; both read the CNV VCF from the view
+-- The DAG decided these cases on `germline_cnv_facts_select.sql`; both read the CNV VCF from the view
 -- `current_germline_gcnv`. A member with no CNV VCF yet comes back with a null `gcnv_url`.
 --
 -- The CRAM is carried, not required: the pipeline's depth-based genotype refinement reads every member's

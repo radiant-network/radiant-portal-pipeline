@@ -2,11 +2,8 @@
 -- `draft` or `revoked`, the same cases the pending queries look at), its status, its tenant, and
 -- whether it has variant data.
 --
--- Consumed by `radiant-case-scheduler` twice: at the start (`fetch_case_statuses`, for
--- `submitted` -> `processing`) and after the pipelines (`refresh_case_statuses`, for
--- `processing` -> `in_progress`, and to email the labs of the cases past `processing` the run
--- processed). Unscoped on purpose: a case whose pipeline failed on an earlier run must still be
--- found once its variants are in.
+-- Consumed by `radiant-case-release` (`fetch_case_statuses`) for the cases it is named, to move
+-- the ready `processing` ones to `in_progress` and to email the labs of the ones past it.
 --
 -- `has_variants`: at least one experiment of the case has been imported (`ingested_at`, set by
 -- `import_part`) from an SNV or CNV VCF, and is not deleted. An Exomiser-only row does not count.
@@ -25,4 +22,8 @@ SELECT pc.case_id            AS case_id,
        i.case_id IS NOT NULL AS has_variants
 FROM {{ mapping.starrocks_pipeline_case }} pc
 LEFT JOIN imported i ON i.case_id = pc.case_id
+{%- if params.get('case_ids') %}
+-- `radiant-case-release`: the cases it was named only.
+WHERE pc.case_id IN %(case_ids)s
+{%- endif %}
 ORDER BY pc.case_id

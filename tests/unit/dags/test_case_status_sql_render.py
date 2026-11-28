@@ -8,9 +8,11 @@ from radiant.tasks.data.radiant_tables import get_radiant_mapping
 _CONF = {"RADIANT_TABLES_DATABASE": "radiant"}
 
 
-def _render() -> str:
+def _render(case_ids=()) -> str:
     text = (DAGS_DIR / "sql" / "clinical" / "case_status_select.sql").read_text()
-    sql = jinja2.Template(text, undefined=jinja2.StrictUndefined).render(mapping=get_radiant_mapping(_CONF))
+    sql = jinja2.Template(text, undefined=jinja2.StrictUndefined).render(
+        mapping=get_radiant_mapping(_CONF), params={"case_ids": list(case_ids)}
+    )
     return "\n".join(line for line in sql.splitlines() if not line.lstrip().startswith("--"))
 
 
@@ -38,6 +40,9 @@ def test_variants_are_imported_snv_or_cnv_vcfs_that_are_not_deleted():
     assert "exomiser" not in imported
 
 
-def test_no_parameter_is_bound():
-    """Unscoped: every processing case is evaluated, not only this run's."""
+def test_no_parameter_is_bound_without_named_cases():
     assert "%(" not in _render()
+
+
+def test_the_release_reads_the_cases_it_was_named_only():
+    assert "WHERE pc.case_id IN %(case_ids)s" in _render([500])

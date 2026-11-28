@@ -6,7 +6,7 @@ named alignment tasks) or lenient mode (the nightly query found them); `resolve_
 builds the families it kept. What differs is the trigger document -- a germline CNV VCF, not
 a gVCF -- and one extra guard: the pipeline only knows DRAGEN's CNV conventions.
 
-The case scheduler decides on `germline_cnv_facts_select.sql` with `decide_cases`, the rule of germline SNV
+The pipeline DAG decides on `germline_cnv_facts_select.sql` with `decide_cases`, the rule of germline SNV
 (`radiant.tasks.nextflow.resolve.decide`): a member absent but the proband does not block, the family runs with the
 members present. The pipeline accepts it: the PED names an absent parent `0`.
 """

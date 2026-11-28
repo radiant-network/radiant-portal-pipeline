@@ -10,7 +10,8 @@ everything around it, exactly as `radiant-nextflow-snv-postprocessing-cases` doe
 annotation.
 
 ```
-has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_cases
+fetch_facts -> decide -> journal, set_processing (one per tenant)
+            -> has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_cases
                                                                               |
                                                    generate_inputs -> run_pipeline
                                                                               |
@@ -18,16 +19,16 @@ has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_c
                                                      (teardown: journal_outcomes)
 ```
 
-It has **no schedule of its own and decides nothing**: `radiant-case-scheduler` starts it
-daily with the cases it decided `run` for (`case_ids`) and its own `excluded_tenants`, and moves the case
-statuses around it. Run it by hand only to rerun named cases: the `excluded_tenants` default below applies to a
-manual run only.
+It has **no schedule of its own**: `radiant-case-scheduler` starts it daily with its own `excluded_tenants`. It
+decides its own cases, journals the decisions, and moves the cases it runs from `submitted` to `processing`
+before running them. A status move that fails does not hold the data back (the members fetch runs **all_done**);
+the run still ends red. The `excluded_tenants` default below applies to a manual run only.
 
 ## Parameters
 
 | Param | Default | Meaning |
 |---|---|---|
-| `case_ids` | empty | The cases to run. The case scheduler passes the ones it decided `run` for. Empty runs nothing. |
+| `case_ids` | empty | Limits the run to these cases, among those decided `run`. Every candidate is still decided and journaled, but a case decided `run` and not named is not journaled. Empty runs every case decided `run`. |
 | `excluded_tenants` | `$RADIANT_ETL_EXCLUDED_TENANTS` | Tenants left out of case processing, reported as `tenant_excluded`. Empty excludes none. |
 | `dry_run` | **false** | Passed to the batch PATCH. True validates and writes nothing. |
 
@@ -36,11 +37,11 @@ eligible and tomorrow's run does the same work again. Manual runs only.
 
 ## What counts as "needs CNV post-processing"
 
-This DAG decides nothing: **radiant-case-scheduler** does (**decide_cases**, on
-sql/clinical/germline_cnv_facts_select.sql, written to the pipeline journal). A case is a candidate when a
+This DAG decides (**decide_cases**, on sql/clinical/germline_cnv_facts_select.sql, written to the pipeline
+journal). A case is a candidate when a
 `(case, sequencing experiment)` pair's *current* experiment has an alignment publishing a `gcnv` / `vcf` document,
-and no `radiant_germline_cnv_annotation` task is scoped to that same pair. This DAG reads the members of the cases
-it is given with sql/clinical/germline_cnv_case_members_select.sql. Both queries read **one experiment per (case,
+and no `radiant_germline_cnv_annotation` task is scoped to that same pair. This DAG then reads the members of the cases
+to run with sql/clinical/germline_cnv_case_members_select.sql. Both queries read **one experiment per (case,
 member)**, the newest `completed` one, and **one alignment per experiment**, the newest, from the StarRocks views
 `current_experiment` and `current_alignment`, the CNV VCF from `current_germline_gcnv`, and the cases from
 `pipeline_case` (`sql/radiant/init/`). To see why a case is not picked up, read its last row in the view
@@ -79,9 +80,10 @@ skip. Passing CRAMs only when the whole set is usable turns both cases into a cl
 
 ## Nothing fails the run -- it gets excluded
 
-The scheduler journals these reasons. `select_cases` checks the named cases again, since the data may have moved:
+**journal** writes these reasons. `select_cases` checks the cases to run again with the members query:
 a case that cannot be run is dropped with a reason, logged (grep for `excluded`), and journaled `failed`; the rest
-continues. `journal_outcomes` writes `succeeded` or `failed` for each named case.
+continues. `journal_outcomes` writes `succeeded` or `failed` for each case run; a `succeeded` row names the
+`radiant_germline_cnv_annotation` task registered (`output_task_id`).
 
 | Reason | Meaning | Transient? |
 |---|---|---|
@@ -97,7 +99,7 @@ continues. `journal_outcomes` writes `succeeded` or `failed` for each named case
 | `no_project_code` | `cases.project_id` did not resolve; the batch PATCH needs it | no |
 | `tenant_excluded` | the tenant is in `excluded_tenants` | no, by configuration |
 
-If every named case is excluded the run **skips**. A skipped run is not a failed one.
+If every case to run is excluded the run **skips**. A skipped run is not a failed one.
 
 ## What gets registered
 

@@ -93,9 +93,19 @@ def test_write_sends_one_row_per_entry_with_one_timestamp():
     [(sql, rows)] = cursor.calls
     assert "INSERT INTO pipeline_journal" in sql
     assert [tuple(row.values()) for row in rows] == [
-        (812, "germline_snv", "", at, "scheduled__x", "run", None),
-        (9, "germline_snv", "", at, "scheduled__x", "wait", '[{"code": "pending_alignment", "detail": ""}]'),
+        (812, "germline_snv", "", at, "scheduled-x", "run", None, None),
+        (9, "germline_snv", "", at, "scheduled-x", "wait", '[{"code": "pending_alignment", "detail": ""}]', None),
     ]
+
+
+def test_the_scheduler_and_its_children_write_the_same_run_id():
+    """The children run under `sanitize_run_tag` of the scheduler's run id: the journal stores that tag for both."""
+    scheduler, child = _Cursor(), _Cursor()
+    write(scheduler, {}, [entry(Decision.RUN)], "scheduled__2026-12-01T00:00:00+00:00")
+    write(child, {}, [entry(Decision.SUCCEEDED)], "scheduled-2026-12-01T00-00-00-00-00")
+    assert (
+        scheduler.calls[0][1][0]["run_id"] == child.calls[0][1][0]["run_id"] == "scheduled-2026-12-01T00-00-00-00-00"
+    )
 
 
 def test_nothing_to_write_sends_nothing():

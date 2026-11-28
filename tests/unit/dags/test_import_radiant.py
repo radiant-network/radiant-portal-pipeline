@@ -11,6 +11,8 @@ def test_dag_has_expected_tasks(dag_bag):
         "fetch_import_facts",
         "decide_import",
         "journal_import",
+        "list_processing",
+        "set_processing",
         "partitioner_group.assign_partitions",
         "partitioner_group.insert_sequencing_experiment",
         "flag_deleted_sequencing_experiment",
@@ -19,6 +21,8 @@ def test_dag_has_expected_tasks(dag_bag):
         "import_part",
         "data_integrity_checks",
         "journal_import_outcomes",
+        "has_cases_to_release",
+        "trigger_case_release",
     }
     assert set(dag.task_ids) == expected_tasks
 
@@ -41,10 +45,24 @@ def test_dag_task_dependencies_are_correct(dag_bag):
 
 
 def test_outcomes_are_journaled_whatever_the_parts_did(dag_bag):
-    """A teardown: it runs after a failed part too, and does not change the run's state."""
+    """All done: a failed part still journals its outcomes, and the cases of the other parts are released."""
     outcomes = dag_bag.get_dag("radiant-import").get_task("journal_import_outcomes")
-    assert outcomes.is_teardown
+    assert outcomes.trigger_rule == "all_done"
     assert "import_part" in outcomes.upstream_task_ids
+
+
+def test_the_cases_with_new_data_are_handed_to_the_release(dag_bag):
+    dag = dag_bag.get_dag("radiant-import")
+    trigger = dag.get_task("trigger_case_release")
+    assert trigger.trigger_dag_id == "radiant-case-release"
+    # The statuses and emails are that DAG's: a failure there does not fail the import.
+    assert trigger.wait_for_completion is False
+    assert trigger.conf == {
+        "case_ids": "{{ ti.xcom_pull(task_ids='journal_import_outcomes') }}",
+        "excluded_tenants": "{{ params.excluded_tenants }}",
+        "notify": "{{ params.notify }}",
+    }
+    assert dag.get_task("has_cases_to_release").upstream_task_ids == {"journal_import_outcomes"}
 
 
 def test_data_integrity_checks_scoped_to_this_batch_tenants(dag_bag):
@@ -83,3 +101,11 @@ def test_partition_triggers_are_serialised_and_bounded(dag_bag):
     assert trigger.execution_timeout == STALE_LOCK_MAX_AGE
     # Bounded by the same constant the stale-lock reclaim uses, so the two cannot drift apart.
     assert dag_bag.get_dag("radiant-import-part").max_active_runs == 1
+
+
+def test_the_cases_to_load_move_to_processing_beside_the_load(dag_bag):
+    """Not upstream of the parts: a failed status move does not hold the data back."""
+    dag = dag_bag.get_dag("radiant-import")
+    assert {t.task_id for t in dag.get_task("set_processing").upstream_list} == {"list_processing"}
+    assert {t.task_id for t in dag.get_task("list_processing").upstream_list} == {"decide_import"}
+    assert "set_processing" not in dag.get_task("import_part").upstream_task_ids

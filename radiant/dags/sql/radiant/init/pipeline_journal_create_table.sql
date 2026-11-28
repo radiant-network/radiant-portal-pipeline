@@ -5,9 +5,10 @@ CREATE TABLE IF NOT EXISTS {{ mapping.starrocks_pipeline_journal }} (
     pipeline    VARCHAR(32)  NOT NULL COMMENT "germline_snv, germline_cnv, quality_control, quality_control_somatic, somatic_snv, import, case_status",
     item_key    VARCHAR(64)  NOT NULL DEFAULT "" COMMENT "Empty for a case-level pipeline; the calling task for somatic_snv, the sequencing task for import",
     decided_at  DATETIME     NOT NULL COMMENT "UTC, to the microsecond; one value per write",
-    run_id      VARCHAR(250) NOT NULL COMMENT "The Airflow run that wrote the row",
+    run_id      VARCHAR(250) NOT NULL COMMENT "The run tag of the Airflow run that wrote the row: one value for the case scheduler and the runs it triggers",
     decision    VARCHAR(16)  NOT NULL COMMENT "run, wait, blocked, skip (scheduler); succeeded, failed (pipeline)",
-    reasons     JSON         NULL     COMMENT "List of {code, detail, patient_id}; patient_id only on a reason about one member; NULL when none"
+    reasons     JSON         NULL     COMMENT "List of {code, detail, patient_id}; patient_id only on a reason about one member; NULL when none",
+    output_task_id INT       NULL     COMMENT "On a succeeded row of a Nextflow pipeline: the task it registered for the item; NULL otherwise"
 ) ENGINE=OLAP
 DUPLICATE KEY(case_id, pipeline, item_key, decided_at)
 PARTITION BY date_trunc('month', decided_at)

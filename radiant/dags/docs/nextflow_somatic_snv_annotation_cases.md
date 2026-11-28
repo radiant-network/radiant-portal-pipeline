@@ -1,6 +1,6 @@
 # Nextflow Somatic SNV Annotation (from Cases)
 
-Annotates the raw SNV VCF of the calling tasks the case scheduler names with the same VEP as germline, and registers the result on the case as a **radiant_somatic_annotation** task.
+Decides the somatic calling tasks to annotate, annotates their raw SNV VCF with the same VEP as germline, and registers the result on the case as a **radiant_somatic_annotation** task.
 The scheduled import already loads that task: nothing changes there.
 
 The launcher is **radiant-nextflow-somatic-snv-annotation**: the germline pipeline, image and
@@ -12,19 +12,20 @@ without the split those variants would be lost.
 
 | Step | Does |
 |:--|:--|
-| **has_tasks** | Skips the run when no calling task is named |
-| **fetch_tasks** | Reads the named calling tasks, for their cases not annotated yet |
-| **select_tasks** | Checks them again: keeps what can run, reports what cannot, skips the run if nothing can |
+| **fetch_facts** | The facts of every candidate calling task, per case not annotated yet (only the named tasks when **task_ids** names some) |
+| **decide**, **journal** | Decides each (case, calling task) and writes it to the pipeline journal |
+| **set_processing** | Moves the cases of the tasks to run from **submitted** to **processing**, one mapped instance per tenant |
+| **has_tasks** | Skips the rest when no calling task is to run |
+| **select_tasks** | Checks the tasks to run again, from the same facts: keeps what can run, reports what cannot |
 | **generate_inputs** | Checks the raw VCFs exist, writes the samplesheet |
 | **run_pipeline** | Triggers **radiant-nextflow-somatic-snv-annotation**, and waits |
 | **collect_outputs** | Finds the VEP VCF and its index of every calling task |
 | **list_tenants**, **register_tasks** | One batch PATCH per tenant |
 | **journal_outcomes** | Writes **succeeded** or **failed** per (case, calling task) to the pipeline journal (a teardown) |
 
-It has **no schedule of its own and decides nothing**: **radiant-case-scheduler** decides which
-calling tasks run, starts it daily with them as **task_ids** and its own excluded tenants, moves the
-case statuses around it, and starts the scheduled import after it, success or not. Run it by hand
-only to rerun named calling tasks.
+It has **no schedule of its own**: **radiant-case-scheduler** starts it daily with its own excluded tenants, and
+starts the scheduled import after it, success or not. A status move that fails does not hold the data back
+(**select_tasks** runs **all_done**); the run still ends red.
 
 ---
 
@@ -32,7 +33,7 @@ only to rerun named calling tasks.
 
 | Param | Default | Meaning |
 |:--|:--|:--|
-| **task_ids** | empty | The calling tasks to run, e.g. [70]. The case scheduler passes the ones it decided **run** for. Each runs for its cases not annotated yet; an annotated task runs nothing. Empty runs nothing. |
+| **task_ids** | empty | Limits the run to these calling tasks, e.g. [70]: only they are read, decided and journaled. Each runs for its cases not annotated yet; an annotated task runs nothing. Empty decides every candidate and runs the ones decided **run**. |
 | **excluded_tenants** | $RADIANT\_ETL\_EXCLUDED\_TENANTS | Tenants left out, reported as **tenant_excluded**. Empty excludes none. |
 | **dry_run** | **false** | Passed to the batch PATCH. True validates and writes nothing. |
 
@@ -57,9 +58,8 @@ A calling task (**somatic_variant_calling**, **tumor_only_variant_calling** or
 - a somatic case, not draft or revoked, holds **every** sequencing experiment of the task. The
   portal refuses an input document from an experiment the case does not hold.
 
-The case scheduler decides it, on the facts of **sql/clinical/somatic_snv_facts_select.sql**
-(journal pipeline **somatic_snv**, one item per case and calling task). This DAG reads its named
-tasks with the same query. A calling task sent the old way (no **ssnv** VCF, annotation from QLIN)
+This DAG decides it, on the facts of **sql/clinical/somatic_snv_facts_select.sql** (journal pipeline
+**somatic_snv**, one item per case and calling task). A calling task sent the old way (no **ssnv** VCF, annotation from QLIN)
 is not a candidate, and is left as it is.
 
 ---
@@ -82,8 +82,8 @@ or missing. Nothing is run then.
 
 ## Nothing fails the run, it gets excluded
 
-The case scheduler journals a candidate that cannot run with its decision (**wait**, **blocked**,
-**skip**) and its reasons, and does not name it. **select_tasks** checks the named tasks again: what
+**journal** writes a candidate that cannot run with its decision (**wait**, **blocked**, **skip**) and its
+reasons, and it does not run. **select_tasks** checks the tasks to run again: what
 cannot run any more is dropped with a reason, journaled **failed**, and the rest continues. It logs
 them: search the log for **excluded**.
 

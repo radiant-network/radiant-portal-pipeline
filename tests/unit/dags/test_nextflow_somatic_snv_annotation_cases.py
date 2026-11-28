@@ -13,8 +13,12 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
+        "fetch_facts",
+        "decide",
+        "journal",
+        "list_processing",
+        "set_processing",
         "has_tasks",
-        "fetch_tasks",
         "select_tasks",
         "generate_inputs",
         "run_pipeline",
@@ -26,23 +30,25 @@ def test_dag_contains_the_expected_stages(dag_bag):
     assert dag.validate() is None
 
 
-def test_it_runs_the_named_calling_tasks_and_decides_nothing(dag_bag):
-    """The scheduler names the calling tasks it decided `run` for; none named runs nothing."""
+def test_it_runs_the_calling_tasks_it_decided(dag_bag):
+    """It decides every candidate (only the named ones when an operator names some), journals them, moves the cases
+    of the tasks to run to `processing`, then selects those tasks from the same facts."""
     dag = dag_bag.get_dag(DAG_ID)
     # The case scheduler starts it; a schedule of its own would race it.
     assert dag.schedule is None
     assert set(dag.params) == {"task_ids", "excluded_tenants", "dry_run"}
     assert dag.params["task_ids"] == []
     assert dag.params["dry_run"] is False
-    fetch = dag.get_task("fetch_tasks")
-    assert {t.task_id for t in fetch.upstream_list} == {"has_tasks"}
-    assert fetch.parameters == {"task_ids": "{{ params.task_ids }}"}
-    assert {t.task_id for t in dag.get_task("select_tasks").upstream_list} == {"fetch_tasks"}
+    assert dag.get_task("fetch_facts").parameters == {"task_ids": "{{ params.task_ids }}"}
+    select = dag.get_task("select_tasks")
+    assert {t.task_id for t in select.upstream_list} == {"decide", "has_tasks", "set_processing"}
+    # A failed status move does not hold the data back.
+    assert select.trigger_rule == "all_done"
 
 
 def test_the_named_tasks_are_read_with_the_somatic_query(dag_bag):
     """The anti-join is on the somatic annotation task type, and the trigger the ssnv VCF."""
-    sql = dag_bag.get_dag(DAG_ID).get_task("fetch_tasks").sql
+    sql = dag_bag.get_dag(DAG_ID).get_task("fetch_facts").sql
     assert "radiant_somatic_annotation" in sql
     assert "'ssnv'" in sql
     assert "'gvcf'" not in sql

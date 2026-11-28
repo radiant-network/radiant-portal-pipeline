@@ -12,6 +12,12 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
+        "fetch_facts_quality_control",
+        "decide_quality_control",
+        "journal_quality_control",
+        "fetch_facts_quality_control_somatic",
+        "decide_quality_control_somatic",
+        "journal_quality_control_somatic",
         "has_cases",
         "fetch_germline_members",
         "fetch_somatic_members",
@@ -115,18 +121,26 @@ def test_each_pipeline_journals_its_own_cases(dag_bag, monkeypatch):
         },
     }
 
+    pulls = {
+        "select_cases": selections,
+        "register_tasks": [{"tenant": "radiant", "report": {}}],
+        "collect_outputs": {"CA3": {"json": {"url": "s3://out/CA3.json"}}},
+    }
+
     class TaskInstance:
         def xcom_pull(self, task_ids, key=None):
-            return selections if task_ids == "select_cases" else [{"tenant": "radiant", "report": {}}]
+            return pulls[task_ids]
 
     recorded = []
     context = {"ti": TaskInstance(), "params": {"dry_run": False}, "run_id": "manual__1"}
     monkeypatch.setattr("airflow.sdk.get_current_context", lambda: context)
     monkeypatch.setattr("radiant.tasks.journal.record", lambda entries, run_id: recorded.extend(entries) or entries)
+    monkeypatch.setattr("radiant.tasks.nextflow.lineage.output_task_ids", lambda urls: {"s3://out/CA3.json": 71})
     assert dag_bag.get_dag(DAG_ID).get_task("journal_outcomes").python_callable() == 2
-    assert [(e.case_id, e.pipeline, e.decision) for e in recorded] == [
-        (3, Pipeline.QUALITY_CONTROL, Decision.SUCCEEDED),
-        (23, Pipeline.QUALITY_CONTROL_SOMATIC, Decision.FAILED),
+    # The succeeded case names the QC task registered for it.
+    assert [(e.case_id, e.pipeline, e.decision, e.output_task_id) for e in recorded] == [
+        (3, Pipeline.QUALITY_CONTROL, Decision.SUCCEEDED, 71),
+        (23, Pipeline.QUALITY_CONTROL_SOMATIC, Decision.FAILED, None),
     ]
 
 
@@ -138,3 +152,19 @@ def test_the_queries_resolve_from_the_sql_search_path(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert dag.template_searchpath == ["/opt/airflow/dags/radiant/dags/sql"]
     assert dag.render_template_as_native_obj is True
+
+
+def test_each_case_type_is_decided_and_journaled_and_no_status_moves(dag_bag):
+    """Quality control does not count for the case statuses yet."""
+    dag = dag_bag.get_dag(DAG_ID)
+    assert not any(t.startswith("set_processing") for t in dag.task_ids)
+    assert {t.task_id for t in dag.get_task("has_cases").upstream_list} == {
+        "decide_quality_control",
+        "decide_quality_control_somatic",
+    }
+    assert dag.get_task("fetch_germline_members").parameters == {
+        "case_ids": "{{ ti.xcom_pull(task_ids='decide_quality_control')['run_case_ids'] or [-1] }}"
+    }
+    assert dag.get_task("fetch_somatic_members").parameters == {
+        "case_ids": "{{ ti.xcom_pull(task_ids='decide_quality_control_somatic')['run_case_ids'] or [-1] }}"
+    }

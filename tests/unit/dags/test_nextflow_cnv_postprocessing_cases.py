@@ -12,6 +12,11 @@ def test_dag_is_importable(dag_bag):
 def test_dag_contains_the_expected_stages(dag_bag):
     dag = dag_bag.get_dag(DAG_ID)
     assert set(dag.task_ids) == {
+        "fetch_facts",
+        "decide",
+        "journal",
+        "list_processing",
+        "set_processing",
         "has_cases",
         "fetch_case_members",
         "select_cases",
@@ -27,8 +32,8 @@ def test_dag_contains_the_expected_stages(dag_bag):
     assert dag.validate() is None
 
 
-def test_it_runs_the_named_cases_and_decides_nothing(dag_bag):
-    """The scheduler names the cases it decided `run` for; none named runs nothing."""
+def test_it_runs_the_cases_it_decided(dag_bag):
+    """It decides every candidate, journals it, moves the cases to run to `processing`, then runs them."""
     dag = dag_bag.get_dag(DAG_ID)
     # The control DAG starts it; a schedule of its own would race it.
     assert dag.schedule is None
@@ -36,7 +41,11 @@ def test_it_runs_the_named_cases_and_decides_nothing(dag_bag):
     assert dag.params["case_ids"] == []
     assert dag.params["dry_run"] is False
     fetch = dag.get_task("fetch_case_members")
-    assert {t.task_id for t in fetch.upstream_list} == {"has_cases"}
+    assert {t.task_id for t in fetch.upstream_list} == {"has_cases", "set_processing"}
+    assert fetch.parameters == {"case_ids": "{{ ti.xcom_pull(task_ids='decide')['run_case_ids'] }}"}
+    # A failed status move does not hold the data back.
+    assert fetch.trigger_rule == "all_done"
+    assert "-- One row per" in dag.get_task("fetch_facts").sql
     assert "%(case_ids)s" in fetch.sql
     assert "{{ mapping.starrocks_current_germline_gcnv }}" in fetch.sql
     assert "annotated" not in fetch.sql

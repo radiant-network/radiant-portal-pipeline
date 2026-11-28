@@ -1,4 +1,4 @@
-"""Run the CNV post-processing pipeline over the named germline cases, register the result.
+"""Decide the germline cases to CNV post-process, run the pipeline over them, register the result.
 
 `radiant-nextflow-cnv-postprocessing` runs the Ferlab cnv-post-processing pipeline. This DAG
 closes the two manual ends around it, the way `nextflow_snv_postprocessing_cases` does for SNV
@@ -7,15 +7,17 @@ clinical model, triggers that DAG, then registers what the run published back on
 a `radiant_germline_cnv_annotation` task, with the Exomiser reports (data type `exomiser_cnv`)
 among its outputs.
 
-    has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_cases
-                                                                                  |
-                                                       generate_inputs -> run_pipeline
-                                                                                  |
-              register_tasks (one per tenant) <- collect_outputs <----------------+
+    fetch_facts -> decide -> journal, set_processing (one per tenant)
+                -> has_cases -> fetch_case_members -> select_cases -> fetch_phenotypes -> resolve_cases
+                                                                                                |
+                                                                     generate_inputs -> run_pipeline
+                                                                                                |
+                            register_tasks (one per tenant) <- collect_outputs <----------------+
 
-It decides nothing. `radiant-case-scheduler` decides which cases run (`decide_cases`, on
-`sql/clinical/germline_cnv_facts_select.sql`) and passes them as `case_ids`; an operator can
-name cases to rerun. `select_cases` checks them again, leniently: a case that cannot be run is
+It decides its own cases (`radiant.dags.pipeline_decision`): every candidate of
+`sql/clinical/germline_cnv_facts_select.sql`, decided by `decide_cases` and journaled. The cases decided `run`
+move to `processing`, then run; `case_ids` limits the run to the cases an operator names. `select_cases` checks
+them again, leniently: a case that cannot be run is
 excluded with a reason, and a member other than the proband with no CNV VCF yet is left out of
 the family. The trigger document is the current alignment's `gcnv`/`vcf`; its CRAM rides along
 and is passed to the depth-based genotype refinement only when every member of the family has
@@ -35,6 +37,8 @@ from airflow.models.param import Param
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 
 from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded_tenants_from_env, load_docs_md
+from radiant.dags.pipeline_decision import decision_head
+from radiant.tasks.journal import Pipeline
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
 LOGGER = logging.getLogger(__name__)
@@ -82,8 +86,8 @@ dag_params = {
         items={"type": "integer"},
         title="Case ids",
         description=(
-            "The cases to run: `radiant-case-scheduler` passes the ones it decided `run` for, and an operator can "
-            "name cases to rerun. Empty runs nothing."
+            "Limit the run to these cases, among the ones decided `run`. Every candidate is still decided and "
+            "journaled. Empty runs every case decided `run`."
         ),
     ),
     "dry_run": Param(
@@ -124,8 +128,8 @@ def _workspace_env() -> dict[str, str]:
     dag_display_name="Radiant - Nextflow CNV Post-processing (from Cases)",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-    # Started by `radiant-case-scheduler`, which moves the case statuses around it. A
-    # schedule of its own would process cases without moving them, and race that DAG.
+    # Started by `radiant-case-scheduler`, after which it decides and moves its own cases. A
+    # schedule of its own would race that DAG.
     schedule=None,
     catchup=False,
     # The entire concurrency story: discovery runs at the start of a run, so a queued run
@@ -138,17 +142,21 @@ def _workspace_env() -> dict[str, str]:
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
 def nextflow_cnv_postprocessing_cases():
-    @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is named")
-    def has_cases() -> bool:
-        from airflow.sdk import get_current_context
+    decided, processing = decision_head(
+        Pipeline.GERMLINE_CNV, "./sql/clinical/germline_cnv_facts_select.sql", "germline CNV"
+    )
 
-        return bool(get_current_context()["params"]["case_ids"])
+    @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is to run")
+    def has_cases(decided: dict) -> bool:
+        return bool(decided["run_case_ids"])
 
     fetch_case_members = RadiantStarRocksOperator(
         task_id="fetch_case_members",
-        task_display_name="[StarRocks] Fetch the members of the named cases",
+        task_display_name="[StarRocks] Fetch the members of the cases to run",
         sql="./sql/clinical/germline_cnv_case_members_select.sql",
-        parameters={"case_ids": "{{ params.case_ids }}"},
+        parameters={"case_ids": "{{ ti.xcom_pull(task_ids='decide')['run_case_ids'] }}"},
+        # A failed status move must not hold the data back: the run still goes red on it.
+        trigger_rule="all_done",
         output_processor=rows_output_processor,
         do_xcom_push=True,
     )
@@ -176,7 +184,8 @@ def nextflow_cnv_postprocessing_cases():
         )
         return _selection_payload(selection)
 
-    has_cases() >> fetch_case_members
+    # The cases are `processing` before their run starts.
+    [has_cases(decided), *processing] >> fetch_case_members
     selection = select_cases(fetch_case_members.output)
 
     fetch_phenotypes = RadiantStarRocksOperator(
@@ -338,6 +347,8 @@ def nextflow_cnv_postprocessing_cases():
         from airflow.sdk import get_current_context
 
         from radiant.tasks.journal import Pipeline, record
+        from radiant.tasks.nextflow.lineage import with_output_tasks
+        from radiant.tasks.nextflow.model import family_id
         from radiant.tasks.nextflow.resolve import outcome_entries
 
         context = get_current_context()
@@ -345,7 +356,12 @@ def nextflow_cnv_postprocessing_cases():
             raise AirflowSkipException("dry run: nothing registered, nothing to journal")
         selection = context["ti"].xcom_pull(task_ids="select_cases", key=SELECTION_KEY) or {}
         registered = {r["tenant"] for r in (context["ti"].xcom_pull(task_ids="register_tasks") or []) if r}
-        written = record(outcome_entries(selection, registered, Pipeline.GERMLINE_CNV), context["run_id"])
+        entries = with_output_tasks(
+            outcome_entries(selection, registered, Pipeline.GERMLINE_CNV),
+            context["ti"].xcom_pull(task_ids="collect_outputs"),
+            lambda e: family_id(e.case_id),
+        )
+        written = record(entries, context["run_id"])
         LOGGER.info("journaled %d outcome(s); tenants registered: %s", len(written), sorted(registered))
         return len(written)
 
