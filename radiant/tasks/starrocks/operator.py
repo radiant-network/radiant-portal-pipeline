@@ -4,7 +4,7 @@ import time
 import uuid
 from abc import abstractmethod
 from collections.abc import MutableMapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 from urllib.parse import urlparse
@@ -46,9 +46,13 @@ class SubmitTaskOptions:
             than the triggerer, so a wedged triggerer fails the task instead of leaving it deferred forever.
             Defaults to `max_query_timeout` plus `DEFER_TIMEOUT_MARGIN` — StarRocks aborts the statement at
             `max_query_timeout`, so the task cannot legitimately outlive that.
+        sync_wait (int): Seconds the worker polls the task before deferring, `$RADIANT_STARROCKS_SYNC_WAIT_SECONDS`
+            (300 by default). A resume after a defer starts a new pod under the KubernetesExecutor, which costs
+            more than most queries take.
     """
 
     DEFER_TIMEOUT_MARGIN = 600
+    SYNC_POLL_INTERVAL = 5
 
     max_query_timeout: int = 14400
     poll_interval: int = 30
@@ -56,6 +60,7 @@ class SubmitTaskOptions:
     spill_mode: str = "auto"
     extra_args: dict[str, Any] = None
     defer_timeout: int | None = None
+    sync_wait: int = field(default_factory=lambda: int(os.getenv("RADIANT_STARROCKS_SYNC_WAIT_SECONDS", "300")))
 
     def get_defer_timeout(self) -> int:
         if self.defer_timeout is not None:
@@ -150,21 +155,29 @@ class RadiantStarRocksBaseOperator(BaseSQLOperator):
 
         return _sql, _task_name
 
-    def submit_query(self, sql, method_name, parameters: MutableMapping | None = None):
+    def submit_query(self, context, sql, method_name, parameters: MutableMapping | None = None):
         submit_sql, task_name = self._prepare_sql(
             sql=sql,
             submit_task_options=self.submit_task_options,
         )
         self.get_db_hook().run(sql=submit_sql, autocommit=True, parameters=parameters)
         if self.submit_task_options:
+            trigger = StarRocksTaskCompleteTrigger(
+                conn_id=self.conn_id,
+                task_name=task_name,
+                sleep_time=self.submit_task_options.poll_interval,
+            )
+            deadline = time.monotonic() + self.submit_task_options.sync_wait
+            while time.monotonic() < deadline:
+                event = trigger.poll_sync()
+                if event is not None:
+                    return getattr(self, method_name)(context, event.payload)
+                time.sleep(SubmitTaskOptions.SYNC_POLL_INTERVAL)
+
             # Defer until StarRocks task completes. `timeout` is the scheduler-side backstop: without it a
             # triggerer that dies or wedges leaves the task deferred indefinitely.
             self.defer(
-                trigger=StarRocksTaskCompleteTrigger(
-                    conn_id=self.conn_id,
-                    task_name=task_name,
-                    sleep_time=self.submit_task_options.poll_interval,
-                ),
+                trigger=trigger,
                 method_name=method_name,
                 timeout=timedelta(seconds=self.submit_task_options.get_defer_timeout()),
             )
@@ -215,7 +228,7 @@ class RadiantStarRocksOperator(RadiantStarRocksBaseOperator, SQLExecuteQueryOper
             raise AirflowSkipException(f"skip_if resolved truthy ({self.skip_if!r}) -- nothing to execute.")
 
         if self.submit_task_options:
-            self.submit_query(sql=self.sql, method_name="_is_complete", parameters=self.parameters)
+            self.submit_query(context, sql=self.sql, method_name="_is_complete", parameters=self.parameters)
             return None
         else:
             return super().execute(context)
@@ -344,7 +357,10 @@ class RadiantStarRocksBasePartitionSwapOperator(RadiantStarRocksBaseOperator):
             # Step 2: Copy data to temp partition (submit async task)
             if self.submit_task_options:
                 self.submit_query(
-                    sql=_copy_partition_sql, method_name="after_copy_partition_complete", parameters=self.parameters
+                    context,
+                    sql=_copy_partition_sql,
+                    method_name="after_copy_partition_complete",
+                    parameters=self.parameters,
                 )
             else:
                 hook.run(sql=_copy_partition_sql, autocommit=True, parameters=self.parameters)
@@ -426,7 +442,7 @@ class RadiantStarRocksPartitionSwapOperator(RadiantStarRocksBasePartitionSwapOpe
             method_name = (
                 "after_insert_sql_partition_exists_complete" if partition_exists else "after_insert_sql_complete"
             )
-            self.submit_query(sql=_sql, method_name=method_name, parameters=self.parameters)
+            self.submit_query(context, sql=_sql, method_name=method_name, parameters=self.parameters)
         else:
             self.log.info("Executing insert SQL on temp partition")
             hook.run(sql=_sql, autocommit=True, parameters=self.parameters)

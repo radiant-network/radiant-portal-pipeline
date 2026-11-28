@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-from airflow.exceptions import TaskDeferred
+from airflow.exceptions import AirflowException, TaskDeferred
 
 from radiant.tasks.starrocks.operator import (
     RadiantLoadExomiserOperator,
@@ -140,13 +140,13 @@ def test_mapped_render_injects_mapping_and_tenant_code():
 def _deferred(submit_task_options):
     op = RadiantStarRocksOperator(task_id="t", sql="SELECT 1", submit_task_options=submit_task_options)
     with patch.object(op, "get_db_hook", return_value=MagicMock()), pytest.raises(TaskDeferred) as exc:
-        op.submit_query(sql="SELECT 1", method_name="_is_complete")
+        op.submit_query({}, sql="SELECT 1", method_name="_is_complete")
     return exc.value
 
 
 # Regression: poll_interval used to be dropped on the floor — submit_query hardcoded sleep_time=30.
 def test_submit_query_uses_configured_poll_interval():
-    deferred = _deferred(SubmitTaskOptions(max_query_timeout=3600, poll_interval=10))
+    deferred = _deferred(SubmitTaskOptions(max_query_timeout=3600, poll_interval=10, sync_wait=0))
 
     assert isinstance(deferred.trigger, StarRocksTaskCompleteTrigger)
     assert deferred.trigger.serialize()[1]["sleep_time"] == 10
@@ -154,15 +154,56 @@ def test_submit_query_uses_configured_poll_interval():
 
 # Regression: no defer timeout meant a wedged or restarted triggerer left the task deferred forever.
 def test_submit_query_sets_defer_timeout_from_query_timeout():
-    deferred = _deferred(SubmitTaskOptions(max_query_timeout=3600, poll_interval=10))
+    deferred = _deferred(SubmitTaskOptions(max_query_timeout=3600, poll_interval=10, sync_wait=0))
 
     assert deferred.timeout.total_seconds() == 3600 + SubmitTaskOptions.DEFER_TIMEOUT_MARGIN
 
 
 def test_submit_query_honours_explicit_defer_timeout():
-    deferred = _deferred(SubmitTaskOptions(max_query_timeout=3600, poll_interval=10, defer_timeout=120))
+    deferred = _deferred(SubmitTaskOptions(max_query_timeout=3600, poll_interval=10, defer_timeout=120, sync_wait=0))
 
     assert deferred.timeout.total_seconds() == 120
+
+
+def _submit_with_task_runs(rows, sync_wait=60):
+    """Run submit_query against a fake `task_runs` that returns `rows` in turn, without sleeping."""
+    op = RadiantStarRocksOperator(
+        task_id="t", sql="SELECT 1", submit_task_options=SubmitTaskOptions(poll_interval=10, sync_wait=sync_wait)
+    )
+    with (
+        patch.object(op, "get_db_hook", return_value=MagicMock()),
+        patch.object(StarRocksTaskCompleteTrigger, "_fetch_last_run", side_effect=rows) as fetch,
+        patch("radiant.tasks.starrocks.operator.time.sleep"),
+    ):
+        op.submit_query({}, sql="SELECT 1", method_name="_is_complete")
+    return fetch
+
+
+def test_submit_query_completes_in_the_worker_when_the_task_ends_within_the_wait():
+    fetch = _submit_with_task_runs([None, ("RUNNING", None), ("SUCCESS", None)])
+
+    assert fetch.call_count == 3
+
+
+def test_submit_query_raises_in_the_worker_when_the_task_fails_within_the_wait():
+    with pytest.raises(AirflowException, match="boom"):
+        _submit_with_task_runs([("FAILED", "boom")])
+
+
+def test_submit_query_defers_when_the_task_outlives_the_wait():
+    with (
+        patch("radiant.tasks.starrocks.operator.time.monotonic", side_effect=[0, 0, 61]),
+        pytest.raises(TaskDeferred),
+    ):
+        _submit_with_task_runs([("RUNNING", None)], sync_wait=60)
+
+
+def test_sync_wait_reads_its_env_var(monkeypatch):
+    monkeypatch.setenv("RADIANT_STARROCKS_SYNC_WAIT_SECONDS", "42")
+    assert SubmitTaskOptions().sync_wait == 42
+
+    monkeypatch.delenv("RADIANT_STARROCKS_SYNC_WAIT_SECONDS")
+    assert SubmitTaskOptions().sync_wait == 300
 
 
 def test_mapped_render_partition_swap_resolves_table_per_tenant():

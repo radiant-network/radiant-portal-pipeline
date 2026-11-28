@@ -104,6 +104,15 @@ class StarRocksTaskCompleteTrigger(BaseTrigger):
 
         return self._evaluate_state(result)
 
+    def poll_sync(self) -> TriggerEvent | None:
+        """Blocking twin of `_poll_once`, for the operator to wait in the worker before it defers."""
+        try:
+            result = self._fetch_last_run()
+        except Exception as e:  # noqa: BLE001 - any driver error is retryable
+            return self._on_query_error(f"[{type(e)}] {e}")
+
+        return self._evaluate_state(result)
+
     def _on_query_error(self, message: str) -> TriggerEvent | None:
         self._query_error_count += 1
         LOGGER.info(
