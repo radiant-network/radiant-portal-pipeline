@@ -44,5 +44,5 @@ def test_no_parameter_is_bound_without_named_cases():
     assert "%(" not in _render()
 
 
-def test_the_evaluation_reads_the_cases_it_was_named_only():
+def test_the_release_reads_the_cases_it_was_named_only():
     assert "WHERE pc.case_id IN %(case_ids)s" in _render([500])

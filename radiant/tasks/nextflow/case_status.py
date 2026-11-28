@@ -2,7 +2,7 @@
 
 The ETL only ever makes two status changes: `submitted` -> `processing`, by the pipeline DAG that
 decides to run work on a case (`decide_run`), and `processing` -> `in_progress`, by
-`radiant-case-evaluation` once the import has loaded the case's data and no pipeline is still
+`radiant-case-release` once the import has loaded the case's data and no pipeline is still
 running or failed for it (`not_ready_cases`, `plan_in_progress`). Everything here
 decides *which* cases; `portal.set_case_system_status` sends the change and the portal checks
 the expected status under a row lock, so a case a geneticist moved in the meantime is left
@@ -54,7 +54,7 @@ class CaseStatus(BaseModel):
 def plan_in_progress(
     status_rows: list[dict], processed: set[int], waiting: set[int], excluded_tenants: list[str]
 ) -> list[dict]:
-    """What `evaluate_cases` does per tenant: `{tenant, case_ids, processed_case_ids}`.
+    """What `release_cases` does per tenant: `{tenant, case_ids, processed_case_ids}`.
 
     `case_ids` is every `processing` case whose pipelines are all done and that has variant
     data. `waiting` is discovery run again after the pipelines: a case still in it has a pipeline

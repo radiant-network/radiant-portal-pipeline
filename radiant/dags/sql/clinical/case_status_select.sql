@@ -2,7 +2,7 @@
 -- `draft` or `revoked`, the same cases the pending queries look at), its status, its tenant, and
 -- whether it has variant data.
 --
--- Consumed by `radiant-case-evaluation` (`fetch_case_statuses`) for the cases it is named, to move
+-- Consumed by `radiant-case-release` (`fetch_case_statuses`) for the cases it is named, to move
 -- the ready `processing` ones to `in_progress` and to email the labs of the ones past it.
 --
 -- `has_variants`: at least one experiment of the case has been imported (`ingested_at`, set by
@@ -23,7 +23,7 @@ SELECT pc.case_id            AS case_id,
 FROM {{ mapping.starrocks_pipeline_case }} pc
 LEFT JOIN imported i ON i.case_id = pc.case_id
 {%- if params.get('case_ids') %}
--- `radiant-case-evaluation`: the cases it was named only.
+-- `radiant-case-release`: the cases it was named only.
 WHERE pc.case_id IN %(case_ids)s
 {%- endif %}
 ORDER BY pc.case_id

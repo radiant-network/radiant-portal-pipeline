@@ -35,7 +35,7 @@ def test_it_is_the_daily_entry_point_one_run_at_a_time(dag_bag):
 
 
 def test_the_pipeline_dags_have_no_schedule_of_their_own(dag_bag):
-    for dag_id in (*CASES_DAG_IDS.values(), "radiant-import", "radiant-case-evaluation"):
+    for dag_id in (*CASES_DAG_IDS.values(), "radiant-import", "radiant-case-release"):
         assert dag_bag.get_dag(dag_id).schedule is None
 
 
@@ -56,7 +56,7 @@ def test_the_block_list_defaults_to_the_env_var(dag_bag, monkeypatch):
     assert excluded_tenants_from_env() == ["radiant", "qlin"]
     monkeypatch.delenv("RADIANT_ETL_EXCLUDED_TENANTS")
     assert excluded_tenants_from_env() == []
-    for dag_id in (DAG_ID, *CASES_DAG_IDS.values(), "radiant-import", "radiant-case-evaluation"):
+    for dag_id in (DAG_ID, *CASES_DAG_IDS.values(), "radiant-import", "radiant-case-release"):
         assert dag_bag.get_dag(dag_id).params["excluded_tenants"] == []
 
 

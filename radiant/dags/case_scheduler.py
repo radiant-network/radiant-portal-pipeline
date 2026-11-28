@@ -2,7 +2,7 @@
 
 It decides nothing and moves no status. Each pipeline DAG decides its own items, journals them, and moves the cases
 it runs from `submitted` to `processing` (`radiant.dags.pipeline_decision`); the import does the same for the cases
-it loads, then hands them to `radiant-case-evaluation`, which moves the ready ones to `in_progress` and emails the
+it loads, then hands them to `radiant-case-release`, which moves the ready ones to `in_progress` and emails the
 laboratories.
 
 The pipelines run `all_done`: a failed pipeline must not hold the others back, and the import follows germline SNV,
@@ -47,7 +47,7 @@ dag_params = {
         type="boolean",
         title="Notify the laboratories",
         description=(
-            "Passed to the import, then to radiant-case-evaluation: email each laboratory the manifest of its cases. "
+            "Passed to the import, then to radiant-case-release: email each laboratory the manifest of its cases. "
             "Disable to move them silently; the case group is still created, so the `notify_cases` DAG can send later."
         ),
     ),

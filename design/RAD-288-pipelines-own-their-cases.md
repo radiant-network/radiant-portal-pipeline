@@ -2,7 +2,7 @@
 
 Story [RAD-286](https://ferlab-crsj.atlassian.net/browse/RAD-286), sub-task RAD-288 (decision journal). Builds on the import journal (#381) and the task lineage (`output_task_id`).
 
-**Summary:** the case scheduler stops deciding and stops moving statuses: it triggers the pipelines, then the import. Each pipeline decides its items, journals them, moves its `run` cases from `submitted` to `processing`, and runs. At its end the import triggers a new DAG, `radiant-case-evaluation`, with the cases it loaded: that DAG moves the ready ones to `in_progress` and emails the laboratories.
+**Summary:** the case scheduler stops deciding and stops moving statuses: it triggers the pipelines, then the import. Each pipeline decides its items, journals them, moves its `run` cases from `submitted` to `processing`, and runs. At its end the import triggers a new DAG, `radiant-case-release`, with the cases it loaded: that DAG moves the ready ones to `in_progress` and emails the laboratories.
 
 ## 1. Why
 
@@ -29,9 +29,9 @@ each "from Cases" DAG and the import
   facts → decide → journal → move `run` cases to processing → run → outcomes
 
 radiant-import, after its parts
-  outcomes (journal) → trigger radiant-case-evaluation(case_ids = cases loaded by this run)
+  outcomes (journal) → trigger radiant-case-release(case_ids = cases loaded by this run)
 
-radiant-case-evaluation
+radiant-case-release
   read the statuses and pipeline_state of the named cases
   → drop the cases not ready
   → per tenant: processing → in_progress, case group, email
@@ -42,8 +42,8 @@ radiant-case-evaluation
 ### Case scheduler (`case_scheduler.py`)
 
 - Keeps the four triggers and the import trigger, their order and `all_done`, and `excluded_tenants` in the children's conf. Passes no `case_ids` / `task_ids`.
-- Removes: `discover_*`, `decide_*`, `journal_*`, `fetch_case_statuses`, `discover_cases`, `set_processing`, `rediscover_*`, `refresh_case_statuses`, `select_ready_cases`, `evaluate_cases`. `watcher` stays.
-- `case_status.py`: `cases_with_work`, `plan_processing` and the scheduler's use of `DECIDE` go; `plan_in_progress` and the per-tenant helpers move to the evaluation.
+- Removes: `discover_*`, `decide_*`, `journal_*`, `fetch_case_statuses`, `discover_cases`, `set_processing`, `rediscover_*`, `refresh_case_statuses`, `select_ready_cases`, `release_cases`. `watcher` stays.
+- `case_status.py`: `cases_with_work`, `plan_processing` and the scheduler's use of `DECIDE` go; `plan_in_progress` and the per-tenant helpers move to the release.
 
 ### Nextflow "from Cases" DAGs (germline SNV, germline CNV, somatic SNV)
 
@@ -64,21 +64,21 @@ radiant-case-evaluation
 
 - `set_processing` after `decide_import`, for the cases decided `run` whose reason is `first_run` or `retry` (a purge, `task_deleted`, brings no data to analyse). Needs `excluded_tenants` (new param, passed by the scheduler): the import loads every tenant, but statuses skip the excluded ones.
 - `journal_import_outcomes` stops being a teardown: an `all_done` task that journals the outcomes and returns the cases with an item `succeeded` whose decision was `first_run` or `retry`.
-- `trigger_case_evaluation`: `TriggerDagRunOperator` to `radiant-case-evaluation`, conf `{case_ids, excluded_tenants, notify}`, not waiting for completion; skipped when no case. Its failure does not fail the import (same handling as `data_integrity_checks`).
+- `trigger_case_release`: `TriggerDagRunOperator` to `radiant-case-release`, conf `{case_ids, excluded_tenants, notify}`, not waiting for completion; skipped when no case. Its failure does not fail the import (same handling as `data_integrity_checks`).
 
-### New `radiant-case-evaluation`
+### New `radiant-case-release`
 
-- Params: `case_ids` (required), `excluded_tenants`, `notify`. Manual runs re-evaluate or resend for named cases.
+- Params: `case_ids` (required), `excluded_tenants`, `notify`. Manual runs re-check or resend for named cases.
 - `fetch_case_statuses`: `case_status_select.sql`, limited to `case_ids`.
 - `fetch_pipeline_state`: the last row of the named cases' items in `pipeline_state`.
 - `select_ready_cases`: a case is ready when none of its `germline_snv`, `germline_cnv`, `somatic_snv` items has a last row `failed`, or `run` (no outcome yet). Ready and `processing` → moved to `in_progress`; ready and past `processing` → emailed only, status unchanged; `submitted` or not ready → left alone, logged.
-- `evaluate_cases`: the current mapped task group per tenant (`set_in_progress` → `create_case_group` → `notify_labs`), moved as is.
+- `release_cases`: the current mapped task group per tenant (`set_in_progress` → `create_case_group` → `notify_labs`), moved as is.
 
 ## 5. Behaviour changes
 
 - A failure holds back the cases it concerns only: no run-wide `none_failed` gate on the statuses.
 - A case is emailed when the import loads something for it, once its other pipelines are not failed or running. The QC report alone no longer triggers an email.
-- A child or import run by hand moves and evaluates its cases like a scheduled one.
+- A child or import run by hand moves and releases its cases like a scheduled one.
 - A `submitted` case with variants loaded outside the pipelines (the old `plan_processing` rule) is no longer moved: no pipeline runs for it. To revisit if it happens.
 - A case moved to `processing` whose pipeline then fails stays `processing` until a later run succeeds, as today.
 
@@ -86,25 +86,25 @@ radiant-case-evaluation
 
 - **Partial family, member pending:** the pipeline runs the present members (`wait` item for the absent one is not a blocker); the case reaches `in_progress` when the import loads, as today.
 - **Blocked item** (no gCNV, missing value): does not hold the case back, as today.
-- **Item decided `run` by the child but the import blocked** (`missing_input`): no import `succeeded`, no evaluation, the case stays `processing`; the journal says why.
+- **Item decided `run` by the child but the import blocked** (`missing_input`): no import `succeeded`, no release, the case stays `processing`; the journal says why.
 - **Facts move between the child's decision and the import:** none of the decisions is shared any more, so there is nothing to reconcile.
 
 ## 7. Commits (on `feat/rad-288-task-lineage`)
 
-1. `radiant-case-evaluation` DAG, its selection rule from `pipeline_state`, and the import's outcomes task + trigger.
+1. `radiant-case-release` DAG, its selection rule from `pipeline_state`, and the import's outcomes task + trigger.
 2. Germline SNV child: facts → decide → journal → `processing`.
 3. Germline CNV child, then somatic SNV, then QC (without `processing`).
 4. Import `set_processing` and `excluded_tenants`.
-5. Scheduler: remove the decisions, statuses and evaluation; `case_status.py` clean-up; docs (`case_scheduler.md`, each DAG doc, `CLAUDE.md`).
+5. Scheduler: remove the decisions, statuses and release; `case_status.py` clean-up; docs (`case_scheduler.md`, each DAG doc, `CLAUDE.md`).
 
 ## 8. Tests
 
-- Unit: the readiness rule (failed, run without outcome, succeeded, wait, blocked; QC ignored); the import's list of cases to evaluate (`task_deleted` excluded); each child's new head (named items filter execution, not the decision); the scheduler's task list and wiring; the evaluation DAG's wiring.
+- Unit: the readiness rule (failed, run without outcome, succeeded, wait, blocked; QC ignored); the import's list of cases to release (`task_deleted` excluded); each child's new head (named items filter execution, not the decision); the scheduler's task list and wiring; the release DAG's wiring.
 - Integration: `pipeline_state` read for named cases; `case_status_select.sql` limited to `case_ids`.
 
 ## 9. Upgrade
 
-- No migration. Deploy note: `radiant-case-evaluation` is new and must be unpaused; the scheduler no longer moves statuses, so the first run after the deploy moves cases only through the new flow.
+- No migration. Deploy note: `radiant-case-release` is new and must be unpaused; the scheduler no longer moves statuses, so the first run after the deploy moves cases only through the new flow.
 
 ## 10. Later
 

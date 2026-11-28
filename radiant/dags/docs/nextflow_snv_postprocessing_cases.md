@@ -238,7 +238,7 @@ The grant is client_credentials — no browser, no device approval.
 
 ## Notification
 
-This DAG does not email the laboratories. **radiant-case-evaluation** does, once **radiant-import** has loaded the
+This DAG does not email the laboratories. **radiant-case-release** does, once **radiant-import** has loaded the
 case's new data, so the manifest holds the results of every pipeline. See their documentation.
 
 ---

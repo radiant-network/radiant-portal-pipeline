@@ -44,12 +44,12 @@ actions:
       only.
   - when: after
     do: >-
-      Unpause radiant-case-evaluation. The case scheduler no longer moves statuses nor emails the laboratories: the
-      pipeline DAGs and the import move their cases to processing, and radiant-import starts radiant-case-evaluation,
+      Unpause radiant-case-release. The case scheduler no longer moves statuses nor emails the laboratories: the
+      pipeline DAGs and the import move their cases to processing, and radiant-import starts radiant-case-release,
       which moves the ready cases to in_progress and sends the emails. Paused, it leaves every case processing and
       sends nothing.
     refs:
-      - radiant-case-evaluation
-      - radiant/dags/case_evaluation.py
+      - radiant-case-release
+      - radiant/dags/case_release.py
     check: >-
-      After the next radiant-import run that loaded data, radiant-case-evaluation has a run under the same run tag.
+      After the next radiant-import run that loaded data, radiant-case-release has a run under the same run tag.

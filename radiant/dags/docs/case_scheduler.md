@@ -17,7 +17,7 @@ watcher (fails the run when any step failed)
 |---|---|
 | Decide each item, journal it (**pipeline_journal**) | each pipeline DAG at its start (**radiant.dags.pipeline_decision**), and **radiant-import** |
 | **submitted** → **processing** | the pipeline DAG that runs work on the case (germline SNV, germline CNV, somatic SNV) and **radiant-import** for the cases it loads. Not quality control: it does not count for the statuses yet |
-| **processing** → **in_progress**, lab email | **radiant-case-evaluation**, started by **radiant-import** with the cases it loaded |
+| **processing** → **in_progress**, lab email | **radiant-case-release**, started by **radiant-import** with the cases it loaded |
 
 Why an item does or does not run is in **pipeline_journal**, per item, and **pipeline_state** gives the last row of
 each.
@@ -29,7 +29,7 @@ germline SNV post-processing, somatic SNV annotation and germline CNV post-proce
 whatever their outcome, since it loads the annotation tasks they register. Quality control is not upstream of it
 yet.
 
-A failure holds back only the cases it concerns: **radiant-case-evaluation** leaves a case **processing** while one
+A failure holds back only the cases it concerns: **radiant-case-release** leaves a case **processing** while one
 of its germline SNV, germline CNV or somatic SNV items is still running or failed, and a later run that finishes it
 moves it. **watcher** turns the run red when any step failed, since the **all_done** steps would otherwise let it end
 green. Look at the failed task and at the child runs.
@@ -48,7 +48,7 @@ A tenant that the portal refuses with a 403 (the service account is not granted 
 | Param | Default | Meaning |
 |---|---|---|
 | **excluded_tenants** | **$RADIANT_ETL_EXCLUDED_TENANTS** | Tenants left out of case processing, see Tenants |
-| **notify** | **true** | Passed to the import, then to **radiant-case-evaluation**: email the laboratories. False still creates the case group, so **notify_cases** can send later |
+| **notify** | **true** | Passed to the import, then to **radiant-case-release**: email the laboratories. False still creates the case group, so **notify_cases** can send later |
 
 ## Child runs
 

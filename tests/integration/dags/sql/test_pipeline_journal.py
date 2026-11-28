@@ -6,7 +6,7 @@ import jinja2
 import pytest
 
 from radiant.dags import DAGS_DIR
-from radiant.dags.case_evaluation import PIPELINE_STATE_SQL
+from radiant.dags.case_release import PIPELINE_STATE_SQL
 from radiant.tasks.decision import Decision, Reason, ReasonCode
 from radiant.tasks.journal import Entry, Pipeline, read_state, to_write, write
 from radiant.tasks.nextflow.lineage import OUTPUT_TASK_SQL
@@ -90,7 +90,7 @@ def test_a_task_is_found_back_from_the_url_of_its_output(postgres_clinical_seeds
         assert cursor.fetchall() == ((url, 63),)
 
 
-def test_the_evaluation_reads_the_items_of_its_cases(journal, radiant_mapping):
+def test_the_release_reads_the_items_of_its_cases(journal, radiant_mapping):
     write(
         journal,
         radiant_mapping,

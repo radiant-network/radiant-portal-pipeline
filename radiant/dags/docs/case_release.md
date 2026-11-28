@@ -1,10 +1,10 @@
-# Case Evaluation
+# Case Release
 
 Moves the named cases that are ready to **in_progress** and emails their laboratories. **radiant-import** triggers
 it at its end with the cases it loaded new data for (an item **succeeded** after **first_run** or **retry**); an
-operator can run it by hand with **case_ids**, to evaluate or email again.
+operator can run it by hand with **case_ids**, to release or email again.
 
-has_cases → fetch_case_statuses, fetch_pipeline_state → select_ready_cases → evaluate_cases (one per tenant:
+has_cases → fetch_case_statuses, fetch_pipeline_state → select_ready_cases → release_cases (one per tenant:
 set_in_progress → create_case_group → notify_labs)
 
 ## Ready
@@ -31,7 +31,7 @@ account gets a 403 from the portal and is skipped.
 One case group per run and tenant, **results-&lt;run tag&gt;**. With **notify** off, the group is created but no
 email goes: **notify_cases** sends it later. A failed email is not sent again by itself: use **notify_cases**.
 
-**evaluate_cases** is a mapped task group, one chain per tenant, so a tenant skipped or failed never holds back
+**release_cases** is a mapped task group, one chain per tenant, so a tenant skipped or failed never holds back
 another tenant's email:
 
 - **set_in_progress** sends the status change; no call for a tenant with nothing to move;

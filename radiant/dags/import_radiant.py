@@ -23,7 +23,7 @@ std_submit_task_opts = SubmitTaskOptions(max_query_timeout=3600, poll_interval=1
 JOURNAL_RETRIES = 2
 JOURNAL_RETRY_DELAY = datetime.timedelta(minutes=1)
 
-# Handed on to `radiant-case-evaluation`, which moves the statuses and emails: the import itself loads every tenant.
+# Handed on to `radiant-case-release`, which moves the statuses and emails: the import itself loads every tenant.
 dag_params = {
     "excluded_tenants": Param(
         excluded_tenants_from_env(),
@@ -31,7 +31,7 @@ dag_params = {
         items={"type": "string"},
         title="Excluded tenants",
         description=(
-            "Tenants whose case statuses are left alone (`processing` here, `in_progress` in radiant-case-evaluation)."
+            "Tenants whose case statuses are left alone (`processing` here, `in_progress` in radiant-case-release)."
             " The import still loads them. Defaults to "
             f"${EXCLUDED_TENANTS_ENV}; empty excludes none. The case scheduler passes its own."
         ),
@@ -40,7 +40,7 @@ dag_params = {
         True,
         type="boolean",
         title="Notify the laboratories",
-        description="Passed to radiant-case-evaluation: email the laboratories of the cases it moves or finds ready.",
+        description="Passed to radiant-case-release: email the laboratories of the cases it moves or finds ready.",
     ),
 }
 
@@ -252,7 +252,7 @@ def import_radiant():
     )
     def journal_import_outcomes() -> list[int]:
         """`failed` for each item decided `run` that the facts still hold, `succeeded` for the others. Returns the
-        cases that got new data, for the evaluation."""
+        cases that got new data, for the release."""
         from airflow.sdk import get_current_context
 
         from radiant.tasks.importing.resolve import cases_with_new_data, fetch_facts, outcome_entries
@@ -270,10 +270,10 @@ def import_radiant():
     outcomes = journal_import_outcomes()
 
     # Not waiting: the statuses and the emails are that DAG's, a portal failure there does not fail the import.
-    trigger_case_evaluation = TriggerDagRunOperator(
-        task_id="trigger_case_evaluation",
-        task_display_name="[DAG] Case Evaluation (in_progress, emails)",
-        trigger_dag_id=f"{NAMESPACE}-case-evaluation",
+    trigger_case_release = TriggerDagRunOperator(
+        task_id="trigger_case_release",
+        task_display_name="[DAG] Case Release (in_progress, emails)",
+        trigger_dag_id=f"{NAMESPACE}-case-release",
         trigger_run_id="{{ sanitize_run_tag(run_id) }}",
         reset_dag_run=True,
         wait_for_completion=False,
@@ -284,8 +284,8 @@ def import_radiant():
         },
     )
 
-    @task.short_circuit(task_id="has_cases_to_evaluate", task_display_name="[PyOp] Skip when no case got new data")
-    def has_cases_to_evaluate(case_ids: Any) -> bool:
+    @task.short_circuit(task_id="has_cases_to_release", task_display_name="[PyOp] Skip when no case got new data")
+    def has_cases_to_release(case_ids: Any) -> bool:
         return bool(case_ids)
 
     (
@@ -300,7 +300,7 @@ def import_radiant():
     )
     flag_deleted_sequencing_experiment >> priority
     import_parts >> outcomes
-    has_cases_to_evaluate(outcomes) >> trigger_case_evaluation
+    has_cases_to_release(outcomes) >> trigger_case_release
 
 
 import_radiant()

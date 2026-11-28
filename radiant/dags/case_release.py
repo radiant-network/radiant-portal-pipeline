@@ -17,7 +17,7 @@ from radiant.dags import DEFAULT_ARGS, EXCLUDED_TENANTS_ENV, NAMESPACE, excluded
 from radiant.tasks.nextflow.case_status import IN_PROGRESS
 from radiant.tasks.starrocks.operator import RadiantStarRocksOperator, rows_output_processor
 
-DAG_ID = f"{NAMESPACE}-case-evaluation"
+DAG_ID = f"{NAMESPACE}-case-release"
 
 # Case group name prefix: `results-<run tag>`, one group per run and tenant. The labs see it, in the manifest's
 # file name.
@@ -43,7 +43,7 @@ dag_params = {
         type="array",
         items={"type": "integer"},
         title="Case ids",
-        description="The cases to evaluate: `radiant-import` passes the ones it loaded. Empty evaluates nothing.",
+        description="The cases to release: `radiant-import` passes the ones it loaded. Empty releases nothing.",
     ),
     "excluded_tenants": Param(
         excluded_tenants_from_env(),
@@ -68,7 +68,7 @@ dag_params = {
 
 @dag(
     dag_id=DAG_ID,
-    dag_display_name="Radiant - Case Evaluation",
+    dag_display_name="Radiant - Case Release",
     default_args=DEFAULT_ARGS,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     schedule=None,
@@ -76,11 +76,11 @@ dag_params = {
     max_active_runs=1,
     tags=["radiant", "scheduled"],
     params=dag_params,
-    doc_md=load_docs_md("case_evaluation.md"),
+    doc_md=load_docs_md("case_release.md"),
     render_template_as_native_obj=True,
     template_searchpath=["/opt/airflow/dags/radiant/dags/sql"],
 )
-def case_evaluation():
+def case_release():
     @task.short_circuit(task_id="has_cases", task_display_name="[PyOp] Skip when no case is named")
     def has_cases() -> bool:
         from airflow.sdk import get_current_context
@@ -155,15 +155,15 @@ def case_evaluation():
             raise AirflowSkipException(f"notify=false: case group '{name}' exists, use the notify_cases DAG to send")
         return send_notification(batch["tenant"], name)
 
-    @task_group(group_id="evaluate_cases", tooltip="Move a tenant's cases to in_progress, then email its labs")
-    def evaluate_cases(batch: dict) -> None:
+    @task_group(group_id="release_cases", tooltip="Move a tenant's cases to in_progress, then email its labs")
+    def release_cases(batch: dict) -> None:
         # One chain per tenant, mapped as a group: a tenant skipped on a 403, or failed, must not hold back the other
         # tenants' emails, as mapping each task on its own would.
         name = create_case_group(batch, set_in_progress(batch))
         notify_labs(batch, name)
 
     has_cases() >> [fetch_case_statuses, fetch_pipeline_state]
-    evaluate_cases.expand(batch=select_ready_cases(fetch_case_statuses.output, fetch_pipeline_state.output))
+    release_cases.expand(batch=select_ready_cases(fetch_case_statuses.output, fetch_pipeline_state.output))
 
 
-case_evaluation()
+case_release()
