@@ -92,7 +92,7 @@ def test_scope_selects_affected_probands_and_mane_select():
     # The part narrows the cases too: their old rows are the ones a rerun deletes.
     assert "p.part = 3" in params["cases"]
     assert (
-        "c.is_mane_select AND c.transcript_id LIKE 'ENST%'" in params["classified"]
+        "c.transcript_id LIKE 'ENST%' AND (c.is_mane_select OR" in params["classified"]
         and "'missense_variant'" in params["classified"]
     )
     assert params["occurrence_part"] == "AND o.part = 3" and params["comphet_part"] == "AND ch.part = 3"
