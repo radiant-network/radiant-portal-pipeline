@@ -1,5 +1,31 @@
 # Changelog
 
+## [1.3.0](https://github.com/radiant-network/radiant-portal-pipeline/compare/v1.2.0...v1.3.0) (2026-11-28)
+
+
+### Features
+
+* RAD-272 read the somatic CNV on the tumor-only alignment task ([#374](https://github.com/radiant-network/radiant-portal-pipeline/issues/374)) ([595659e](https://github.com/radiant-network/radiant-portal-pipeline/commit/595659e5a5922ca1a175258b5c269dffa5a1dca5))
+* RAD-288 each pipeline decides and moves its cases and the import hands them to a case evaluation dag ([#382](https://github.com/radiant-network/radiant-portal-pipeline/issues/382)) ([f280f4b](https://github.com/radiant-network/radiant-portal-pipeline/commit/f280f4b530cc22090bdc52fb1f1ca69f899f02e4))
+* RAD-288 germline SNV runs the cases the scheduler decided, a missing parent no longer blocks ([#362](https://github.com/radiant-network/radiant-portal-pipeline/issues/362)) ([26910c4](https://github.com/radiant-network/radiant-portal-pipeline/commit/26910c4dc584cea0009edc95fd2779a7c83709e3))
+* RAD-288 the case scheduler journals its germline CNV decisions and the CNV post-processing runs the cases it decided ([#372](https://github.com/radiant-network/radiant-portal-pipeline/issues/372)) ([cfab51a](https://github.com/radiant-network/radiant-portal-pipeline/commit/cfab51aead36bbe690536cca3456529e81c96f89))
+* RAD-288 the case scheduler journals its germline SNV decisions ([#361](https://github.com/radiant-network/radiant-portal-pipeline/issues/361)) ([281a39c](https://github.com/radiant-network/radiant-portal-pipeline/commit/281a39cbe4d64dea3f2888d5143a5f3b13a3714e))
+* RAD-288 the case scheduler journals its quality control decisions and the qc dag runs the cases it decided ([#375](https://github.com/radiant-network/radiant-portal-pipeline/issues/375)) ([147075b](https://github.com/radiant-network/radiant-portal-pipeline/commit/147075b8404584ca90ebf1277abb5a4333a9d94e))
+* RAD-288 the case scheduler journals its somatic snv decisions per calling task and the somatic dag runs the tasks it decided ([#378](https://github.com/radiant-network/radiant-portal-pipeline/issues/378)) ([03d60bb](https://github.com/radiant-network/radiant-portal-pipeline/commit/03d60bb9c86bdb942696d8dc15e1fc4104c4a669))
+* RAD-288 the germline SNV post-processing journals succeeded or failed per case ([#363](https://github.com/radiant-network/radiant-portal-pipeline/issues/363)) ([1d6fa8a](https://github.com/radiant-network/radiant-portal-pipeline/commit/1d6fa8a6cdde7e0b4c9ba24ca46417924e0134d1))
+* RAD-288 the import decides its tasks in python from sql facts and journals them ([#381](https://github.com/radiant-network/radiant-portal-pipeline/issues/381)) ([6eb4de3](https://github.com/radiant-network/radiant-portal-pipeline/commit/6eb4de34e137195e184c47273f0343fba31be524))
+* RAD-288 the pipeline journal table and its write rule ([#360](https://github.com/radiant-network/radiant-portal-pipeline/issues/360)) ([55f8c30](https://github.com/radiant-network/radiant-portal-pipeline/commit/55f8c3033e226efc13802cb0353e00252a2c2aa3))
+* rad-369 import gene coverage ([#367](https://github.com/radiant-network/radiant-portal-pipeline/issues/367)) ([2973fe1](https://github.com/radiant-network/radiant-portal-pipeline/commit/2973fe13dbd502ca892b2bd01c1fb2ca0aebf164))
+* rad-378 batch the exomiser load ([#370](https://github.com/radiant-network/radiant-portal-pipeline/issues/370)) ([e1ffd98](https://github.com/radiant-network/radiant-portal-pipeline/commit/e1ffd98ad54480adbfb6e5342d68ff5c48907d78))
+* RAD-434 add opt-in Rust engine for parsing SNV VCFs ([#379](https://github.com/radiant-network/radiant-portal-pipeline/issues/379)) ([69c8b95](https://github.com/radiant-network/radiant-portal-pipeline/commit/69c8b958e5df76be26379b0473f827de3ed81d6b))
+
+
+### Bug Fixes
+
+* rad-377 rely on created_on only for calculating what to process ([#369](https://github.com/radiant-network/radiant-portal-pipeline/issues/369)) ([c8fb06f](https://github.com/radiant-network/radiant-portal-pipeline/commit/c8fb06fb98fbc995e7278d3aa9dfdfd12e3804df))
+* RAD-399 assign partitions per group of linked rows ([#376](https://github.com/radiant-network/radiant-portal-pipeline/issues/376)) ([0432027](https://github.com/radiant-network/radiant-portal-pipeline/commit/04320278a2cb5ad24673dda125edce9ede85274c))
+* RAD-400 purge the snv rows of deleted tasks ([#380](https://github.com/radiant-network/radiant-portal-pipeline/issues/380)) ([d07b182](https://github.com/radiant-network/radiant-portal-pipeline/commit/d07b18222a5169f3ba1df4cd5900779ae01c1a79))
+
 ## [1.2.0](https://github.com/radiant-network/radiant-portal-pipeline/compare/v1.1.32...v1.2.0) (2026-11-18)
 
 
