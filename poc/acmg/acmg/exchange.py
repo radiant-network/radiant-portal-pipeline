@@ -123,15 +123,17 @@ def scope(args, rs: Ruleset) -> dict:
     )
     consequences = ", ".join(f"'{c}'" for c in rs.scope.consequences)
     # VEP --merged flags both the Ensembl and the RefSeq copy of a MANE Select: keep the Ensembl one. Some genes
-    # have the flag on the RefSeq copy only: their Ensembl canonical (the MANE in Ensembl) stands in.
+    # have the flag on the RefSeq copy only: their Ensembl canonical (the MANE in Ensembl) stands in. Genes with no
+    # MANE at all (lncRNA, readthrough) stay out.
     transcripts = (
         "TRUE" if args.all_transcripts
-        else "c.transcript_id LIKE 'ENST%' AND (c.is_mane_select OR (c.is_canonical AND m.locus_id IS NULL))"
+        else "c.transcript_id LIKE 'ENST%' AND (c.is_mane_select OR (c.is_canonical AND m.has_nm AND NOT m.has_enst))"
     )
     classified = (
         f"SELECT c.locus_id, c.transcript_id FROM {args.shared_db}.snv__consequence c"
-        f" LEFT JOIN (SELECT DISTINCT locus_id, symbol FROM {args.shared_db}.snv__consequence"
-        f" WHERE is_mane_select AND transcript_id LIKE 'ENST%') m ON m.locus_id = c.locus_id AND m.symbol = c.symbol"
+        f" LEFT JOIN (SELECT locus_id, symbol, max(transcript_id LIKE 'ENST%') AS has_enst,"
+        f" max(transcript_id LIKE 'NM_%') AS has_nm FROM {args.shared_db}.snv__consequence"
+        f" WHERE is_mane_select GROUP BY locus_id, symbol) m ON m.locus_id = c.locus_id AND m.symbol = c.symbol"
         f" WHERE {transcripts}"
         f" AND (arrays_overlap(c.consequences, [{consequences}]) OR c.spliceai_ds >= {rs.scope.spliceai_min})"
         f" AND c.locus_id IN (SELECT o.locus_id FROM {args.tenant_db}.germline__snv__occurrence o"
