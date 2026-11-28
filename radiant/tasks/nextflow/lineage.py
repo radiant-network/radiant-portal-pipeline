@@ -5,14 +5,19 @@ the run collected itself and which belongs to that task alone.
 """
 
 from collections.abc import Callable
-from pathlib import Path
 
 import jinja2
 
 from radiant.tasks.decision import Decision
 from radiant.tasks.journal import Entry
 
-_SQL = Path(__file__).parents[2] / "dags" / "sql" / "clinical" / "output_task_select.sql"
+# A document is the output of one task only: the portal enforces it.
+OUTPUT_TASK_SQL = """
+SELECT d.url, thd.task_id
+FROM {{ mapping.clinical_document }} d
+JOIN {{ mapping.clinical_task_has_document }} thd ON thd.document_id = d.id AND thd.type = 'output'
+WHERE d.url IN %(urls)s
+"""
 
 
 def with_output_tasks(
@@ -42,7 +47,7 @@ def output_task_ids(urls: list[str], conf: dict | None = None) -> dict[str, int]
 
     from radiant.tasks.data.radiant_tables import get_radiant_mapping
 
-    sql = jinja2.Template(_SQL.read_text()).render(mapping=get_radiant_mapping(conf))
+    sql = jinja2.Template(OUTPUT_TASK_SQL).render(mapping=get_radiant_mapping(conf))
     connection = BaseHook.get_connection("starrocks_conn").get_hook().get_conn()
     with connection.cursor() as cursor:
         cursor.execute(sql, {"urls": urls})

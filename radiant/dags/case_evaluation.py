@@ -30,6 +30,13 @@ STATUS_RETRY_DELAY = datetime.timedelta(minutes=1)
 
 CASE_IDS_PARAMETERS = {"case_ids": "{{ params.case_ids }}"}
 
+# The last journal row of each item of the named cases.
+PIPELINE_STATE_SQL = """
+SELECT case_id, pipeline, item_key, decision
+FROM {{ mapping.starrocks_pipeline_state }}
+WHERE case_id IN %(case_ids)s
+"""
+
 dag_params = {
     "case_ids": Param(
         [],
@@ -92,7 +99,7 @@ def case_evaluation():
     fetch_pipeline_state = RadiantStarRocksOperator(
         task_id="fetch_pipeline_state",
         task_display_name="[StarRocks] Fetch where the items of the named cases stand",
-        sql="./sql/radiant/pipeline_state_of_cases_select.sql",
+        sql=PIPELINE_STATE_SQL,
         parameters=CASE_IDS_PARAMETERS,
         output_processor=rows_output_processor,
         do_xcom_push=True,

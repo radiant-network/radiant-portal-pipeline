@@ -6,8 +6,10 @@ import jinja2
 import pytest
 
 from radiant.dags import DAGS_DIR
+from radiant.dags.case_evaluation import PIPELINE_STATE_SQL
 from radiant.tasks.decision import Decision, Reason, ReasonCode
 from radiant.tasks.journal import Entry, Pipeline, read_state, to_write, write
+from radiant.tasks.nextflow.lineage import OUTPUT_TASK_SQL
 
 _INIT_DIR = DAGS_DIR / "sql" / "radiant" / "init"
 J1 = datetime.datetime(2026, 11, 1, 2, 0, 0, 1)
@@ -82,8 +84,9 @@ def test_a_task_is_found_back_from_the_url_of_its_output(postgres_clinical_seeds
             "WHERE thd.task_id = 63 AND thd.type = 'output' AND d.format_code = 'vcf'"
         )
         [(url,)] = cursor.fetchall()
-        sql = (DAGS_DIR / "sql" / "clinical" / "output_task_select.sql").read_text()
-        cursor.execute(jinja2.Template(sql).render(mapping=radiant_mapping), {"urls": [url, "s3://unknown.vcf.gz"]})
+        cursor.execute(
+            jinja2.Template(OUTPUT_TASK_SQL).render(mapping=radiant_mapping), {"urls": [url, "s3://unknown.vcf.gz"]}
+        )
         assert cursor.fetchall() == ((url, 63),)
 
 
@@ -99,6 +102,5 @@ def test_the_evaluation_reads_the_items_of_its_cases(journal, radiant_mapping):
         "scheduled__j1",
         J1,
     )
-    sql = (DAGS_DIR / "sql" / "radiant" / "pipeline_state_of_cases_select.sql").read_text()
-    journal.execute(jinja2.Template(sql).render(mapping=radiant_mapping), {"case_ids": [1]})
+    journal.execute(jinja2.Template(PIPELINE_STATE_SQL).render(mapping=radiant_mapping), {"case_ids": [1]})
     assert sorted(journal.fetchall()) == [(1, "germline_cnv", "", "wait"), (1, "germline_snv", "", "run")]
